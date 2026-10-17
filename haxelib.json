@@ -1,0 +1,9 @@
+{
+	"name": "rayde",
+	"license": "Apache",
+	"description": "RayDE, the Rayzor Development Environment: a Haxe IDE on ashui's code editor, for the ash and rayzor runtimes.",
+	"contributors": ["darmie"],
+	"version": "0.1.0",
+	"classPath": "src",
+	"releasenote": "Language layer: the Haxe compilation server's display protocol."
+}
