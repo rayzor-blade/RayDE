@@ -1,0 +1,5 @@
+/* RayDE's own rules over ashui's components; layout only, the theme does the rest. */
+#rayde .rayde-problem { border-radius: var(--radius-sm); }
+#rayde .rayde-problem:hover { background: var(--accent-subtle); }
+/* A badge aligns itself to the start; in RayDE's rows it follows the row, centred like its neighbours. */
+#rayde .ui-badge { align-self: auto; }
