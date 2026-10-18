@@ -30,6 +30,7 @@ class Main {
 			height: 800,
 			minWidth: 800,
 			minHeight: 560,
+			icon: rayde.ui.AppIcon.window(),
 			theme: Theming.bundle(appearance.theme),
 			appearance: Theming.windowTheme(appearance)
 		}, () -> {

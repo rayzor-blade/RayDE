@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+	<mime-type type="text/x-hxml">
+		<comment>Haxe build file</comment>
+		<icon name="rayde"/>
+		<glob pattern="*.hxml"/>
+	</mime-type>
+	<mime-type type="application/x-rayext">
+		<comment>RayScript extension</comment>
+		<sub-class-of type="application/json"/>
+		<icon name="rayde"/>
+		<glob pattern="*.rayext"/>
+	</mime-type>
+</mime-info>

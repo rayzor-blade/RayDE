@@ -21,8 +21,20 @@ class Keymaps {
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
 		"quickopen", "commands", "gotoline", "run", "stop", "save", "close", "definition", "panel", "explorer", "problems", "output", "terminal", "newterminal",
-		"splitterminal", "settings"
+		"splitterminal", "settings", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
 	];
+
+	/** The commands that act on the file or folder selected in the Explorer, which run only while the Explorer has the keyboard. */
+	public static final fileCommands = [
+		"filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filecopyrelative", "filereveal", "newfile", "newfolder"
+	];
+
+	/** The keys of the Explorer's file commands: the clipboard and delete as every editor has them, and `rename` as this one does. */
+	static function files(rename:String, ?copyPath:Key, ?reveal:Key):Array<Key>
+		return [
+			k("filerename", rename), k("filedelete", "delete", "cmd+backspace"), k("filecopy", "mod+c"), k("filecut", "mod+x"), k("filepaste", "mod+v"),
+			k("fileduplicate", "mod+d"), copyPath == null ? k("filecopypath", "") : copyPath, reveal == null ? k("filereveal", "") : reveal
+		];
 
 	static function k(command:String, key:String, ?mac:String):Key
 		return {command: command, key: key, mac: mac};
@@ -37,7 +49,7 @@ class Keymaps {
 				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
 				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,")
-			]
+			].concat(files("f2", k("filecopypath", "shift+alt+c", "alt+cmd+c"), k("filereveal", "shift+alt+r", "alt+cmd+r")))
 		},
 		{
 			id: "intellij",
@@ -49,7 +61,7 @@ class Keymaps {
 				k("run", "shift+f10", "ctrl+r"), k("stop", "ctrl+f2", "cmd+f2"), k("save", "mod+s"), k("close", "ctrl+f4", "cmd+w"), k("definition", "ctrl+b", "cmd+b"),
 				k("panel", "ctrl+shift+f12", "cmd+shift+f12"), k("explorer", "alt+1", "cmd+1"), k("problems", "alt+6", "cmd+6"), k("output", "alt+4", "cmd+4"),
 				k("terminal", "alt+f12"), k("settings", "ctrl+alt+s", "cmd+,")
-			]
+			].concat(files("shift+f6"))
 		},
 		{
 			id: "sublime",
@@ -59,7 +71,7 @@ class Keymaps {
 			keys: [
 				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "mod+b"), k("save", "ctrl+shift+s", "cmd+alt+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("settings", "", "cmd+,")
-			]
+			].concat(files("f2"))
 		},
 		{
 			id: "eclipse",
@@ -69,7 +81,7 @@ class Keymaps {
 			keys: [
 				k("quickopen", "mod+shift+r"), k("commands", "mod+3"), k("gotoline", "mod+l"), k("run", "ctrl+f11", "cmd+shift+f11"), k("stop", "mod+f2"),
 				k("save", "mod+shift+s"), k("close", "mod+w"), k("definition", "f3"), k("settings", "", "cmd+,")
-			]
+			].concat(files("f2"))
 		},
 		{
 			id: "visualstudio",
@@ -79,7 +91,7 @@ class Keymaps {
 			keys: [
 				k("quickopen", "ctrl+t"), k("commands", "ctrl+q"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "ctrl+shift+s"),
 				k("close", "ctrl+f4"), k("definition", "f12"), k("explorer", "ctrl+alt+l"), k("output", "ctrl+alt+o"), k("terminal", "ctrl+`")
-			]
+			].concat(files("f2"))
 		},
 		{
 			id: "xcode",
@@ -89,7 +101,7 @@ class Keymaps {
 			keys: [
 				k("quickopen", "cmd+shift+o"), k("commands", "cmd+shift+a"), k("gotoline", "cmd+l"), k("run", "cmd+r"), k("stop", "cmd+."), k("save", "cmd+alt+s"),
 				k("close", "cmd+w"), k("definition", "ctrl+cmd+j"), k("settings", "cmd+,"), k("explorer", "cmd+0"), k("panel", "cmd+shift+y")
-			]
+			].concat(files("f2"))
 		}
 	];
 

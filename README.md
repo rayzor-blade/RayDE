@@ -30,4 +30,17 @@ scripts/scroll-bench.sh # frames of a long file flicked and left to decelerate, 
 
 The UI builds against a pinned ashui commit (`ashui_rev` in `scripts/deps.sh`), checked out under `.deps` and built once; `ASHUI=<dir>` uses another checkout. hlwgpu and hlwindow are read from beside RayDE. Look at the snapshots after any change to how something looks.
 
+### App icon and packaging
+
+The icon is `assets/rayde-icon.png`, a rounded square on a transparent margin. `scripts/icons.sh` derives each platform's icon from it into `assets/icons`, which is committed: only a change to the icon needs ImageMagick (`magick`), and macOS also `iconutil`.
+
+| Platform | Icon | Packaged with |
+| --- | --- | --- |
+| macOS | `rayde.icns`, the icon on the Big Sur grid with its shadow | `scripts/package-macos.sh [folder]` builds `RayDE.app` |
+| Linux | `hicolor/<n>x<n>/apps/rayde.png`, 16 to 1024 px | `scripts/package-linux.sh [prefix]` installs the launcher, desktop entry, MIME types and icons |
+| Windows | `rayde.ico`, 16 to 256 px | `packaging/windows/RayDE.cmd` and `install-shortcut.ps1` |
+| Window | `rayde-256.rgba`, embedded in the program and passed as `WindowConfig.icon` | every run (Windows and Linux windows; macOS takes the bundle's) |
+
+The packaged launchers run the program with ash, which is not bundled: `RAYDE_ASH` names it, otherwise it is looked for in the usual places. Given no project they open a file dialog for a `.hxml` or `.rayext`. The Windows scripts have not been run on Windows.
+
 Work is tracked with git-bug; `git-bug bug` lists it.

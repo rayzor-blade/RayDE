@@ -1,0 +1,136 @@
+// A Markdown parser for the subset the preview draws: headings, paragraphs, lists, block quotes, fenced code,
+// rules, and emphasis, code spans and links inside text.
+
+function headingLevel(line) {
+  var n = 0;
+  while (n < line.length && line.charAt(n) == '#') n++;
+  return (n >= 1 && n <= 6 && line.charAt(n) == ' ') ? n : 0;
+}
+
+function isRule(line) {
+  return line == '---' || line == '***' || line == '___';
+}
+
+function listMarker(line) {
+  if (line.startsWith('- ') || line.startsWith('* ') || line.startsWith('+ ')) return 2;
+  var n = 0;
+  while (n < line.length && line.charAt(n) >= '0' && line.charAt(n) <= '9') n++;
+  if (n > 0 && line.charAt(n) == '.' && line.charAt(n + 1) == ' ') return n + 2;
+  return 0;
+}
+
+function startsBlock(line) {
+  return line.startsWith('```') || line.startsWith('>') || headingLevel(line) > 0 || isRule(line) || listMarker(line) > 0;
+}
+
+// The blocks of a document, in order: {kind: 'heading', level, text}, {kind: 'paragraph', text},
+// {kind: 'list', ordered, items}, {kind: 'quote', text}, {kind: 'code', lang, text} and {kind: 'rule'}.
+function blocks(source) {
+  var lines = source.split('\n');
+  var out = [];
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i].trim();
+    if (line == '') {
+      i++;
+    } else if (line.startsWith('```')) {
+      var lang = line.substr(3).trim();
+      var code = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) {
+        code.push(lines[i]);
+        i++;
+      }
+      i++;
+      out.push({kind: 'code', lang: lang, text: code.join('\n')});
+    } else if (headingLevel(line) > 0) {
+      var level = headingLevel(line);
+      out.push({kind: 'heading', level: level, text: line.substr(level + 1).trim()});
+      i++;
+    } else if (isRule(line)) {
+      out.push({kind: 'rule'});
+      i++;
+    } else if (line.startsWith('>')) {
+      var quoted = [];
+      while (i < lines.length && lines[i].trim().startsWith('>')) {
+        quoted.push(lines[i].trim().substr(1).trim());
+        i++;
+      }
+      out.push({kind: 'quote', text: quoted.join(' ')});
+    } else if (listMarker(line) > 0) {
+      var ordered = !(line.startsWith('-') || line.startsWith('*') || line.startsWith('+'));
+      var items = [];
+      while (i < lines.length && listMarker(lines[i].trim()) > 0) {
+        var item = lines[i].trim();
+        items.push(item.substr(listMarker(item)).trim());
+        i++;
+      }
+      out.push({kind: 'list', ordered: ordered, items: items});
+    } else {
+      var words = [];
+      while (i < lines.length && lines[i].trim() != '' && !startsBlock(lines[i].trim())) {
+        words.push(lines[i].trim());
+        i++;
+      }
+      out.push({kind: 'paragraph', text: words.join(' ')});
+    }
+  }
+  return out;
+}
+
+// The pieces of a line of text: {kind: 'text'|'em'|'strong'|'code'|'link', text, href}.
+function inlines(s) {
+  var out = [];
+  var buf = '';
+  var i = 0;
+  function flush() {
+    if (buf != '') {
+      out.push({kind: 'text', text: buf});
+      buf = '';
+    }
+  }
+  while (i < s.length) {
+    var c = s.charAt(i);
+    var taken = false;
+    if (c == '`') {
+      var end = s.indexOf('`', i + 1);
+      if (end > i) {
+        flush();
+        out.push({kind: 'code', text: s.substring(i + 1, end)});
+        i = end + 1;
+        taken = true;
+      }
+    } else if (c == '*' && s.charAt(i + 1) == '*') {
+      var end = s.indexOf('**', i + 2);
+      if (end > i) {
+        flush();
+        out.push({kind: 'strong', text: s.substring(i + 2, end)});
+        i = end + 2;
+        taken = true;
+      }
+    } else if (c == '*' || c == '_') {
+      var end = s.indexOf(c, i + 1);
+      if (end > i + 1) {
+        flush();
+        out.push({kind: 'em', text: s.substring(i + 1, end)});
+        i = end + 1;
+        taken = true;
+      }
+    } else if (c == '[') {
+      var mid = s.indexOf('](', i);
+      var close = mid > i ? s.indexOf(')', mid + 2) : -1;
+      if (close > mid) {
+        flush();
+        out.push({kind: 'link', text: s.substring(i + 1, mid), href: s.substring(mid + 2, close)});
+        i = close + 1;
+        taken = true;
+      }
+    }
+    if (!taken) {
+      buf += c;
+      i++;
+    }
+  }
+  flush();
+  return out;
+}

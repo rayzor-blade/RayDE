@@ -24,6 +24,9 @@ class Chord {
 	];
 	static final arrows = ["up" => "↑", "down" => "↓", "left" => "←", "right" => "→"];
 
+	/** The keys a Mac's menus draw as symbols. */
+	static final glyphs = ["backspace" => "⌫", "delete" => "⌦", "enter" => "↩", "escape" => "⎋", "tab" => "⇥"];
+
 	/** What Shift makes of a symbol on a US keyboard, so a chord is the same however it was typed. */
 	static final shifted = [
 		"~" => "`", "!" => "1", "@" => "2", "#" => "3", "$" => "4", "%" => "5", "^" => "6", "&" => "7", "*" => "8", "(" => "9", ")" => "0", "_" => "-", "+" => "=",
@@ -176,7 +179,7 @@ class Chord {
 		var name = named.exists(key) ? named.get(key) : key.toUpperCase();
 		if (mac) {
 			var symbols = (ctrl ? "⌃" : "") + (alt ? "⌥" : "") + (shift ? "⇧" : "") + (meta ? "⌘" : "");
-			return symbols + (arrows.exists(key) ? arrows.get(key) : name);
+			return symbols + (arrows.exists(key) ? arrows.get(key) : glyphs.exists(key) ? glyphs.get(key) : name);
 		}
 		return (ctrl ? "Ctrl+" : "") + (alt ? "Alt+" : "") + (shift ? "Shift+" : "") + (meta ? "Win+" : "") + name;
 	}

@@ -85,12 +85,39 @@ class Snapshots {
 				var renamed = haxe.io.Path.join([folder, "Renamed.hx"]);
 				if (!sys.FileSystem.exists(renamed) || sys.FileSystem.exists(haxe.io.Path.join([folder, "Fresh.hx"])) || bench.open.get().indexOf(renamed) < 0 || bench.active.get() != renamed)
 					throw "Rename should move the file and its tab";
+				// Duplicate, and copy then paste into the folder, give copies a free name; the menu shows each command's key.
+				menuOn("src/Renamed.hx");
+				shot("explorer-menu-keys");
+				click("#rayde-explorer-duplicate");
+				var copyOf = haxe.io.Path.join([folder, "Renamed copy.hx"]);
+				if (!sys.FileSystem.exists(copyOf))
+					throw "Duplicate should make Renamed copy.hx beside the file";
+				menuOn("src/Main.hx");
+				click("#rayde-explorer-copy");
+				menuOn("/src");
+				click("#rayde-explorer-paste");
+				if (!sys.FileSystem.exists(haxe.io.Path.join([folder, "Main copy.hx"])))
+					throw "Paste should put a copy of Main.hx in the folder under a free name";
+				// What is cut moves, and the tab of a moved file follows it.
+				sys.FileSystem.createDirectory(haxe.io.Path.join([folder, "sub"]));
+				bench.refreshExplorer();
+				settle();
+				bench.openFile(copyOf);
+				menuOn("src/Renamed copy.hx");
+				click("#rayde-explorer-cut");
+				menuOn("/sub");
+				click("#rayde-explorer-paste");
+				var cutTo = haxe.io.Path.join([folder, "sub", "Renamed copy.hx"]);
+				if (sys.FileSystem.exists(copyOf) || !sys.FileSystem.exists(cutTo) || bench.active.get() != cutTo)
+					throw "Cut and paste should move the file, and its tab with it";
 				menuOn("src/Renamed.hx");
 				click("#rayde-explorer-delete");
 				shot("explorer-delete");
 				click("#rayde-prompt-accept");
 				if (sys.FileSystem.exists(renamed) || bench.open.get().indexOf(renamed) >= 0)
 					throw "Delete should remove the file and close its tab";
+				bench.closeAll();
+				settle();
 				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
 				bench.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), "Util.hx"]));

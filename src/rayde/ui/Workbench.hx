@@ -201,6 +201,9 @@ class Workbench extends Component<WorkbenchProps> {
 
 	final explorerMenu = new Ref<ContextMenu>();
 
+	/** Changes when something is cut or copied, so the menu's Paste is enabled or not. */
+	final clipboardRevision = Signal.make(0);
+
 	/** The path the Explorer's menu is open on: a file or folder, or the project's folder for the empty part of the tree. */
 	final menuTarget = Signal.make("");
 
@@ -832,6 +835,17 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
 			{id: "extension", label: "Show Extension Console", icon: Icons.PUZZLE_LINE, run: () -> showPanel("extension")},
+			{id: "newfile", label: "New File…", icon: Icons.FILE_ADD_LINE, run: () -> askCreate(selectedFolder(), false)},
+			{id: "newfolder", label: "New Folder…", icon: Icons.FOLDER_ADD_LINE, run: () -> askCreate(selectedFolder(), true)},
+			{id: "filerename", label: "Rename File…", icon: Icons.EDIT_LINE, run: () -> withSelected(askRename)},
+			{id: "filedelete", label: "Delete File…", icon: Icons.DELETE_BIN_LINE, run: () -> withSelected(askDelete)},
+			{id: "filecopy", label: "Copy File", icon: Icons.FILE_COPY_LINE, run: () -> withSelected(p -> copyFile(p, false))},
+			{id: "filecut", label: "Cut File", icon: Icons.SCISSORS_LINE, run: () -> withSelected(p -> copyFile(p, true))},
+			{id: "filepaste", label: "Paste File", icon: Icons.CLIPBOARD_LINE, run: () -> pasteFiles(selectedFolder())},
+			{id: "fileduplicate", label: "Duplicate File", icon: Icons.FILE_COPY_2_LINE, run: () -> withSelected(duplicateFile)},
+			{id: "filecopypath", label: "Copy File Path", icon: Icons.LINK_M, run: () -> withSelected(p -> ashui.input.Clipboard.setText(p))},
+			{id: "filecopyrelative", label: "Copy Relative File Path", icon: Icons.LINK_M, run: () -> withSelected(p -> ashui.input.Clipboard.setText(FileOps.relative(props.display.cwd, p)))},
+			{id: "filereveal", label: Sys.systemName() == "Mac" ? "Reveal File in Finder" : "Reveal File in File Manager", icon: Icons.FOLDER_OPEN_LINE, run: () -> withSelected(FileOps.reveal)},
 			{id: "extensionreload", label: "Reload Extension", icon: Icons.REFRESH_LINE, run: () -> if (extension != null) extensionStudio().reload() else if (isExtension(active.get())) studioOf(active.get()).reload()},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, run: toggleTerminal},
 			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
@@ -1013,8 +1027,19 @@ class Workbench extends Component<WorkbenchProps> {
 		var action = id == null ? null : Lambda.find(commandList, a -> a.id == id);
 		if (action == null)
 			return;
+		// The keys of the file commands are the editor's own, copy and paste among them: they are the Explorer's only while it has the keyboard.
+		if (Keymaps.fileCommands.indexOf(id) >= 0 && !explorerFocused())
+			return;
 		action.run();
 		e.preventDefault();
+	}
+
+	/** Whether the keyboard is on the Explorer or something in it. */
+	function explorerFocused():Bool {
+		var found = ashui.css.Css.query(tree, this.node.id, "#rayde-files"), at = ashui.input.Focus.of(tree);
+		if (found.length == 0 || at == null)
+			return false;
+		return at.node.id == found[0] || tree.ancestors(at.node.id).indexOf(found[0]) >= 0;
 	}
 
 	function runtime():String
@@ -1247,7 +1272,7 @@ class Workbench extends Component<WorkbenchProps> {
 						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
 					</div>
 				</context-menu-trigger>
-				<context-menu-content id="rayde-explorer-menu-content"><for {target in [menuTarget.get()]}>${explorerItems(target)}</for></context-menu-content>
+				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
 			</context-menu>
 		</div>;
 	}
@@ -1291,34 +1316,109 @@ class Workbench extends Component<WorkbenchProps> {
 	static function menuId(label:String):String
 		return "rayde-explorer-" + [for (w in label.split(" ")) w.toLowerCase().replace("…", "")].join("-");
 
-	function menuItem(label:String, run:Void->Void):Element
-		return <context-menu-item id={menuId(label)} onSelect={run}>${label}</context-menu-item>;
+	function menuItem(label:String, command:Null<String>, run:Void->Void, enabled = true):Element {
+		var keys = command == null ? null : bindings.label(command);
+		return <context-menu-item id={menuId(label)} shortcut={keys} disabled={!enabled} onSelect={run}>${label}</context-menu-item>;
+	}
 
-	function dangerItem(label:String, run:Void->Void):Element
-		return <context-menu-item id={menuId(label)} destructive={true} onSelect={run}>${label}</context-menu-item>;
+	function dangerItem(label:String, command:Null<String>, run:Void->Void):Element {
+		var keys = command == null ? null : bindings.label(command);
+		return <context-menu-item id={menuId(label)} shortcut={keys} destructive={true} onSelect={run}>${label}</context-menu-item>;
+	}
 
 	/** The items of the Explorer's menu for a file, a folder or the project's own folder. */
 	function explorerItems(path:String):Element {
 		var folder = path != "" && sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path), top = path == props.display.cwd;
 		var items:Array<Element> = [];
 		if (!folder && path != "")
-			items.push(menuItem("Open", () -> if (isSource(path)) openFile(path) else if (Manifest.isManifest(path)) openSettings("extension")));
+			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (Manifest.isManifest(path)) openSettings("extension")));
 		if (folder) {
-			items.push(menuItem("New File…", () -> askCreate(path, false)));
-			items.push(menuItem("New Folder…", () -> askCreate(path, true)));
-			items.push(<context-menu-separator/>);
+			items.push(menuItem("New File…", "newfile", () -> askCreate(path, false)));
+			items.push(menuItem("New Folder…", "newfolder", () -> askCreate(path, true)));
 		}
-		items.push(menuItem("Copy Path", () -> ashui.input.Clipboard.setText(path)));
-		items.push(menuItem("Copy Relative Path", () -> ashui.input.Clipboard.setText(FileOps.relative(props.display.cwd, path))));
-		items.push(menuItem(Sys.systemName() == "Mac" ? "Reveal in Finder" : "Reveal in File Manager", () -> FileOps.reveal(path)));
+		if (items.length > 0)
+			items.push(<context-menu-separator/>);
+		if (!top) {
+			items.push(menuItem("Cut", "filecut", () -> copyFile(path, true)));
+			items.push(menuItem("Copy", "filecopy", () -> copyFile(path, false)));
+		}
+		items.push(menuItem("Paste", "filepaste", () -> pasteFiles(folder ? path : haxe.io.Path.directory(path)), fileClipboard != null));
+		if (!top)
+			items.push(menuItem("Duplicate", "fileduplicate", () -> duplicateFile(path)));
+		items.push(<context-menu-separator/>);
+		items.push(menuItem("Copy Path", "filecopypath", () -> ashui.input.Clipboard.setText(path)));
+		items.push(menuItem("Copy Relative Path", "filecopyrelative", () -> ashui.input.Clipboard.setText(FileOps.relative(props.display.cwd, path))));
+		items.push(menuItem(Sys.systemName() == "Mac" ? "Reveal in Finder" : "Reveal in File Manager", "filereveal", () -> FileOps.reveal(path)));
 		if (!top) {
 			items.push(<context-menu-separator/>);
-			items.push(menuItem("Rename…", () -> askRename(path)));
-			items.push(dangerItem("Delete…", () -> askDelete(path)));
+			items.push(menuItem("Rename…", "filerename", () -> askRename(path)));
+			items.push(dangerItem("Delete…", "filedelete", () -> askDelete(path)));
 		}
 		items.push(<context-menu-separator/>);
-		items.push(menuItem("Refresh", refreshExplorer));
+		items.push(menuItem("Refresh", null, refreshExplorer));
 		return <div class="flex flex-col">{items}</div>;
+	}
+
+	/** Files cut or copied in the Explorer, waiting to be pasted. */
+	var fileClipboard:Null<{paths:Array<String>, cut:Bool}>;
+
+	function copyFile(path:String, cut:Bool):Void {
+		fileClipboard = {paths: [path], cut: cut};
+		clipboardRevision.set(clipboardRevision.get() + 1);
+	}
+
+	/** The file or closed folder the Explorer has selected, the one the file commands act on; not the project's own folder. */
+	function selectedPath():Null<String> {
+		var path = treeSelected.get();
+		return path == null || path == "" || path == props.display.cwd || path == SETTINGS || path == EXTENSION_TAB ? null : path;
+	}
+
+	function withSelected(run:String->Void):Void {
+		var path = selectedPath();
+		if (path != null)
+			run(path);
+	}
+
+	/** Where a new file goes by key: in the selected folder, beside the selected file, or in the project's own folder. */
+	function selectedFolder():String {
+		var path = selectedPath();
+		if (path == null)
+			return props.display.cwd;
+		return sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) ? path : haxe.io.Path.directory(path);
+	}
+
+	/** Puts what was cut or copied into `dir`: a copy takes a free name, and what was cut is moved, its tabs with it. */
+	function pasteFiles(dir:String):Void {
+		var held = fileClipboard;
+		if (held == null)
+			return;
+		try {
+			for (p in held.paths) {
+				if (!sys.FileSystem.exists(p))
+					continue;
+				if (held.cut) {
+					var to = FileOps.move(props.display.cwd, p, dir);
+					if (to != p)
+						moveTabs(p, to);
+				} else
+					FileOps.copy(props.display.cwd, p, dir, FileOps.uniqueName(dir, haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(p))));
+			}
+			if (held.cut) {
+				fileClipboard = null;
+				clipboardRevision.set(clipboardRevision.get() + 1);
+			}
+			folderState(dir, true).set(true);
+			refreshExplorer();
+		} catch (e:Dynamic)
+			say(Std.string(e));
+	}
+
+	function duplicateFile(path:String):Void {
+		try {
+			FileOps.duplicate(props.display.cwd, path);
+			refreshExplorer();
+		} catch (e:Dynamic)
+			say(Std.string(e));
 	}
 
 	/** Builds the tree again from the files as they are. */

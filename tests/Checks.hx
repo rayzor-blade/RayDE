@@ -4,6 +4,7 @@ import rayde.lang.Display;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.ext.ExtensionHost;
+import rayde.ui.AppIcon;
 import rayde.files.FileOps;
 import rayde.ext.HostBinary;
 import rayde.ext.Manifest;
@@ -149,6 +150,11 @@ class Checks {
 		var jetbrains = new KeyBindings(true, "intellij");
 		check(jetbrains.label("quickopen") == "⇧⌘O" && jetbrains.label("run") == "⌃R" && jetbrains.label("terminal") == "⌥F12", 'IntelliJ on a Mac: ${jetbrains.label("quickopen")} ${jetbrains.label("run")} ${jetbrains.label("terminal")}');
 		check(new KeyBindings(false, "intellij").label("quickopen") == "Ctrl+Shift+N" && new KeyBindings(false, "intellij").label("settings") == "Ctrl+Alt+S", "IntelliJ elsewhere");
+		var vs = new KeyBindings(true), plain = new KeyBindings(false);
+		check(vs.label("filecopy") == "⌘C" && vs.label("filecut") == "⌘X" && vs.label("filepaste") == "⌘V" && vs.label("filerename") == "F2" && vs.label("fileduplicate") == "⌘D", 'file keys on a Mac: ${vs.label("filecopy")} ${vs.label("filepaste")} ${vs.label("filerename")}');
+		check(vs.label("filedelete") == "⌘⌫" && plain.label("filedelete") == "Delete" && parse("mod+enter", true).label(true) == "⌘↩", 'delete is Command+Backspace on a Mac and Delete elsewhere: ${vs.label("filedelete")} ${plain.label("filedelete")}');
+		check(plain.label("filecopypath") == "Alt+Shift+C" && vs.label("filecopypath") == "⌥⌘C" && plain.label("filereveal") == "Alt+Shift+R", 'copy path and reveal have keys: ${plain.label("filecopypath")} ${vs.label("filecopypath")} ${plain.label("filereveal")}');
+		check(new KeyBindings(true, "intellij").label("filerename") == "⇧F6", "a keymap names its own rename");
 		check(new KeyBindings(true, "nonesuch").preset == "vscode" && new KeyBindings(true).label("quickopen") == "⌘P", "an unknown keymap is the default");
 		var moving = new KeyBindings(true);
 		moving.set("run", p("f6"));
@@ -257,6 +263,27 @@ class Checks {
 		check(KeyMap.mouse(0, 5, 3, false, 2) == "\x1b[<0;5;3M" && KeyMap.mouse(0, 5, 3, true, 2) == "\x1b[<0;5;3m", "mouse reports in the sgr form");
 	}
 
+	/** The icons for each platform exist and are what their formats say. */
+	static function iconChecks():Void {
+		var icon = AppIcon.window();
+		check(icon.width == 256 && icon.height == 256 && icon.pixels != null && icon.pixels.length == 256 * 256 * 4, "the window icon is 256 by 256 RGBA pixels");
+		var alphaAt = (x:Int, y:Int) -> icon.pixels.get((y * icon.width + x) * 4 + 3);
+		check(alphaAt(0, 0) == 0 && alphaAt(255, 255) == 0 && alphaAt(128, 128) >= 250, "the window icon is cut to its shape: clear at the corner, solid in the middle");
+		var root = Sys.getCwd() + "assets/icons/";
+		var ico = sys.io.File.getBytes(root + "rayde.ico");
+		check(ico.getUInt16(0) == 0 && ico.getUInt16(2) == 1 && ico.getUInt16(4) == 7, "the .ico holds seven images");
+		var sizes = [for (i in 0...7) ico.get(6 + i * 16) == 0 ? 256 : ico.get(6 + i * 16)];
+		check(sizes.join(",") == "16,24,32,48,64,128,256", 'the .ico sizes: $sizes');
+		var icns = sys.io.File.getBytes(root + "rayde.icns");
+		check(icns.getString(0, 4) == "icns" && icns.length > 100000, "the .icns has its header");
+		for (s in [16, 24, 32, 48, 64, 128, 256, 512, 1024]) {
+			var png = sys.io.File.getBytes(root + 'hicolor/${s}x${s}/apps/rayde.png');
+			check(png.get(1) == "P".code && png.getString(1, 3) == "PNG", 'hicolor ${s}x$s is a PNG');
+			var big = (png.get(16) << 24) | (png.get(17) << 16) | (png.get(18) << 8) | png.get(19);
+			check(big == s, 'hicolor ${s}x$s is $s pixels wide: $big');
+		}
+	}
+
 	/** What the Explorer's menus do to files: made, renamed and deleted inside the project, and refused with a reason outside it or on a bad name. */
 	static function fileOpsChecks():Void {
 		var root = Sys.getCwd() + "bin/check-fileops";
@@ -299,6 +326,32 @@ class Checks {
 		check(!sys.FileSystem.exists(renamed), "a folder is deleted with what is in it");
 		check(refused(() -> FileOps.delete(root, "/tmp/nothing-here")) == "That is outside the project.", "nothing is deleted outside the project");
 		check(FileOps.relative(root, root + "/lib/Main.hx") == "lib/Main.hx", "paths are shown from the project");
+
+		// Copies and moves.
+		sys.FileSystem.createDirectory(root + "/pkg");
+		sys.FileSystem.createDirectory(root + "/pkg/inner");
+		sys.io.File.saveContent(root + "/pkg/Main.hx", "class Main {}");
+		sys.io.File.saveContent(root + "/pkg/inner/Deep.hx", "class Deep {}");
+		sys.io.File.saveContent(root + "/pkg/.hidden", "h");
+		check(FileOps.uniqueName(root + "/pkg", "Other.hx") == "Other.hx", "a free name is kept");
+		check(FileOps.uniqueName(root + "/pkg", "Main.hx") == "Main copy.hx", "a taken name gets copy before its extension");
+		check(FileOps.duplicate(root, root + "/pkg/Main.hx") == root + "/pkg/Main copy.hx" && sys.io.File.getContent(root + "/pkg/Main copy.hx") == "class Main {}", "a file is duplicated beside itself");
+		check(FileOps.duplicate(root, root + "/pkg/Main.hx") == root + "/pkg/Main copy 2.hx" && FileOps.duplicate(root, root + "/pkg/Main.hx") == root + "/pkg/Main copy 3.hx", "duplicates are numbered");
+		check(FileOps.uniqueName(root + "/pkg", ".hidden") == ".hidden copy", "a name that starts with a dot has no extension");
+		var dup = FileOps.duplicate(root, root + "/pkg");
+		check(dup == root + "/pkg copy" && sys.io.File.getContent(dup + "/inner/Deep.hx") == "class Deep {}" && sys.FileSystem.exists(dup + "/.hidden"), "a folder is duplicated with what is in it");
+		check(refused(() -> FileOps.copy(root, root + "/pkg", root + "/pkg/inner")) == "A folder cannot be copied into itself.", "a folder is not copied into itself");
+		check(refused(() -> FileOps.copy(root, root + "/pkg/Main.hx", root + "/pkg")) == "Main.hx is already there.", "a copy does not overwrite");
+		var into = FileOps.copy(root, root + "/pkg/Main.hx", dup + "/inner", "Renamed.hx");
+		check(into == dup + "/inner/Renamed.hx" && sys.FileSystem.exists(into), "a copy can be given another name");
+		sys.io.File.saveContent(root + "/pkg/Move.hx", "m");
+		var moved = FileOps.move(root, root + "/pkg/Move.hx", dup);
+		check(moved == dup + "/Move.hx" && !sys.FileSystem.exists(root + "/pkg/Move.hx") && sys.FileSystem.exists(moved), "a file is moved into a folder");
+		check(refused(() -> FileOps.move(root, root + "/pkg/Main copy.hx", dup)) == "Main copy.hx is already there.", "a move does not overwrite");
+		check(FileOps.move(root, moved, dup) == moved, "moving into the folder it is in changes nothing");
+		check(refused(() -> FileOps.move(root, root + "/pkg", root + "/pkg/inner")) == "A folder cannot be moved into itself.", "a folder is not moved into itself");
+		check(FileOps.move(root, moved, dup + "/inner") == dup + "/inner/Move.hx" && sys.FileSystem.exists(dup + "/inner/Move.hx"), "a file can be moved again");
+		check(refused(() -> FileOps.move(root, root + "/pkg/Main.hx", "/tmp")) == "That is outside the project.", "nothing is moved out of the project");
 	}
 
 	/** The .rayext config file: what it says, what it defaults to, and what is wrong with one that is wrong. */
@@ -444,6 +497,7 @@ class Checks {
 		settingsChecks();
 		terminalChecks();
 		manifestChecks();
+		iconChecks();
 		fileOpsChecks();
 		extensionHostChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";

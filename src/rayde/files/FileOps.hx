@@ -77,6 +77,70 @@ class FileOps {
 		return target;
 	}
 
+	/** A name for a copy of `name` that is not taken in `dir`: `Main copy.hx`, then `Main copy 2.hx`; the name itself when it is free. */
+	public static function uniqueName(dir:String, name:String):String {
+		if (!sys.FileSystem.exists(haxe.io.Path.join([dir, name])))
+			return name;
+		var dot = name.lastIndexOf(".");
+		var base = dot > 0 ? name.substr(0, dot) : name, ext = dot > 0 ? name.substr(dot) : "";
+		var candidate = '$base copy$ext', n = 2;
+		while (sys.FileSystem.exists(haxe.io.Path.join([dir, candidate])))
+		{
+			candidate = '$base copy $n$ext';
+			n++;
+		}
+		return candidate;
+	}
+
+	static function isOrIn(parent:String, path:String):Bool
+		return inside(parent, path);
+
+	/** Copies a file, or a folder with all it holds, into `dir` under `name` (its own name by default) and gives the new path. */
+	public static function copy(root:String, from:String, dir:String, ?name:String):String {
+		guard(root, from);
+		guard(root, dir);
+		var own = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(from));
+		var target = haxe.io.Path.join([dir, name == null ? own : name]);
+		check(name == null ? own : name);
+		if (sys.FileSystem.isDirectory(from) && isOrIn(from, dir))
+			throw "A folder cannot be copied into itself.";
+		if (sys.FileSystem.exists(target))
+			throw '${haxe.io.Path.withoutDirectory(target)} is already there.';
+		copyTree(from, target);
+		return target;
+	}
+
+	static function copyTree(from:String, to:String):Void {
+		if (sys.FileSystem.isDirectory(from)) {
+			sys.FileSystem.createDirectory(to);
+			for (entry in sys.FileSystem.readDirectory(from))
+				copyTree(haxe.io.Path.join([from, entry]), haxe.io.Path.join([to, entry]));
+		} else
+			sys.io.File.copy(from, to);
+	}
+
+	/** Copies a file or folder beside itself under a name that is free, and gives the new path. */
+	public static function duplicate(root:String, path:String):String {
+		var dir = haxe.io.Path.directory(haxe.io.Path.removeTrailingSlashes(path));
+		return copy(root, path, dir, uniqueName(dir, haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path))));
+	}
+
+	/** Moves a file or folder into `dir`, and gives the new path. Into the folder it is in is no change. */
+	public static function move(root:String, from:String, dir:String):String {
+		guard(root, from);
+		guard(root, dir);
+		var own = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(from));
+		var target = haxe.io.Path.join([dir, own]);
+		if (haxe.io.Path.normalize(target) == haxe.io.Path.removeTrailingSlashes(haxe.io.Path.normalize(from)))
+			return from;
+		if (sys.FileSystem.isDirectory(from) && isOrIn(from, dir))
+			throw "A folder cannot be moved into itself.";
+		if (sys.FileSystem.exists(target))
+			throw '$own is already there.';
+		sys.FileSystem.rename(from, target);
+		return target;
+	}
+
 	/** Deletes a file, or a folder and all it holds. */
 	public static function delete(root:String, path:String):Void {
 		guard(root, path);
