@@ -41,7 +41,7 @@ class Welcome extends Component<WelcomeProps> {
 			<div class="flex flex-col gap-7 px-10 py-6" width={900}>
 				<div class="flex flex-col gap-3">
 					<for {dark in [darkScheme()]}>${wordmark(dark)}</for>
-					<text class="text-sm text-text-secondary">${"Haxe, running on " + props.runtime}</text>
+					<text class="text-sm text-text-secondary">Haxe Integrated Development Environment</text>
 				</div>
 				<div class="flex gap-12">
 					<div class="flex flex-col gap-7 flex-1 min-w-0">
