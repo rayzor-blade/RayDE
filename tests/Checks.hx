@@ -3,6 +3,8 @@ import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
+import rayde.ext.ExtensionHost;
+import rayde.ext.HostBinary;
 import rayde.keys.Keymaps;
 import rayde.run.Haxelib;
 import rayde.run.Runner;
@@ -252,11 +254,69 @@ class Checks {
 		check(KeyMap.mouse(0, 5, 3, false, 2) == "\x1b[<0;5;3M" && KeyMap.mouse(0, 5, 3, true, 2) == "\x1b[<0;5;3m", "mouse reports in the sgr form");
 	}
 
+	/** An extension in a real rayscript-host: a view comes back as operations, an event goes in, an error comes with its place. */
+	static function extensionHostChecks():Void {
+		var binary = HostBinary.find();
+		if (binary == null) {
+			Sys.println("extension host checks skipped: no rayscript-host (set RAYSCRIPT_HOST, or build ../rayscript)");
+			return;
+		}
+		var dir = Sys.getCwd() + "bin/check-extension";
+		var host = new ExtensionHost(binary, dir);
+		// Waits for a message the test wants, polling as the frame loop would; everything seen on the way is kept.
+		var seen:Array<Dynamic> = [];
+		function until(want:Dynamic->Bool):Null<Dynamic> {
+			var end = haxe.Timer.stamp() + 5;
+			while (haxe.Timer.stamp() < end) {
+				for (m in host.poll()) {
+					seen.push(m);
+					if (want(m))
+						return m;
+				}
+				Sys.sleep(.01);
+			}
+			return null;
+		}
+		host.start();
+		check(host.running(), "the host starts");
+		var ready = until(m -> m.t == "ready");
+		check(ready != null && ready.protocol == 1, "the host says it is ready");
+		check(host.send({t: "run", name: "main.rays", source: "var n = signal(0); mount(() -> <button onClick={() -> n.value++}>{n}</button>, 'check');"}), "a message is sent");
+		var ops = until(m -> m.t == "ops");
+		check(ops != null && Std.string(ops.ops).indexOf("button") >= 0, 'the view comes back as operations: ${ops == null ? "nothing" : Std.string(ops.ops)}');
+		var listen = ops == null ? null : Lambda.find((ops.ops : Array<Dynamic>), o -> o[0] == "listen");
+		check(listen != null && listen[2] == "click", "the button asks for clicks");
+		if (listen != null) {
+			host.send({t: "event", node: listen[1], event: "click"});
+			var text = until(m -> m.t == "ops");
+			check(text != null && text.ops[0][0] == "setText" && text.ops[0][2] == "1", 'a click changes the text: ${text == null ? "nothing" : Std.string(text.ops)}');
+		}
+		host.send({t: "run", name: "bad.rays", source: "var ok = 1;\nvar = 2;"});
+		var error = until(m -> m.t == "error");
+		check(error != null && error.kind == "syntax" && error.items[0].line == 2 && error.items[0].col == 5, 'an error comes with its place: ${error == null ? "nothing" : Std.string(error.items)}');
+		host.send({t: "this is not a message"});
+		check(until(m -> m.t == "error" && m.kind == "protocol") != null, "a message the host cannot read is answered, not fatal");
+		host.stop();
+		check(host.state == "idle", "the host is stopped");
+		// A host whose input closes ends by itself.
+		var second = new ExtensionHost(binary, dir + "-2");
+		second.start();
+		var gone = haxe.Timer.stamp() + 5;
+		second.send({t: "shutdown"});
+		while (second.state == "running" && haxe.Timer.stamp() < gone) {
+			second.poll();
+			Sys.sleep(.01);
+		}
+		check(second.state == "exited" && second.exitCode == 0, 'a shut down host exits: ${second.state} ${second.exitCode}');
+		Sys.println('extension host: ${seen.length} messages from ${binary}');
+	}
+
 	static function main():Void {
 		hxmlChecks();
 		keyChecks();
 		settingsChecks();
 		terminalChecks();
+		extensionHostChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
 		var server = new CompilerServer(), display = Display.ofHxml(server, root + "/build.hxml");
@@ -332,6 +392,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, haxelib, extensions, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, haxelib, extensions, compilation server, an extension in its own process, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }
