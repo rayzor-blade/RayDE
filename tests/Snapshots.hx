@@ -22,10 +22,17 @@ class Snapshots {
 
 	static function main():Void {
 		for (dark in [true, false]) {
-			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type) -> {
+			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover) -> {
 				if (bench.panelOpen())
 					throw "the bottom panel should start closed";
 				shot("empty");
+				// The guide lines of the Explorer's tree are hidden until the pointer is over it.
+				bench.openFile(file);
+				bench.closeAll();
+				hover("#rayde-tree");
+				shot("explorer-hover");
+				hover("#rayde-bottom");
+				shot("explorer-away");
 				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
 				bench.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), "Util.hx"]));
@@ -140,6 +147,64 @@ class Snapshots {
 				bench.showTerminalMenu(true);
 				shot("terminal-profiles");
 				bench.showTerminalMenu(false);
+				// Split the screen of the second terminal, which sits beside it; the list shows both under one.
+				var before = bench.terminalCount();
+				bench.splitTerminal();
+				if (bench.terminalCount() != before + 1)
+					throw "splitting should start another terminal";
+				var third = bench.terminal();
+				until = haxe.Timer.stamp() + 6;
+				while (third.line(4).indexOf("orange") < 0 && haxe.Timer.stamp() < until) {
+					Sys.sleep(.03);
+					settle(1);
+				}
+				settle(10);
+				shot("terminal-split");
+				bench.killTerminal();
+				// The pickers of the menu, in the command center.
+				bench.splitWithProfile();
+				shot("terminal-split-profile");
+				bench.quickOpen.set(false);
+				bench.selectDefaultProfile();
+				shot("terminal-default-profile");
+				bench.quickOpen.set(false);
+				// A task of the project's own, from .rayde/tasks.json, run in a terminal of its own that keeps its output after it ends.
+				var taskFile = haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), ".rayde", "tasks.json"]);
+				sys.FileSystem.createDirectory(haxe.io.Path.directory(taskFile));
+				sys.io.File.saveContent(taskFile, '{"tasks": [{"label": "Say hello", "command": "echo hello from a task"}, {"label": "Format source", "command": "echo formatting"}]}');
+				var tasks = rayde.run.Tasks.list(bench.display());
+				if (!Lambda.exists(tasks, t -> t.label == "Say hello") || !Lambda.exists(tasks, t -> t.label == "Build build.hxml") || !Lambda.exists(tasks, t -> StringTools.startsWith(t.label, "Run build.hxml")))
+					throw 'the project should offer its own tasks and the hxml ones: ${[for (t in tasks) t.label]}';
+				bench.runTaskPicker();
+				shot("tasks");
+				bench.quickOpen.set(false);
+				bench.openCenter("task ");
+				shot("center-tasks");
+				bench.quickOpen.set(false);
+				var before = bench.terminalCount();
+				bench.runTask(Lambda.find(tasks, t -> t.label == "Say hello"));
+				if (bench.terminalCount() != before + 1)
+					throw "a task should run in a terminal of its own";
+				var ran = bench.terminal();
+				until = haxe.Timer.stamp() + 6;
+				while ((ran.line(0).indexOf("hello from a task") < 0 || ran.exitCode() == -1) && haxe.Timer.stamp() < until) {
+					Sys.sleep(.03);
+					settle(1);
+				}
+				if (ran.line(0).indexOf("hello from a task") < 0 || ran.exitCode() != 0)
+					throw 'the task did not run: "${ran.line(0)}", exit ${ran.exitCode()}';
+				settle(10);
+				shot("terminal-task");
+				bench.killTerminal();
+				// The file the menu's Configure Tasks opens, as JSON.
+				bench.configureTasks();
+				shot("tasks-file");
+				// The terminal's settings page, and a profile made the default is kept in the project.
+				bench.openTerminalSettings();
+				bench.setDefaultProfile("bash");
+				shot("terminal-settings");
+				if (sys.io.File.getContent(haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), ".rayde", "terminal.json"])).indexOf('"bash"') < 0)
+					throw "the default profile was not kept";
 				// Choosing the first brings it to the front, still running with what it printed; killing the one in front leaves the other.
 				bench.selectTerminal(bench.terminalIds()[0]);
 				if (bench.terminal() == null || bench.terminal().handle != first.handle)
@@ -158,7 +223,7 @@ class Snapshots {
 				shot("welcome-recent");
 			});
 			// A build file with a target, libraries, defines and an argument the form does not manage, as the form shows it.
-			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type) -> {
+			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type, hover) -> {
 				bench.openBuild();
 				shot("build-settings");
 				scroll("#rayde-build", 520);
@@ -214,7 +279,7 @@ class Snapshots {
 				if (bench.display().args.indexOf("from-the-form") < 0)
 					throw "the compiler's arguments did not follow the build file";
 			});
-			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type) -> {
+			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type, hover) -> {
 				bench.openFile(file);
 				bench.run();
 				wait(bench);
@@ -270,7 +335,7 @@ class Snapshots {
 			sys.FileSystem.deleteFile(path);
 	}
 
-	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void) -> Void):Void {
+	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void, String->Void) -> Void):Void {
 		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
@@ -333,7 +398,18 @@ class Snapshots {
 			ashui.ui.Input.at(tree, found[0]).value.set(text);
 			settle(2);
 		}
-		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type);
+		// Puts the pointer over the middle of the first element `selector` finds.
+		function hover(selector:String):Void {
+			var found = ashui.css.Css.query(tree, view.node.id, selector);
+			if (found.length == 0)
+				throw 'nothing matches $selector';
+			var at = tree.getScrolledBounds(new ashui.layout.Node(found[0]));
+			ashui.input.Pointer.move(tree, at.x + at.width / 2, at.y + at.height / 2);
+			settle(6);
+			if (Sys.getEnv("RAYDE_DEBUG") != null)
+				Sys.println('hover $selector at ' + (at.x + at.width / 2) + "," + (at.y + at.height / 2) + " hovered=" + (ashui.input.Interaction.byId(tree, found[0]) == null ? "n/a" : "" + ashui.input.Interaction.byId(tree, found[0]).hovered.get()));
+		}
+		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type, hover);
 		stop();
 		tree.dispose();
 		server.stop();

@@ -24,8 +24,11 @@ typedef CenterAction = {
 	run:Void->Void
 };
 
-/** What the center opens with: the text in its filter, and a serial so asking again starts it afresh. */
-typedef CenterRequest = {text:String, serial:Int};
+/** A list of choices to put in the center in place of its files and commands, with what to say in the filter. */
+typedef Picker = {placeholder:String, items:Array<CenterAction>};
+
+/** What the center opens with: the text in its filter, a serial so asking again starts it afresh, and a list of choices to show instead when it is to pick one. */
+typedef CenterRequest = {text:String, serial:Int, ?picker:Picker};
 
 typedef CommandCenterProps = {
 	opened:Signal<Bool>,
@@ -37,6 +40,8 @@ typedef CommandCenterProps = {
 	/** The folder the listed paths are shown relative to. */
 	root:String,
 	actions:Array<CenterAction>,
+	/** The project's tasks, which the center lists after `task `; asked for each time it opens. */
+	tasks:Void->Array<CenterAction>,
 	onOpenFile:String->Void,
 	onLine:Int->Void
 };
@@ -60,14 +65,12 @@ class CommandCenter extends Component<CommandCenterProps> {
 	var panel:Element;
 	var floating:Floating;
 
+	/** The list of choices the center was opened to pick from, or null when it goes to files and commands. */
+	var picker:Null<Picker> = null;
+
 	function render():Element {
 		panel = <div id="rayde-command-center" class="rayde-glass rayde-command-center flex flex-col overflow-hidden" width={600}>
 			<for {k in [{mode: mode.get(), build: builds.get()}]}>${body(k.mode)}</for>
-			<div class="rayde-cc-footer flex items-center gap-4 px-4">
-				<text class="text-xs text-text-tertiary">Enter to open</text>
-				<text class="text-xs text-text-tertiary">&gt; for commands</text>
-				<text class="text-xs text-text-tertiary">: for a line</text>
-			</div>
 		</div>;
 		var root = <div position={Absolute} width={0} height={0}/>;
 		floating = new Floating(props.opened, panel);
@@ -80,7 +83,8 @@ class CommandCenter extends Component<CommandCenterProps> {
 			0;
 		}, _ -> if (props.opened.get()) {
 			carry = props.request.get().text;
-			mode.set(modeOf(carry));
+			picker = props.request.get().picker;
+			mode.set(picker != null ? "pick" : modeOf(carry));
 			builds.set(builds.get() + 1);
 		}, (_, _) -> false);
 		// A press outside the panel and its pill closes it; the pill closes it itself when it is open.
@@ -96,29 +100,42 @@ class CommandCenter extends Component<CommandCenterProps> {
 	}
 
 	static function modeOf(text:String):String
-		return StringTools.startsWith(text, ">") ? "commands" : StringTools.startsWith(text, ":") ? "line" : "files";
+		return StringTools.startsWith(text, ">") ? "commands" : StringTools.startsWith(text, ":") ? "line" : StringTools.startsWith(text, "task ") ? "tasks" : "files";
 
 	function body(m:String):Element {
 		var rows:Array<Element> = switch m {
-			case "commands": [for (a in props.actions) actionRow(a)];
+			case "pick": [for (a in picker.items) actionRow(a, "")];
+			case "tasks": [for (a in props.tasks()) actionRow(a, "task ")];
+			case "commands": [for (a in props.actions) actionRow(a, ">")];
 			case "line": [];
 			case _: [for (path in props.files()) fileRow(path)];
 		};
-		var empty = m == "line" ? "Type a line number, then Enter, to go to it" : m == "commands" ? "No commands match" : "No files match";
+		var empty = m == "pick" ? "Nothing matches" : m == "tasks" ? "No tasks match" : m == "line" ? "Type a line number, then Enter, to go to it" : m == "commands" ? "No commands match" : "No files match";
 		rows.unshift(new CommandEmpty({}, [new ashui.ui.Text(empty)]));
-		var placeholder = m == "commands" ? "Run a command" : m == "line" ? "Go to line" : "Search files by name";
-		var element = <command id="rayde-command-list" onSelect={choose}>
+		var placeholder = m == "pick" ? picker.placeholder : m == "tasks" ? "Run a task" : m == "commands" ? "Run a command" : m == "line" ? "Go to line" : "Search files by name";
+		var element = <div class="flex flex-col">
+		<command id="rayde-command-list" onSelect={choose}>
 			<command-input ref={input} id="rayde-command-input" placeholder={placeholder} onKeyDown={e -> if (m == "line" && e.key.match(Named(Enter))) {
 				goToLine();
 				e.preventDefault();
 				e.stopPropagation();
 			}}/>
 			${new CommandList({}, rows)}
-		</command>;
+		</command>
+		<div class="rayde-cc-footer flex items-center gap-4 px-4">
+			<if {m == "pick"}><text class="text-xs text-text-tertiary">Enter to choose</text>
+			<else>
+				<text class="text-xs text-text-tertiary">Enter to open</text>
+				<text class="text-xs text-text-tertiary">&gt; for commands</text>
+				<text class="text-xs text-text-tertiary">: for a line</text>
+				<text class="text-xs text-text-tertiary">task for tasks</text>
+			</if>
+		</div>
+		</div>;
 		// A change of mode builds the list again, so what was typed goes back into the new filter.
 		new Watch(() -> command.get() == null ? "" : command.get().query.get(), q -> {
 			var next = modeOf(q);
-			if (command.get() != null && next != mode.get()) {
+			if (picker == null && command.get() != null && next != mode.get()) {
 				carry = q;
 				mode.set(next);
 			}
@@ -138,8 +155,9 @@ class CommandCenter extends Component<CommandCenterProps> {
 		</command-item>;
 	}
 
-	function actionRow(a:CenterAction):Element
-		return <command-item id={"center-action-" + a.id} value={"action:" + a.id} keywords={[">" + a.label, a.label]} shortcut={a.shortcut}>
+	/** One action as a row; what is typed in the filter starts with `prefix` (> for commands, `task ` for tasks), which the row answers to. */
+	function actionRow(a:CenterAction, prefix:String):Element
+		return <command-item id={"center-action-" + a.id} value={"action:" + a.id} keywords={[prefix + a.label, a.label]} shortcut={a.shortcut}>
 			<div class="flex items-center gap-3 w-full min-w-0" height={32}>
 				<icon document={a.icon} class="size-4 shrink-0 text-text-secondary"/>
 				<text class="text-sm">${a.label}</text>
@@ -155,8 +173,9 @@ class CommandCenter extends Component<CommandCenterProps> {
 	function choose(value:String):Void {
 		if (StringTools.startsWith(value, "action:")) {
 			var id = value.substr(7);
+			var choices = picker != null ? picker.items : mode.get() == "tasks" ? props.tasks() : props.actions;
 			props.opened.set(false);
-			for (a in props.actions)
+			for (a in choices)
 				if (a.id == id)
 					a.run();
 		} else {

@@ -158,3 +158,11 @@
 #rayde .rayde-term-kill { --ui-button-height: 20px; --ui-button-width: 20px; opacity: 0; }
 #rayde .rayde-term-item:hover .rayde-term-kill, #rayde .rayde-term-item[data-on] .rayde-term-kill { opacity: 1; }
 #rayde .rayde-split { --ui-button-width: 18px; margin-left: -4px; }
+
+/* Split terminals: a thin line between the screens, and their rows in the list set in under the first. */
+#rayde #rayde-terminal-split > .ui-resizable-handle { width: 5px; }
+#rayde #rayde-terminal-split > .ui-resizable-handle > .ui-resizable-line { background: var(--border); }
+#rayde #rayde-terminal-split > .ui-resizable-handle:hover > .ui-resizable-line,
+#rayde #rayde-terminal-split > .ui-resizable-handle[data-dragging] > .ui-resizable-line { background: var(--primary); }
+#rayde .rayde-term-item[data-split] { margin-left: 12px; }
+#rayde .rayde-term-note { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }

@@ -23,9 +23,12 @@ import rayde.lang.Display;
 import rayde.run.Runner;
 import rayde.term.Profiles;
 import rayde.term.Profiles.Profile;
+import rayde.term.Settings;
+import rayde.run.Tasks;
 import rayde.term.Terminal;
 import rayde.ui.BuildSettings;
 import rayde.ui.FileTabs;
+import rayde.ui.TerminalSettings;
 import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
@@ -41,7 +44,7 @@ typedef WorkbenchProps = {
 };
 
 /** A terminal that is running, and the profile it was started from. */
-private typedef Session = {id:Int, terminal:Terminal, profile:Profile};
+private typedef Session = {id:Int, group:Int, terminal:Terminal, profile:Profile};
 
 /**
  * The IDE, laid out as VS Code is: a title bar naming the project, the side
@@ -61,6 +64,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The page of the build form, which a tab holds in place of a file. */
 	public static inline var BUILD = "rayde:build";
+
+	/** The page of the terminal's settings. */
+	public static inline var TERMINAL_SETTINGS = "rayde:terminal";
+
+	/** The most terminals one screen is split among. */
+	static inline var MAX_SPLITS = 4;
 
 	public final open = Signal.make(([] : Array<String>));
 	public final active = Signal.make("");
@@ -125,6 +134,18 @@ class Workbench extends Component<WorkbenchProps> {
 	var sessions:Array<Session> = [];
 	var activeSession = -1;
 	var nextSession = 1;
+	var nextGroup = 1;
+
+	/** What the terminal is set to, read from the project's .rayde/terminal.json. */
+	var terminalSettings:Settings;
+
+	/** Changes when a terminal setting does, for the views that draw by it. */
+	final settingsRevision = Signal.make(0);
+
+	/** The terminal in front, by id, for the list beside the screens. */
+	final terminalActive = Signal.make(-1);
+
+	final views = new Map<Int, Ref<TerminalView>>();
 
 	/** Set while a new terminal is being made on purpose, so showing the panel does not also start one. */
 	var starting = false;
@@ -156,7 +177,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (open.get().indexOf(file) < 0)
 			open.set(open.get().concat([file]));
 		active.set(file);
-		if (file == BUILD)
+		if (file == BUILD || file == TERMINAL_SETTINGS)
 			return;
 		remember(file);
 		check(file);
@@ -190,7 +211,7 @@ class Workbench extends Component<WorkbenchProps> {
 		props.display.reload();
 		buildRevision.set(buildRevision.get() + 1);
 		for (file in open.get())
-			if (file != BUILD)
+			if (file != BUILD && file != TERMINAL_SETTINGS)
 				check(file);
 	}
 
@@ -388,9 +409,12 @@ class Workbench extends Component<WorkbenchProps> {
 	public function setPanelHeight(height:Float):Void
 		problemsHeight.set(height);
 
-	function current():Null<Session> {
+	function current():Null<Session>
+		return find(activeSession);
+
+	function find(id:Int):Null<Session> {
 		for (s in sessions)
-			if (s.id == activeSession)
+			if (s.id == id)
 				return s;
 		return null;
 	}
@@ -409,16 +433,25 @@ class Workbench extends Component<WorkbenchProps> {
 	public function terminalIds():Array<Int>
 		return [for (s in sessions) s.id];
 
+	/** The terminals that share a screen with `id`, from left to right: the one itself when it is not split. */
+	function groupOf(id:Int):Array<Session> {
+		var s = find(id);
+		return s == null ? [] : [for (o in sessions) if (o.group == s.group) o];
+	}
+
 	/** Ends every terminal. */
 	public function closeTerminals():Void
 		for (id in terminalIds())
 			endSession(id);
 
-	/** The profile a plain + starts: the first the machine offers, unless a test names a program. */
+	/** The profile a plain + starts: the one set as the default, else the first the machine offers, unless a test names a program. */
 	function defaultProfile():Profile {
 		if (terminalProgram != null)
 			return {name: haxe.io.Path.withoutDirectory(terminalProgram), program: terminalProgram, args: terminalArgs};
 		var all = Profiles.list();
+		for (p in all)
+			if (p.name == terminalSettings.defaultProfile)
+				return p;
 		return all.length > 0 ? all[0] : {name: "sh", program: "/bin/sh"};
 	}
 
@@ -427,20 +460,21 @@ class Workbench extends Component<WorkbenchProps> {
 		if (!starting && sessions.length == 0)
 			startSession(defaultProfile());
 
-	/** Runs `profile` in the project's folder as another terminal, which comes to the front. */
-	function startSession(profile:Profile):Void {
+	/** Runs `profile` in the project's folder, on the screen of `group` or a new one, and brings it to the front. */
+	function startSession(profile:Profile, ?group:Int):Void {
 		var t = Terminal.open(100, 12, props.display.cwd, profile.program, profile.args);
 		if (t == null) {
 			say("Could not start " + profile.name);
 			return;
 		}
-		var session = {id: nextSession++, terminal: t, profile: profile};
+		var session = {id: nextSession++, group: group == null ? nextGroup++ : group, terminal: t, profile: profile};
 		sessions.push(session);
 		activeSession = session.id;
+		terminalActive.set(session.id);
 		terminalGeneration.set(terminalGeneration.get() + 1);
 	}
 
-	/** Starts another terminal, from `profile` or the default, beside the ones running, and gives it the keyboard. */
+	/** Starts another terminal on a screen of its own, from `profile` or the default, beside the ones running, and gives it the keyboard. */
 	public function newTerminal(?profile:Profile):Void {
 		starting = true;
 		showPanel("terminal");
@@ -449,16 +483,41 @@ class Workbench extends Component<WorkbenchProps> {
 		focusTerminal();
 	}
 
-	/** Brings terminal `id` to the front. */
-	public function selectTerminal(id:Int):Void {
-		if (id == activeSession)
+	/** Splits the screen of the terminal in front, adding one beside it from `profile` or the same profile. */
+	public function splitTerminal(?profile:Profile):Void {
+		var s = current();
+		if (s == null) {
+			newTerminal(profile);
 			return;
-		activeSession = id;
-		terminalGeneration.set(terminalGeneration.get() + 1);
+		}
+		if (groupOf(s.id).length >= MAX_SPLITS) {
+			say("A screen is split " + MAX_SPLITS + " ways at most");
+			return;
+		}
+		startSession(profile == null ? s.profile : profile, s.group);
 		focusTerminal();
 	}
 
-	/** Ends the terminal in view; the one beside it comes forward, and with none left the pane offers a new one. */
+	/** Brings terminal `id` to the front, and its screen with it. */
+	public function selectTerminal(id:Int):Void {
+		var from = current(), to = find(id);
+		if (to == null)
+			return;
+		activeSession = id;
+		terminalActive.set(id);
+		if (from == null || from.group != to.group)
+			terminalGeneration.set(terminalGeneration.get() + 1);
+		focusTerminal();
+	}
+
+	/** Notes that the view of terminal `id` has the keyboard, which makes it the one in front. */
+	function noteFocus(id:Int):Void
+		if (activeSession != id && find(id) != null) {
+			activeSession = id;
+			terminalActive.set(id);
+		}
+
+	/** Ends the terminal in front; one beside it, or the neighbouring screen, comes forward, and with none left the pane offers a new one. */
 	public function killTerminal():Void
 		endSession(activeSession);
 
@@ -469,17 +528,91 @@ class Workbench extends Component<WorkbenchProps> {
 				at = i;
 		if (at < 0)
 			return;
+		var group = sessions[at].group;
 		sessions[at].terminal.close();
 		sessions.splice(at, 1);
-		if (activeSession == id)
-			activeSession = sessions.length == 0 ? -1 : sessions[Std.int(Math.min(at, sessions.length - 1))].id;
+		views.remove(id);
+		if (activeSession == id) {
+			var peers = [for (s in sessions) if (s.group == group) s];
+			activeSession = peers.length > 0 ? peers[peers.length - 1].id : sessions.length == 0 ? -1 : sessions[Std.int(Math.min(at, sessions.length - 1))].id;
+			terminalActive.set(activeSession);
+		}
 		terminalGeneration.set(terminalGeneration.get() + 1);
+	}
+
+	/** Makes `name` the profile + starts, and keeps it. */
+	public function setDefaultProfile(name:String):Void {
+		terminalSettings.defaultProfile = name;
+		terminalSettings.save(props.display.cwd);
+		settingsRevision.set(settingsRevision.get() + 1);
 	}
 
 	/** Opens or closes the menu of terminal profiles, as its button does. */
 	public function showTerminalMenu(on:Bool):Void
 		if (profilesMenu.get() != null)
 			profilesMenu.get().opened.set(on);
+
+	/** Opens the terminal's settings in a tab. */
+	public function openTerminalSettings():Void
+		openFile(TERMINAL_SETTINGS);
+
+	/** The profiles of the machine as choices, each doing `then` with its profile when chosen. */
+	function profileChoices(then:Profile->Void):Array<CenterAction> {
+		var out:Array<CenterAction> = [];
+		for (p in Profiles.list())
+			out.push({
+				id: "profile-" + p.name,
+				label: p.name + (p.name == defaultProfile().name ? " (default)" : ""),
+				icon: p.name == defaultProfile().name ? Icons.CHECK_LINE : Icons.TERMINAL_BOX_LINE,
+				shortcut: p.program,
+				run: () -> then(p)
+			});
+		return out;
+	}
+
+	public function splitWithProfile():Void
+		openPicker("Split the terminal with a profile", profileChoices(p -> splitTerminal(p)));
+
+	public function selectDefaultProfile():Void
+		openPicker("Select the default profile", profileChoices(p -> setDefaultProfile(p.name)));
+
+	/** Opens the center to choose among `items`, in place of its files and commands. */
+	function openPicker(placeholder:String, items:Array<CenterAction>):Void {
+		centerRequest.set({text: "", serial: centerRequest.get().serial + 1, picker: {placeholder: placeholder, items: items}});
+		quickOpen.set(true);
+	}
+
+	// Tasks
+
+	/** The project's tasks as choices for the center, each run in a terminal of its own. */
+	function taskChoices():Array<CenterAction> {
+		var out:Array<CenterAction> = [];
+		for (i => t in Tasks.list(props.display))
+			out.push({id: "task-" + i, label: t.label, icon: Icons.PLAY_FILL, shortcut: t.detail, run: () -> runTask(t)});
+		return out;
+	}
+
+	/** Runs `task` in a new terminal, which stays after the command ends so its output can be read. */
+	public function runTask(task:Task):Void {
+		var windows = Sys.systemName() == "Windows";
+		starting = true;
+		showPanel("terminal");
+		starting = false;
+		startSession({name: task.label, program: windows ? "cmd.exe" : "/bin/sh", args: [windows ? "/c" : "-c", task.command]});
+		focusTerminal();
+	}
+
+	public function runTaskPicker():Void {
+		var tasks = taskChoices();
+		if (tasks.length == 0)
+			say("No tasks. Configure Tasks adds some");
+		else
+			openPicker("Run a task", tasks);
+	}
+
+	/** Opens the project's tasks file, made with an example when there is none. */
+	public function configureTasks():Void
+		openFile(Tasks.ensure(props.display.cwd));
 
 	/** Opens the panel on the terminal and gives it the keyboard, or closes the panel when the terminal is what it shows. */
 	public function toggleTerminal():Void {
@@ -491,11 +624,11 @@ class Workbench extends Component<WorkbenchProps> {
 		focusTerminal();
 	}
 
-	/** Once the terminal's view is made, gives it the keyboard. */
+	/** Once the view of the terminal in front is made, gives it the keyboard. */
 	public function focusTerminal():Void {
 		var tries = 0, hook:ashui.layout.LayoutTree->Void = null;
 		hook = _ -> {
-			var view = terminalView.get();
+			var ref = views.get(activeSession), view = ref == null ? null : ref.get();
 			if (view != null && panelShown.get()) {
 				ashui.layout.LayoutTree.flushHooks.remove(hook);
 				view.focus();
@@ -561,7 +694,12 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, shortcut: "Ctrl+`", run: toggleTerminal},
-			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
+			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, shortcut: "Ctrl+Shift+`", run: () -> newTerminal()},
+			{id: "splitterminal", label: "Split Terminal", icon: Icons.LAYOUT_COLUMN_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "\\", run: () -> splitTerminal()},
+			{id: "terminalprofile", label: "Select Default Terminal Profile", icon: Icons.TERMINAL_BOX_LINE, run: selectDefaultProfile},
+			{id: "terminalsettings", label: "Configure Terminal Settings", icon: Icons.SETTINGS_3_LINE, run: openTerminalSettings},
+			{id: "runtask", label: "Run Task", icon: Icons.PLAY_FILL, run: runTaskPicker},
+			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J", run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
@@ -636,7 +774,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
-		if (file == BUILD)
+		if (file == BUILD || file == TERMINAL_SETTINGS || !StringTools.endsWith(file, ".hx"))
 			return;
 		var found = try props.display.diagnostics(file, buffer(file).get()) catch (_:Dynamic) [];
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
@@ -660,8 +798,12 @@ class Workbench extends Component<WorkbenchProps> {
 				closeFile(active.get());
 			case Character("j") | Character("J") if (command):
 				togglePanel();
+			case Character("`") | Character("~") if (e.control && e.shift):
+				newTerminal();
 			case Character("`") if (e.control || command):
 				toggleTerminal();
+			case Character("\\") if (command):
+				splitTerminal();
 			case Named(F12):
 				goToDefinition();
 			case Named(F5) if (e.shift):
@@ -679,6 +821,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function render():Element {
 		runner = new Runner(props.display);
+		terminalSettings = Settings.read(props.display.cwd);
 		loadRecent();
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
@@ -713,7 +856,7 @@ class Workbench extends Component<WorkbenchProps> {
 				</resizable>
 			</div>
 			${statusBar()}
-			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={actions()}
+			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={actions()} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
 	}
@@ -890,10 +1033,10 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function tabLabel(file:String):String
-		return file == BUILD ? haxe.io.Path.withoutDirectory(props.display.hxml) : haxe.io.Path.withoutDirectory(file);
+		return file == BUILD ? haxe.io.Path.withoutDirectory(props.display.hxml) : file == TERMINAL_SETTINGS ? "Terminal" : haxe.io.Path.withoutDirectory(file);
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == BUILD ? Icons.SETTINGS_3_LINE : Icons.HAXE;
+		return file == BUILD ? Icons.SETTINGS_3_LINE : file == TERMINAL_SETTINGS ? Icons.TERMINAL_BOX_LINE : StringTools.endsWith(file, ".hx") ? Icons.HAXE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)
@@ -923,6 +1066,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function breadcrumb(file:String):Element {
 		if (file == BUILD)
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(props.display.hxml), "Build"])}</breadcrumb>;
+		if (file == TERMINAL_SETTINGS)
+			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([".rayde", "terminal.json", "Terminal"])}</breadcrumb>;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
 		var parts = (file.startsWith(root) ? file.substr(root.length) : file).split("/");
 		return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(parts)}</breadcrumb>;
@@ -946,12 +1091,20 @@ class Workbench extends Component<WorkbenchProps> {
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<build-settings file={buildModel} root={props.display.cwd} onChanged={buildChanged}/>
 			</tabs-content>;
+		if (file == TERMINAL_SETTINGS)
+			return <tabs-content value={file} class="flex-1 min-h-0">
+				<terminal-settings settings={terminalSettings} root={props.display.cwd} onChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}/>
+			</tabs-content>;
 		return pageOfFile(file);
 	}
 
+	/** The grammar the editor highlights `file` by. */
+	static function languageOf(file:String):String
+		return StringTools.endsWith(file, ".hx") ? "haxe" : StringTools.endsWith(file, ".json") ? "json" : "plain";
+
 	function pageOfFile(file:String):Element
 		return <tabs-content value={file} class="flex-1 min-h-0">
-			<code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language="haxe"
+			<code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
 				lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
 				class="flex-1 min-h-0"/>
 		</tabs-content>;
@@ -977,7 +1130,7 @@ class Workbench extends Component<WorkbenchProps> {
 			</div>
 		</div>;
 
-	/** The terminal in view, with the list of terminals beside it when there are several, or an offer of one while none is running. */
+	/** The screen of the terminal in front, split with its neighbours when it is, and the list of terminals beside it when there are several; or an offer of one while none is running. */
 	function terminalPane():Element {
 		var session = current();
 		if (session == null)
@@ -985,48 +1138,90 @@ class Workbench extends Component<WorkbenchProps> {
 				<text class="text-sm text-text-tertiary">No terminal is running.</text>
 				<button id="rayde-terminal-new" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> newTerminal()}>New terminal</button>
 			</div>;
+		var members = groupOf(session.id);
 		// A view that takes a terminal over from another shows all of its rows.
-		session.terminal.invalidate();
+		for (m in members)
+			m.terminal.invalidate();
 		return <div class="flex flex-1 min-h-0 min-w-0">
-			<terminal-view ref={terminalView} terminal={session.terminal} shown={() -> panelShown.get() && bottom.get() == "terminal"}
-				onExit={code -> say("The terminal exited with code " + code)}/>
-			<if {sessions.length > 1}>${terminalList()}</if>
+			${screens(members)}
+			<if {sessions.length > 1}><for {id in [terminalActive.get()]}>${terminalList()}</for></if>
 		</div>;
 	}
 
-	/** The terminals running, by their profiles, down the right of the pane; the one in front lit. */
+	/** One screen, or several side by side with a divider to drag between each two. */
+	function screens(members:Array<Session>):Element {
+		if (members.length == 1)
+			return screen(members[0]);
+		return <resizable id="rayde-terminal-split" class="flex-1 min-h-0 min-w-0">{splitPanels(members)}</resizable>;
+	}
+
+	function splitPanels(members:Array<Session>):Array<Element>
+		return [for (m in members) <resizable-panel minSize={140}>${screen(m)}</resizable-panel>];
+
+	function screen(s:Session):Element {
+		var ref = views.get(s.id);
+		if (ref == null) {
+			ref = new Ref<TerminalView>();
+			views.set(s.id, ref);
+		}
+		var id = s.id;
+		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> panelShown.get() && bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision}
+			onExit={code -> say(s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)}/>;
+	}
+
+	/** The terminals running down the right of the pane, a screen's terminals together; the one in front lit. */
 	function terminalList():Element
 		return <div id="rayde-terminal-list" class="rayde-term-list flex flex-col shrink-0 gap-1 p-1" width={170}>{terminalRows()}</div>;
 
-	function terminalRows():Array<Element>
-		return [for (s in sessions) terminalRow(s)];
+	function terminalRows():Array<Element> {
+		var out = [], seen = new Map<Int, Bool>();
+		for (s in sessions) {
+			out.push(terminalRow(s, seen.exists(s.group)));
+			seen.set(s.group, true);
+		}
+		return out;
+	}
 
-	function terminalRow(s:Session):Element {
+	function terminalRow(s:Session, split:Bool):Element {
 		var id = s.id, row = <div id={"rayde-terminal-item-" + id} class="rayde-term-item flex items-center gap-2 px-2 shrink-0 cursor-pointer" height={28} onClick={_ -> selectTerminal(id)}>
-			<icon document={Icons.TERMINAL_BOX_LINE} class="size-4 shrink-0"/>
+			<icon document={split ? Icons.LAYOUT_COLUMN_LINE : Icons.TERMINAL_BOX_LINE} class="size-4 shrink-0"/>
 			<text class="text-xs flex-1 min-w-0">${s.profile.name}</text>
 			<tooltip label="Kill terminal" side="left"><button variant={Ghost} size={Icon} class="rayde-remove rayde-term-kill" onClick={e -> {
 				e.stopPropagation();
 				endSession(id);
 			}}><icon document={Icons.CLOSE_LINE} class="size-3.5"/></button></tooltip>
 		</div>;
+		var identity = ashui.css.Identity.of(row.tree, row.node.id);
 		if (s.id == activeSession)
-			ashui.css.Identity.of(row.tree, row.node.id).setAttribute("data-on", "");
+			identity.setAttribute("data-on", "");
+		if (split)
+			identity.setAttribute("data-split", "");
 		return row;
 	}
 
-	/** What the panel's tab row holds for the tab in view, before its close button: for the terminal, + and a menu of profiles, and a bin. */
+	/** What the panel's tab row holds for the tab in view, before its close button: for the terminal, + and the menu beside it, and a bin. */
 	function panelTools(tab:String):Element {
 		if (tab != "terminal")
 			return <div/>;
+		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
 		return <div class="flex items-center gap-1">
 			<div class="flex items-center">
 				<tooltip label="New terminal" side="top"><button id="rayde-terminal-add" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> newTerminal()}><icon document={Icons.ADD_LINE} class="size-4"/></button></tooltip>
 				<dropdown-menu ref={profilesMenu} id="rayde-terminal-profiles">
 					<dropdown-menu-trigger id="rayde-terminal-profiles-trigger" variant={Ghost} size={Icon} class="rayde-panel-button rayde-split"></dropdown-menu-trigger>
 					<dropdown-menu-content>
-						<dropdown-menu-label>New terminal with</dropdown-menu-label>
+						<dropdown-menu-item id="rayde-menu-new-terminal" shortcut="Ctrl+Shift+`" onSelect={() -> newTerminal()}>New Terminal</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-menu-split-terminal" shortcut={mod + "\\"} onSelect={() -> splitTerminal()}>Split Terminal</dropdown-menu-item>
+						<dropdown-menu-separator/>
+						<dropdown-menu-label>Profiles</dropdown-menu-label>
 						{profileItems()}
+						<dropdown-menu-separator/>
+						<dropdown-menu-item id="rayde-menu-split-profile" onSelect={splitWithProfile}>Split Terminal with Profile…</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-menu-default-profile" onSelect={selectDefaultProfile}>Select Default Profile…</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-menu-terminal-settings" onSelect={openTerminalSettings}>Configure Terminal Settings</dropdown-menu-item>
+						<dropdown-menu-separator/>
+						<dropdown-menu-item id="rayde-menu-run-task" onSelect={runTaskPicker}>Run Task…</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-menu-configure-tasks" onSelect={configureTasks}>Configure Tasks…</dropdown-menu-item>
 					</dropdown-menu-content>
 				</dropdown-menu>
 			</div>
@@ -1039,7 +1234,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return [for (p in Profiles.list()) profileItem(p)];
 
 	function profileItem(p:Profile):Element
-		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.isDefault == true ? p.name + " (default)" : p.name}</dropdown-menu-item>;
+		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.name == defaultProfile().name ? p.name + " (default)" : p.name}</dropdown-menu-item>;
 
 	function problemsPane(list:Array<Diagnostic>):Element
 		return <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">

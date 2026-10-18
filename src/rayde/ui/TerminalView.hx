@@ -20,6 +20,7 @@ import ashui.types.Style.FontStyle;
 import ashui.types.Style.FontWeight;
 import ashui.ui.Component;
 import rayde.term.KeyMap;
+import rayde.term.Settings;
 import rayde.term.Terminal;
 
 typedef TerminalViewProps = {
@@ -27,7 +28,12 @@ typedef TerminalViewProps = {
 	/** Whether the view is on screen; a terminal that is not is left alone until it is. */
 	shown:Void->Bool,
 	/** Called once with the exit code when the program ends. */
-	?onExit:Int->Void
+	?onExit:Int->Void,
+	/** Called when the view takes the keyboard, so the workbench knows which terminal is in front. */
+	?onFocus:Void->Void,
+	/** How the cursor is drawn and what a selection does, and a number that changes when they change. */
+	?settings:Settings,
+	?changes:Signal<Int>
 };
 
 /** A run as an element has it: a fresh object each time a row is fetched, so the row's elements are made again. */
@@ -75,6 +81,7 @@ class TerminalView extends Component<TerminalViewProps> {
 	var focused = false;
 	var lastOutput = 0.;
 	var exited = false;
+	final exitCode = Signal.make(-1);
 	var gone = false;
 	var root:Element;
 	var anchor:Null<{row:Int, col:Int}> = null;
@@ -90,6 +97,9 @@ class TerminalView extends Component<TerminalViewProps> {
 			<div position={Absolute} left={PAD} top={PAD / 2} pointerEvents={PointerEvents.None}>
 				<for {k in [{rows: rowStates.get(), cell: measured.get()}]}>${rowElements(k.rows)}</for>
 			</div>
+			<if {exitCode.get() != -1}>
+				<div position={Absolute} left={PAD} bottom={6} pointerEvents={PointerEvents.None}><text id="rayde-terminal-exit" class="rayde-term-note">${"[Process exited with code " + exitCode.get() + "]"}</text></div>
+			</if>
 		</div>;
 		var interaction = Interaction.of(root.node).setFocusable(true);
 		interaction.onKeyDown(key);
@@ -97,6 +107,8 @@ class TerminalView extends Component<TerminalViewProps> {
 		interaction.onWheel(wheel);
 		new ashui.reactive.Watch(() -> interaction.focused.get(), on -> {
 			focused = on;
+			if (on && props.onFocus != null)
+				props.onFocus();
 			revision.set(revision.get() + 1);
 		});
 		// A new theme gives the text its colours again.
@@ -206,6 +218,7 @@ class TerminalView extends Component<TerminalViewProps> {
 				var code = props.terminal.exitCode();
 				if (code != -1 && code != -3) {
 					exited = true;
+					exitCode.set(code);
 					changed = true;
 					if (props.onExit != null)
 						props.onExit(code);
@@ -265,6 +278,8 @@ class TerminalView extends Component<TerminalViewProps> {
 		theme.revision.get();
 		revision.get();
 		measured.get();
+		if (props.changes != null)
+			props.changes.get();
 		if (cellWidth == 0)
 			return;
 		var fg = theme.color(TextPrimary).rgb();
@@ -290,10 +305,16 @@ class TerminalView extends Component<TerminalViewProps> {
 		}
 		if (screen.cursorShown && screen.scrollback == 0 && !exited) {
 			var x = PAD + screen.cursorColumn * cellWidth, y = PAD / 2 + screen.cursorRow * cellHeight;
-			// A block while the terminal has the keyboard, which does not blink, and an outline while it has not.
-			if (focused)
-				ctx.fillRect(x, y, cellWidth, cellHeight, Brush.solid(fg, .45));
-			else {
+			// While the terminal has the keyboard the cursor is solid, as the settings shape it, and it does not blink; without, an outline.
+			var style = props.settings == null ? "block" : props.settings.cursor;
+			if (focused) {
+				var solid = Brush.solid(fg, style == "block" ? .45 : .9);
+				switch style {
+					case "bar": ctx.fillRect(x, y, 2, cellHeight, solid);
+					case "underline": ctx.fillRect(x, y + cellHeight - 2, cellWidth, 2, solid);
+					case _: ctx.fillRect(x, y, cellWidth, cellHeight, solid);
+				}
+			} else {
 				var line = Brush.solid(fg, .6);
 				ctx.fillRect(x, y, cellWidth, 1, line);
 				ctx.fillRect(x, y + cellHeight - 1, cellWidth, 1, line);
@@ -396,8 +417,14 @@ class TerminalView extends Component<TerminalViewProps> {
 			if (p.pressed) {
 				head = cell(p.x, p.y);
 				revision.set(revision.get() + 1);
-			} else
+			} else {
 				stopDrag();
+				if (props.settings != null && props.settings.copyOnSelect) {
+					var text = selectedText();
+					if (text != "")
+						Clipboard.setText(text);
+				}
+			}
 		};
 		Pointer.hooks.push(drag);
 	}
