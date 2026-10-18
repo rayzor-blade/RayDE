@@ -57,6 +57,15 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 	final toolId = Signal.make("");
 	final toolTitle = Signal.make("");
 	final toolIcon = Signal.make("");
+	final cmdId = Signal.make("");
+	final cmdTitle = Signal.make("");
+	final cmdIcon = Signal.make("");
+	final itemExt = Signal.make("");
+	final itemName = Signal.make("");
+	final itemTitle = Signal.make("");
+	final itemIcon = Signal.make("");
+	var itemCommand = "";
+	var itemKind = "any";
 
 	function render():Element {
 		m = props.manifest;
@@ -108,6 +117,8 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 			${SettingsParts.card("rayde-ext-scripts", "Scripts", "Entry point and module search path. Imports resolve against the first source folder.", scripts())}
 			${SettingsParts.card("rayde-ext-view", "View", "Workbench contribution: activity bar icon, view title and location.", view())}
 			${SettingsParts.card("rayde-ext-tools", "View actions", "Actions in the view's title bar. Invoking one calls the handler registered with onTool(id).", tools())}
+			${SettingsParts.card("rayde-ext-commands", "Commands", "Commands the script registers with registerCommand(id). Listed in the command palette; bindable in Keyboard Shortcuts as ext.<id>.", commands())}
+			${SettingsParts.card("rayde-ext-menus", "Explorer context menu", "Items for matching files and folders. Choosing one runs its command with { path, kind }.", menuItems())}
 			${SettingsParts.card("rayde-ext-capabilities", "Capabilities", "Permissions the extension requests.", caps())}
 			<div class="flex items-center gap-2">
 				<button id="rayde-ext-edit-text" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> props.onEditText()}><icon document={Icons.CODE_BOX_LINE} class="size-4"/>Open as JSON</button>
@@ -215,6 +226,120 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		toolTitle.set("");
 		toolIcon.set("");
 		change(() -> Manifest.addTool(m.file, {id: id, title: title == "" ? id : title, icon: icon == "" ? null : icon}));
+	}
+
+	function commands():Array<Element> {
+		var out:Array<Element> = [for (c in m.commands) commandRow(c)];
+		if (m.commands.length == 0)
+			out.push(<text class="text-xs text-text-tertiary">No commands declared.</text>);
+		out.push(<div class="flex items-center gap-2">
+			<input height={32} id="rayde-ext-cmd-id" value={cmdId} placeholder="Command id" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addCommand()}/>
+			<input height={32} id="rayde-ext-cmd-title" value={cmdTitle} placeholder="Title" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addCommand()}/>
+			<input height={32} id="rayde-ext-cmd-icon" value={cmdIcon} placeholder="Icon name or .svg path" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addCommand()}/>
+			<button id="rayde-ext-cmd-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addCommand()}>Add</button>
+		</div>);
+		var svgs = svgFiles();
+		if (svgs.length > 0)
+			out.push(chips("SVG files", [for (s in svgs) {label: s, run: () -> cmdIcon.set(s)}]));
+		return out;
+	}
+
+	function commandRow(c:rayde.ext.Manifest.ViewCommand):Element {
+		var icon = ViewIcons.named(m, c.icon);
+		return <div class="rayde-setting-row flex items-center gap-3 px-3" height={40}>
+			<icon document={icon == null ? Icons.PUZZLE_LINE : icon} class="size-4 shrink-0 text-text-secondary"/>
+			<text class="rayde-mono text-sm">${c.id}</text>
+			<text class="text-xs text-text-tertiary flex-1 min-w-0">${c.title == c.id ? "" : c.title}${c.icon == null ? "" : "   " + c.icon}</text>
+			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeCommand(m.file, c.id))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+		</div>;
+	}
+
+	function addCommand():Void {
+		var id = cmdId.get().trim();
+		if (id == "")
+			return;
+		var title = cmdTitle.get().trim(), icon = cmdIcon.get().trim();
+		cmdId.set("");
+		cmdTitle.set("");
+		cmdIcon.set("");
+		change(() -> Manifest.addCommand(m.file, {id: id, title: title == "" ? id : title, icon: icon == "" ? null : icon}));
+	}
+
+	static final EXPLORER = "explorer/context";
+
+	/** What an item applies to, as the row says it: kind, extensions, name pattern. */
+	static function whenText(w:MenuWhen):String {
+		var parts = [w.kind == null ? "file or folder" : w.kind];
+		if (w.ext.length > 0)
+			parts.push(w.ext.join(", "));
+		if (w.name != null)
+			parts.push(w.name);
+		return parts.join("  ·  ");
+	}
+
+	function menuItems():Array<Element> {
+		var items = m.menus.get(EXPLORER);
+		var out:Array<Element> = [];
+		if (items != null)
+			for (i => item in items)
+				out.push(menuRow(i, item));
+		if (items == null || items.length == 0)
+			out.push(<text class="text-xs text-text-tertiary">No menu items declared.</text>);
+		if (m.commands.length == 0) {
+			out.push(<text class="text-xs text-text-tertiary">Declare a command to add a menu item.</text>);
+			return out;
+		}
+		if (!Lambda.exists(m.commands, c -> c.id == itemCommand))
+			itemCommand = m.commands[0].id;
+		var commandItems:Array<Element> = [for (c in m.commands) <select-item value={c.id}>${c.id}</select-item>];
+		var kinds:Array<Element> = [<select-item value="any">File or folder</select-item>, <select-item value="file">File</select-item>, <select-item value="folder">Folder</select-item>];
+		out.push(<div class="flex items-center gap-2">
+			<select id="rayde-ext-item-command" value={itemCommand} size={Sm} class="rayde-control" onChange={v -> itemCommand = v}>{commandItems}</select>
+			<select id="rayde-ext-item-kind" value={itemKind} size={Sm} class="rayde-control" onChange={v -> itemKind = v}>{kinds}</select>
+			<input height={32} id="rayde-ext-item-ext" value={itemExt} placeholder="Extensions: .md, .markdown" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) addMenuItem()}/>
+		</div>);
+		out.push(<div class="flex items-center gap-2">
+			<input height={32} id="rayde-ext-item-name" value={itemName} placeholder="Name pattern: README*" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addMenuItem()}/>
+			<input height={32} id="rayde-ext-item-title" value={itemTitle} placeholder="Title override" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addMenuItem()}/>
+			<input height={32} id="rayde-ext-item-icon" value={itemIcon} placeholder="Icon override" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addMenuItem()}/>
+			<button id="rayde-ext-item-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addMenuItem()}>Add</button>
+		</div>);
+		return out;
+	}
+
+	function menuRow(index:Int, item:MenuItem):Element {
+		var command = Lambda.find(m.commands, c -> c.id == item.command);
+		var icon = ViewIcons.named(m, item.icon != null ? item.icon : command == null ? null : command.icon);
+		return <div class="rayde-setting-row flex items-center gap-3 px-3" height={40}>
+			<icon document={icon == null ? Icons.PUZZLE_LINE : icon} class="size-4 shrink-0 text-text-secondary"/>
+			<text class="rayde-mono text-sm">${item.command}</text>
+			<text class="text-xs text-text-tertiary flex-1 min-w-0 truncate">${whenText(item.when)}</text>
+			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeMenuItem(m.file, EXPLORER, index))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+		</div>;
+	}
+
+	function addMenuItem():Void {
+		if (itemCommand == "")
+			return;
+		var exts = [for (e in ~/[,\s]+/.split(itemExt.get())) e.toLowerCase()];
+		var seen:Array<String> = [];
+		for (e in exts)
+			if (e != "") {
+				var dotted = e.startsWith(".") ? e : "." + e;
+				if (seen.indexOf(dotted) < 0)
+					seen.push(dotted);
+			}
+		var name = itemName.get().trim(), title = itemTitle.get().trim(), icon = itemIcon.get().trim();
+		itemExt.set("");
+		itemName.set("");
+		itemTitle.set("");
+		itemIcon.set("");
+		change(() -> Manifest.addMenuItem(m.file, EXPLORER, {
+			command: itemCommand,
+			title: title == "" ? null : title,
+			icon: icon == "" ? null : icon,
+			when: {kind: itemKind == "any" ? null : itemKind, ext: seen, name: name == "" ? null : name}
+		}));
 	}
 
 	function caps():Array<Element> {

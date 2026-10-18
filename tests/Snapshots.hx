@@ -628,6 +628,25 @@ class Snapshots {
 				bench.closeFile(previews()[0]);
 				until(() -> studio.tabViews.length == 0 && !says("Rewritten"), "the extension to unmount the closed tab");
 				shot("markdown-closed");
+				// The config form lists the extension's commands and menu items, and adds to both; each is written to the file at once.
+				bench.openSettings("extension");
+				settle(10);
+				scroll("#rayde-extension-config", 760);
+				shot("markdown-config");
+				var config = root + "/markdown.rayext";
+				click("#rayde-ext-cmd-id");
+				type("#rayde-ext-cmd-id", "refresh");
+				type("#rayde-ext-cmd-title", "Refresh Preview");
+				type("#rayde-ext-cmd-icon", "refresh");
+				click("#rayde-ext-cmd-add");
+				until(() -> sys.io.File.getContent(config).indexOf('"id": "refresh"') > 0, "the command to be written to the config");
+				type("#rayde-ext-item-name", "README*");
+				click("#rayde-ext-item-add");
+				until(() -> sys.io.File.getContent(config).indexOf('"name": "README*"') > 0, "the menu item to be written to the config");
+				var written = sys.io.File.getContent(config);
+				if (written.indexOf('"icon": "ext/preview.svg"') < 0 || written.indexOf('"location": "sidebar"') < 0)
+					throw "the form should leave what it did not change as it was: " + written;
+				shot("markdown-config-edited");
 			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}

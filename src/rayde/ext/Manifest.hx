@@ -403,6 +403,136 @@ class Manifest {
 			}
 		});
 
+	static function contributesOf(json:J):J {
+		var c = OrderedJson.get(json, "contributes");
+		if (c == null || !c.match(Obj(_))) {
+			c = Obj([]);
+			OrderedJson.set(json, "contributes", c);
+		}
+		return c;
+	}
+
+	/** Takes out of `contributes` what an edit left empty: lists, the menus object, and `contributes` itself. */
+	static function tidy(json:J):Void {
+		var c = OrderedJson.get(json, "contributes");
+		if (c == null)
+			return;
+		var menus = OrderedJson.get(c, "menus");
+		if (menus != null) {
+			switch menus {
+				case Obj(entries):
+					for (e in entries.copy())
+						switch e.value {
+							case Arr(items) if (items.length == 0): OrderedJson.set(menus, e.key, null);
+							case _:
+						}
+				case _:
+			}
+			switch menus {
+				case Obj(entries) if (entries.length == 0): OrderedJson.set(c, "menus", null);
+				case _:
+			}
+		}
+		switch OrderedJson.get(c, "commands") {
+			case Arr(items) if (items.length == 0): OrderedJson.set(c, "commands", null);
+			case _:
+		}
+		switch c {
+			case Obj(entries) if (entries.length == 0): OrderedJson.set(json, "contributes", null);
+			case _:
+		}
+	}
+
+	/** Adds a command to `contributes`, at the end; one with that id already is replaced where it is. */
+	public static function addCommand(file:String, command:ViewCommand):Void
+		update(file, json -> {
+			var c = contributesOf(json);
+			var entry:J = Obj([{key: "id", value: Str(command.id)}]);
+			if (command.title != command.id && command.title != "")
+				OrderedJson.set(entry, "title", Str(command.title));
+			if (command.icon != null && command.icon != "")
+				OrderedJson.set(entry, "icon", Str(command.icon));
+			switch OrderedJson.get(c, "commands") {
+				case Arr(items):
+					for (i in 0...items.length)
+						if (OrderedJson.text(OrderedJson.get(items[i], "id")) == command.id) {
+							items[i] = entry;
+							return;
+						}
+					items.push(entry);
+				case _:
+					OrderedJson.set(c, "commands", Arr([entry]));
+			}
+		});
+
+	/** Takes a command out, and the menu items that name it. */
+	public static function removeCommand(file:String, id:String):Void
+		update(file, json -> {
+			var c = OrderedJson.get(json, "contributes");
+			if (c == null)
+				return;
+			switch OrderedJson.get(c, "commands") {
+				case Arr(items):
+					OrderedJson.set(c, "commands", Arr([for (i in items) if (OrderedJson.text(OrderedJson.get(i, "id")) != id) i]));
+				case _:
+			}
+			switch OrderedJson.get(c, "menus") {
+				case Obj(entries):
+					for (e in entries)
+						switch e.value {
+							case Arr(items):
+								e.value = Arr([for (i in items) if (OrderedJson.text(OrderedJson.get(i, "command")) != id) i]);
+							case _:
+						}
+				case _:
+			}
+			tidy(json);
+		});
+
+	/** Adds an item to the menu at `location`, at the end. */
+	public static function addMenuItem(file:String, location:String, item:MenuItem):Void
+		update(file, json -> {
+			var c = contributesOf(json);
+			var entry:J = Obj([{key: "command", value: Str(item.command)}]);
+			if (item.title != null && item.title != "")
+				OrderedJson.set(entry, "title", Str(item.title));
+			if (item.icon != null && item.icon != "")
+				OrderedJson.set(entry, "icon", Str(item.icon));
+			var when:J = Obj([]);
+			if (item.when.kind != null)
+				OrderedJson.set(when, "kind", Str(item.when.kind));
+			if (item.when.ext.length > 0)
+				OrderedJson.set(when, "ext", Arr([for (e in item.when.ext) Str(e)]));
+			if (item.when.name != null)
+				OrderedJson.set(when, "name", Str(item.when.name));
+			switch when {
+				case Obj(entries) if (entries.length > 0): OrderedJson.set(entry, "when", when);
+				case _:
+			}
+			var menus = OrderedJson.get(c, "menus");
+			if (menus == null || !menus.match(Obj(_))) {
+				menus = Obj([]);
+				OrderedJson.set(c, "menus", menus);
+			}
+			switch OrderedJson.get(menus, location) {
+				case Arr(items): items.push(entry);
+				case _: OrderedJson.set(menus, location, Arr([entry]));
+			}
+		});
+
+	/** Takes the item at `index` out of the menu at `location`. */
+	public static function removeMenuItem(file:String, location:String, index:Int):Void
+		update(file, json -> {
+			var c = OrderedJson.get(json, "contributes"), menus = c == null ? null : OrderedJson.get(c, "menus");
+			if (menus == null)
+				return;
+			switch OrderedJson.get(menus, location) {
+				case Arr(items) if (index >= 0 && index < items.length): items.splice(index, 1);
+				case _:
+			}
+			tidy(json);
+		});
+
 	/** Where the mocked answers are, in full. */
 	public function mocksPath():String
 		return absolute(mocks);

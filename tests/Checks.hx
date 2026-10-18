@@ -417,6 +417,28 @@ class Checks {
 		check(icons.iconFile("ext/notes.svg") == sys.FileSystem.fullPath(dir) + "/ext/notes.svg" && icons.iconFile("eye") == null && icons.iconFile(null) == null, "an icon is a file in the extension, or a name of RayDE's");
 		check(icons.problems.length == 2 && icons.problems[0].indexOf("gone.svg") > 0 && icons.problems[1].indexOf("nowhere.svg") > 0, 'icon files that are missing are named: ${icons.problems}');
 
+		// The form adds and removes commands and menu items; what it did not touch stays as written, and an emptied `contributes` goes.
+		var cfile = dir + "/contribute-edit.rayext";
+		sys.io.File.saveContent(cfile, '{\n  "zeta": 1.50,\n  "name": "E",\n  "main": "ext/main.rays"\n}\n');
+		Manifest.addCommand(cfile, {id: "preview", title: "Preview", icon: "eye"});
+		Manifest.addCommand(cfile, {id: "other", title: "other", icon: null});
+		Manifest.addMenuItem(cfile, "explorer/context", {command: "preview", title: null, icon: null, when: {kind: "file", ext: [".md"], name: null}});
+		Manifest.addMenuItem(cfile, "explorer/context", {command: "other", title: "Do it", icon: "star", when: {kind: null, ext: [], name: "README*"}});
+		var edited = Manifest.read(cfile);
+		check(edited.problems.length == 0 && edited.commands.length == 2 && edited.commands[1].title == "other", 'commands are added: ${edited.problems} ${edited.commands}');
+		var entries = edited.menuFor("explorer/context", "x/README.md", "file").map(i -> i.command + ":" + i.title + ":" + i.icon);
+		check(entries.join(",") == "preview:Preview:eye,other:Do it:star", 'menu items are added with their conditions: $entries');
+		check(sys.io.File.getContent(cfile).indexOf('"zeta": 1.50') > 0, "what the edit did not touch is as written");
+		Manifest.addCommand(cfile, {id: "preview", title: "Open preview", icon: null});
+		check(Manifest.read(cfile).commands[0].title == "Open preview" && Manifest.read(cfile).commands.length == 2, "a command with an id that exists is replaced where it is");
+		Manifest.removeMenuItem(cfile, "explorer/context", 0);
+		check(Manifest.read(cfile).menus.get("explorer/context").length == 1, "a menu item is removed by its place");
+		Manifest.removeCommand(cfile, "other");
+		var after = Manifest.read(cfile);
+		check(after.commands.length == 1 && !after.menus.exists("explorer/context") && after.problems.length == 0, 'removing a command removes the items that name it: ${after.problems}');
+		Manifest.removeCommand(cfile, "preview");
+		check(sys.io.File.getContent(cfile).indexOf("contributes") < 0, "an emptied contributes is not written");
+
 		// A form edits the file and leaves the rest of it alone: the order of the keys, the keys it does not know, the text of numbers.
 		var text = '{\n  "zeta": 1.50,\n  "name": "Keep",\n  "contributes": {"commands": [{"id": "a"}]},\n  "main": "ext/main.rays"\n}\n';
 		sys.io.File.saveContent(dir + "/edit.rayext", text);
