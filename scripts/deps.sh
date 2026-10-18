@@ -51,5 +51,5 @@ stage_natives() {
 
 ui_args=(-cp src -lib hashlink -lib tink_hxx -D ash_simd -D ashui_scene_stencil -D "ashui_css=src/rayde/ui/rayde.css"
   --macro "ashui.core.render.UiFramework.register()" --macro "ashui.ui.Markup.enable()"
-  -cp "$ashui/haxe" -cp "$ashui/components/haxe" -cp "$ashui/canvaskit/haxe" -cp "$ashui/media/haxe"
+  -cp "$ashui/haxe" -cp "$ashui/components/haxe" -cp "$ashui/icons/haxe" -cp "$ashui/canvaskit/haxe" -cp "$ashui/media/haxe"
   -cp "$hlwgpu/haxe" -cp "$hlwindow/haxe" -cp "$future" -cp "$simd")

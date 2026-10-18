@@ -24,10 +24,13 @@ class Snapshots {
 		for (dark in [true, false]) {
 			scenario(dark, "basic", (bench, file, shot, settle) -> {
 				shot("empty");
+				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
+				bench.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), "Util.hx"]));
+				bench.active.set(file);
 				var buffer = bench.buffer(file), original = buffer.get();
 				buffer.set(StringTools.replace(original, 'var greeting = "hello";', 'var greeting:Int = "hello";'));
-				bench.check(file);
+				bench.edited(file);
 				settle();
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
@@ -114,6 +117,12 @@ class Snapshots {
 			}
 		function shot(what:String):Void {
 			settle();
+			if (Sys.getEnv("RAYDE_DEBUG") != null)
+				for (sel in [".rayde-tab", ".rayde-tab-body", "#rayde-file-tabs"])
+					for (id in ashui.css.Css.query(tree, view.node.id, sel)) {
+						var b = tree.getBounds(new ashui.layout.Node(id));
+						Sys.println('$what $sel ' + (b == null ? "null" : b.x + "," + b.y + " " + b.width + "x" + b.height));
+					}
 			Snapshot.capture('rayde-${dark ? "dark" : "light"}-$name-$what', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
 		}
 		settle();

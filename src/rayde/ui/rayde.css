@@ -1,5 +1,69 @@
-/* RayDE's own rules over ashui's components; layout only, the theme does the rest. */
+/* RayDE's own rules over ashui's components. Regions are cards with a gap between; the theme gives the colours. */
+
+/* The resizables draw nothing of their own, so each region's card is the only border and no two regions share one. */
+#rayde .ui-resizable { border-width: 0; border-radius: 0; background: transparent; }
+#rayde .ui-resizable-handle { width: 8px; }
+#rayde .ui-resizable[data-direction="vertical"] > .ui-resizable-handle { width: auto; height: 8px; }
+#rayde .ui-resizable-line { background: transparent; }
+#rayde .ui-resizable-handle:hover > .ui-resizable-line,
+#rayde .ui-resizable-handle[data-dragging] > .ui-resizable-line,
+#rayde .ui-resizable-handle:focus-visible > .ui-resizable-line { background: var(--primary); }
+
+/* Three tiers: the window on the background, the editor lifted on the surface, the side panels sunk below it, so the page being edited reads as the focus. */
+#rayde .rayde-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+#rayde .rayde-card.panel { background: var(--surface-overlay); --ui-code-bg: transparent; --ui-code-gutter-bg: transparent; }
+
+/* The editor and the console sit flush in their cards, and a gutter is not walled off from the text. */
+#rayde .ui-code { border-width: 0; border-radius: 0; }
+#rayde .ui-code-gutter { border-right-width: 0; }
+
+/* Title bar */
+#rayde .rayde-pill { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); }
+#rayde .rayde-pill-icon { color: var(--text-tertiary); }
+
+/* Activity bar */
+#rayde .rayde-activity-item { position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-tertiary); cursor: pointer; }
+#rayde .rayde-activity-item:hover { color: var(--text-primary); background: var(--accent-subtle); }
+#rayde .rayde-activity-item[data-on] { color: var(--text-primary); background: color-mix(in srgb, var(--primary) 24%, transparent); }
+
+/* Explorer */
+#rayde .rayde-heading { font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); }
+
+/* File tabs: the strip sits on the page's background, a quiet tab brightens under the pointer, the front tab is drawn by its canvas. */
+#rayde .rayde-strip { background: var(--background); }
+/* A tab keeps the front tab's sweep clear on each side, so its flared feet have room to draw; the hover shows on the body only. */
+#rayde .rayde-tab { padding: 0 12px; }
+#rayde .rayde-tab-body { height: 28px; border-radius: var(--radius-md); }
+#rayde .rayde-tab:hover .rayde-tab-body { background: var(--accent-subtle); }
+#rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
+#rayde .rayde-tab-icon { flex-shrink: 0; }
+#rayde .rayde-tab-name { color: var(--text-secondary); }
+#rayde .rayde-tab:hover .rayde-tab-name { color: var(--text-primary); }
+#rayde .rayde-tab[data-front] .rayde-tab-name { color: var(--text-primary); }
+#rayde .ui-tooltip-trigger { align-self: center; }
+#rayde .rayde-close:hover { background: var(--accent-subtle); }
+#rayde .rayde-close-icon { color: var(--text-tertiary); opacity: 0; }
+#rayde .rayde-tab:hover .rayde-close-icon, #rayde .rayde-tab[data-front] .rayde-close-icon { opacity: 1; }
+#rayde .rayde-dirty { display: none; background: var(--text-secondary); }
+#rayde .rayde-tab[data-dirty] .rayde-dirty { display: flex; }
+#rayde .rayde-tab[data-dirty] .rayde-close-icon { display: none; }
+#rayde .rayde-tab[data-dirty]:hover .rayde-dirty { display: none; }
+#rayde .rayde-tab[data-dirty]:hover .rayde-close-icon { display: flex; }
+
+/* Breadcrumb: the steps are plain text, not links. */
+#rayde a.ui-breadcrumb-item { text-decoration: none; }
+#rayde .rayde-crumbs { height: 28px; padding: 0 16px; align-items: center; flex-shrink: 0; }
+
+/* The editor's tab list is unused: the strip above chooses the page. */
+#rayde .rayde-nolist { display: none; }
+
+/* Bottom panel */
+#rayde-bottom { --ui-tabs-list-bg: transparent; }
 #rayde .rayde-problem { border-radius: var(--radius-sm); }
 #rayde .rayde-problem:hover { background: var(--accent-subtle); }
-/* A badge aligns itself to the start; in RayDE's rows it follows the row, centred like its neighbours. */
-#rayde .ui-badge { align-self: auto; }
+
+/* Status bar */
+#rayde .rayde-status { color: var(--text-secondary); font-size: var(--text-xs); }
+#rayde .rayde-status-item { align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-sm); height: 20px; }
+#rayde .rayde-status-item.action { cursor: pointer; }
+#rayde .rayde-status-item.action:hover { background: var(--accent-subtle); color: var(--text-primary); }
