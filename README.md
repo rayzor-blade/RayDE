@@ -16,6 +16,8 @@ The Rayzor Development Environment: a Haxe IDE built on [ashui](https://github.c
 scripts/rayde.sh path/to/build.hxml   # opens that project; Run builds it and runs it on ash
 ```
 
+Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P goes to a file, Cmd+S saves every edited file, Cmd+W closes the tab, F12 goes to the definition of the name under the cursor, F5 runs and Shift+F5 stops. A problem in the Problems list opens its file at its line.
+
 ## Checks
 
 ```sh

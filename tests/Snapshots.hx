@@ -35,15 +35,27 @@ class Snapshots {
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
 				shot("problems");
-				// Put the edit back, and run the program.
+				// Put the edit back; from the call on line 8, go to where it is defined.
 				buffer.set(original);
 				bench.check(file);
+				bench.goTo(file, 7, 4);
+				settle();
+				if (bench.caretLine(file) != 7)
+					throw 'go to should put the cursor on line 8, not ${bench.caretLine(file) + 1}';
+				bench.goToDefinition();
+				settle();
+				if (bench.caretLine(file) != 2)
+					throw 'go to definition should land on line 3, not ${bench.caretLine(file) + 1}';
+				// Run the program.
 				bench.run();
 				wait(bench);
 				settle();
 				if (bench.runner.state != "finished" || bench.runner.console.indexOf("hello") < 0)
 					throw 'the program did not run: ${bench.runner.state}: ${bench.runner.console}';
 				shot("run");
+				bench.quickOpen.set(true);
+				shot("quick-open");
+				bench.quickOpen.set(false);
 			});
 			scenario(dark, "broken", (bench, file, shot, settle) -> {
 				bench.openFile(file);
@@ -55,7 +67,7 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
-		Sys.println("rayde snapshots: the workbench empty, with problems, after a run and after a failed build, in both themes");
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in quick open and after a failed build, in both themes");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */

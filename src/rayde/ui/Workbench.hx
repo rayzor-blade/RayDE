@@ -11,10 +11,13 @@ import ashui.components.TreeView;
 import ashui.layout.Element;
 import ashui.reactive.Computed;
 import ashui.reactive.Signal;
+import ashui.input.Events.KeyEvent;
 import ashui.ui.Component;
+import ashui.ui.Ref;
 import rayde.lang.Display;
 import rayde.run.Runner;
 import rayde.ui.FileTabs;
+import rayde.ui.QuickOpen;
 
 using StringTools;
 
@@ -45,7 +48,14 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The open files with edits not yet written to disk. */
 	public final dirty = Signal.make(([] : Array<String>));
 
+	/** Whether Go to file is open. */
+	public final quickOpen = Signal.make(false);
+
+	/** A line the status bar shows for a few seconds: what a command could not do. */
+	final notice = Signal.make("");
+
 	final buffers = new Map<String, Signal<String>>();
+	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final treeWidth = Signal.make(EXPLORER_WIDTH);
 	final explorerShown:Computed<Bool>;
 	final problemsHeight = Signal.make(190.);
@@ -84,6 +94,72 @@ class Workbench extends Component<WorkbenchProps> {
 		if (active.get() == file)
 			active.set(rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
 		open.set(rest);
+	}
+
+	/** Opens `file` with the cursor at `line` and `character` (from 0), scrolled into view, and gives the editor the keyboard. */
+	public function goTo(file:String, line:Int, character:Int):Void {
+		openFile(file);
+		var text = buffer(file).get(), offset = 0, at = 0;
+		while (at < line && offset < text.length) {
+			var next = text.indexOf("\n", offset);
+			if (next < 0)
+				break;
+			offset = next + 1;
+			at++;
+		}
+		offset = Std.int(Math.min(text.length, offset + character));
+		// The editor of a file just opened is made at the next flush, so ask until it exists.
+		var tries = 0, apply:Void->Void = null;
+		apply = () -> {
+			var editor = editorOf(file);
+			if (editor != null && active.get() == file) {
+				editor.select(offset, offset);
+				editor.focus();
+			} else if (++tries < 80)
+				ashui.animation.AnimationScheduler.main.after(.025, apply);
+		};
+		ashui.animation.AnimationScheduler.main.after(.01, apply);
+	}
+
+	function editorOf(file:String):Null<CodeEditor> {
+		var ref = editorRefs.get(file);
+		return ref == null ? null : ref.get();
+	}
+
+	/** The text offset of the cursor in `file`'s editor, or -1 while it has none. */
+	public function caret(file:String):Int {
+		var editor = editorOf(file);
+		return editor == null ? -1 : editor.editing.caret.get();
+	}
+
+	/** The line (from 0) the cursor of `file`'s editor is on, or -1. */
+	public function caretLine(file:String):Int {
+		var offset = caret(file);
+		if (offset < 0)
+			return -1;
+		var line = 0, text = buffer(file).get();
+		for (i in 0...Std.int(Math.min(offset, text.length)))
+			if (text.charCodeAt(i) == "\n".code)
+				line++;
+		return line;
+	}
+
+	/** Goes to where the name under the cursor is defined, or says there is none. */
+	public function goToDefinition():Void {
+		var file = active.get(), offset = caret(file);
+		if (file == "" || offset < 0)
+			return;
+		var found = try props.display.definition(file, offset, buffer(file).get()) catch (_:Dynamic) [];
+		if (found.length == 0)
+			say("No definition found");
+		else
+			goTo(found[0].file, found[0].range.start.line, found[0].range.start.character);
+	}
+
+	/** Shows `text` in the status bar for a few seconds. */
+	function say(text:String):Void {
+		notice.set(text);
+		ashui.animation.AnimationScheduler.main.after(3, () -> if (notice.get() == text) notice.set(""));
 	}
 
 	/** The editor's text for `file`, read from disk when first opened. */
@@ -153,12 +229,36 @@ class Workbench extends Component<WorkbenchProps> {
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
 	}
 
+	/** VS Code's keys: Go to file, Save, Close tab, Go to definition, Run and Stop. */
+	function key(e:KeyEvent):Void {
+		if (e.defaultPrevented)
+			return;
+		var command = e.superKey || e.control;
+		switch e.key {
+			case Character("p") | Character("P") if (command && !e.shift):
+				quickOpen.set(true);
+			case Character("s") | Character("S") if (command):
+				saveAll();
+			case Character("w") | Character("W") if (command && active.get() != ""):
+				closeFile(active.get());
+			case Named(F12):
+				goToDefinition();
+			case Named(F5) if (e.shift):
+				stopRun();
+			case Named(F5):
+				run();
+			case _:
+				return;
+		}
+		e.preventDefault();
+	}
+
 	function runtime():String
 		return props.runtime == null ? "ash" : props.runtime;
 
 	function render():Element {
 		runner = new Runner(props.display);
-		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary">
+		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 pr-2">
 				${activityBar()}
@@ -175,6 +275,7 @@ class Workbench extends Component<WorkbenchProps> {
 				</resizable>
 			</div>
 			${statusBar()}
+			<quick-open opened={quickOpen} files={projectFiles} root={props.display.cwd} onOpen={path -> openFile(path)}/>
 		</div>;
 	}
 
@@ -219,15 +320,39 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 	}
 
-	/** The project's source folders, from the classpaths its build names. */
-	function folders():Array<Element> {
-		var args = props.display.args, out:Array<Element> = [];
+	/** The project's source folders as the build names them: the label as written, and the folder in full. */
+	function classpaths():Array<{label:String, dir:String}> {
+		var args = props.display.args, out = [];
 		for (i in 0...args.length - 1)
 			if (args[i] == "-cp" || args[i] == "--class-path") {
 				var dir = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([props.display.cwd, args[i + 1]]);
 				if (sys.FileSystem.exists(dir) && sys.FileSystem.isDirectory(dir))
-					out.push(folder(dir, args[i + 1], true));
+					out.push({label: args[i + 1], dir: dir});
 			}
+		return out;
+	}
+
+	function folders():Array<Element>
+		return [for (cp in classpaths()) folder(cp.dir, cp.label, true)];
+
+	/** Every Haxe file under the project's source folders, folder by folder, in name order. */
+	function projectFiles():Array<String> {
+		var out = [];
+		function walk(dir:String):Void {
+			var names = sys.FileSystem.readDirectory(dir);
+			names.sort(Reflect.compare);
+			for (name in names) {
+				var path = haxe.io.Path.join([dir, name]);
+				if (name.startsWith("."))
+					continue;
+				if (sys.FileSystem.isDirectory(path))
+					walk(path);
+				else if (name.endsWith(".hx"))
+					out.push(path);
+			}
+		}
+		for (cp in classpaths())
+			walk(cp.dir);
 		return out;
 	}
 
@@ -279,10 +404,19 @@ class Workbench extends Component<WorkbenchProps> {
 	function crumbs(parts:Array<String>):Array<Element>
 		return [for (i => part in parts) <breadcrumb-item current={i == parts.length - 1}>${part}</breadcrumb-item>];
 
+	function editorRef(file:String):Ref<CodeEditor> {
+		var ref = editorRefs.get(file);
+		if (ref == null) {
+			ref = new Ref<CodeEditor>();
+			editorRefs.set(file, ref);
+		}
+		return ref;
+	}
+
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String):Element
 		return <tabs-content value={file} class="flex-1 min-h-0">
-			<code-editor id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language="haxe"
+			<code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language="haxe"
 				lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
 				class="flex-1 min-h-0"/>
 		</tabs-content>;
@@ -309,7 +443,7 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function problemRow(p:Diagnostic):Element
-		return <div class="rayde-problem flex items-center gap-2 px-2 py-1 cursor-pointer" onClick={_ -> openFile(p.file)}>
+		return <div class="rayde-problem flex items-center gap-2 px-2 py-1 cursor-pointer" onClick={_ -> goTo(p.file, p.range.start.line, p.range.start.character)}>
 			<if {p.severity == 1}><icon document={Icons.CLOSE_CIRCLE_LINE} class="size-4 text-error"/>
 			<else><icon document={Icons.ALERT_LINE} class="size-4 text-warning"/></if>
 			<text class="text-xs flex-1 min-w-0">${p.message.split("\n")[0]}</text>
@@ -324,6 +458,7 @@ class Workbench extends Component<WorkbenchProps> {
 			</tooltip>
 			<for {list in [problems.get()]}>${problemCounts(list)}</for>
 			<div class="flex-1"/>
+			<if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>
 			<for {state in [runState.get()]}>${runStatus(state)}</for>
 			<div class="rayde-status-item flex"><text>Haxe</text></div>
 		</div>;
