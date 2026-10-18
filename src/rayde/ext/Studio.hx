@@ -24,6 +24,12 @@ class Studio {
 	/** Whether typing reloads the extension on its own, a moment after it stops. */
 	public final live = Signal.make(true);
 
+	/** True while the view shown is the last that ran and the source as it is now does not: it has a mistake in it. */
+	public final stale = Signal.make(false);
+
+	/** The heading of the view: the config's title, which the extension can change. */
+	public final title:Signal<String>;
+
 	/** Changes with the Preview's tree, for the Elements panel. */
 	public final elements = Signal.make(0);
 
@@ -43,8 +49,9 @@ class Studio {
 
 	final binary:Null<String>;
 	final dir:String;
-	final root:String;
-	final manifest:Null<Manifest>;
+	var root:String;
+	/** The config of the extension, when it was opened from one. */
+	public var manifest(default, null):Null<Manifest>;
 	final source:Void->String;
 	var host:Null<ExtensionHost>;
 	final tree:LayoutTree;
@@ -56,6 +63,9 @@ class Studio {
 	var scheduled = false;
 	var attached:Array<Int> = [];
 
+	/** Set by a reload: the view stays until the new version has started, so a typing mistake does not blank it. */
+	var replacing = false;
+
 	/** Counts what the Console shows. */
 	static inline var MAX_ENTRIES = 1000;
 
@@ -66,6 +76,7 @@ class Studio {
 		this.source = source;
 		this.tree = tree;
 		this.manifest = manifest;
+		title = Signal.make(manifest != null ? manifest.viewTitle : "Preview");
 		Utilities.install();
 		preview = new Preview(tree, send);
 		this.binary = binary != null ? binary : HostBinary.find();
@@ -75,36 +86,51 @@ class Studio {
 			state.set("unavailable");
 	}
 
+	/** The config changed: the view's heading, where scripts are imported from and the mocks file are what it says now. */
+	public function useManifest(m:Manifest):Void {
+		manifest = m;
+		root = m.importRoot();
+		mocksFile = m.mocksPath();
+		title.set(m.viewTitle);
+	}
+
 	public function mocksPath():String
 		return mocksFile;
 
 	/** Shows the Preview in `container`, a node of the tree. */
 	public function attach(container:Node):Void {
-		if (this.container != null && this.container.id != container.id) {
-			tree.detachChildren(this.container.id);
-			attached = [];
-		}
+		if (this.container != null && this.container.id != container.id)
+			release();
 		this.container = container;
+		if (preview != null)
+			preview.show();
 		adopt();
 	}
 
+	/** Lets go of the container: what is drawn goes from it and from the tree, and the model of the view stays. */
+	function release():Void {
+		if (container != null)
+			tree.detachChildren(container.id);
+		if (preview != null)
+			preview.hide();
+		container = null;
+		attached = [];
+	}
+
 	/**
-	 * Takes the Preview out of `from`, a page that is about to go; the extension and its view go on. A page
-	 * built to replace it may already have the view, in which case there is nothing to take.
+	 * Takes the Preview out of `from`, a page that is about to go; the extension and its view go on, and
+	 * are drawn again by the next page. A page built to replace it may have the view already.
 	 */
 	public function detach(from:Node):Void {
 		if (container == null || container.id != from.id)
 			return;
-		tree.detachChildren(container.id);
-		container = null;
-		attached = [];
+		release();
 	}
 
 	/** Ends the extension and takes its view down, for good. */
 	public function dispose():Void {
 		stop();
-		if (container != null)
-			detach(container);
+		release();
 		if (preview != null)
 			preview.clear();
 		preview = null;
@@ -127,9 +153,8 @@ class Studio {
 		if (binary == null)
 			return;
 		stop();
-		if (preview != null)
-			preview.clear();
-		attached = [];
+		replacing = true;
+		title.set(manifest != null ? manifest.viewTitle : "Preview");
 		problems = [];
 		if (onProblems != null)
 			onProblems(problems);
@@ -161,6 +186,19 @@ class Studio {
 
 	public function running():Bool
 		return host != null && host.running();
+
+	/** The buttons the extension's config puts in its header. */
+	public function tools():Array<rayde.ext.Manifest.ViewTool>
+		return manifest == null ? [] : manifest.tools;
+
+	/** A tool of the header was chosen: tells the extension. */
+	public function tool(id:String):Void {
+		if (host == null)
+			return;
+		host.send({t: "tool", id: id});
+		note(activity, "event", 'tool $id');
+		activeNow();
+	}
 
 	/** Sends an event for an element of the view, as a person using the Preview does. */
 	public function send(node:Int, event:String, payload:Dynamic):Void {
@@ -220,6 +258,8 @@ class Studio {
 
 	function handle(m:Dynamic):Void {
 		switch (m.t : String) {
+			case "started":
+				replace();
 			case "ops":
 				if (preview != null) {
 					preview.apply(m.ops);
@@ -227,6 +267,9 @@ class Studio {
 					elements.set(elements.get() + 1);
 				}
 				note(activity, "ops", (m.ops : Array<Dynamic>).length + (m.ops.length == 1 ? " operation" : " operations"));
+			case "view":
+				if (m.title != null)
+					title.set(Std.string(m.title));
 			case "log":
 				note(console, "log", m.message);
 			case "call":
@@ -237,6 +280,18 @@ class Studio {
 		}
 	}
 
+	/** The new version of the extension has started: what the old one drew goes, and the new one draws. */
+	function replace():Void {
+		if (!replacing)
+			return;
+		replacing = false;
+		stale.set(false);
+		if (preview != null)
+			preview.clear();
+		attached = [];
+		elements.set(elements.get() + 1);
+	}
+
 	/** Puts the roots the extension has mounted in the container. */
 	function adopt():Void {
 		if (preview == null || container == null)
@@ -245,7 +300,8 @@ class Studio {
 		for (r in preview.roots)
 			if (attached.indexOf(r.id) < 0) {
 				attached.push(r.id);
-				tree.addChild(container.id, r.node.id);
+				if (r.node != null)
+					tree.addChild(container.id, r.node.id);
 			}
 	}
 
@@ -253,6 +309,8 @@ class Studio {
 		var items:Array<Dynamic> = m.items == null ? [] : m.items;
 		var kind:String = m.kind;
 		if (kind == "syntax" || kind == "compile") {
+			if (replacing)
+				stale.set(preview != null && preview.count() > 0);
 			problems = [
 				for (i in items)
 					{

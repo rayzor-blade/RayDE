@@ -9,25 +9,27 @@ import ashui.layout.Prop;
 /** What the Preview tells whoever is running the extension: an element asked for this event, and here it is. */
 typedef PreviewEvent = (node:Int, event:String, payload:Dynamic) -> Void;
 
-/** An element of the extension's view as the Preview holds it. */
+/** An element of the extension's view: what the extension said about it, and, while the Preview is shown, its node. */
 private class Part {
 	public final host:Int;
 
 	/** The element's tag; null for a text node. */
 	public final tag:Null<String>;
 
-	public final node:Node;
 	public var parent = 0;
 	public var children:Array<Int> = [];
 	public var text = "";
 	public final props:Map<String, Dynamic> = new Map();
 	public final order:Array<String> = [];
 
-	/** The CSS properties the `style` property set, so a new `style` can take away what it no longer has. */
-	public var styled:Array<String> = [];
-
 	/** The events the extension wants from this element. */
 	public final listens:Map<String, Bool> = new Map();
+
+	/** The ashui node, null while the Preview is not in a page. */
+	public var node:Null<Node>;
+
+	/** The CSS properties the `style` property set, so a new `style` can take away what it no longer has. */
+	public var styled:Array<String> = [];
 
 	/** What the text node shows now: the run of text it heads, or its own text. */
 	public var shown = "";
@@ -38,26 +40,29 @@ private class Part {
 	/** The events this element has a handler for in ashui; a handler stays and answers only while the event is wanted. */
 	public final hooked:Map<String, Bool> = new Map();
 
-	public function new(host:Int, tag:Null<String>, node:Node) {
+	public function new(host:Int, tag:Null<String>) {
 		this.host = host;
 		this.tag = tag;
-		this.node = node;
 	}
 }
 
 /**
- * The elements an extension has asked for, as ashui nodes in a tree: the other end of the host's
- * operations. `apply` takes the `ops` of a message and makes them true; the roots the extension mounted
- * are nodes that whoever shows the Preview puts where it wants them. Classes are styled by the
- * utilities stylesheet and `style` is CSS, so what is drawn is what the cascade says.
+ * The elements an extension has asked for: the other end of the host's operations. `apply` takes the `ops` of
+ * a message and makes them true. What the extension has made is kept as a model, and drawn as ashui nodes
+ * only while a page shows it (`show`); `hide` takes the nodes down and the model stays, so the page can be
+ * built again around the view, or not be there at all. Classes are styled by the utilities stylesheet and
+ * `style` is CSS, so what is drawn is what the cascade says.
  */
 class Preview {
 	final tree:LayoutTree;
 	final parts:Map<Int, Part> = new Map();
 	final emit:PreviewEvent;
 
-	/** The roots, in the order they were mounted, with the name each was mounted under. */
-	public final roots:Array<{id:Int, name:String, node:Node}> = [];
+	/** Whether there are ashui nodes: false until a page shows the view, and again once it is hidden. */
+	var shown = false;
+
+	/** The roots, in the order they were mounted, with the name each was mounted under; `node` is null while the view is hidden. */
+	public final roots:Array<{id:Int, name:String, node:Null<Node>}> = [];
 
 	/** Counts every change, for whatever shows the tree. */
 	public var revision(default, null) = 0;
@@ -67,13 +72,12 @@ class Preview {
 		this.emit = emit;
 	}
 
-	/** Takes everything down. */
+	/** Takes everything down, the model and the nodes. */
 	public function clear():Void {
-		for (r in roots)
-			tree.removeSubtree(r.node.id);
-		for (p in parts)
-			if (p.parent == 0 && !Lambda.exists(roots, r -> r.id == p.host))
-				tree.removeSubtree(p.node.id);
+		if (shown)
+			for (p in parts)
+				if (p.parent == 0 && p.node != null)
+					tree.removeSubtree(p.node.id);
 		parts.clear();
 		roots.resize(0);
 		revision++;
@@ -84,6 +88,47 @@ class Preview {
 		for (_ in parts)
 			n++;
 		return n;
+	}
+
+	/** Draws the view as ashui nodes, from what the extension has said. */
+	public function show():Void {
+		if (shown)
+			return;
+		shown = true;
+		for (p in parts)
+			make(p);
+		for (p in parts)
+			if (p.tag != null) {
+				for (name in p.order)
+					style(p, name, p.props.get(name));
+				for (event in p.listens.keys())
+					hook(p, event);
+			}
+		for (p in parts)
+			if (p.tag != null)
+				refresh(p);
+		for (r in roots)
+			r.node = parts.get(r.id).node;
+		revision++;
+	}
+
+	/** Takes the nodes down, wherever they are: the page that held them may already have taken them with it. The model stays. */
+	public function hide():Void {
+		if (!shown)
+			return;
+		for (p in parts) {
+			if (p.parent == 0 && p.node != null)
+				tree.removeSubtree(p.node.id);
+		}
+		for (p in parts) {
+			p.node = null;
+			p.hooked.clear();
+			p.styled = [];
+			p.placed = [];
+		}
+		for (r in roots)
+			r.node = null;
+		shown = false;
 	}
 
 	/** Applies the operations of an `ops` message in order. */
@@ -115,24 +160,38 @@ class Preview {
 		revision++;
 	}
 
-	function create(id:Int, tag:String):Void {
+	/** The ashui node of a part, made now. */
+	function make(p:Part):Void {
+		if (p.tag == null) {
+			var node = tree.createTextNode(p.text, 14, 1.4);
+			Identity.register(tree, node, "text");
+			p.node = node;
+			p.shown = p.text;
+			return;
+		}
 		var node = tree.createNode();
-		var root = tag == "#root";
-		var identity = Identity.register(tree, node, root || !Tags.known(tag) ? "div" : tag);
+		var root = p.tag == "#root";
+		var identity = Identity.register(tree, node, root || !Tags.known(p.tag) ? "div" : p.tag);
 		if (root)
 			identity.setClasses([Utilities.SCOPE, Utilities.SCOPE + "-root"]);
 		else
-			identity.setAttribute("data-tag", tag);
-		parts.set(id, new Part(id, tag, node));
+			identity.setAttribute("data-tag", p.tag);
+		p.node = node;
+	}
+
+	function create(id:Int, tag:String):Void {
+		var p = new Part(id, tag);
+		parts.set(id, p);
+		if (shown)
+			make(p);
 	}
 
 	function createText(id:Int, text:String):Void {
-		var node = tree.createTextNode(text, 14, 1.4);
-		Identity.register(tree, node, "text");
-		var part = new Part(id, null, node);
-		part.text = text;
-		part.shown = text;
-		parts.set(id, part);
+		var p = new Part(id, null);
+		p.text = text;
+		parts.set(id, p);
+		if (shown)
+			make(p);
 	}
 
 	function setText(id:Int, text:String):Void {
@@ -141,7 +200,7 @@ class Preview {
 			return;
 		part.text = text;
 		var up = parts.get(part.parent);
-		if (up != null)
+		if (shown && up != null)
 			refresh(up);
 	}
 
@@ -157,12 +216,18 @@ class Preview {
 				part.order.push(name);
 			part.props.set(name, value);
 		}
+		if (shown)
+			style(part, name, value);
+	}
+
+	/** Applies one property of an element to its node. */
+	function style(part:Part, name:String, value:Dynamic):Void {
 		var identity = Identity.of(tree, part.node.id);
 		if (identity == null)
 			return;
 		switch name {
 			case "class" | "className":
-				identity.setClasses(value == null ? [] : classList(value, part.tag == "#root"));
+				identity.setClasses(value == null ? (part.tag == "#root" ? classList("", true) : []) : classList(value, part.tag == "#root"));
 			case "id":
 				identity.setId(value == null ? null : Std.string(value));
 			case "style":
@@ -232,9 +297,16 @@ class Preview {
 			return;
 		}
 		part.listens.set(event, true);
+		if (shown)
+			hook(part, event);
+	}
+
+	/** Gives the node a handler for `event`, once; it answers only while the extension still wants the event. */
+	function hook(part:Part, event:String):Void {
 		if (part.hooked.exists(event))
 			return;
 		part.hooked.set(event, true);
+		var id = part.host;
 		var interaction = Interaction.of(part.node);
 		function wanted(payload:Dynamic):Void
 			if (part.listens.exists(event))
@@ -259,13 +331,9 @@ class Preview {
 		var p = parts.get(parent), c = parts.get(child);
 		if (p == null || c == null)
 			return;
-		if (c.parent != 0) {
-			var old = parts.get(c.parent);
-			if (old != null)
-				old.children.remove(child);
-			if (old != null && old != p)
-				place(old);
-		}
+		var old = c.parent == 0 ? null : parts.get(c.parent);
+		if (old != null)
+			old.children.remove(child);
 		p.children.remove(child);
 		var at = before == null ? -1 : p.children.indexOf(before);
 		if (at < 0)
@@ -273,11 +341,12 @@ class Preview {
 		else
 			p.children.insert(at, child);
 		c.parent = parent;
-		place(p);
+		if (shown) {
+			if (old != null && old != p)
+				refresh(old);
+			refresh(p);
+		}
 	}
-
-	function place(p:Part):Void
-		refresh(p);
 
 	/**
 	 * Makes the ashui node's children what the part's are, in order. Text next to text is one run, as in a
@@ -326,12 +395,14 @@ class Preview {
 		if (part == null)
 			return;
 		var up = parts.get(part.parent);
-		if (up != null) {
+		if (up != null)
 			up.children.remove(id);
-			place(up);
+		if (shown) {
+			if (up != null)
+				refresh(up);
+			tree.removeSubtree(part.node.id);
+			Identity.forgetSubtree(tree, part.node.id);
 		}
-		tree.removeSubtree(part.node.id);
-		Identity.forgetSubtree(tree, part.node.id);
 		forget(id);
 		for (i in 0...roots.length)
 			if (roots[i].id == id) {
@@ -349,26 +420,14 @@ class Preview {
 			forget(c);
 	}
 
-	/**
-	 * A mounted view's root: the element the extension named, once it has `name`. Null until then.
-	 * The first call for a root records it, and `roots` lists it from then on.
-	 */
-	public function rootOf(id:Int):Null<Node> {
-		var part = parts.get(id);
-		if (part == null || part.tag != "#root")
-			return null;
-		for (r in roots)
-			if (r.id == id)
-				return r.node;
-		roots.push({id: id, name: part.props.exists("name") ? Std.string(part.props.get("name")) : "main", node: part.node});
-		return part.node;
-	}
-
-	/** Every root the extension has created, found and recorded. */
+	/** Finds the roots the extension has mounted, and records them in `roots`; the one already known is left. */
 	public function findRoots():Void {
-		for (id => p in parts)
-			if (p.tag == "#root")
-				rootOf(id);
+		for (id => p in parts) {
+			if (p.tag != "#root" || Lambda.exists(roots, r -> r.id == id))
+				continue;
+			roots.push({id: id, name: p.props.exists("name") ? Std.string(p.props.get("name")) : "main", node: p.node});
+		}
+		roots.sort((a, b) -> a.id - b.id);
 	}
 
 	/** The tree as the Elements panel lists it: each element in document order with its depth, tag or text, and properties. */

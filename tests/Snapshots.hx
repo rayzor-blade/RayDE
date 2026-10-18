@@ -5,6 +5,7 @@ import ashui.layout.LayoutTree;
 import ashui.reactive.Owner;
 import ashui.theme.ThemeState;
 import ashui.theme.themes.RestrainedTheme;
+import rayde.ext.Manifest;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.run.Haxelib;
@@ -441,38 +442,62 @@ class Snapshots {
 			});
 		}
 		for (dark in [true, false])
-			scenario(dark, "extension", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
-				var rays = haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), "ext", "main.rays"]);
-				bench.openFile(rays);
+			scenario(dark, "extension", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
-				var studio = bench.extension(rays);
+				var studio = bench.studioFor(rays);
 				if (studio == null)
-					throw "opening a .rays file should start its extension";
+					throw "opening an extension project should start its extension";
 				if (studio.state.get() == "unavailable") {
 					Sys.println("extension snapshots skipped: no rayscript-host");
 					return;
 				}
 				var says = (text:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text == text);
-				until(() -> says("src/Main.hx"), "the extension's view, with the file a mocked call answered with");
-				shot("extension-preview");
+				until(() -> says("ext/main.rays"), "the extension's view, with the file a mocked call answered with");
+				// The view is in the sidebar in the Explorer's place, and its icon is in the activity bar; the Explorer's icon brings the Explorer back.
+				shot("extension-sidebar");
+				click("#rayde-activity-explorer");
+				shot("extension-explorer");
+				click("#rayde-activity-ext");
 				bench.showPanel("extension");
 				shot("extension-console");
 				click("#rayde-studio-surface button");
 				until(() -> says("1"), "the click to reach the extension and its change to come back");
+				// The header is the extension's: a tool of its config runs its handler, and it can change the title.
+				click("#rayde-tool-add");
+				until(() -> says("A note 2") && studio.title.get() == "Notes (4)", "the tool to be answered, and the title changed");
+				shot("extension-tool");
 				click("#rayde-extension-activity");
 				shot("extension-activity");
 				click("#rayde-extension-elements");
 				shot("extension-elements");
-				// A mistake as it is typed: the extension is run again a moment later, the error lands in Problems, and the line opens from the Console.
+				// The config as a form: a change is written to the .rayext at once, and the heading follows.
+				bench.openSettings("extension");
+				settle(10);
+				shot("extension-config");
+				var config = haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(rays)), "notes.rayext"]);
+				click("#rayde-ext-title");
+				type("#rayde-ext-title", "Field notes");
+				press(Named(Enter));
+				until(() -> studio.title.get() == "Field notes" && sys.io.File.getContent(config).indexOf('"title": "Field notes"') > 0, "the heading to be written to the config and shown");
+				click("#rayde-ext-cap-terminal");
+				until(() -> sys.io.File.getContent(config).indexOf('"terminal"') > 0, "a capability to be written to the config");
+				var text = sys.io.File.getContent(config);
+				if (text.indexOf('"id": "reset"') < 0 || text.indexOf('"main": "ext/main.rays"') < 0)
+					throw "the form should leave what it did not change as it was: " + text;
+				shot("extension-config-edited");
+				bench.openFile(rays);
+				// A mistake as it is typed: the view stays as it was, the error lands in Problems, and the line opens from the Console.
 				var buffer = bench.buffer(rays), good = buffer.get();
 				buffer.set(StringTools.replace(good, "var count = signal(0);", "var = signal(0);"));
 				bench.edited(rays);
 				until(() -> bench.problems.get().length > 0, "the typed mistake to be found");
+				if (!says("ext/main.rays"))
+					throw "the last view that ran should stay while the source has a mistake";
 				bench.showPanel("problems");
 				shot("extension-error");
 				buffer.set(good);
 				bench.edited(rays);
-				until(() -> bench.problems.get().length == 0 && says("src/Main.hx"), "the fixed extension to run again");
+				until(() -> bench.problems.get().length == 0 && !studio.stale.get() && says("ext/main.rays"), "the fixed extension to run again");
 				shot("extension-fixed");
 			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
@@ -530,10 +555,12 @@ class Snapshots {
 		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
-		var display = Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
+		// A fixture with a .rayext is an extension project, opened from that file with no build.
+		var rayext = root + "/notes.rayext", extension = sys.FileSystem.exists(rayext) ? Manifest.read(rayext) : null;
+		var display = extension != null ? new Display(server, root, []) : Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
 		var view = Owner.root(tree, s -> {
 			stop = s;
-			return bench = new Workbench({display: display, name: name, runtime: "ash"});
+			return bench = new Workbench({display: display, name: extension != null ? extension.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension});
 		});
 		function settle(?frames:Int):Void
 			for (_ in 0...(frames == null ? 20 : frames)) {
@@ -564,7 +591,7 @@ class Snapshots {
 		}
 		// A press and release on the first element `selector` finds, as the pointer makes them, once the form it is in has been scrolled to show it.
 		function click(selector:String):Void {
-			var found = ashui.css.Css.query(tree, view.node.id, selector), area = ashui.css.Css.query(tree, view.node.id, "#rayde-build");
+			var found = ashui.css.Css.query(tree, view.node.id, selector), area = ashui.css.Css.query(tree, view.node.id, "#rayde-build, #rayde-extension-config");
 			if (found.length == 0)
 				throw 'nothing matches $selector';
 			var scroller = area.length == 0 ? null : ashui.input.Scroll.at(area[0], tree);
@@ -617,7 +644,9 @@ class Snapshots {
 			if (!done())
 				throw 'timed out waiting for $what';
 		}
-		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type, hover, press, until);
+		if (extension != null)
+			bench.openProject();
+		steps(bench, extension != null ? extension.mainPath() : root + "/src/Main.hx", shot, settle, scroll, click, type, hover, press, until);
 		stop();
 		tree.dispose();
 		server.stop();

@@ -196,8 +196,9 @@
 
 /* Extension Studio: the Preview's bar and surface, and the lists in the Extension panel. */
 #rayde .rayde-studio-bar { border-bottom: 1px solid var(--border); }
-#rayde .rayde-studio-live { --ui-button-height: 26px; padding: 0 8px; gap: 6px; border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
-#rayde .rayde-studio-live:hover { color: var(--text-primary); }
+#rayde .rayde-studio-more .ui-dropdown-menu-chevron { display: none; }
+#rayde .rayde-dot { flex-shrink: 0; }
+#rayde .rayde-stale { background: color-mix(in srgb, var(--warning) 14%, transparent); border-bottom: 1px solid var(--border); }
 #rayde .rayde-studio-surface { background: var(--background); }
 #rayde .rayde-extension-pick { border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
 #rayde .rayde-extension-pick:hover { color: var(--text-primary); background: var(--accent-subtle); }

@@ -1,0 +1,18 @@
+{
+  "name": "Notes",
+  "version": "0.1.0",
+  "description": "A notes panel, written as a RayScript extension",
+  "main": "ext/main.rays",
+  "sources": ["ext"],
+  "mocks": "ext/studio.mocks.json",
+  "capabilities": ["workspace.read"],
+  "view": {
+    "title": "Notes",
+    "icon": "ext/notes.svg",
+    "location": "sidebar",
+    "tools": [
+      {"id": "add", "title": "Add a note", "icon": "ext/add.svg"},
+      {"id": "reset", "title": "Start again", "icon": "refresh"}
+    ]
+  }
+}

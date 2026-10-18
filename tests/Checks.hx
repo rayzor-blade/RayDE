@@ -6,6 +6,7 @@ import rayde.keys.KeyBindings;
 import rayde.ext.ExtensionHost;
 import rayde.ext.HostBinary;
 import rayde.ext.Manifest;
+import rayde.ext.OrderedJson;
 import rayde.keys.Keymaps;
 import rayde.run.Haxelib;
 import rayde.run.Runner;
@@ -286,6 +287,53 @@ class Checks {
 		var types = Manifest.read(dir + "/types.rayext");
 		check(types.name == "types" && types.problems.length >= 3, 'wrong types are named: ${types.problems}');
 		check(Manifest.isManifest("a/notes.rayext") && !Manifest.isManifest("build.hxml"), "a config file is known by its extension");
+		check(m.location == "sidebar" && m.viewTitle == "Notes" && m.viewIcon == null, "a view is in the sidebar, under the extension's name, with no icon, unless said otherwise");
+		sys.io.File.saveContent(dir + "/ext/notes.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="currentColor"/></svg>');
+		sys.io.File.saveContent(dir + "/view.rayext", '{"name": "V", "main": "ext/main.rays", "view": {"title": "My notes", "icon": "ext/notes.svg", "location": "panel"}}');
+		var v = Manifest.read(dir + "/view.rayext");
+		check(v.problems.length == 0 && v.viewTitle == "My notes" && v.viewIcon == "ext/notes.svg" && v.location == "panel", 'the view is read: ${v.problems} ${v.viewTitle} ${v.location}');
+		check(v.iconPath() == sys.FileSystem.fullPath(dir) + "/ext/notes.svg" && sys.FileSystem.exists(v.iconPath()), "the icon file's place is in full");
+		sys.io.File.saveContent(dir + "/odd.rayext", '{"name": "O", "main": "ext/main.rays", "view": {"icon": "nowhere.svg", "location": "moon"}}');
+		var odd = Manifest.read(dir + "/odd.rayext");
+		sys.io.File.saveContent(dir + "/tools.rayext", '{"name": "T", "main": "ext/main.rays", "view": {"tools": [{"id": "add", "title": "Add", "icon": "ext/notes.svg"}, {"id": "refresh", "icon": "refresh"}, {"title": "no id"}, {"id": "add"}, "text", {"id": "gone", "icon": "missing.svg"}]}}');
+		var tools = Manifest.read(dir + "/tools.rayext");
+		check(tools.tools.length == 3 && tools.tools[0].id == "add" && tools.tools[0].title == "Add" && tools.tools[1].title == "refresh" && tools.tools[1].icon == "refresh", 'tools are read, the title defaulting to the id: ${tools.tools}');
+		check(tools.toolIconPath(tools.tools[0]) == sys.FileSystem.fullPath(dir) + "/ext/notes.svg" && tools.toolIconPath(tools.tools[1]) == null, "a tool's icon is a file or a name");
+		check(tools.problems.length == 4, 'the tools that are wrong are named: ${tools.problems}');
+		check(odd.location == "sidebar" && odd.problems.length == 2, 'a wrong location and a missing icon are named: ${odd.problems}');
+
+		// A form edits the file and leaves the rest of it alone: the order of the keys, the keys it does not know, the text of numbers.
+		var text = '{\n  "zeta": 1.50,\n  "name": "Keep",\n  "contributes": {"commands": [{"id": "a"}]},\n  "main": "ext/main.rays"\n}\n';
+		sys.io.File.saveContent(dir + "/edit.rayext", text);
+		Manifest.setText(dir + "/edit.rayext", "version", "1.0.0");
+		Manifest.setText(dir + "/edit.rayext", "location", "secondary", true);
+		Manifest.setText(dir + "/edit.rayext", "title", "Keep it", true);
+		Manifest.setList(dir + "/edit.rayext", "capabilities", ["workspace.read", "terminal"]);
+		var edited = sys.io.File.getContent(dir + "/edit.rayext");
+		check(edited.indexOf('"zeta": 1.50') > 0, 'a number keeps its text: $edited');
+		check(edited.indexOf('"zeta"') < edited.indexOf('"name"') && edited.indexOf('"name"') < edited.indexOf('"contributes"') && edited.indexOf('"contributes"') < edited.indexOf('"main"') && edited.indexOf('"main"') < edited.indexOf('"version"'), 'keys stay in order and new ones go last: $edited');
+		check(edited.indexOf('"commands": [{') < 0 && edited.indexOf('"id": "a"') > 0, 'what the form does not know is kept: $edited');
+		var again = Manifest.read(dir + "/edit.rayext");
+		check(again.version == "1.0.0" && again.location == "secondary" && again.viewTitle == "Keep it" && again.capabilities.length == 2, 'the edit reads back: ${again.version} ${again.location} ${again.viewTitle}');
+		Manifest.setText(dir + "/edit.rayext", "location", null, true);
+		Manifest.setText(dir + "/edit.rayext", "title", "", true);
+		check(OrderedJson.get(OrderedJson.parse(sys.io.File.getContent(dir + "/edit.rayext")), "view") == null, "a view with nothing left in it is taken out");
+		var refused = false;
+		sys.io.File.saveContent(dir + "/refuse.rayext", "{ not json");
+		try
+			Manifest.setText(dir + "/refuse.rayext", "name", "x")
+		catch (_:Dynamic)
+			refused = true;
+		check(refused && sys.io.File.getContent(dir + "/refuse.rayext") == "{ not json", "a file that is not JSON is not overwritten");
+		for (sample in ['{"a": [1, 2.5e3, -4], "b": {"c": null, "d": true}, "e": "x\\ny\\u00e9"}', "[]", "{}", '"s"'])
+			check(OrderedJson.stringify(OrderedJson.parse(sample), "") != null, 'JSON is read: $sample');
+		var bad = 0;
+		for (sample in ['{"a": }', '{"a" 1}', "[1, 2", '"open', "{,}", "tru"])
+			try
+				OrderedJson.parse(sample)
+			catch (_:Dynamic)
+				bad++;
+		check(bad == 6, 'six broken texts are all refused: $bad');
 	}
 
 	/** An extension in a real rayscript-host: a view comes back as operations, an event goes in, an error comes with its place. */

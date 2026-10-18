@@ -5,6 +5,7 @@ import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.build.HxmlFile;
+import rayde.ext.Manifest;
 import rayde.keys.KeyBindings;
 import rayde.run.LibraryManager;
 import rayde.settings.Appearance;
@@ -12,6 +13,7 @@ import rayde.term.Settings;
 import rayde.ui.AppearanceSettings;
 import rayde.ui.BuildSettings;
 import rayde.ui.CommandCenter.CenterAction;
+import rayde.ui.ExtensionConfig;
 import rayde.ui.ExtensionSettings;
 import rayde.ui.KeyBindingSettings;
 import rayde.ui.LibrarySettings;
@@ -36,7 +38,11 @@ typedef SettingsPageProps = {
 	onBuildChanged:Void->Void,
 	onTerminalChanged:Void->Void,
 	onAppearanceChanged:Void->Void,
-	onBindingsChanged:Void->Void
+	onBindingsChanged:Void->Void,
+	/** The extension this project is, when it is one: its config is a section, and the build and libraries are not. */
+	extension:Null<Manifest>,
+	onExtensionChanged:Manifest->Void,
+	onEditExtensionText:Void->Void
 };
 
 /**
@@ -46,6 +52,7 @@ typedef SettingsPageProps = {
  */
 class SettingsPage extends Component<SettingsPageProps> {
 	public static final categories:Array<SettingsCategory> = [
+		{id: "extension", label: "Extension", icon: Icons.PUZZLE_LINE},
 		{id: "build", label: "Build", icon: Icons.HAMMER_LINE},
 		{id: "libraries", label: "Libraries", icon: Icons.BOOK_2_LINE},
 		{id: "terminal", label: "Terminal", icon: Icons.TERMINAL_BOX_LINE},
@@ -54,11 +61,15 @@ class SettingsPage extends Component<SettingsPageProps> {
 		{id: "extensions", label: "Extensions", icon: Icons.PUZZLE_LINE}
 	];
 
-	/** The section named `id`, or the first. */
+	/** The section named `id`, or the first a Haxe project has. */
 	public static function category(id:String):SettingsCategory {
 		var found = Lambda.find(categories, c -> c.id == id);
-		return found == null ? categories[0] : found;
+		return found == null ? categories[1] : found;
 	}
+
+	/** Whether a project has the section: the config of an extension only for an extension, the build and libraries for the rest. */
+	function has(c:SettingsCategory):Bool
+		return props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
 
 	function render():Element
 		return <div id="rayde-settings" class="flex flex-1 min-h-0">
@@ -69,7 +80,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 		</div>;
 
 	function nav(current:String):Element
-		return <div class="flex flex-col gap-1">{[for (c in categories) navItem(c, c.id == current)]}</div>;
+		return <div class="flex flex-col gap-1">{[for (c in categories) if (has(c)) navItem(c, c.id == current)]}</div>;
 
 	function navItem(c:SettingsCategory, on:Bool):Element {
 		var item = <div id={"rayde-settings-nav-" + c.id} class="rayde-nav-item flex items-center gap-3 px-3 cursor-pointer" height={34} onClick={_ -> props.category.set(c.id)}>
@@ -89,6 +100,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root}/>;
+			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}
 
