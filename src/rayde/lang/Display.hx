@@ -42,21 +42,25 @@ class Display {
 	public final cwd:String;
 	public final args:Array<String>;
 
+	/** The build file this was read from, when it was read from one. */
+	public final hxml:Null<String>;
+
 	var id = 0;
 
 	/** Files last typed from contents rather than from disk. */
 	final edited = new Map<String, Bool>();
 
-	public function new(server:CompilerServer, cwd:String, args:Array<String>) {
+	public function new(server:CompilerServer, cwd:String, args:Array<String>, ?hxml:String) {
 		this.server = server;
 		this.cwd = cwd;
 		this.args = args;
+		this.hxml = hxml;
 	}
 
 	/** A project read from its `.hxml`, run from that file's folder. */
 	public static function ofHxml(server:CompilerServer, hxml:String):Display {
 		var full = sys.FileSystem.fullPath(hxml);
-		return new Display(server, haxe.io.Path.directory(full), Hxml.read(full));
+		return new Display(server, haxe.io.Path.directory(full), Hxml.read(full), full);
 	}
 
 	public function completion(file:String, offset:Int, ?contents:String, auto = false):Completion {

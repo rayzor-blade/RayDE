@@ -84,12 +84,14 @@ class FileTabs extends Component<FileTabsProps> {
 				scroll.scrollTo(scroll.x.get() + right - view.width + 8, 0);
 		};
 		LayoutTree.flushHooks.push(hook);
+		// The tabs it looks for go when they are rebuilt or the strip is, and the hook with them.
+		ashui.reactive.Owner.onCleanup(() -> LayoutTree.flushHooks.remove(hook));
 	}
 
 	function strip(files:Array<String>, front:String, dirty:Array<String>):Element {
 		reveal();
 		// A trailing space the width of a foot, so the last tab's foot is not cut off at the end of the row.
-		return <div class="flex items-end shrink-0">{tabs(files, front, dirty)}<div class="shrink-0" width={SWEEP}/></div>;
+		return <div class="flex items-end gap-1 shrink-0">{tabs(files, front, dirty)}<div class="shrink-0" width={SWEEP}/></div>;
 	}
 
 	function tabs(files:Array<String>, front:String, dirty:Array<String>):Array<Element>

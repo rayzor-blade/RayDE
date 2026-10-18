@@ -76,6 +76,9 @@ class Snapshots {
 				shot("tabs-many");
 				bench.active.set(file);
 				shot("tabs-many-first");
+				// Every tab closed: the welcome page, now with recent files.
+				bench.closeAll();
+				shot("welcome-recent");
 			});
 			scenario(dark, "broken", (bench, file, shot, settle) -> {
 				bench.openFile(file);
@@ -87,7 +90,7 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
-		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow and after a failed build, in both themes");
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */
@@ -118,6 +121,9 @@ class Snapshots {
 				if (entry != ".rayde")
 					deleteTree(haxe.io.Path.join([to, entry]));
 		copy(from, to);
+		// What a run opened last is not carried into the next, so the welcome page starts as it would in a new project.
+		if (sys.FileSystem.exists(to + "/.rayde/recent.txt"))
+			sys.FileSystem.deleteFile(to + "/.rayde/recent.txt");
 		return to;
 	}
 

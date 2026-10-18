@@ -18,6 +18,7 @@ import ashui.ui.Ref;
 import rayde.lang.Display;
 import rayde.run.Runner;
 import rayde.ui.FileTabs;
+import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
 
 using StringTools;
@@ -52,6 +53,11 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The open files with edits not yet written to disk. */
 	public final dirty = Signal.make(([] : Array<String>));
+
+	/** The files opened last in this project, newest first, kept in .rayde/recent.txt beside the build file. */
+	public final recent = Signal.make(([] : Array<String>));
+
+	static var compiler:Null<String> = null;
 
 	/** Whether the command center is open. */
 	public final quickOpen = Signal.make(false);
@@ -91,6 +97,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (open.get().indexOf(file) < 0)
 			open.set(open.get().concat([file]));
 		active.set(file);
+		remember(file);
 		check(file);
 	}
 
@@ -104,6 +111,62 @@ class Workbench extends Component<WorkbenchProps> {
 		if (active.get() == file)
 			active.set(rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
 		open.set(rest);
+	}
+
+	function recentFile():String
+		return haxe.io.Path.join([props.display.cwd, ".rayde", "recent.txt"]);
+
+	function relative(path:String):String {
+		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
+		return path.startsWith(root) ? path.substr(root.length) : path;
+	}
+
+	function loadRecent():Void {
+		var list = [];
+		if (sys.FileSystem.exists(recentFile()))
+			for (line in sys.io.File.getContent(recentFile()).split("\n")) {
+				var path = haxe.io.Path.join([props.display.cwd, line]);
+				if (line != "" && sys.FileSystem.exists(path))
+					list.push(path);
+			}
+		recent.set(list);
+	}
+
+	/** Puts `file` first among the recent files, and keeps the list. */
+	function remember(file:String):Void {
+		var list = [file].concat([for (f in recent.get()) if (f != file) f]).slice(0, 6);
+		recent.set(list);
+		try {
+			var dir = haxe.io.Path.join([props.display.cwd, ".rayde"]);
+			if (!sys.FileSystem.exists(dir))
+				sys.FileSystem.createDirectory(dir);
+			sys.io.File.saveContent(recentFile(), [for (f in list) relative(f)].join("\n"));
+		} catch (_:Dynamic) {}
+	}
+
+	/** The file of the build's main class, when the build names one and a source folder has it. */
+	function mainFile():Null<String> {
+		var args = props.display.args;
+		for (i in 0...args.length - 1)
+			if (args[i] == "--main" || args[i] == "-main" || args[i] == "-m")
+				for (cp in classpaths()) {
+					var path = haxe.io.Path.join([cp.dir, args[i + 1].split(".").join("/") + ".hx"]);
+					if (sys.FileSystem.exists(path))
+						return path;
+				}
+		return null;
+	}
+
+	/** The compiler's version, asked once. */
+	function compilerVersion():String {
+		if (compiler == null)
+			compiler = try {
+				var p = new sys.io.Process(props.display.server.haxe, ["--version"]);
+				var v = StringTools.trim(p.stdout.readAll().toString());
+				p.close();
+				"Haxe " + v;
+			} catch (_:Dynamic) "Haxe";
+		return compiler;
 	}
 
 	/** Opens `file` with the cursor at `line` and `character` (from 0), scrolled into view, and gives the editor the keyboard. */
@@ -360,6 +423,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function render():Element {
 		runner = new Runner(props.display);
+		loadRecent();
 		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
@@ -487,19 +551,22 @@ class Workbench extends Component<WorkbenchProps> {
 		return <tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={expanded}>{children}</tree-item>;
 	}
 
-	/** The open files' tabs, the path to the file in front, and its editor. */
+	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */
 	function editorCard():Element
 		return <div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0">
-			<file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} trailing={editorMenu()}/>
+			<for {has in [open.get().length > 0]}>${tabStrip(has)}</for>
 			<for {files in [open.get()]}>${editors(files)}</for>
 		</div>;
 
+	function tabStrip(has:Bool):Element {
+		if (!has)
+			return <div/>;
+		return <file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} trailing={editorMenu()}/>;
+	}
+
 	function editors(files:Array<String>):Element {
 		if (files.length == 0)
-			return <div class="flex flex-col flex-1 items-center justify-center gap-3">
-				<icon document={Icons.BRACES_LINE} class="size-8 text-text-tertiary"/>
-				<text class="text-sm text-text-tertiary">Open a file from the Explorer to start editing.</text>
-			</div>;
+			return welcome();
 		return <div class="flex flex-col flex-1 min-h-0">
 			<for {file in [active.get()]}>${breadcrumb(file)}</for>
 			<tabs id="rayde-tabs" value={active} class="flex-1 min-h-0">
@@ -508,6 +575,12 @@ class Workbench extends Component<WorkbenchProps> {
 			</tabs>
 		</div>;
 	}
+
+	function welcome():Element
+		return <welcome name={props.name} runtime={runtime()} root={props.display.cwd}
+			build={props.display.hxml == null ? "build.hxml" : haxe.io.Path.withoutDirectory(props.display.hxml)} haxe={compilerVersion()}
+			sources={[for (cp in classpaths()) cp.label]} files={projectFiles().length} main={mainFile()} recent={recent} problems={problems}
+			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run}/>;
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
