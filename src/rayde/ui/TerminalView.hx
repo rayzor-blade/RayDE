@@ -31,6 +31,8 @@ typedef TerminalViewProps = {
 	?onExit:Int->Void,
 	/** Called when the view takes the keyboard, so the workbench knows which terminal is in front. */
 	?onFocus:Void->Void,
+	/** Whether the workbench takes a key press, which the terminal then leaves alone: the keys that toggle it, and a few more. */
+	?reserved:KeyEvent->Bool,
 	/** How the cursor is drawn and what a selection does, and a number that changes when they change. */
 	?settings:Settings,
 	?changes:Signal<Int>
@@ -361,7 +363,7 @@ class TerminalView extends Component<TerminalViewProps> {
 			case _:
 		}
 		// The workbench's own shortcuts, and the keys that would move focus out, are not the program's.
-		if (command || e.control && e.key.match(Character("`")))
+		if (command || e.control && e.key.match(Character("`")) || props.reserved != null && props.reserved(e))
 			return;
 		var text = KeyMap.encode(e.key, e.shift, e.control, e.alt, screen.applicationCursor);
 		if (text == null)

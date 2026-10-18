@@ -353,9 +353,35 @@ class Snapshots {
 				var keysFile = haxe.io.Path.join([root, ".rayde", "keybindings.json"]);
 				bench.openSettings("keys");
 				shot("settings-keys");
+				// A keymap of another editor: choosing it writes the choice, its keys run the commands and the default's no longer do.
+				var mac = Sys.systemName() == "Mac";
+				click("#rayde-keymap-intellij");
+				if (Store.section(root, "keymap").preset != "intellij")
+					throw "choosing a keymap did not write it";
+				shot("settings-keymap-intellij");
+				// The command center offers the same choice, and a keymap chosen there is shown on the page.
+				bench.selectKeymap();
+				shot("keymap-picker");
+				bench.quickOpen.set(false);
+				click("#rayde-keys-filter");
+				press(Character(mac ? "o" : "n"), true, !mac, false, mac);
+				until(() -> bench.quickOpen.get(), "the keymap's key for Go to File to open it");
+				bench.quickOpen.set(false);
+				press(Character("p"), false, !mac, false, mac);
+				if (bench.quickOpen.get())
+					throw "a key of the keymap left behind still did its command";
+				bench.useKeymap("sublime");
+				click("#rayde-keys-filter");
+				shot("settings-keymap-sublime");
+				if (Store.section(root, "keymap").preset != "sublime")
+					throw "choosing a keymap from the center did not write it";
+				click("#rayde-keymap-vscode");
+				if (Store.section(root, "keymap").preset != "vscode")
+					throw "going back to the default keymap did not write it";
 				type("#rayde-keys-filter", "terminal");
 				shot("settings-keys-filtered");
 				type("#rayde-keys-filter", "toggle explorer");
+				scroll("#rayde-keys", 5000);
 				click("#rayde-key-edit-explorer");
 				shot("settings-keys-recording");
 				if (bench.boundsOf("#rayde-key-recorder") == null)
@@ -377,10 +403,10 @@ class Snapshots {
 					throw "the key chosen for Toggle Explorer did not run it";
 				press(Character("e"), false, false, true);
 				press(Character("p"), false, false, false, true);
-				if (!bench.quickOpen.get())
-					throw "Cmd+P should open the command center";
+				until(() -> bench.quickOpen.get(), "Cmd+P to open the command center");
 				bench.quickOpen.set(false);
 				type("#rayde-keys-filter", "run");
+				scroll("#rayde-keys", 5000);
 				click("#rayde-key-edit-run");
 				press(Character("p"), false, false, false, true);
 				shot("settings-keys-conflict");

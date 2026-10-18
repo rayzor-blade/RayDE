@@ -1,34 +1,20 @@
 package rayde.keys;
 
+import rayde.settings.Store;
+
 using StringTools;
 
 /** The keys a command has, and where they come from: the defaults, or a change the user made. */
 typedef Binding = {command:String, chord:Null<Chord>, user:Bool};
 
 /**
- * Which key does which command. Each command has at most one key: its default, or the one the user chose,
- * which is kept in `.rayde/keybindings.json` as a list of `{"command": ..., "key": ...}`, a key of "" taking
- * the command's key away. Keys are chords as `Chord.parse` reads them, with `mod` for Command or Control.
+ * Which key does which command. Each command has at most one key: the one its keymap gives it (the keymap of
+ * an editor people know, VS Code's unless another is chosen), or the one the user chose, which is kept in
+ * `.rayde/keybindings.json` as a list of `{"command": ..., "key": ...}`, a key of "" taking the command's key
+ * away. The keymap is the `keymap` section of `.rayde/settings.json`; the user's own changes stay on top of it. Keys are chords as `Chord.parse` reads them, with `mod` for Command or Control.
  * The same key on two commands is allowed and shown as a conflict; the first command in the list runs.
  */
 class KeyBindings {
-	/** The keys commands have until the user changes them, in the order the page lists them. */
-	static final defaults = [
-		{command: "quickopen", key: "mod+p"},
-		{command: "commands", key: "mod+shift+p"},
-		{command: "gotoline", key: "mod+g"},
-		{command: "save", key: "mod+s"},
-		{command: "close", key: "mod+w"},
-		{command: "run", key: "f5"},
-		{command: "stop", key: "shift+f5"},
-		{command: "definition", key: "f12"},
-		{command: "panel", key: "mod+j"},
-		{command: "terminal", key: "ctrl+`"},
-		{command: "newterminal", key: "ctrl+shift+`"},
-		{command: "splitterminal", key: "mod+\\"},
-		{command: "settings", key: "mod+,"}
-	];
-
 	public final mac:Bool;
 
 	/** What the user changed, by command: a chord, or null for a key taken away. */
@@ -37,27 +23,50 @@ class KeyBindings {
 	/** The commands the user changed, in the order they did it. */
 	final order:Array<String> = [];
 
-	final base = new Map<String, Chord>();
+	/** The id of the keymap in use. */
+	public var preset(default, null) = Keymaps.DEFAULT;
+
+	var base = new Map<String, Chord>();
 
 	/** The commands that have a key, in listing order, and the chord text each is found by. */
 	var index = new Map<String, String>();
 
-	public function new(mac:Bool) {
+	public function new(mac:Bool, preset = Keymaps.DEFAULT) {
 		this.mac = mac;
-		for (d in defaults) {
-			var chord = Chord.parse(d.key, mac);
+		use(preset);
+		rebuild();
+	}
+
+	/** Takes the keys of the keymap `id`, the default when there is none of that name. */
+	function use(id:String):Void {
+		var map = Keymaps.find(id);
+		preset = map.id;
+		base = new Map();
+		for (e in map.keys) {
+			var text = Keymaps.key(map, e.command, mac), chord = text == null ? null : Chord.parse(text, mac);
 			if (chord != null)
-				base.set(d.command, chord);
+				base.set(e.command, chord);
 		}
+	}
+
+	/**
+	 * Changes the keymap. What the user changed stays, except a change that now says what the keymap does,
+	 * which is no change.
+	 */
+	public function setPreset(id:String):Void {
+		use(id);
+		for (c in order.copy())
+			put(c, changes.get(c));
 		rebuild();
 	}
 
 	static function file(root:String):String
 		return haxe.io.Path.join([root, ".rayde", "keybindings.json"]);
 
-	/** The bindings for the project at `root`: the defaults with the user's changes, when the file holds any. */
+	/** The bindings for the project at `root`: its keymap, with the user's changes on top when the file holds any. */
 	public static function read(root:String, mac:Bool):KeyBindings {
-		var k = new KeyBindings(mac);
+		var chosen = Store.section(root, "keymap").preset;
+		var k = new KeyBindings(mac, chosen == null ? Keymaps.DEFAULT : Std.string(chosen));
 		try {
 			if (sys.FileSystem.exists(file(root))) {
 				var json:Dynamic = haxe.Json.parse(sys.io.File.getContent(file(root)));
@@ -76,7 +85,12 @@ class KeyBindings {
 		return k;
 	}
 
-	public function save(root:String):Void
+	public function save(root:String):Void {
+		Store.save(root, "keymap", {preset: preset});
+		saveChanges(root);
+	}
+
+	function saveChanges(root:String):Void
 		try {
 			var dir = haxe.io.Path.join([root, ".rayde"]);
 			if (changes.keys().hasNext()) {
@@ -144,6 +158,10 @@ class KeyBindings {
 	public function commandFor(chord:Chord):Null<String>
 		return index.get(chord.toString());
 
+	/** Whether `command` has a key in the keymap in use, whatever the user changed. */
+	public function inKeymap(command:String):Bool
+		return base.exists(command);
+
 	/** The label of `command`'s key as the page and the menus show it, or null when it has none. */
 	public function label(command:String):Null<String> {
 		var chord = of(command);
@@ -151,7 +169,7 @@ class KeyBindings {
 	}
 
 	function commandsWithKeys():Array<String> {
-		var out = [for (d in defaults) d.command];
+		var out = Keymaps.order.copy();
 		for (c in order)
 			if (out.indexOf(c) < 0)
 				out.push(c);

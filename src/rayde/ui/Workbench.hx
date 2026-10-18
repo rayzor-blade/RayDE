@@ -21,6 +21,7 @@ import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
+import rayde.keys.Keymaps;
 import rayde.lang.Display;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
@@ -129,6 +130,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** haxelib's installs and removals, which go on while the Settings page is out of view. */
 	var libraries:LibraryManager;
+
+	/** Changes when a key does, so the Settings page draws the keys again. */
+	final bindingsRevision = Signal.make(0);
+
+	/** The commands whose keys the terminal leaves to the workbench while it has the keyboard; any other key is the program's. */
+	static final terminalKeepsOut = ["terminal", "newterminal", "splitterminal", "panel", "quickopen", "commands", "settings"];
 
 	/** The commands, which the center lists, the Settings page shows and the keys run. */
 	var commandList:Array<CenterAction> = [];
@@ -760,6 +767,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "libraries", label: "Manage Libraries", icon: Icons.BOOK_2_LINE, run: () -> openSettings("libraries")},
 			{id: "colorscheme", label: "Color Scheme", icon: Icons.PALETTE_LINE, run: () -> openSettings("appearance")},
 			{id: "keybindings", label: "Open Keyboard Shortcuts", icon: Icons.KEYBOARD_LINE, run: () -> openSettings("keys")},
+			{id: "keymap", label: "Select Keymap...", icon: Icons.KEYBOARD_LINE, run: selectKeymap},
 			{id: "extensions", label: "Show Extensions", icon: Icons.PUZZLE_LINE, run: () -> openSettings("extensions")},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
@@ -778,6 +786,33 @@ class Workbench extends Component<WorkbenchProps> {
 	function refreshShortcuts():Void
 		for (a in commandList)
 			a.shortcut = bindings.label(a.id);
+
+	/** What follows a change to a key: the center's labels, and the Settings page. */
+	function bindingsChanged():Void {
+		refreshShortcuts();
+		bindingsRevision.set(bindingsRevision.get() + 1);
+	}
+
+	/** Whether the key pressed does a command the terminal gives up its keyboard for. */
+	function reservedKey(e:KeyEvent):Bool {
+		var chord = Chord.ofEvent(e.key, e.shift, e.control, e.alt, e.superKey), id = chord == null ? null : bindings.commandFor(chord);
+		return id != null && terminalKeepsOut.indexOf(id) >= 0;
+	}
+
+	/** Takes the keys of the keymap `id`, keeps the choice, and shows it everywhere keys are shown. */
+	public function useKeymap(id:String):Void {
+		bindings.setPreset(id);
+		bindings.save(props.display.cwd);
+		bindingsChanged();
+		say("Keymap: " + Keymaps.find(id).label);
+	}
+
+	/** Opens the center to choose a keymap, those of the editors people know. */
+	public function selectKeymap():Void
+		openPicker("Select a keymap", [
+			for (m in Keymaps.available(bindings.mac))
+				{id: m.id, label: m.label + (m.id == bindings.preset ? "  (current)" : ""), icon: Icons.KEYBOARD_LINE, run: () -> useKeymap(m.id)}
+		]);
 
 	/** The file the Settings page in view is kept in, for copying its path. */
 	function settingsFile():Null<String> {
@@ -1160,7 +1195,7 @@ class Workbench extends Component<WorkbenchProps> {
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} terminal={terminalSettings} appearance={appearance} bindings={bindings}
 					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
-					onAppearanceChanged={() -> settingsRevision.set(settingsRevision.get() + 1)} onBindingsChanged={refreshShortcuts}/>
+					onAppearanceChanged={() -> settingsRevision.set(settingsRevision.get() + 1)} onBindingsChanged={bindingsChanged} bindingChanges={bindingsRevision}/>
 			</tabs-content>;
 		return pageOfFile(file);
 	}
@@ -1233,7 +1268,7 @@ class Workbench extends Component<WorkbenchProps> {
 		}
 		var id = s.id;
 		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> panelShown.get() && bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision}
-			onExit={code -> say(s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)}/>;
+			onExit={code -> say(s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={reservedKey}/>;
 	}
 
 	/** The terminals running down the right of the pane, a screen's terminals together; the one in front lit. */

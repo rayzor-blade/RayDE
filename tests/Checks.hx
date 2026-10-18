@@ -3,6 +3,7 @@ import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
+import rayde.keys.Keymaps;
 import rayde.run.Haxelib;
 import rayde.run.Runner;
 import rayde.settings.Appearance;
@@ -124,6 +125,41 @@ class Checks {
 		again.resetAll();
 		again.save(root);
 		check(!sys.FileSystem.exists(root + "/.rayde/keybindings.json") && !again.anyChanged(), "with nothing changed there is no file");
+
+		// Keymaps: each key of each is a chord, and no keymap gives one key to two commands, on a Mac or elsewhere.
+		for (m in Keymaps.all)
+			for (mac in [true, false]) {
+				var seen = new Map<String, String>();
+				for (e in m.keys) {
+					var text = Keymaps.key(m, e.command, mac), chord = text == null ? null : Chord.parse(text, mac);
+					check(text == null || chord != null, '${m.id}: "$text" for ${e.command} is not a chord');
+					check(Keymaps.order.indexOf(e.command) >= 0, '${m.id} binds ${e.command}, which no keymap order names');
+					if (chord == null)
+						continue;
+					check(!seen.exists(chord.toString()), '${m.id} gives ${chord.label(mac)} to ${seen.get(chord.toString())} and ${e.command}');
+					seen.set(chord.toString(), e.command);
+				}
+			}
+		check(Keymaps.available(true).map(m -> m.id).indexOf("visualstudio") < 0 && Keymaps.available(false).map(m -> m.id).indexOf("xcode") < 0, "a keymap of another platform is not offered");
+		var jetbrains = new KeyBindings(true, "intellij");
+		check(jetbrains.label("quickopen") == "⇧⌘O" && jetbrains.label("run") == "⌃R" && jetbrains.label("terminal") == "⌥F12", 'IntelliJ on a Mac: ${jetbrains.label("quickopen")} ${jetbrains.label("run")} ${jetbrains.label("terminal")}');
+		check(new KeyBindings(false, "intellij").label("quickopen") == "Ctrl+Shift+N" && new KeyBindings(false, "intellij").label("settings") == "Ctrl+Alt+S", "IntelliJ elsewhere");
+		check(new KeyBindings(true, "nonesuch").preset == "vscode" && new KeyBindings(true).label("quickopen") == "⌘P", "an unknown keymap is the default");
+		var moving = new KeyBindings(true);
+		moving.set("run", p("f6"));
+		moving.set("gotoline", p("cmd+l"));
+		moving.setPreset("intellij");
+		check(moving.label("run") == "F6" && moving.changed("run"), "a change stays when the keymap does");
+		check(!moving.changed("gotoline") && moving.label("gotoline") == "⌘L", "a change that is now what the keymap says is no change");
+		moving.setPreset("sublime");
+		check(moving.label("stop") == null && !moving.inKeymap("stop") && moving.inKeymap("run") && moving.commandFor(p("cmd+b")) == null, "a command the keymap has no key for has none, and one changed leaves the keymap's key free");
+		check(moving.commandFor(p("cmd+shift+p")) == "commands" && moving.commandFor(p("cmd+shift+o")) == null, "the keymap in use answers to its own keys");
+		moving.save(root);
+		var restored = KeyBindings.read(root, true);
+		check(restored.preset == "sublime" && restored.label("run") == "F6" && restored.label("commands") == "⇧⌘P", "the keymap and the changes on it come back from the files");
+		restored.setPreset("vscode");
+		restored.resetAll();
+		restored.save(root);
 
 		Store.save(root, "terminal", {cursor: "bar"});
 		Store.save(root, "elsewhere", {kept: true});

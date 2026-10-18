@@ -29,6 +29,8 @@ typedef SettingsPageProps = {
 	terminal:Settings,
 	appearance:Appearance,
 	bindings:KeyBindings,
+	/** Changes when the keys do, from the page or elsewhere. */
+	bindingChanges:Signal<Int>,
 	commands:Array<CenterAction>,
 	libraries:LibraryManager,
 	onBuildChanged:Void->Void,
@@ -85,7 +87,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "libraries": <library-settings file={props.build} root={props.root} manager={props.libraries} onChanged={props.onBuildChanged}/>;
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
-			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged}/>;
+			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}

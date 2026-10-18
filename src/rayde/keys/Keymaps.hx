@@ -1,0 +1,114 @@
+package rayde.keys;
+
+/** The key a keymap gives a command: `key` as chord text, or on a Mac `mac` when that is given. An empty key is none. */
+typedef Key = {command:String, key:String, ?mac:String};
+
+/**
+ * The keys of another editor, by the name it is known by. `platform` limits where it is offered: `mac` for an
+ * editor that exists only there, `other` for one that does not exist on a Mac, empty for both.
+ */
+typedef Keymap = {id:String, label:String, note:String, platform:String, keys:Array<Key>};
+
+/**
+ * Keymaps for the commands RayDE has, as the editors people know bind them. A command an editor has no key for
+ * has none here, and a command RayDE has that the editor lacks keeps none. `mod` is Command on a Mac and Control
+ * elsewhere. Chord sequences, such as Sublime's and VS Code's Cmd+K Cmd+S, are not expressible, so those commands
+ * go without a key.
+ */
+class Keymaps {
+	public static inline var DEFAULT = "vscode";
+
+	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
+	public static final order = [
+		"quickopen", "commands", "gotoline", "run", "stop", "save", "close", "definition", "panel", "explorer", "problems", "output", "terminal", "newterminal",
+		"splitterminal", "settings"
+	];
+
+	static function k(command:String, key:String, ?mac:String):Key
+		return {command: command, key: key, mac: mac};
+
+	public static final all:Array<Keymap> = [
+		{
+			id: "vscode",
+			label: "Visual Studio Code",
+			note: "RayDE's own: quick open, the command palette and the panel toggles as in VS Code.",
+			platform: "",
+			keys: [
+				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
+				k("close", "mod+w"), k("definition", "f12"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
+				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,")
+			]
+		},
+		{
+			id: "intellij",
+			label: "IntelliJ IDEA",
+			note: "JetBrains IDEs: Find Action, Go to Declaration, tool windows on the number keys.",
+			platform: "",
+			keys: [
+				k("quickopen", "ctrl+shift+n", "cmd+shift+o"), k("commands", "ctrl+shift+a", "cmd+shift+a"), k("gotoline", "ctrl+g", "cmd+l"),
+				k("run", "shift+f10", "ctrl+r"), k("stop", "ctrl+f2", "cmd+f2"), k("save", "mod+s"), k("close", "ctrl+f4", "cmd+w"), k("definition", "ctrl+b", "cmd+b"),
+				k("panel", "ctrl+shift+f12", "cmd+shift+f12"), k("explorer", "alt+1", "cmd+1"), k("problems", "alt+6", "cmd+6"), k("output", "alt+4", "cmd+4"),
+				k("terminal", "alt+f12"), k("settings", "ctrl+alt+s", "cmd+,")
+			]
+		},
+		{
+			id: "sublime",
+			label: "Sublime Text",
+			note: "Go to Anything, the command palette and Build.",
+			platform: "",
+			keys: [
+				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "mod+b"), k("save", "ctrl+shift+s", "cmd+alt+s"),
+				k("close", "mod+w"), k("definition", "f12"), k("settings", "", "cmd+,")
+			]
+		},
+		{
+			id: "eclipse",
+			label: "Eclipse",
+			note: "Open Resource, Quick Access and Open Declaration.",
+			platform: "",
+			keys: [
+				k("quickopen", "mod+shift+r"), k("commands", "mod+3"), k("gotoline", "mod+l"), k("run", "ctrl+f11", "cmd+shift+f11"), k("stop", "mod+f2"),
+				k("save", "mod+shift+s"), k("close", "mod+w"), k("definition", "f3"), k("settings", "", "cmd+,")
+			]
+		},
+		{
+			id: "visualstudio",
+			label: "Visual Studio",
+			note: "Go To All, Start Debugging and Solution Explorer.",
+			platform: "other",
+			keys: [
+				k("quickopen", "ctrl+t"), k("commands", "ctrl+q"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "ctrl+shift+s"),
+				k("close", "ctrl+f4"), k("definition", "f12"), k("explorer", "ctrl+alt+l"), k("output", "ctrl+alt+o"), k("terminal", "ctrl+`")
+			]
+		},
+		{
+			id: "xcode",
+			label: "Xcode",
+			note: "Open Quickly, Run and Stop, and the navigator on Cmd+0.",
+			platform: "mac",
+			keys: [
+				k("quickopen", "cmd+shift+o"), k("commands", "cmd+shift+a"), k("gotoline", "cmd+l"), k("run", "cmd+r"), k("stop", "cmd+."), k("save", "cmd+alt+s"),
+				k("close", "cmd+w"), k("definition", "ctrl+cmd+j"), k("settings", "cmd+,"), k("explorer", "cmd+0"), k("panel", "cmd+shift+y")
+			]
+		}
+	];
+
+	/** The keymap named `id`, or the default when there is none of that name. */
+	public static function find(id:Null<String>):Keymap {
+		var found = Lambda.find(all, m -> m.id == id);
+		return found == null ? all[0] : found;
+	}
+
+	/** The keymaps that exist where the program runs. */
+	public static function available(mac:Bool):Array<Keymap>
+		return [for (m in all) if (m.platform == "" || m.platform == (mac ? "mac" : "other")) m];
+
+	/** The chord text `keymap` gives `command` here, or null. */
+	public static function key(keymap:Keymap, command:String, mac:Bool):Null<String> {
+		var entry = Lambda.find(keymap.keys, e -> e.command == command);
+		if (entry == null)
+			return null;
+		var text = mac && entry.mac != null ? entry.mac : entry.key;
+		return text == "" ? null : text;
+	}
+}

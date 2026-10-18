@@ -191,3 +191,7 @@
 #rayde .rayde-keycap { min-width: 64px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }
 #rayde .rayde-keycap:hover { border-color: var(--border-hover); }
 #rayde .rayde-recorder { border: 1px solid var(--primary); border-radius: var(--radius-md); corner-shape: squircle; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--text-primary); }
+#rayde .rayde-keymap-tile { border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-keymap-tile:hover { border-color: var(--border-hover); }
+#rayde .rayde-keymap-tile[data-on] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+#rayde .rayde-keycap-small { min-width: 48px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }

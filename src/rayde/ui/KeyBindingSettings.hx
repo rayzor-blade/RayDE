@@ -10,6 +10,8 @@ import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
+import rayde.keys.Keymaps;
+import rayde.keys.Keymaps.Keymap;
 import rayde.ui.CommandCenter.CenterAction;
 
 using StringTools;
@@ -20,13 +22,16 @@ typedef KeyBindingSettingsProps = {
 	commands:Array<CenterAction>,
 	root:String,
 	/** Called after a binding has changed and been written to the file. */
-	onChanged:Void->Void
+	onChanged:Void->Void,
+	/** Changes when the keys do from anywhere, such as the command center's keymap choice, so the page draws them again. */
+	changes:Signal<Int>
 };
 
 /**
- * Every command and the key that does it, as a list: a click on the key records a new one, the pencil does the
- * same, and a command whose key was changed can be put back. The same key on two commands is marked. Changes go
- * to `.rayde/keybindings.json`; commands the Settings page lists are the ones the command center runs.
+ * The keymap, chosen from the editors people know, and then every command with the key that does it, as a list:
+ * a click on the key records a new one, the pencil does the same, and a command whose key was changed can be put
+ * back. The same key on two commands is marked. The keymap is kept in `.rayde/settings.json` and the changes on
+ * top of it in `.rayde/keybindings.json`; the commands listed are the ones the command center runs.
  */
 class KeyBindingSettings extends Component<KeyBindingSettingsProps> {
 	final filter = Signal.make("");
@@ -40,15 +45,71 @@ class KeyBindingSettings extends Component<KeyBindingSettingsProps> {
 
 	function render():Element
 		return SettingsParts.page("rayde-keys", <div class="flex flex-col gap-6">
-			${SettingsParts.header(Icons.KEYBOARD_LINE, "Key bindings", ".rayde/keybindings.json. Click a key to record another; the change is written at once.")}
+			${SettingsParts.header(Icons.KEYBOARD_LINE, "Key bindings", "Choose the keys of an editor you know, then change any of them. Each change is written at once.")}
+			${SettingsParts.card("rayde-keymap-card", "Keymap", "Your own changes stay on top of the keymap, and Reset all takes them off.", [keymapArea()])}
 			${SettingsParts.card("rayde-keys-card", "Commands", "The same commands the command center runs.", [filterInput(), listArea()])}
 		</div>);
+
+	function keymapArea():Element
+		return <div class="flex flex-col"><for {r in [revision.get() + props.changes.get()]}>${keymapTiles(r)}</for></div>;
+
+	/** The keymaps of this platform, three to a row. */
+	function keymapTiles(_:Int):Element {
+		var maps = Keymaps.available(props.bindings.mac), rows:Array<Element> = [], i = 0;
+		while (i < maps.length) {
+			rows.push(tileRow(maps.slice(i, i + 3)));
+			i += 3;
+		}
+		return <div class="flex flex-col gap-3">{rows}</div>;
+	}
+
+	function tileRow(maps:Array<Keymap>):Element {
+		var cells:Array<Element> = [for (m in maps) tile(m)];
+		while (cells.length < 3)
+			cells.push(<div class="flex-1 min-w-0"/>);
+		return <div class="flex items-stretch gap-3">{cells}</div>;
+	}
+
+	function tile(m:Keymap):Element {
+		var on = props.bindings.preset == m.id;
+		var item = <div id={"rayde-keymap-" + m.id} class="rayde-keymap-tile flex flex-col gap-2 p-3 flex-1 min-w-0 cursor-pointer" onClick={_ -> chooseKeymap(m.id)}>
+			<div class="flex items-center justify-between">
+				<text class="text-sm font-semibold">${m.label}</text>
+				<if {on}><icon document={Icons.CHECK_LINE} class="size-4 text-primary"/></if>
+			</div>
+			<text class="text-xs text-text-tertiary">${m.note}</text>
+			<div class="flex flex-col gap-1">
+				${sample(m, "quickopen", "Go to File")}
+				${sample(m, "commands", "Commands")}
+				${sample(m, "definition", "Definition")}
+			</div>
+		</div>;
+		if (on)
+			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
+		return item;
+	}
+
+	/** One line of a tile: a command, and the key the keymap gives it. */
+	function sample(m:Keymap, command:String, label:String):Element {
+		var text = Keymaps.key(m, command, props.bindings.mac), chord = text == null ? null : Chord.parse(text, props.bindings.mac);
+		return <div class="flex items-center justify-between gap-2">
+			<text class="text-xs text-text-secondary">${label}</text>
+			<div class="rayde-keycap-small flex items-center justify-center px-2 shrink-0" height={22}><text class="rayde-mono text-xs">${chord == null ? "none" : chord.label(props.bindings.mac)}</text></div>
+		</div>;
+	}
+
+	function chooseKeymap(id:String):Void {
+		if (props.bindings.preset == id)
+			return;
+		props.bindings.setPreset(id);
+		commit();
+	}
 
 	function filterInput():Element
 		return <input height={32} id="rayde-keys-filter" value={filter} placeholder="Search by command or key" class="rayde-control-wide"/>;
 
 	function listArea():Element
-		return <div class="flex flex-col"><for {k in [{q: filter.get(), r: revision.get(), c: recording.get()}]}>${list(k.q, k.c)}</for></div>;
+		return <div class="flex flex-col"><for {k in [{q: filter.get(), r: revision.get() + props.changes.get(), c: recording.get()}]}>${list(k.q, k.c)}</for></div>;
 
 	function list(query:String, recordingId:String):Element {
 		var q = query.trim().toLowerCase();
