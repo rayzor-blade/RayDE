@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792313748,"nonce":"siRDsV1T2U1V2I/pmNiSjK+nwFA=","message":"Tracked separately: the build form (e3653e3) and the title bar layout controls (8cd2df1).","files":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792313919,"nonce":"vB5nDu5V3QtVNPJChhGMD5qTi6I=","message":"Terminal tab (an embedded shell) is tracked as b2a5fd6.","files":null}]}
