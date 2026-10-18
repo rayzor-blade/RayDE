@@ -116,6 +116,9 @@ class Checks {
 		var keys = new KeyBindings(true), p = parse.bind(_, true);
 		check(keys.commandFor(p("cmd+p")) == "quickopen" && keys.commandFor(p("cmd+shift+p")) == "commands", "the defaults are bound");
 		check(keys.commandFor(p("ctrl+p")) == null && keys.label("terminal") == "⌃`", "a default is bound to its own chord only");
+		check(keys.commandFor(p("cmd+m")) == "minimize" && keys.commandFor(p("ctrl+cmd+f")) == "fullscreen" && keys.commandFor(p("f11")) == null, "the window's keys on a Mac: minimize, and full screen where macOS has it");
+		var other = KeyBindings.read(root, false);
+		check(other.commandFor(p("f11")) == "fullscreen" && other.label("minimize") == null, "and elsewhere: F11 is full screen, and minimize has no key");
 		keys.set("run", p("f6"));
 		check(keys.commandFor(p("f5")) == null && keys.commandFor(p("f6")) == "run" && keys.changed("run"), "a rebound command answers to its new key");
 		keys.set("close", null);
@@ -181,7 +184,13 @@ class Checks {
 		a.save(root);
 		check(Store.section(root, "terminal").cursor == "bar" && Store.section(root, "elsewhere").kept == true, "saving a section keeps the others");
 		var back = Appearance.read(root);
-		check(back.theme == "hybrid" && back.scheme == "system", "the colour scheme comes back from the file");
+		check(back.theme == "hybrid" && back.scheme == "system" && back.windowControls == "auto", "the colour scheme comes back from the file, the window controls at the platform's default");
+		a.windowControls = "kde";
+		a.save(root);
+		check(Appearance.read(root).windowControls == "kde" && Appearance.read(root).theme == "hybrid", "the style of the window's controls is kept beside the scheme");
+		Store.save(root, "appearance", {windowControls: "amiga"});
+		check(Appearance.read(root).windowControls == "auto", "a style that does not exist falls back to the platform's");
+		a.windowControls = "auto";
 		Store.save(root, "appearance", {theme: "nonesuch", scheme: "purple"});
 		check(Appearance.read(root).theme == "restrained" && Appearance.read(root).scheme == "dark", "an unknown theme or scheme falls back to the default");
 		check(Store.section(root + "/nowhere", "terminal").cursor == null, "a missing file is an empty section");

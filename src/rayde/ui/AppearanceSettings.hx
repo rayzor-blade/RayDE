@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Icon;
+import ashui.components.Select;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.theme.ColorToken;
@@ -32,7 +33,22 @@ class AppearanceSettings extends Component<AppearanceSettingsProps> {
 		return <div class="flex flex-col gap-6">
 			${SettingsParts.card("rayde-appearance-scheme", "Appearance", "Light, dark, or whichever your system is in.", [<div class="flex items-center gap-3">{schemeTiles()}</div>])}
 			${SettingsParts.card("rayde-appearance-theme", "Theme", "Each theme has a light and a dark scheme. The pictures show the one in use.", [<div class="flex gap-4">{themeCards()}</div>])}
+			${SettingsParts.card("rayde-appearance-controls", "Window controls", "Close, minimize and maximize, drawn in the title bar. Platform default follows the operating system and, on Linux, the desktop.", [controlChoice()])}
 		</div>;
+
+	function controlChoice():Element {
+		var items:Array<Element> = [for (s in WindowControls.styles) <select-item value={s.id}>${s.label}</select-item>];
+		return <select id="rayde-window-controls-style" value={props.appearance.windowControls} size={Sm} class="rayde-control-wide" onChange={v -> pickControls(v)}>{items}</select>;
+	}
+
+	function pickControls(style:String):Void {
+		if (props.appearance.windowControls == style)
+			return;
+		props.appearance.windowControls = style;
+		props.appearance.save(props.root);
+		revision.set(revision.get() + 1);
+		props.onChanged();
+	}
 
 	function schemeTiles():Array<Element>
 		return [

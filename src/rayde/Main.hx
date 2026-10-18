@@ -31,10 +31,12 @@ class Main {
 			minWidth: 800,
 			minHeight: 560,
 			icon: rayde.ui.AppIcon.window(),
+			// RayDE draws the title bar and the window's controls itself.
+			decorations: false,
 			theme: Theming.bundle(appearance.theme),
 			appearance: Theming.windowTheme(appearance)
 		}, () -> {
-			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : "ash", extension: extension});
+			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : "ash", extension: extension, chrome: rayde.ui.WindowChrome.ofApp()});
 			bench.openProject();
 			// RAYDE_PANEL=terminal (or problems, console) opens the bottom panel on that tab at launch, for scripted runs.
 			var tab = Sys.getEnv("RAYDE_PANEL");

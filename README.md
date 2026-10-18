@@ -21,7 +21,11 @@ RAYDE_PANEL=terminal scripts/rayde.sh path/to/build.hxml   # opens with the bott
 RAYDE_SETTINGS=keys scripts/rayde.sh path/to/build.hxml     # opens the Settings page on that section (build, libraries, terminal, appearance, keys or extensions)
 ```
 
-Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P opens the command center, which goes to a file as you type, to a command after `>` (also Cmd+Shift+P) and to a line after `:` (also Cmd+G); clicking the project pill opens it too. Cmd+S saves every edited file, Cmd+W closes the tab, F12 goes to the definition of the name under the cursor, F5 runs and Shift+F5 stops. A problem in the Problems list opens its file at its line.
+Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P opens the command center, which goes to a file as you type, to a command after `>` (also Cmd+Shift+P) and to a line after `:` (also Cmd+G); clicking the project pill opens it too. Cmd+S saves every edited file, Cmd+W closes the tab, F12 goes to the definition of the name under the cursor, F5 runs and Shift+F5 stops. Cmd+M minimizes the window and Ctrl+Cmd+F (F11 elsewhere) toggles full screen. A problem in the Problems list opens its file at its line.
+
+### The window
+
+RayDE opens without the system's frame and draws its own title bar: the bar moves the window, a double click on it maximizes, the edges and corners resize it, and the close, minimize and maximize controls are RayDE's, in the style of the platform (macOS lights on the left; Windows, GNOME and KDE controls on the right). Settings > Color scheme > Window controls picks another style, and `appearance.windowControls` in `.rayde/settings.json` (`auto`, `macos`, `windows`, `gnome`, `kde`) keeps it. `rayde.ui.WindowChrome` is what the controls ask of the window; with no window, as in the snapshots, it records the requests.
 
 ### Checks
 

@@ -57,7 +57,9 @@ typedef WorkbenchProps = {
 	/** The runtime the project runs on, as its profile names it: ash or rayzor. */
 	?runtime:String,
 	/** The extension this project is, when it was opened from a `.rayext` and not a build file. */
-	?extension:Manifest
+	?extension:Manifest,
+	/** The window's controls: the app's window; without one the controls act on nothing and keep their own state, as in a test. */
+	?chrome:WindowChrome
 };
 
 /** A part of the layout an extension view takes: its icon in the activity bar, and where its view is drawn. */
@@ -167,6 +169,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** How the window looks: the theme and whether it is light or dark, kept in .rayde/settings.json. */
 	var appearance:Appearance;
+
+	/** What the title bar's controls ask of the window and show of it. */
+	public var chrome(default, null):WindowChrome;
+
+	/** The style of the window's controls now: macos, windows, gnome or kde. */
+	final windowStyle = Signal.make("");
 
 	/** Which key does which command, with the changes kept in .rayde/keybindings.json. */
 	var bindings:KeyBindings;
@@ -935,6 +943,9 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "filecopypath", label: "Copy File Path", icon: Icons.LINK_M, run: () -> withSelected(p -> ashui.input.Clipboard.setText(p))},
 			{id: "filecopyrelative", label: "Copy Relative File Path", icon: Icons.LINK_M, run: () -> withSelected(p -> ashui.input.Clipboard.setText(FileOps.relative(props.display.cwd, p)))},
 			{id: "filereveal", label: Sys.systemName() == "Mac" ? "Reveal File in Finder" : "Reveal File in File Manager", icon: Icons.FOLDER_OPEN_LINE, run: () -> withSelected(FileOps.reveal)},
+			{id: "minimize", label: "Minimize Window", icon: Icons.SUBTRACT_LINE, run: () -> chrome.minimize()},
+			{id: "fullscreen", label: "Toggle Full Screen", icon: Icons.FULLSCREEN_LINE, run: () -> chrome.toggleFullscreen()},
+			{id: "maximize", label: "Toggle Maximize Window", icon: Icons.CHECKBOX_BLANK_LINE, run: () -> chrome.toggleMaximize()},
 			{id: "extensionreload", label: "Reload Extension", icon: Icons.REFRESH_LINE, run: () -> if (extension != null) extensionStudio().reload() else if (isExtension(active.get())) studioOf(active.get()).reload()},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, run: toggleTerminal},
 			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
@@ -1201,6 +1212,8 @@ class Workbench extends Component<WorkbenchProps> {
 		runner = new Runner(props.display);
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
+		chrome = props.chrome != null ? props.chrome : new WindowChrome();
+		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
 		containers = makeContainers();
@@ -1213,6 +1226,8 @@ class Workbench extends Component<WorkbenchProps> {
 			emit("active.changed", {path: realFile(file)});
 		});
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
+		// The controls go grey while another window is in front.
+		new ashui.reactive.Watch(() -> ashui.input.WindowState.active.get(), on -> chrome.focused.set(on));
 		// The terminal starts when its tab is first in view, not when RayDE does.
 		new ashui.reactive.Watch(() -> {
 			bottom.get();
@@ -1231,13 +1246,14 @@ class Workbench extends Component<WorkbenchProps> {
 			treeSelected.get();
 			0;
 		}, _ -> keepSelection(), (_, _) -> false);
-		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
+		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary relative" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
 				<for {revision in [layoutRevision.get()]}>${columns()}</for>
 			</div>
 			${statusBar()}
 			<prompt request={prompt}/>
+			<for {direction in (chrome.resizable() ? EDGES : [])}>${edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
@@ -1264,19 +1280,61 @@ class Workbench extends Component<WorkbenchProps> {
 		</resizable>;
 	}
 
-	/** The project in a pill in the middle, which opens the command center; the window has its own title and icon. */
+	/** The project in a pill in the middle, which opens the command center, and the window's controls at one end; the bar moves the window. */
 	function titleBar():Element {
 		var hint = Sys.systemName() == "Mac" ? "⌘P" : "Ctrl+P";
-		pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onClick={_ -> if (quickOpen.get()) quickOpen.set(false) else openCenter()}>
+		pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onPointerDown={e -> e.stopPropagation()} onClick={_ -> if (quickOpen.get()) quickOpen.set(false) else openCenter()}>
 			<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
 			<text class="text-xs flex-1">${props.name}</text>
 			<text class="rayde-pill-hint text-xs">${hint}</text>
 		</div>;
-		return <div id="rayde-bar" class="flex items-center px-4 shrink-0" height={40}>
+		return <div id="rayde-bar" class="flex items-center shrink-0" height={40} onPointerDown={barPress}>
+			<for {style in [windowStyle.get()]}>${barEnd(style, true)}</for>
 			<div class="flex-1"/>
 			<tooltip label={"Search files and commands in " + props.display.cwd} side="bottom">{pill}</tooltip>
 			<div class="flex-1"/>
+			<for {style in [windowStyle.get()]}>${barEnd(style, false)}</for>
 		</div>;
+	}
+
+	/** One end of the bar: the controls where the style puts them, and on the other end a space of the same width, so the pill stays in the middle. */
+	function barEnd(style:String, leftEnd:Bool):Element {
+		if (WindowControls.onLeft(style) == leftEnd)
+			return <window-controls style={style} chrome={chrome}/>;
+		return <div class="shrink-0" width={WindowControls.width(style)}/>;
+	}
+
+	/** A press on the bar: a double click maximizes the window, and anything else on it moves the window. */
+	function barPress(e:ashui.input.Events.PointerEvent):Void {
+		if (e.button == null || !e.button.match(Left))
+			return;
+		if (e.clickCount >= 2)
+			chrome.toggleMaximize();
+		else
+			chrome.drag();
+	}
+
+	/** The edges and corners that resize the window, in the order they are laid over the page. */
+	static final EDGES = ["North", "South", "East", "West", "NorthEast", "NorthWest", "SouthEast", "SouthWest"];
+
+	/** One of the edges: an invisible strip along a side or a square at a corner, which starts a resize from there. */
+	function edge(direction:String):Element {
+		var el = <div class="rayde-edge" onPointerDown={e -> if (e.button != null && e.button.match(Left)) {
+			e.stopPropagation();
+			chrome.resize(direction);
+		}}/>;
+		var place = switch direction {
+			case "North": "n";
+			case "South": "s";
+			case "East": "e";
+			case "West": "w";
+			case "NorthEast": "ne";
+			case "NorthWest": "nw";
+			case "SouthEast": "se";
+			case _: "sw";
+		};
+		ashui.css.Identity.of(el.tree, el.node.id).setClasses(["rayde-edge", "rayde-edge-" + place]);
+		return el;
 	}
 
 	/** The side panel: the activity bar and the Explorer beside it, in one card. */
@@ -1867,7 +1925,10 @@ class Workbench extends Component<WorkbenchProps> {
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} terminal={terminalSettings} appearance={appearance} bindings={bindings}
 					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
-					onAppearanceChanged={() -> settingsRevision.set(settingsRevision.get() + 1)} onBindingsChanged={bindingsChanged} bindingChanges={bindingsRevision}
+					onAppearanceChanged={() -> {
+						windowStyle.set(WindowControls.styleFor(appearance.windowControls));
+						settingsRevision.set(settingsRevision.get() + 1);
+					}} onBindingsChanged={bindingsChanged} bindingChanges={bindingsRevision}
 					extension={extension} onExtensionChanged={extensionChanged} onEditExtensionText={() -> openFile(extension.file)}
 					listening={() -> extension == null ? [] : extensionStudio().listening()}/>
 			</tabs-content>;

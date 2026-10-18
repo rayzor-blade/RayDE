@@ -19,7 +19,12 @@ class Appearance {
 	/** system, light or dark. */
 	public var scheme = "dark";
 
+	/** How the window's controls look: auto (the platform's), macos, windows, gnome or kde. */
+	public var windowControls = "auto";
+
 	public function new() {}
+
+	public static final controlStyles = ["auto", "macos", "windows", "gnome", "kde"];
 
 	public static function read(root:String):Appearance {
 		var a = new Appearance(), json = Store.section(root, "appearance");
@@ -27,11 +32,13 @@ class Appearance {
 			a.theme = Std.string(json.theme);
 		if (json.scheme != null && ["system", "light", "dark"].indexOf(Std.string(json.scheme)) >= 0)
 			a.scheme = Std.string(json.scheme);
+		if (json.windowControls != null && controlStyles.indexOf(Std.string(json.windowControls)) >= 0)
+			a.windowControls = Std.string(json.windowControls);
 		return a;
 	}
 
 	public function save(root:String):Void
-		Store.save(root, "appearance", {theme: theme, scheme: scheme});
+		Store.save(root, "appearance", {theme: theme, scheme: scheme, windowControls: windowControls});
 
 	public function choice():ThemeChoice
 		return Lambda.find(themes, t -> t.id == theme);

@@ -21,7 +21,7 @@ class Keymaps {
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
 		"quickopen", "commands", "gotoline", "run", "stop", "save", "close", "definition", "panel", "explorer", "problems", "output", "terminal", "newterminal",
-		"splitterminal", "settings", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
+		"splitterminal", "settings", "minimize", "fullscreen", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
 	];
 
 	/** The commands that act on the file or folder selected in the Explorer, which run only while the Explorer has the keyboard. */
@@ -48,7 +48,8 @@ class Keymaps {
 			keys: [
 				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
-				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,")
+				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,"),
+				k("minimize", "", "cmd+m"), k("fullscreen", "f11", "ctrl+cmd+f")
 			].concat(files("f2", k("filecopypath", "shift+alt+c", "alt+cmd+c"), k("filereveal", "shift+alt+r", "alt+cmd+r")))
 		},
 		{

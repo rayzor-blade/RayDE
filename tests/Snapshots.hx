@@ -715,6 +715,77 @@ class Snapshots {
 					throw "the form should leave the other views as they were: " + written;
 				shot("views-added");
 			});
+		for (dark in [true, false])
+			scenario(dark, "chrome", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				var chrome = bench.chrome, tree = bench.tree;
+				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
+				var at = (x:Float, y:Float, ?times:Int) -> {
+					ashui.input.Pointer.move(tree, x, y);
+					for (_ in 0...(times == null ? 1 : times)) {
+						ashui.input.Pointer.press(tree);
+						ashui.input.Pointer.release(tree);
+					}
+					settle(3);
+				};
+				var asked = () -> chrome.calls.splice(0, chrome.calls.length).join(",");
+				// The controls in the style of each platform; each asks the window for what it says.
+				for (style in ["macos", "windows", "gnome", "kde"]) {
+					@:privateAccess bench.windowStyle.set(style);
+					settle(10);
+					shot("bar-" + style);
+					var middle = style == "macos" ? "#rayde-win-fullscreen" : "#rayde-win-maximize";
+					click("#rayde-win-minimize");
+					click(middle);
+					click("#rayde-win-close");
+					var expected = "minimize," + (style == "macos" ? "fullscreen" : "maximize") + ",close";
+					var got = asked();
+					if (got != expected)
+						throw 'the $style controls should ask for $expected, not $got';
+					// With no window the chrome keeps the state itself: the window now fills the screen, so it has no resize edges until it is restored.
+					settle(5);
+					if (!(style == "macos" ? chrome.fullscreen.get() : chrome.maximized.get()) || has(".rayde-edge-w"))
+						throw "a window that fills the screen has no resize edges";
+					chrome.fullscreen.set(false);
+					chrome.maximized.set(false);
+					settle(5);
+					if (!has(".rayde-edge-w"))
+						throw "a window that does not fill the screen should have resize edges";
+				}
+				@:privateAccess bench.windowStyle.set("windows");
+				settle(10);
+				chrome.maximized.set(true);
+				settle(5);
+				if (has(".rayde-edge-w"))
+					throw "a maximized window has no resize edges";
+				shot("bar-windows-maximized");
+				chrome.maximized.set(false);
+				settle(5);
+				// The bar moves the window, and a double click on it maximizes; the pill and the controls do not.
+				at(250, 20);
+				if (asked() != "drag")
+					throw "a press on the bar should start a move";
+				at(250, 20, 2);
+				var twice = asked();
+				if (twice.indexOf("maximize") < 0)
+					throw 'a double click on the bar should maximize: $twice';
+				chrome.maximized.set(false);
+				settle(5);
+				at(640, 20);
+				if (asked() != "")
+					throw "the pill is not a place to move the window from";
+				bench.closeAll();
+				// The edges and corners resize it from where they are.
+				at(2, 400);
+				at(1278, 400);
+				at(640, 798);
+				at(2, 2);
+				at(1278, 798);
+				var edges = asked();
+				if (edges != "resize West,resize East,resize South,resize NorthWest,resize SouthEast")
+					throw 'the edges should resize from where they are: $edges';
+				shot("bar-after");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 

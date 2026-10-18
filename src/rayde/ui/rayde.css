@@ -210,3 +210,41 @@
 
 /* The Explorer's context menu wraps the tree and takes its place in the column. */
 #rayde #rayde-explorer-menu, #rayde #rayde-explorer-trigger { display: flex; flex-direction: column; flex: 1 1 0%; min-height: 0; min-width: 0; }
+
+/* The window's controls, in the style of each platform. They are buttons with the look taken off. */
+#rayde .rayde-light, #rayde .rayde-caption, #rayde .rayde-round, #rayde .rayde-flat {
+	padding: 0; border: 0; box-shadow: none; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+/* macOS: three lights, glyphs on the group's hover, grey while the window is behind. */
+#rayde .rayde-light { width: 12px; height: 12px; min-width: 12px; border-radius: 6px; color: transparent; }
+#rayde .rayde-light .rayde-glyph { width: 8px; height: 8px; opacity: 0; }
+#rayde .rayde-lights:hover .rayde-light .rayde-glyph { opacity: 1; color: rgba(0, 0, 0, 0.55); }
+#rayde .rayde-light-close { background: #ff5f57; }
+#rayde .rayde-light-minimize { background: #febc2e; }
+#rayde .rayde-light-zoom { background: #28c840; }
+#rayde .rayde-lights[data-focused="false"] .rayde-light { background: var(--border-hover); }
+#rayde .rayde-lights[data-focused="false"]:hover .rayde-light-close { background: #ff5f57; }
+#rayde .rayde-lights[data-focused="false"]:hover .rayde-light-minimize { background: #febc2e; }
+#rayde .rayde-lights[data-focused="false"]:hover .rayde-light-zoom { background: #28c840; }
+/* Windows: flat, the width of a caption button, the close one turning red. */
+#rayde .rayde-caption { width: 46px; height: 40px; min-width: 46px; background: transparent; color: var(--text-secondary); border-radius: 0; }
+#rayde .rayde-caption:hover { background: var(--accent-subtle); color: var(--text-primary); }
+#rayde .rayde-caption-close:hover { background: #e81123; color: #ffffff; }
+/* GNOME: round and quiet. */
+#rayde .rayde-round { width: 24px; height: 24px; min-width: 24px; border-radius: 12px; background: var(--surface-elevated); color: var(--text-secondary); }
+#rayde .rayde-round:hover { background: var(--accent-subtle); color: var(--text-primary); }
+/* KDE: flat, rounded when hovered, the close one tinted red. */
+#rayde .rayde-flat { width: 28px; height: 28px; min-width: 28px; border-radius: var(--radius-md); corner-shape: squircle; background: transparent; color: var(--text-secondary); }
+#rayde .rayde-flat:hover { background: var(--accent-subtle); color: var(--text-primary); }
+#rayde .rayde-flat-close:hover { background: var(--error-bg); color: var(--error); }
+
+/* The edges that resize the window, over everything and drawing nothing. */
+#rayde .rayde-edge { position: absolute; background: transparent; }
+#rayde .rayde-edge-n { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+#rayde .rayde-edge-s { bottom: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+#rayde .rayde-edge-e { right: 0; top: 10px; bottom: 10px; width: 5px; cursor: ew-resize; }
+#rayde .rayde-edge-w { left: 0; top: 10px; bottom: 10px; width: 5px; cursor: ew-resize; }
+#rayde .rayde-edge-ne { top: 0; right: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+#rayde .rayde-edge-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+#rayde .rayde-edge-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+#rayde .rayde-edge-se { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
