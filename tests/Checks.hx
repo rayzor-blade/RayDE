@@ -460,7 +460,34 @@ class Checks {
 		check(again.version == "1.0.0" && again.location == "secondary" && again.viewTitle == "Keep it" && again.capabilities.length == 2, 'the edit reads back: ${again.version} ${again.location} ${again.viewTitle}');
 		Manifest.setText(dir + "/edit.rayext", "location", null, true);
 		Manifest.setText(dir + "/edit.rayext", "title", "", true);
-		check(OrderedJson.get(OrderedJson.parse(sys.io.File.getContent(dir + "/edit.rayext")), "view") == null, "a view with nothing left in it is taken out");
+		var left = Manifest.read(dir + "/edit.rayext");
+		check(left.views.length == 1 && left.views[0].id == "main" && left.views[0].location == "sidebar" && left.viewTitle == left.name, "a view with nothing left in it is still declared, with the defaults");
+		Manifest.removeView(dir + "/edit.rayext", "main");
+		check(Manifest.read(dir + "/edit.rayext").views.length == 0 && OrderedJson.get(OrderedJson.parse(sys.io.File.getContent(dir + "/edit.rayext")), "view") == null, "removing the view takes it out of the file");
+
+		// Views: an extension declares as many as it likes, each in a part of the layout; a first one added to `view` moves into `views`.
+		var vfile = dir + "/views.rayext";
+		sys.io.File.saveContent(vfile, '{"name": "V", "main": "ext/main.rays", "zeta": 2.0}');
+		check(Manifest.read(vfile).views.length == 0, "a config with no view declares none");
+		Manifest.addView(vfile, {id: "main", title: "", icon: null, location: "sidebar", tools: []});
+		check(sys.io.File.getContent(vfile).indexOf('"view": {}') > 0 && Manifest.read(vfile).views.length == 1, "a first view is written as `view`");
+		Manifest.addTool(vfile, {id: "add", title: "Add", icon: "add"});
+		Manifest.addView(vfile, {id: "inspector", title: "Inspector", icon: "eye", location: "secondary", tools: []});
+		Manifest.addView(vfile, {id: "log", title: "", icon: null, location: "panel", tools: []});
+		var many = Manifest.read(vfile);
+		var describe = many.views.map(v -> v.id + "@" + v.location + ":" + v.title + ":" + v.tools.length).join(",");
+		check(many.problems.length == 0 && describe == "main@sidebar:V:1,inspector@secondary:Inspector:0,log@panel:V:0", 'views are read in order, the first moved into views with its tools: $describe ${many.problems}');
+		check(many.viewTitle == "V" && many.location == "sidebar" && many.tools.length == 1, "the first view is what the single-view fields name");
+		check(sys.io.File.getContent(vfile).indexOf('"view"') < 0 && sys.io.File.getContent(vfile).indexOf('"zeta": 2.0') > 0, "`view` is gone once there are several, and what is not a view is kept");
+		Manifest.setText(vfile, "location", "editor", true, "log");
+		Manifest.addTool(vfile, {id: "clear", title: "Clear", icon: null}, "log");
+		check(Manifest.read(vfile).viewOf("log").location == "editor" && Manifest.read(vfile).viewOf("log").tools[0].id == "clear", "a view is edited by its id");
+		Manifest.removeTool(vfile, "clear", "log");
+		Manifest.removeView(vfile, "inspector");
+		check(Manifest.read(vfile).views.map(v -> v.id).join(",") == "main,log" && Manifest.read(vfile).viewOf("log").tools.length == 0, "a view and a tool are removed by id");
+		sys.io.File.saveContent(dir + "/viewbad.rayext", '{"name": "B", "main": "ext/main.rays", "views": [{"id": "a"}, {"id": "a"}, {"title": "no id"}, {"id": "t:x"}, {"id": "b", "location": "moon", "tools": [{"id": "go"}]}, {"id": "c", "tools": [{"id": "go"}]}, "text"]}');
+		var bad = Manifest.read(dir + "/viewbad.rayext");
+		check(bad.views.length == 3 && bad.problems.length == 6, 'views that are wrong are named: ${bad.views.length} ${bad.problems}');
 		var refused = false;
 		sys.io.File.saveContent(dir + "/refuse.rayext", "{ not json");
 		try

@@ -592,9 +592,10 @@ class Snapshots {
 					settle(8);
 				};
 				var previews = () -> [for (f in bench.open.get()) if (StringTools.startsWith(f, Workbench.TAB)) f];
-				// The extension's view has the sidebar; the Explorer's icon brings the Explorer back, with the extension's item in the menu of a Markdown file only.
-				click("#rayde-activity-explorer");
+				// The extension declares no view: the Explorer keeps the sidebar and there is no icon for it in the activity bar. Its item is in the menu of a Markdown file only.
 				until(() -> studio.state.get() == "running", "the extension to start");
+				if (has("#rayde-activity-ext"))
+					throw "an extension with no view should have no icon in the activity bar";
 				menuOn("README.md");
 				if (!has("#rayde-explorer-preview"))
 					throw "a Markdown file should have the extension's Preview in its menu";
@@ -664,9 +665,55 @@ class Snapshots {
 				click("#rayde-ext-item-add");
 				until(() -> sys.io.File.getContent(config).indexOf('"name": "README*"') > 0, "the menu item to be written to the config");
 				var written = sys.io.File.getContent(config);
-				if (written.indexOf('"icon": "ext/preview.svg"') < 0 || written.indexOf('"location": "sidebar"') < 0)
+				if (written.indexOf('"icon": "ext/preview.svg"') < 0 || written.indexOf('"view"') >= 0)
 					throw "the form should leave what it did not change as it was: " + written;
 				shot("markdown-config-edited");
+			});
+		for (dark in [true, false])
+			scenario(dark, "views", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				var studio = bench.studioFor(rays);
+				if (studio == null)
+					throw "opening an extension project should start its extension";
+				if (studio.state.get() == "unavailable") {
+					Sys.println("views snapshots skipped: no rayscript-host");
+					return;
+				}
+				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
+				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);
+				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
+				until(() -> says("Overview") && says("Inspector") && says("started"), "the three views to be drawn");
+				// A view in each part of the layout: the sidebar, the right side bar and the bottom panel, each with its icon in the activity bar.
+				for (selector in ["#rayde-activity-ext", "#rayde-activity-ext-inspector", "#rayde-activity-ext-log"])
+					if (!has(selector))
+						throw 'the activity bar should have $selector';
+				for (selector in ["#rayde-view-ext #rayde-studio-surface", "#rayde-secondary #rayde-studio-surface", "#rayde-view-ext-log #rayde-studio-surface"])
+					if (!has(selector))
+						throw 'each view should be drawn in its own part: $selector';
+				if (!has("#rayde-view-ext-log #rayde-studio-title"))
+					throw "the panel view has its own header";
+				shot("views");
+				// An action of one view's header reaches the extension, and every view that shows the change follows it.
+				click("#rayde-tool-refresh");
+				until(() -> says("refresh 1") && Lambda.exists(studio.preview.outline(), o -> o.text == "2") && Lambda.exists(studio.preview.outline(), o -> o.text == "1"), "the action to be answered in the views");
+				shot("views-refreshed");
+				// The form lists each view with its own controls, and declares another. The right side bar and the panel are put away first, so the form has room.
+				@:privateAccess bench.closePanel();
+				@:privateAccess bench.secondaryWidth.set(0);
+				settle(10);
+				bench.openSettings("extension");
+				settle(10);
+				scroll("#rayde-extension-config", 520);
+				shot("views-config");
+				var config = root + "/dashboard.rayext";
+				click("#rayde-ext-newview-id");
+				type("#rayde-ext-newview-id", "extra");
+				click("#rayde-ext-newview-add");
+				until(() -> sys.io.File.getContent(config).indexOf('"id": "extra"') > 0 && has("#rayde-activity-ext-extra"), "the new view to be written to the config and given its icon");
+				var written = sys.io.File.getContent(config);
+				if (written.indexOf('"id": "inspector"') < 0 || written.indexOf('"refresh"') < 0)
+					throw "the form should leave the other views as they were: " + written;
+				shot("views-added");
 			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}

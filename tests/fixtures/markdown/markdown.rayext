@@ -5,10 +5,6 @@
   "main": "ext/main.rays",
   "sources": ["ext", "docs"],
   "capabilities": ["workspace.read"],
-  "view": {
-    "title": "Markdown",
-    "location": "sidebar"
-  },
   "contributes": {
     "commands": [
       {"id": "preview", "title": "Preview", "icon": "ext/preview.svg"}

@@ -16,7 +16,9 @@ typedef StudioViewProps = {
 	onMocks:Void->Void,
 	onConsole:Void->Void,
 	/** Whether it is a card of its own, as in a tab or beside the code; false where the part of the layout it is in has its own. */
-	?framed:Bool
+	?framed:Bool,
+	/** The declared view it shows; none for an extension run on its own, which shows everything it mounts. */
+	?view:rayde.ext.Manifest.ViewDecl
 };
 
 /**
@@ -30,20 +32,27 @@ class StudioView extends Component<StudioViewProps> {
 		var studio = props.studio, surface = new Ref<Div>();
 		var body = <div class="flex flex-col flex-1 min-h-0 min-w-0">
 			<div id="rayde-studio-bar" class="rayde-studio-bar flex items-center gap-1 pl-3 pr-2 shrink-0" height={36}>
-				<text id="rayde-studio-title" class="rayde-heading flex-1 min-w-0 truncate">${studio.title.get()}</text>
-				{[for (t in studio.tools()) tool(t)]}
+				<text id="rayde-studio-title" class="rayde-heading flex-1 min-w-0 truncate">${shownTitle(studio)}</text>
+				{[for (t in studio.tools(viewId())) tool(t)]}
 				<for {k in [{state: studio.state.get(), stale: studio.stale.get(), live: studio.live.get()}]}>${menu(k.state, k.stale, k.live)}</for>
 			</div>
 			<for {stale in [studio.stale.get()]}>${banner(stale)}</for>
 			<div ref={surface} id="rayde-studio-surface" class="rayde-studio-surface flex flex-col flex-1 min-h-0 overflow-auto"/>
 		</div>;
 		var node = surface.get().node;
-		studio.attach(node);
+		studio.attach(node, null, viewId());
 		ashui.reactive.Owner.onCleanup(() -> studio.detach(node));
 		if (props.framed == false)
 			return <div id="rayde-studio" class="flex flex-col flex-1 min-h-0 min-w-0">{body}</div>;
 		return <div id="rayde-studio" class="rayde-card flex flex-col flex-1 min-h-0 min-w-0">{body}</div>;
 	}
+
+	function viewId():Null<String>
+		return props.view == null ? null : props.view.id;
+
+	/** The title the extension gave its first view with setTitle, or the title another view declares. */
+	function shownTitle(studio:Studio):String
+		return props.view == null || props.view.id == props.studio.manifest.views[0].id ? studio.title.get() : props.view.title;
 
 	/** One of the tools the extension's config puts in its header. */
 	function tool(t:ViewTool):Element {

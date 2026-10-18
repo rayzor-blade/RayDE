@@ -8,6 +8,10 @@
 <p align="center"><img  src="assets/rayde-welcome.png" width="800" alt="RayDE on a dark scheme, with the welcome page and the build file open in the Explorer" /></p>
 
 
+## Extensions
+
+RayDE extensions are written in RayScript and described by a `.rayext` file. [Writing an extension](docs/extensions.md) covers the config, commands and menus, hooks, reading files, tabs and the Extension Studio, with a Markdown preview as the example.
+
 ## Contributor notes
 
 ```sh

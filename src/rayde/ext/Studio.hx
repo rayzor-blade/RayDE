@@ -23,8 +23,11 @@ typedef Services = {
 /** A view the extension presented as a tab: the root it mounted, and the title it gave. */
 typedef TabView = {root:Int, title:String};
 
-/** A place the view is drawn: its container, and the root it shows; null for the main view, which shows every root that is not a tab. */
-private typedef Surface = {container:Node, root:Null<Int>, attached:Array<Int>};
+/**
+ * A place a view is drawn: its container, and what it shows: one root, for a tab; the roots mounted for one declared
+ * view, for a part of the layout; or, with neither, every root that is not a tab, as a script run on its own has.
+ */
+private typedef Surface = {container:Node, root:Null<Int>, view:Null<String>, attached:Array<Int>};
 
 /**
  * An extension being developed: its host process, the Preview its view is drawn in, and what it said and
@@ -90,6 +93,9 @@ class Studio {
 	/** The hooks the running extension listens for. */
 	final subscribed = new Map<String, Bool>();
 
+	/** The names of mounted views the config gives no place, said once each. */
+	final unhosted:Array<String> = [];
+
 	final pending = new Map<String, Dynamic>();
 	var mocks:Dynamic = {};
 	var mocksFile:String;
@@ -135,12 +141,12 @@ class Studio {
 	 * Draws the view in `container`, a node of the tree: the main view, or only the root `root` for a tab.
 	 * A page built to replace one that showed the same thing takes its place.
 	 */
-	public function attach(container:Node, ?root:Int):Void {
+	public function attach(container:Node, ?root:Int, ?view:String):Void {
 		for (s in surfaces.copy())
-			if (s.root == root && s.container.id != container.id)
+			if (s.root == root && s.view == view && s.container.id != container.id)
 				release(s);
 		if (!Lambda.exists(surfaces, s -> s.container.id == container.id))
-			surfaces.push({container: container, root: root, attached: []});
+			surfaces.push({container: container, root: root, view: view, attached: []});
 		if (preview != null)
 			preview.show();
 		adopt();
@@ -199,6 +205,7 @@ class Studio {
 		readMocks();
 		subscribed.clear();
 		pending.clear();
+		unhosted.resize(0);
 		host = new ExtensionHost(binary, dir, root);
 		host.start();
 		state.set("running");
@@ -239,8 +246,12 @@ class Studio {
 		return host != null && host.running();
 
 	/** The buttons the extension's config puts in its header. */
-	public function tools():Array<rayde.ext.Manifest.ViewTool>
-		return manifest == null ? [] : manifest.tools;
+	public function tools(?view:String):Array<rayde.ext.Manifest.ViewTool> {
+		if (manifest == null)
+			return [];
+		var v = view == null ? manifest.views[0] : manifest.viewOf(view);
+		return v == null ? [] : v.tools;
+	}
 
 	/** A tool of the header was chosen: tells the extension. */
 	public function tool(id:String):Void {
@@ -283,8 +294,10 @@ class Studio {
 		ashui.animation.AnimationScheduler.main.after(delay, () -> {
 			scheduled = false;
 			tick();
+			// The longer the extension has been quiet, the less often it is looked at; a click or a command brings the next look forward.
+			var quiet = haxe.Timer.stamp() - lastActive;
 			if (host != null && host.running() || changedAt >= 0)
-				schedule(haxe.Timer.stamp() - lastActive < 1 ? .016 : .1);
+				schedule(quiet < 1 ? .016 : quiet < 5 ? .1 : .5);
 		});
 	}
 
@@ -358,14 +371,30 @@ class Studio {
 	static function isTab(name:String):Bool
 		return StringTools.startsWith(name, "tab:");
 
+	/**
+	 * The declared view a root mounted under `name` belongs to: the view with that id, else the first. Null when the
+	 * config declares none, or there is no config.
+	 */
+	function viewFor(name:String):Null<String> {
+		if (manifest == null || manifest.views.length == 0)
+			return null;
+		var v = manifest.viewOf(name);
+		return v != null ? v.id : manifest.views[0].id;
+	}
+
 	/** Puts each root the extension has mounted in the surface that shows it. */
 	function adopt():Void {
 		if (preview == null)
 			return;
 		preview.findRoots();
+		for (r in preview.roots)
+			if (manifest != null && manifest.views.length == 0 && !isTab(r.name) && unhosted.indexOf(r.name) < 0) {
+				unhosted.push(r.name);
+				note(console, "error", 'Mounted a view "${r.name}", but ${haxe.io.Path.withoutDirectory(manifest.file)} declares no view. Declare one under "views", or mount it as "tab:<title>".');
+			}
 		for (s in surfaces)
 			for (r in preview.roots) {
-				var wanted = s.root == null ? !isTab(r.name) : r.id == s.root;
+				var wanted = s.root != null ? r.id == s.root : !isTab(r.name) && (s.view == null || viewFor(r.name) == s.view);
 				if (wanted && s.attached.indexOf(r.id) < 0 && r.node != null) {
 					s.attached.push(r.id);
 					tree.addChild(s.container.id, r.node.id);

@@ -78,10 +78,16 @@ class ViewIcons {
 		return read.get(key);
 	}
 
-	/** The icon of an extension's view. */
+	/** The icon of an extension's first view. */
 	public static function of(m:Manifest):ashui.svg.SvgDocument {
 		var doc = file(m.iconPath());
 		return doc == null ? Icons.PUZZLE_LINE : doc;
+	}
+
+	/** The icon of one of an extension's views: its SVG file, or the icon of RayDE's it names, or the puzzle piece. */
+	public static function ofView(m:Manifest, v:rayde.ext.Manifest.ViewDecl):ashui.svg.SvgDocument {
+		var icon = named(m, v.icon);
+		return icon == null ? Icons.PUZZLE_LINE : icon;
 	}
 
 	/** The icon of a tool in the view's header: its SVG file, or the icon of RayDE's it names. */

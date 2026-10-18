@@ -82,6 +82,7 @@ class TerminalView extends Component<TerminalViewProps> {
 	var wantRows = 0;
 	var focused = false;
 	var lastOutput = 0.;
+	var pollTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var exited = false;
 	final exitCode = Signal.make(-1);
 	var gone = false;
@@ -229,7 +230,21 @@ class TerminalView extends Component<TerminalViewProps> {
 			if (changed)
 				revision.set(revision.get() + 1);
 		}
-		AnimationScheduler.main.after(now - lastOutput < .6 ? .03 : .1, poll);
+		// The longer it has been quiet, the less often it is looked at; input brings the next look forward (see `soon`).
+		var quiet = now - lastOutput;
+		later(!props.shown() ? .5 : quiet < .6 ? .03 : quiet < 5 ? .1 : .4);
+	}
+
+	function later(delay:Float):Void {
+		if (pollTimer != null)
+			pollTimer.cancel();
+		pollTimer = AnimationScheduler.main.after(delay, poll);
+	}
+
+	/** Input is on its way to the program and its answer follows: look at the terminal again at once and keep looking closely for a while. */
+	function soon():Void {
+		lastOutput = haxe.Timer.stamp();
+		later(.01);
 	}
 
 	/** Fetches the rows that changed, and the screen's state, and gives the changed rows their elements. */
@@ -372,6 +387,7 @@ class TerminalView extends Component<TerminalViewProps> {
 			props.terminal.scrollback(0);
 		anchor = head = null;
 		props.terminal.write(text);
+		soon();
 		e.preventDefault();
 	}
 
@@ -380,6 +396,7 @@ class TerminalView extends Component<TerminalViewProps> {
 			return;
 		var body = ~/\r?\n/g.replace(text, "\r");
 		props.terminal.write(screen.bracketedPaste ? "\x1b[200~" + body + "\x1b[201~" : body);
+		soon();
 	}
 
 	function selectedText():String {
@@ -407,6 +424,7 @@ class TerminalView extends Component<TerminalViewProps> {
 			var report = KeyMap.mouse(0, at.col + 1, at.row + 1, false, screen.mouseEncoding);
 			if (report != null)
 				props.terminal.write(report);
+			soon();
 			trackRelease(at);
 			return;
 		}
@@ -459,10 +477,12 @@ class TerminalView extends Component<TerminalViewProps> {
 			if (report != null)
 				for (_ in 0...lines)
 					props.terminal.write(report);
+			soon();
 			return;
 		}
 		// Up shows older output, down newer.
 		props.terminal.scrollback(Std.int(Math.max(0, screen.scrollback + (e.deltaY < 0 ? lines : -lines))));
 		seen = -1;
+		soon();
 	}
 }

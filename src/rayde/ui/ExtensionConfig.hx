@@ -10,6 +10,7 @@ import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.ext.Hooks;
 import rayde.ext.Manifest;
+import rayde.ext.Manifest.ViewDecl;
 
 using StringTools;
 
@@ -54,12 +55,12 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 	final description = Signal.make("");
 	final main = Signal.make("");
 	final mocks = Signal.make("");
-	final title = Signal.make("");
-	final icon = Signal.make("");
+	/** The text of the inputs of each view, by view id and field. */
+	final viewFields = new Map<String, Signal<String>>();
+	var newViewLocation = "sidebar";
 	final newSource = Signal.make("");
-	final toolId = Signal.make("");
-	final toolTitle = Signal.make("");
-	final toolIcon = Signal.make("");
+	final newViewId = Signal.make("");
+	final newViewTitle = Signal.make("");
 	final cmdId = Signal.make("");
 	final cmdTitle = Signal.make("");
 	final cmdIcon = Signal.make("");
@@ -75,7 +76,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		load();
 		return <div id="rayde-extension-config" class="rayde-settings flex flex-1 min-h-0 justify-center overflow-auto">
 			<div class="flex flex-col gap-6 px-8 py-8" width={780}>
-				${SettingsParts.header(Icons.PUZZLE_LINE, "Extension", haxe.io.Path.withoutDirectory(m.file) + ". Edits are written to the file immediately.")}
+				${SettingsParts.header(Icons.PUZZLE_LINE, m.name, haxe.io.Path.withoutDirectory(m.file) + ". Edits are written to the file immediately.")}
 				<for {r in [revision.get()]}>${sections(r)}</for>
 				<div class="shrink-0" height={40}/>
 			</div>
@@ -89,8 +90,10 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		description.set(m.description);
 		main.set(m.main);
 		mocks.set(m.mocks);
-		title.set(m.viewTitle == m.name ? "" : m.viewTitle);
-		icon.set(m.viewIcon == null ? "" : m.viewIcon);
+		for (v in m.views) {
+			field(v, "title").set(v.title == m.name ? "" : v.title);
+			field(v, "icon").set(v.icon == null ? "" : v.icon);
+		}
 	}
 
 	/** Runs a change to the file, then reads it again, shows it and tells the workbench. */
@@ -118,8 +121,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 			<if {m.problems.length > 0}>${problems()}</if>
 			${SettingsParts.card("rayde-ext-identity", "Extension", "Identifier and metadata shown in the Extensions list.", identity())}
 			${SettingsParts.card("rayde-ext-scripts", "Scripts", "Entry point and module search path. Imports resolve against the first source folder.", scripts())}
-			${SettingsParts.card("rayde-ext-view", "View", "Workbench contribution: activity bar icon, view title and location.", view())}
-			${SettingsParts.card("rayde-ext-tools", "View actions", "Actions in the view's title bar. Invoking one calls the handler registered with onTool(id).", tools())}
+			${SettingsParts.card("rayde-ext-view", "Views", "Parts of the layout the extension draws into, each mounted by id with mount(view, 'id'). A tab needs no declaration: mount it as 'tab:<title>'.", views())}
 			${SettingsParts.card("rayde-ext-commands", "Commands", "Commands the script registers with registerCommand(id). Listed in the command palette; bindable in Keyboard Shortcuts as ext.<id>.", commands())}
 			${SettingsParts.card("rayde-ext-hooks", "Hooks", "Editor events delivered to onHook handlers, and the menus that accept items from this extension.", hooks())}
 			${SettingsParts.card("rayde-ext-capabilities", "Capabilities", "Permissions the extension requests.", caps())}
@@ -173,62 +175,105 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		change(() -> Manifest.setList(m.file, "sources", m.sources.concat([v])));
 	}
 
-	function view():Array<Element> {
-		var doc = ViewIcons.of(m);
+	function field(v:ViewDecl, name:String):Signal<String> {
+		var key = v.id + ":" + name;
+		var s = viewFields.get(key);
+		if (s == null)
+			viewFields.set(key, s = Signal.make(""));
+		return s;
+	}
+
+	/** The element id of a view's control: the first view's keep the plain id, the others' end with the view's. */
+	static function fid(base:String, v:ViewDecl):String
+		return v.id == "main" ? base : base + "-" + v.id;
+
+	function views():Array<Element> {
+		var out:Array<Element> = [];
+		if (m.views.length == 0)
+			out.push(<text id="rayde-ext-no-views" class="text-xs text-text-tertiary">No view declared. The extension can still handle hooks and commands and present tabs.</text>);
+		for (v in m.views)
+			out.push(viewBlock(v));
+		var places:Array<Element> = [for (l in locations) <select-item value={l.id}>${l.label}</select-item>];
+		out.push(<div class="flex items-center gap-2 pt-1">
+			<input height={32} id="rayde-ext-newview-id" value={newViewId} placeholder={m.views.length == 0 ? "View id (main)" : "View id"} class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addView()}/>
+			<select id="rayde-ext-newview-location" value={newViewLocation} size={Sm} class="rayde-control" onChange={v -> newViewLocation = v}>{places}</select>
+			<button id="rayde-ext-newview-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addView()}>Add view</button>
+		</div>);
+		return out;
+	}
+
+	function addView():Void {
+		var id = newViewId.get().trim();
+		if (id == "")
+			id = m.views.length == 0 ? "main" : "";
+		if (id == "" || id.indexOf(":") >= 0 || m.viewOf(id) != null)
+			return;
+		var where = newViewLocation;
+		newViewId.set("");
+		change(() -> Manifest.addView(m.file, {id: id, title: "", icon: null, location: where, tools: []}));
+	}
+
+	/** One view's controls: where it goes, its title and icon, and the actions of its header. */
+	function viewBlock(v:ViewDecl):Element {
+		var doc = ViewIcons.ofView(m, v);
 		var items:Array<Element> = [for (l in locations) <select-item value={l.id}>${l.label}</select-item>];
-		var found = m.viewIcon == null ? null : (sys.FileSystem.exists(m.iconPath()));
+		var file = m.iconFile(v.icon), found = file == null ? null : sys.FileSystem.exists(file);
+		var title = field(v, "title"), icon = field(v, "icon");
 		var out:Array<Element> = [
-			text("Title", "View title. Scripts can change it with setTitle(). Defaults to the extension name", "rayde-ext-title", title, m.name, () -> save("title", title, true)),
+			<div class="flex items-center gap-3">
+				<icon document={doc} class="size-4 shrink-0 text-text-secondary"/>
+				<text class="rayde-mono text-sm flex-1 min-w-0">${v.id}</text>
+				<tooltip label="Remove view"><button id={fid("rayde-ext-view-remove", v)} variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeView(m.file, v.id))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+			</div>,
+			text("Title", "View title. Scripts can change the first view's with setTitle(). Defaults to the extension name", fid("rayde-ext-title", v), title, m.name, () -> change(() -> Manifest.setText(m.file, "title", title.get().trim(), true, v.id))),
 			SettingsParts.field("Location", "Where the view is rendered",
-				<select id="rayde-ext-location" value={m.location} size={Sm} class="rayde-control" onChange={v -> change(() -> Manifest.setText(m.file, "location", v == "sidebar" ? null : v, true))}>{items}</select>),
-			SettingsParts.field("Icon", "SVG file for the activity bar icon. Defaults to the generic extension icon",
+				<select id={fid("rayde-ext-location", v)} value={v.location} size={Sm} class="rayde-control" onChange={l -> change(() -> Manifest.setText(m.file, "location", l == "sidebar" ? null : l, true, v.id))}>{items}</select>),
+			SettingsParts.field("Icon", "SVG file or built-in icon name for the activity bar. Defaults to the generic extension icon",
 				<div class="flex items-center gap-3">
-					<div id="rayde-ext-icon-preview" class="rayde-tile flex items-center justify-center shrink-0" width={32} height={32}><icon document={doc} class="size-4"/></div>
-					<input height={32} id="rayde-ext-icon" value={icon} placeholder="ext/icon.svg" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) save("icon", icon, true)}/>
+					<div id={fid("rayde-ext-icon-preview", v)} class="rayde-tile flex items-center justify-center shrink-0" width={32} height={32}><icon document={doc} class="size-4"/></div>
+					<input height={32} id={fid("rayde-ext-icon", v)} value={icon} placeholder="ext/icon.svg" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) change(() -> Manifest.setText(m.file, "icon", icon.get().trim(), true, v.id))}/>
 				</div>)
 		];
-		if (m.viewIcon != null && found == false)
-			out.push(<div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-icon-missing" class="text-xs text-warning">${m.viewIcon + " not found"}</text></div>);
+		if (v.icon != null && found == false)
+			out.push(<div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id={fid("rayde-ext-icon-missing", v)} class="text-xs text-warning">${v.icon + " not found"}</text></div>);
 		var svgs = svgFiles();
 		if (svgs.length > 0)
-			out.push(chips("SVG files", [for (s in svgs) {label: s, run: () -> change(() -> Manifest.setText(m.file, "icon", s, true))}]));
-		return out;
-	}
-
-	function tools():Array<Element> {
-		var out:Array<Element> = [
-			for (t in m.tools)
-				toolRow(t)
-		];
-		if (m.tools.length == 0)
+			out.push(chips("SVG files", [for (s in svgs) {label: s, run: () -> change(() -> Manifest.setText(m.file, "icon", s, true, v.id))}]));
+		out.push(<text class="text-xs font-semibold text-text-secondary pt-1">Actions</text>);
+		out.push(<text class="text-xs text-text-tertiary">Buttons in the view's title bar. Choosing one calls the handler registered with onTool(id).</text>);
+		for (t in v.tools)
+			out.push(toolRow(v, t));
+		if (v.tools.length == 0)
 			out.push(<text class="text-xs text-text-tertiary">No actions declared.</text>);
+		var id = field(v, "toolId"), toolTitle = field(v, "toolTitle"), toolIcon = field(v, "toolIcon");
 		out.push(<div class="flex items-center gap-2">
-			<input height={32} id="rayde-ext-tool-id" value={toolId} placeholder="Action id" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
-			<input height={32} id="rayde-ext-tool-title" value={toolTitle} placeholder="Tooltip" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
-			<input height={32} id="rayde-ext-tool-icon" value={toolIcon} placeholder="Icon name or .svg path" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
-			<button id="rayde-ext-tool-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addTool()}>Add</button>
+			<input height={32} id={fid("rayde-ext-tool-id", v)} value={id} placeholder="Action id" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool(v)}/>
+			<input height={32} id={fid("rayde-ext-tool-title", v)} value={toolTitle} placeholder="Tooltip" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool(v)}/>
+			<input height={32} id={fid("rayde-ext-tool-icon", v)} value={toolIcon} placeholder="Icon name or .svg path" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool(v)}/>
+			<button id={fid("rayde-ext-tool-add", v)} variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addTool(v)}>Add</button>
 		</div>);
 		out.push(chips("Built-in icons", [for (n in ["add", "refresh", "search", "filter", "settings", "play", "stop", "edit", "delete", "more"]) {label: n, run: () -> toolIcon.set(n)}]));
-		return out;
+		return <div id={fid("rayde-ext-view-block", v)} class="rayde-setting-row flex flex-col gap-3 p-4">{out}</div>;
 	}
 
-	function toolRow(t:rayde.ext.Manifest.ViewTool):Element
-		return <div class="rayde-setting-row flex items-center gap-3 px-3" height={40}>
+	function toolRow(v:ViewDecl, t:rayde.ext.Manifest.ViewTool):Element
+		return <div class="flex items-center gap-3 px-1" height={36}>
 			<icon document={ViewIcons.tool(m, t)} class="size-4 shrink-0 text-text-secondary"/>
 			<text class="rayde-mono text-sm">${t.id}</text>
 			<text class="text-xs text-text-tertiary flex-1 min-w-0">${t.title == t.id ? "" : t.title}${t.icon == null ? "" : "   " + t.icon}</text>
-			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeTool(m.file, t.id))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeTool(m.file, t.id, v.id))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
 		</div>;
 
-	function addTool():Void {
-		var id = toolId.get().trim();
+	function addTool(v:ViewDecl):Void {
+		var idField = field(v, "toolId"), titleField = field(v, "toolTitle"), iconField = field(v, "toolIcon");
+		var id = idField.get().trim();
 		if (id == "")
 			return;
-		var title = toolTitle.get().trim(), icon = toolIcon.get().trim();
-		toolId.set("");
-		toolTitle.set("");
-		toolIcon.set("");
-		change(() -> Manifest.addTool(m.file, {id: id, title: title == "" ? id : title, icon: icon == "" ? null : icon}));
+		var title = titleField.get().trim(), icon = iconField.get().trim();
+		idField.set("");
+		titleField.set("");
+		iconField.set("");
+		change(() -> Manifest.addTool(m.file, {id: id, title: title == "" ? id : title, icon: icon == "" ? null : icon}, v.id));
 	}
 
 	function commands():Array<Element> {

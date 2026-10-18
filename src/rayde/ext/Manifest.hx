@@ -2,6 +2,9 @@ package rayde.ext;
 
 import rayde.ext.OrderedJson.J;
 
+/** A view an extension declares: the id its script mounts it under, its title and icon, the part of the layout it goes in, and the buttons of its header. */
+typedef ViewDecl = {id:String, title:String, icon:Null<String>, location:String, tools:Array<ViewTool>};
+
 /** A command an extension contributes: the id its script registers a handler for, the title shown for it, and its icon (an SVG file or the name of one of RayDE's), null when it has none. */
 typedef ViewCommand = {id:String, title:String, icon:Null<String>};
 
@@ -33,15 +36,23 @@ typedef ViewTool = {id:String, title:String, icon:Null<String>};
  *       "view": {"title": "Notes", "icon": "ext/notes.svg", "location": "sidebar"}
  *     }
  *
+ *     "views": [
+ *       {"id": "main", "title": "Overview", "location": "sidebar"},
+ *       {"id": "inspector", "title": "Inspector", "location": "secondary"}
+ *     ]
+ *
  * `main` is the script that starts the extension (`main.rays` unless named). `sources` are the folders its
  * scripts are in, where `import a.b.C` looks for `a/b/C.rays` (the first one); by default the folder of
  * `main`. `mocks` is the file that answers the extension's remote calls while it is developed, by default
  * `studio.mocks.json` beside `main`. A path is relative to the config file.
  *
- * `view` says how the extension shows itself: its `title`, an SVG file for its `icon`, its `tools` and its `location`:
- * `sidebar` (the default: its icon joins the activity bar and its view takes the Explorer's place when the
- * icon is chosen), `secondary` (the side bar on the right), `panel` (a tab of the bottom panel) or `editor`
- * (a tab among the open files).
+ * An extension has a view only if it declares one; one that handles hooks and commands and presents tabs declares
+ * none, and takes no place in the layout. `view` declares one (its id is `main`), `views` a list of them, each with
+ * an `id`, and the script mounts a view under its id: `mount(view, 'inspector')`. A view says how it shows itself:
+ * its `title`, an SVG file for its `icon`, its `tools` and its `location`: `sidebar` (the default: its icon joins the
+ * activity bar and its view takes the Explorer's place when the icon is chosen), `secondary` (the side bar on the
+ * right), `panel` (a tab of the bottom panel) or `editor` (a tab among the open files). A name that is no view's id
+ * goes to the first view; `tab:<title>` opens a tab, which needs no declaration.
  *
  * `contributes` adds to the workbench: `commands` (each an `id`, a `title` and optionally an `icon`; the script
  * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`, `editor/title`), each a list of
@@ -73,16 +84,39 @@ class Manifest {
 	public final mocks:String;
 	public final capabilities:Array<String>;
 
-	/** The name the view goes by: its tab, its heading. */
-	public final viewTitle:String;
+	/**
+	 * The views the extension declares, each in a part of the layout; none for an extension that only handles hooks and
+	 * commands and presents tabs. `view` is the first of them, with the id `main`.
+	 */
+	public final views:Array<ViewDecl> = [];
 
-	/** The SVG file of the view's icon, as written; null when it has none. */
-	public final viewIcon:Null<String>;
+	/** The name the first view goes by: its tab, its heading. */
+	public var viewTitle(get, never):String;
 
-	public final location:String;
+	/** The SVG file of the first view's icon, as written; null when it has none. */
+	public var viewIcon(get, never):Null<String>;
 
-	/** The buttons of the view's header. */
-	public final tools:Array<ViewTool> = [];
+	/** Where the first view is shown. */
+	public var location(get, never):String;
+
+	/** The buttons of the first view's header. */
+	public var tools(get, never):Array<ViewTool>;
+
+	function get_viewTitle():String
+		return views.length == 0 ? name : views[0].title;
+
+	function get_viewIcon():Null<String>
+		return views.length == 0 ? null : views[0].icon;
+
+	function get_location():String
+		return views.length == 0 ? "sidebar" : views[0].location;
+
+	function get_tools():Array<ViewTool>
+		return views.length == 0 ? [] : views[0].tools;
+
+	/** The view with this id. */
+	public function viewOf(id:String):Null<ViewDecl>
+		return Lambda.find(views, v -> v.id == id);
 
 	/** The commands the extension contributes. */
 	public final commands:Array<ViewCommand> = [];
@@ -107,20 +141,58 @@ class Manifest {
 		mocks = text(json, "mocks", haxe.io.Path.join([folder, "studio.mocks.json"]));
 		capabilities = strings(json, "capabilities");
 		var view:Dynamic = Reflect.field(json, "view");
-		if (view != null && !Reflect.isObject(view)) {
+		if (view != null && (Std.isOfType(view, String) || Std.isOfType(view, Array) || !Reflect.isObject(view)))
 			problems.push('"view" must be an object.');
-			view = null;
-		}
-		viewTitle = view == null ? name : text(view, "title", name);
-		var icon = view == null ? "" : text(view, "icon", "");
-		viewIcon = icon == "" ? null : icon;
-		var where = view == null ? "sidebar" : text(view, "location", "sidebar");
+		else if (view != null)
+			views.push(readView(view, "main"));
+		var listed:Dynamic = Reflect.field(json, "views");
+		if (listed != null && !Std.isOfType(listed, Array))
+			problems.push('"views" must be an array.');
+		else if (listed != null)
+			for (v in (listed : Array<Dynamic>)) {
+				if (v == null || Std.isOfType(v, String) || Std.isOfType(v, Array) || !Reflect.isObject(v)) {
+					problems.push("Each view must be an object with an id.");
+					continue;
+				}
+				var id = text(v, "id", "");
+				if (id == "") {
+					problems.push("View is missing an id.");
+					continue;
+				}
+				if (id.indexOf(":") >= 0) {
+					problems.push('View id "$id" must not contain ":".');
+					continue;
+				}
+				if (viewOf(id) != null) {
+					problems.push('Duplicate view id "$id".');
+					continue;
+				}
+				views.push(readView(v, id));
+			}
+		var seen:Array<String> = [];
+		for (v in views)
+			for (t in v.tools) {
+				if (seen.indexOf(t.id) >= 0)
+					problems.push('Tool id "${t.id}" is declared by more than one view.');
+				seen.push(t.id);
+			}
+		contributions(Reflect.field(json, "contributes"));
+		if (!sys.FileSystem.exists(mainPath()))
+			problems.push('Main script ${main} not found.');
+	}
+
+	/** One view's declaration, with its tools; what is wrong with it goes to `problems`. */
+	function readView(view:Dynamic, id:String):ViewDecl {
+		var icon = text(view, "icon", "");
+		if (icon != "" && StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+			problems.push(id == "main" ? 'Icon $icon not found.' : 'Icon $icon of view "$id" not found.');
+		var where = text(view, "location", "sidebar");
 		if (LOCATIONS.indexOf(where) < 0) {
 			problems.push('Unknown view location "$where"; expected one of ${LOCATIONS.join(", ")}.');
 			where = "sidebar";
 		}
-		location = where;
-		var listed:Dynamic = view == null ? null : Reflect.field(view, "tools");
+		var tools:Array<ViewTool> = [];
+		var listed:Dynamic = Reflect.field(view, "tools");
 		if (listed != null && !Std.isOfType(listed, Array))
 			problems.push('"tools" must be an array.');
 		else if (listed != null)
@@ -129,25 +201,21 @@ class Manifest {
 					problems.push("Each tool must be an object with an id.");
 					continue;
 				}
-				var id = text(t, "id", "");
-				if (id == "") {
+				var tid = text(t, "id", "");
+				if (tid == "") {
 					problems.push("Tool is missing an id.");
 					continue;
 				}
-				if (Lambda.exists(tools, x -> x.id == id)) {
-					problems.push('Duplicate tool id "$id".');
+				if (Lambda.exists(tools, x -> x.id == tid)) {
+					problems.push('Duplicate tool id "$tid".');
 					continue;
 				}
-				var icon = text(t, "icon", "");
-				if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
-					problems.push('Icon $icon of tool "$id" not found.');
-				tools.push({id: id, title: text(t, "title", id), icon: icon == "" ? null : icon});
+				var toolIcon = text(t, "icon", "");
+				if (StringTools.endsWith(toolIcon, ".svg") && !sys.FileSystem.exists(absolute(toolIcon)))
+					problems.push('Icon $toolIcon of tool "$tid" not found.');
+				tools.push({id: tid, title: text(t, "title", tid), icon: toolIcon == "" ? null : toolIcon});
 			}
-		contributions(Reflect.field(json, "contributes"));
-		if (viewIcon != null && !sys.FileSystem.exists(absolute(viewIcon)))
-			problems.push('Icon ${viewIcon} not found.');
-		if (!sys.FileSystem.exists(mainPath()))
-			problems.push('Main script ${main} not found.');
+		return {id: id, title: text(view, "title", name), icon: icon == "" ? null : icon, location: where, tools: tools};
 	}
 
 	function contributions(c:Dynamic):Void {
@@ -337,38 +405,100 @@ class Manifest {
 		sys.io.File.saveContent(file, OrderedJson.stringify(json) + "\n");
 	}
 
-	/** Sets `field` of the config file to `value`, or takes it out for null or empty text; inside `view` when `inView`. */
-	public static function setText(file:String, field:String, value:Null<String>, inView = false):Void
-		update(file, json -> setIn(json, field, value == null || value == "" ? null : Str(value), inView));
+	/** Sets `field` of the config file to `value`, or takes it out for null or empty text; inside the view `viewId` (`main` by default) when `inView`. */
+	public static function setText(file:String, field:String, value:Null<String>, inView = false, viewId = "main"):Void
+		update(file, json -> {
+			var v = value == null || value == "" ? null : Str(value);
+			if (!inView)
+				return OrderedJson.set(json, field, v);
+			var view = viewObject(json, viewId, v != null);
+			if (view != null)
+				OrderedJson.set(view, field, v);
+		});
 
 	/** Sets a field of the file to a list of text, or takes it out for an empty list. */
 	public static function setList(file:String, field:String, values:Array<String>):Void
 		update(file, json -> OrderedJson.set(json, field, values.length == 0 ? null : Arr([for (v in values) Str(v)])));
 
-	static function setIn(json:J, field:String, value:Null<J>, inView:Bool):Void {
-		if (!inView)
-			return OrderedJson.set(json, field, value);
-		var view = OrderedJson.get(json, "view");
-		if (view == null || !view.match(Obj(_))) {
-			view = Obj([]);
-			OrderedJson.set(json, "view", view);
-		}
-		OrderedJson.set(view, field, value);
-		// A view with nothing left in it is not written.
-		switch view {
-			case Obj(entries) if (entries.length == 0): OrderedJson.set(json, "view", null);
+	/**
+	 * The object that declares the view `id`: an entry of `views`, or `view` for `main` when there is no `views`. With
+	 * `create`, a missing one is made; making a second view moves `view` into `views` as the entry `main`.
+	 */
+	static function viewObject(json:J, id:String, create:Bool):Null<J> {
+		switch OrderedJson.get(json, "views") {
+			case Arr(items):
+				for (i in items)
+					if (OrderedJson.text(OrderedJson.get(i, "id")) == id)
+						return i;
+				if (!create)
+					return null;
+				var made:J = Obj([{key: "id", value: Str(id)}]);
+				items.push(made);
+				return made;
 			case _:
 		}
+		var single = OrderedJson.get(json, "view");
+		var isObject = single != null && single.match(Obj(_));
+		if (id == "main") {
+			if (isObject)
+				return single;
+			if (!create)
+				return null;
+			var made:J = Obj([]);
+			OrderedJson.set(json, "view", made);
+			return made;
+		}
+		if (!create)
+			return null;
+		var list:Array<J> = [];
+		if (isObject) {
+			var moved:J = Obj([{key: "id", value: Str("main")}]);
+			switch single {
+				case Obj(entries):
+					for (e in entries)
+						OrderedJson.set(moved, e.key, e.value);
+				case _:
+			}
+			list.push(moved);
+			OrderedJson.set(json, "view", null);
+		}
+		var made:J = Obj([{key: "id", value: Str(id)}]);
+		list.push(made);
+		OrderedJson.set(json, "views", Arr(list));
+		return made;
 	}
 
-	/** Adds a tool to the view's header, at the end; one with that id already is replaced where it is. */
-	public static function addTool(file:String, tool:ViewTool):Void
+	/** Declares a view, with the fields that are not the defaults; one with that id already is replaced where it is. */
+	public static function addView(file:String, view:ViewDecl):Void
 		update(file, json -> {
-			var view = OrderedJson.get(json, "view");
-			if (view == null || !view.match(Obj(_))) {
-				view = Obj([]);
-				OrderedJson.set(json, "view", view);
+			var made = viewObject(json, view.id, true);
+			if (made == null)
+				return;
+			if (view.title != "")
+				OrderedJson.set(made, "title", Str(view.title));
+			if (view.icon != null && view.icon != "")
+				OrderedJson.set(made, "icon", Str(view.icon));
+			if (view.location != "sidebar")
+				OrderedJson.set(made, "location", Str(view.location));
+		});
+
+	/** Takes a view out, with its tools; `views` or `view` goes when that leaves none. */
+	public static function removeView(file:String, id:String):Void
+		update(file, json -> {
+			switch OrderedJson.get(json, "views") {
+				case Arr(items):
+					var kept = [for (i in items) if (OrderedJson.text(OrderedJson.get(i, "id")) != id) i];
+					OrderedJson.set(json, "views", kept.length == 0 ? null : Arr(kept));
+				case _:
+					if (id == "main")
+						OrderedJson.set(json, "view", null);
 			}
+		});
+
+	/** Adds a tool to the header of the view `viewId`, at the end; one with that id already is replaced where it is. */
+	public static function addTool(file:String, tool:ViewTool, viewId = "main"):Void
+		update(file, json -> {
+			var view = viewObject(json, viewId, true);
 			var entry:J = Obj([{key: "id", value: Str(tool.id)}]);
 			if (tool.title != tool.id && tool.title != "")
 				OrderedJson.set(entry, "title", Str(tool.title));
@@ -387,20 +517,16 @@ class Manifest {
 			}
 		});
 
-	/** Takes the tool with this id out of the view's header, and the list of tools or the view when that leaves them empty. */
-	public static function removeTool(file:String, id:String):Void
+	/** Takes the tool with this id out of the header of the view `viewId`, and the list of tools when that leaves it empty. */
+	public static function removeTool(file:String, id:String, viewId = "main"):Void
 		update(file, json -> {
-			var view = OrderedJson.get(json, "view");
+			var view = viewObject(json, viewId, false);
 			if (view == null)
 				return;
 			switch OrderedJson.get(view, "tools") {
 				case Arr(items):
 					var kept = [for (i in items) if (OrderedJson.text(OrderedJson.get(i, "id")) != id) i];
 					OrderedJson.set(view, "tools", kept.length == 0 ? null : Arr(kept));
-				case _:
-			}
-			switch view {
-				case Obj(entries) if (entries.length == 0): OrderedJson.set(json, "view", null);
 				case _:
 			}
 		});

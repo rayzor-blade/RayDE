@@ -1,0 +1,22 @@
+var refreshes = signal(0);
+var lines = signal(['started']);
+
+// Each view is mounted under the id the config declares it with, and goes where its location says.
+mount(() -> <div class="flex flex-col gap-2 p-4">
+  <h2 class="text-xl font-semibold">Overview</h2>
+  <p class="text-sm text-text-secondary">{refreshes} refreshes</p>
+</div>, 'main');
+
+mount(() -> <div class="flex flex-col gap-2 p-4">
+  <h2 class="text-lg font-semibold">Inspector</h2>
+  <p class="text-sm text-text-secondary">{lines.value.length} lines logged</p>
+</div>, 'inspector');
+
+mount(() -> <div class="flex flex-col gap-1 p-3">
+  <for {line in lines}><span class="text-xs">{line}</span></for>
+</div>, 'log');
+
+onTool('refresh', () -> {
+  refreshes.value++;
+  lines.value = lines.value.concat(['refresh ' + refreshes.value]);
+});

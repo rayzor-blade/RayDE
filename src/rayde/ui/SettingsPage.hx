@@ -69,6 +69,10 @@ class SettingsPage extends Component<SettingsPageProps> {
 		return found == null ? categories[1] : found;
 	}
 
+	/** The name a section goes by in the list: the extension's own name for the section that configures it. */
+	public static function labelOf(c:SettingsCategory, extension:Null<Manifest>):String
+		return c.id == "extension" && extension != null ? extension.name : c.label;
+
 	/** Whether a project has the section: the config of an extension only for an extension, the build and libraries for the rest. */
 	function has(c:SettingsCategory):Bool
 		return props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
@@ -87,7 +91,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 	function navItem(c:SettingsCategory, on:Bool):Element {
 		var item = <div id={"rayde-settings-nav-" + c.id} class="rayde-nav-item flex items-center gap-3 px-3 cursor-pointer" height={34} onClick={_ -> props.category.set(c.id)}>
 			<icon document={c.icon} class="size-4 shrink-0"/>
-			<text class="text-sm">${c.label}</text>
+			<text class="text-sm truncate">${labelOf(c, props.extension)}</text>
 		</div>;
 		if (on)
 			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
