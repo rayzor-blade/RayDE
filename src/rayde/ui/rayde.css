@@ -145,3 +145,7 @@
 #rayde { --ui-input-height: 32px; --ui-input-radius: var(--radius-md); --ui-button-shadow: none; }
 #rayde input.ui-input { box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px; corner-shape: squircle; }
 #rayde .rayde-add { --ui-button-height: 32px; border-radius: var(--radius-md); corner-shape: squircle; }
+
+/* The terminal: its screen is drawn on a canvas that fills the panel's tab. */
+#rayde .rayde-terminal { min-width: 0; outline-width: 0; }
+#rayde .rayde-term-text { font-family: var(--font-mono); font-size: 13px; line-height: 18px; white-space: pre; }

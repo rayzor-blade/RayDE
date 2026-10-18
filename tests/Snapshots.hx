@@ -97,6 +97,25 @@ class Snapshots {
 				shot("tabs-many-first");
 				bench.openBuild();
 				shot("build-tab");
+				// A terminal in the panel, running a script that prints in colour and then waits.
+				bench.terminalProgram = "/bin/sh";
+				bench.terminalArgs = [
+					"-c",
+					"printf '\\033[32mrayde\\033[0m on \\033[35mmain\\033[0m \\033[2m10:42\\033[0m\\n'; printf '\\033[1mls\\033[0m\\n'; printf '\\033[34msrc\\033[0m  \\033[34mbin\\033[0m  \\033[36mbuild.hxml\\033[0m  README.md\\n'; "
+					+ "printf '\\033[31merror\\033[0m: \\033[4munderlined\\033[0m \\033[7minverse\\033[0m  box ┌─┬─┐ ╔═╦═╗ ┃ ▀▄█ ░▒▓ ▖▟ ✓\\n'; printf '\\033[38;5;208morange\\033[0m \\033[38;2;120;200;255mtruecolor\\033[0m \\033[1;33mbold yellow\\033[0m\\n'; printf '$ '; sleep 60"
+				];
+				bench.showPanel("terminal");
+				var waiting = haxe.Timer.stamp() + 8;
+				while ((bench.terminal() == null || bench.terminal().line(4).indexOf("orange") < 0) && haxe.Timer.stamp() < waiting) {
+					Sys.sleep(.03);
+					settle(1);
+				}
+				if (bench.terminal() == null || bench.terminal().line(0).indexOf("rayde on main") < 0)
+					throw 'the terminal did not show what the program printed: "${bench.terminal() == null ? "no terminal" : bench.terminal().line(0)}"';
+				settle(12);
+				shot("terminal");
+				bench.killTerminal();
+				bench.closePanel();
 				// Every tab closed: the welcome page, now with recent files.
 				bench.closeAll();
 				shot("welcome-recent");

@@ -7,5 +7,6 @@ ash=${ASH:-$(command -v ash || true)}
 mkdir -p "$here/bin"
 "$here/scripts/build-terminal.sh"
 cd "$here"
-haxe -cp src -cp tests -main Checks -hl bin/checks.hl
+siblings=$(dirname "$here")
+haxe -cp src -cp tests -cp "${HLWINDOW:-$siblings/hlwindow}/haxe" -main Checks -hl bin/checks.hl
 exec "$ash" --preset application bin/checks.hl "$@"

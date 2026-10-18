@@ -11,6 +11,7 @@ import ashui.components.Tabs;
 import ashui.components.Tooltip;
 import ashui.components.TreeView;
 import ashui.layout.Element;
+import ashui.reactive.Owner;
 import ashui.reactive.Computed;
 import ashui.reactive.Signal;
 import ashui.input.Events.KeyEvent;
@@ -20,8 +21,10 @@ import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.lang.Display;
 import rayde.run.Runner;
+import rayde.term.Terminal;
 import rayde.ui.BuildSettings;
 import rayde.ui.FileTabs;
+import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
 
@@ -108,6 +111,15 @@ class Workbench extends Component<WorkbenchProps> {
 
 	final panelShown:Computed<Bool>;
 	final rowsRef = new Ref<Resizable>();
+
+	/** The program the terminal runs, the user's login shell unless a test names one. */
+	public var terminalProgram:Null<String>;
+
+	public var terminalArgs:Null<Array<String>>;
+
+	var session:Null<Terminal>;
+	final terminalGeneration = Signal.make(0);
+	final terminalView = new Ref<TerminalView>();
 
 	/** The tab shown below the editor: problems or console, which the panel calls Output. */
 	public final bottom = Signal.make("problems");
@@ -360,6 +372,64 @@ class Workbench extends Component<WorkbenchProps> {
 		</tooltip>;
 	}
 
+	/** Sets the bottom panel's height, as a drag of its handle would. */
+	public function setPanelHeight(height:Float):Void
+		problemsHeight.set(height);
+
+	/** The terminal's session, null before it starts and after it is killed. */
+	public function terminal():Null<Terminal>
+		return session;
+
+	/** Starts the terminal if it is not running. */
+	function ensureTerminal():Void {
+		if (session != null)
+			return;
+		session = Terminal.open(100, 12, props.display.cwd, terminalProgram, terminalArgs);
+		if (session == null)
+			say("Could not start a shell");
+		terminalGeneration.set(terminalGeneration.get() + 1);
+	}
+
+	/** Ends the terminal and starts another in the project's folder, and gives it the keyboard. */
+	public function newTerminal():Void {
+		killTerminal();
+		showPanel("terminal");
+		ensureTerminal();
+		focusTerminal();
+	}
+
+	/** Ends the terminal; the pane then offers a new one. */
+	public function killTerminal():Void {
+		if (session != null)
+			session.close();
+		session = null;
+		terminalGeneration.set(terminalGeneration.get() + 1);
+	}
+
+	/** Opens the panel on the terminal and gives it the keyboard, or closes the panel when the terminal is what it shows. */
+	public function toggleTerminal():Void {
+		if (panelShown.get() && bottom.get() == "terminal") {
+			closePanel();
+			return;
+		}
+		showPanel("terminal");
+		focusTerminal();
+	}
+
+	/** Once the terminal's view is made, gives it the keyboard. */
+	function focusTerminal():Void {
+		var tries = 0, hook:ashui.layout.LayoutTree->Void = null;
+		hook = _ -> {
+			var view = terminalView.get();
+			if (view != null && panelShown.get()) {
+				ashui.layout.LayoutTree.flushHooks.remove(hook);
+				view.focus();
+			} else if (++tries > 30)
+				ashui.layout.LayoutTree.flushHooks.remove(hook);
+		};
+		ashui.layout.LayoutTree.flushHooks.push(hook);
+	}
+
 	/** Whether the bottom panel, Problems and Output, is open. */
 	public function panelOpen():Bool
 		return panelShown.get();
@@ -415,6 +485,8 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
+			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, shortcut: "Ctrl+`", run: toggleTerminal},
+			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: newTerminal},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J", run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
@@ -513,6 +585,8 @@ class Workbench extends Component<WorkbenchProps> {
 				closeFile(active.get());
 			case Character("j") | Character("J") if (command):
 				togglePanel();
+			case Character("`") if (e.control || command):
+				toggleTerminal();
 			case Named(F12):
 				goToDefinition();
 			case Named(F5) if (e.shift):
@@ -533,6 +607,14 @@ class Workbench extends Component<WorkbenchProps> {
 		loadRecent();
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
+		// The terminal starts when its tab is first in view, not when RayDE does.
+		new ashui.reactive.Watch(() -> {
+			bottom.get();
+			panelShown.get();
+			0;
+		}, _ -> if (bottom.get() == "terminal" && panelShown.get())
+			ensureTerminal(), (_, _) -> false);
+		Owner.onCleanup(() -> if (session != null) session.close());
 		new ashui.reactive.Watch(() -> {
 			active.get();
 			folderStates.get();
@@ -805,16 +887,39 @@ class Workbench extends Component<WorkbenchProps> {
 				<tabs-list class="shrink-0">
 					<tabs-trigger id="rayde-tab-problems" value="problems">Problems</tabs-trigger>
 					<tabs-trigger id="rayde-tab-console" value="console">Output</tabs-trigger>
+					<tabs-trigger id="rayde-tab-terminal" value="terminal">Terminal</tabs-trigger>
 				</tabs-list>
 				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><for {list in [problems.get()]}>${problemsPane(list)}</for></tabs-content>
 				<tabs-content value="console" class="flex-1 min-h-0 pt-1">
 					<code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>
 				</tabs-content>
+				<tabs-content value="terminal" class="flex-1 min-h-0 pt-1"><for {g in [terminalGeneration.get()]}>${terminalPane()}</for></tabs-content>
 			</tabs>
 			<div class="flex items-center gap-1" position={Absolute} right={8} top={6}>
+				<for {tab in [bottom.get()]}>${panelTools(tab)}</for>
 				<tooltip label="Close panel" side="top"><button id="rayde-panel-close" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> closePanel()}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
 			</div>
 		</div>;
+
+	/** The terminal, or an offer of one while none is running. */
+	function terminalPane():Element {
+		if (session == null)
+			return <div id="rayde-terminal-empty" class="flex flex-col flex-1 items-center justify-center gap-3">
+				<text class="text-sm text-text-tertiary">No terminal is running.</text>
+				<button id="rayde-terminal-new" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> newTerminal()}>New terminal</button>
+			</div>;
+		return <terminal-view ref={terminalView} terminal={session} shown={() -> panelShown.get() && bottom.get() == "terminal"} onExit={code -> say("The terminal exited with code " + code)}/>;
+	}
+
+	/** What the panel's tab row holds for the tab in view, before its close button. */
+	function panelTools(tab:String):Element {
+		if (tab != "terminal")
+			return <div/>;
+		return <div class="flex items-center gap-1">
+			<tooltip label="New terminal" side="top"><button id="rayde-terminal-add" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> newTerminal()}><icon document={Icons.ADD_LINE} class="size-4"/></button></tooltip>
+			<tooltip label="Kill terminal" side="top"><button id="rayde-terminal-kill" variant={Ghost} size={Icon} class="rayde-panel-button rayde-remove" onClick={_ -> killTerminal()}><icon document={Icons.DELETE_BIN_LINE} class="size-4"/></button></tooltip>
+		</div>;
+	}
 
 	function problemsPane(list:Array<Diagnostic>):Element
 		return <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">

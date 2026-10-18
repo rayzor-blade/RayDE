@@ -2,7 +2,9 @@ import rayde.build.HxmlFile;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.run.Runner;
+import rayde.term.KeyMap;
 import rayde.term.Terminal;
+import window.Key;
 
 using StringTools;
 
@@ -100,8 +102,26 @@ class Checks {
 		t.close();
 	}
 
+	/** What keys send a program, which is what xterm sends. */
+	static function keyChecks():Void {
+		var sends = (key:Key, shift:Bool, control:Bool, alt:Bool, application:Bool) -> KeyMap.encode(key, shift, control, alt, application);
+		check(sends(Named(Enter), false, false, false, false) == "\r", "Enter sends a carriage return");
+		check(sends(Named(Backspace), false, false, false, false) == "\x7f", "Backspace sends delete");
+		check(sends(Character("c"), false, true, false, false) == "\x03", "Ctrl+C is the interrupt");
+		check(sends(Character("x"), false, false, true, false) == "\x1bx", "Alt puts an escape before the key");
+		check(sends(Named(ArrowUp), false, false, false, false) == "\x1b[A", "up arrow");
+		check(sends(Named(ArrowUp), false, false, false, true) == "\x1bOA", "up arrow in application mode");
+		check(sends(Named(ArrowRight), false, true, false, false) == "\x1b[1;5C", "Ctrl+right carries its modifier");
+		check(sends(Named(Tab), true, false, false, false) == "\x1b[Z", "Shift+Tab");
+		check(sends(Named(F5), false, false, false, false) == "\x1b[15~", "F5");
+		check(sends(Named(Delete), false, false, false, false) == "\x1b[3~", "Delete");
+		check(sends(Character("é"), false, false, false, false) == "é", "a character is sent as it is");
+		check(KeyMap.mouse(0, 5, 3, false, 2) == "\x1b[<0;5;3M" && KeyMap.mouse(0, 5, 3, true, 2) == "\x1b[<0;5;3m", "mouse reports in the sgr form");
+	}
+
 	static function main():Void {
 		hxmlChecks();
+		keyChecks();
 		terminalChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
@@ -178,6 +198,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, the terminal, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal and its keys, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }

@@ -65,6 +65,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 					<div class="rayde-note flex items-center gap-3 px-4 py-3"><icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0"/><text class="text-xs">This file holds several builds separated by --next. The form edits the first one.</text></div>
 				</if>
 				<for {r in [revision.get()]}>${sections(r)}</for>
+				<div class="shrink-0" height={40}/>
 			</div>
 		</div>;
 	}

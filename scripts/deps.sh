@@ -48,7 +48,7 @@ stage_natives() {
   cp "$gpu" "$out/xgpu.hdll"
   cp "$window" "$out/xwindow.hdll"
   "$here/scripts/build-terminal.sh"
-  [ "$out" = "$here/bin" ] || cp "$here/bin/cterm.hdll" "$out/cterm.hdll"
+  [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/cterm.hdll" "$out/cterm.hdll"
 }
 
 ui_args=(-cp src -lib hashlink -lib tink_hxx -D ash_simd -D ashui_scene_stencil -D "ashui_css=src/rayde/ui/rayde.css"
