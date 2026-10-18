@@ -69,12 +69,12 @@ mount(() -> <div class='flex flex-col gap-3 p-4'>
 			}
 			check(done(), 'timed out waiting for $what');
 		}
-		studio = new Studio(file, dir + "/host", () -> sys.io.File.getContent(file));
+		studio = new Studio(file, dir + "/host", () -> sys.io.File.getContent(file), tree);
 		if (studio.state.get() == "unavailable") {
 			Sys.println("preview checks skipped: no rayscript-host");
 			return;
 		}
-		studio.attach(tree, view.node);
+		studio.attach(view.node);
 		studio.reload();
 		until(() -> studio.preview.count() > 12, "the view");
 		settle();
@@ -95,7 +95,6 @@ mount(() -> <div class='flex flex-col gap-3 p-4'>
 			settle();
 			Snapshot.capture('preview-${dark ? "dark" : "light"}-clicked', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
 		}
-		studio.stop();
-		studio.detach();
+		studio.dispose();
 	}
 }

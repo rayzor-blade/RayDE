@@ -193,3 +193,16 @@
 #rayde .rayde-keymap-tile:hover { border-color: var(--border-hover); }
 #rayde .rayde-keymap-tile[data-on] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
 #rayde .rayde-keycap-small { min-width: 48px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }
+
+/* Extension Studio: the Preview's bar and surface, and the lists in the Extension panel. */
+#rayde .rayde-studio-bar { border-bottom: 1px solid var(--border); }
+#rayde .rayde-studio-live { --ui-button-height: 26px; padding: 0 8px; gap: 6px; border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
+#rayde .rayde-studio-live:hover { color: var(--text-primary); }
+#rayde .rayde-studio-surface { background: var(--background); }
+#rayde .rayde-extension-pick { border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
+#rayde .rayde-extension-pick:hover { color: var(--text-primary); background: var(--accent-subtle); }
+#rayde .rayde-extension-pick[data-on] { color: var(--text-primary); background: color-mix(in srgb, var(--primary) 24%, transparent); }
+#rayde .rayde-entry { border-radius: var(--radius-md); corner-shape: squircle; }
+#rayde .rayde-entry[data-jump] { cursor: pointer; }
+#rayde .rayde-entry[data-jump]:hover { background: var(--accent-subtle); }
+#rayde .rayde-element { min-height: 20px; }

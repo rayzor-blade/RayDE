@@ -8,12 +8,12 @@ import rayde.settings.Extensions.Extension;
 
 typedef ExtensionSettingsProps = {root:String};
 
-/** The extensions installed, from the folders that hold an extension.json. */
+/** The extensions installed, from the folders that hold a .rayext config file. */
 class ExtensionSettings extends Component<ExtensionSettingsProps> {
 	function render():Element {
 		var found = Extensions.list(props.root);
 		return SettingsParts.page("rayde-extensions", <div class="flex flex-col gap-6">
-			${SettingsParts.header(Icons.PUZZLE_LINE, "Extensions", "Folders with an extension.json, in .rayde/extensions here or in your home folder.")}
+			${SettingsParts.header(Icons.PUZZLE_LINE, "Extensions", "Folders with a .rayext file, in .rayde/extensions here or in your home folder.")}
 			${SettingsParts.card("rayde-extensions-card", "Installed", "RayDE lists what it finds. It does not run extensions yet.", rows(found))}
 		</div>);
 	}

@@ -5,6 +5,7 @@ import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.ext.ExtensionHost;
 import rayde.ext.HostBinary;
+import rayde.ext.Manifest;
 import rayde.keys.Keymaps;
 import rayde.run.Haxelib;
 import rayde.run.Runner;
@@ -101,7 +102,7 @@ class Checks {
 
 		var root = Sys.getCwd() + "bin/check-settings";
 		if (sys.FileSystem.exists(root))
-			for (f in ["libs.txt", "haxelib-stub.sh", ".rayde/keybindings.json", ".rayde/settings.json", ".rayde/run/haxelib.log", ".rayde/extensions/hello/extension.json", ".rayde/extensions/broken/extension.json"])
+			for (f in ["libs.txt", "haxelib-stub.sh", ".rayde/keybindings.json", ".rayde/settings.json", ".rayde/run/haxelib.log", ".rayde/extensions/hello/hello.rayext", ".rayde/extensions/broken/broken.rayext"])
 				if (sys.FileSystem.exists(root + "/" + f))
 					sys.FileSystem.deleteFile(root + "/" + f);
 		for (d in [root, root + "/.rayde", root + "/.rayde/run", root + "/.rayde/extensions", root + "/.rayde/extensions/hello", root + "/.rayde/extensions/broken"])
@@ -202,8 +203,8 @@ class Checks {
 		Sys.putEnv("RAYDE_HAXELIB", "");
 		Haxelib.refresh();
 
-		sys.io.File.saveContent(root + "/.rayde/extensions/hello/extension.json", '{"name": "Hello", "version": "0.1.0", "description": "Says hello"}');
-		sys.io.File.saveContent(root + "/.rayde/extensions/broken/extension.json", "{ not json");
+		sys.io.File.saveContent(root + "/.rayde/extensions/hello/hello.rayext", '{"name": "Hello", "version": "0.1.0", "description": "Says hello", "main": "hello.rays"}');
+		sys.io.File.saveContent(root + "/.rayde/extensions/broken/broken.rayext", "{ not json");
 		var found = [for (e in Extensions.list(root)) if (e.scope == "Workspace") e];
 		check(found.length == 2 && found[0].id == "broken" && found[0].problem != null && found[1].name == "Hello" && found[1].version == "0.1.0", 'extensions are found: ${found.map(e -> e.id + ":" + e.problem)}');
 	}
@@ -252,6 +253,39 @@ class Checks {
 		check(sends(Named(Delete), false, false, false, false) == "\x1b[3~", "Delete");
 		check(sends(Character("é"), false, false, false, false) == "é", "a character is sent as it is");
 		check(KeyMap.mouse(0, 5, 3, false, 2) == "\x1b[<0;5;3M" && KeyMap.mouse(0, 5, 3, true, 2) == "\x1b[<0;5;3m", "mouse reports in the sgr form");
+	}
+
+	/** The .rayext config file: what it says, what it defaults to, and what is wrong with one that is wrong. */
+	static function manifestChecks():Void {
+		var dir = Sys.getCwd() + "bin/check-manifest";
+		for (d in [dir, dir + "/ext"])
+			if (!sys.FileSystem.exists(d))
+				sys.FileSystem.createDirectory(d);
+		sys.io.File.saveContent(dir + "/ext/main.rays", "");
+		sys.io.File.saveContent(dir + "/notes.rayext", '{"name": "Notes", "version": "0.2.0", "description": "A panel", "main": "ext/main.rays", "sources": ["ext", "missing"], "mocks": "ext/answers.json", "capabilities": ["workspace.read"]}');
+		var m = Manifest.read(dir + "/notes.rayext");
+		check(m.problems.length == 0, 'a good file has no problems: ${m.problems}');
+		check(m.name == "Notes" && m.version == "0.2.0" && m.description == "A panel" && m.capabilities.join(",") == "workspace.read", "the fields are read");
+		check(m.mainPath() == sys.FileSystem.fullPath(dir) + "/ext/main.rays", 'the main script in full: ${m.mainPath()}');
+		check(m.mocksPath() == sys.FileSystem.fullPath(dir) + "/ext/answers.json", 'the mocks file in full: ${m.mocksPath()}');
+		check(m.sourceDirs().length == 1 && m.sourceDirs()[0].label == "ext", "a source folder that is not there is left out");
+		check(m.importRoot() == sys.FileSystem.fullPath(dir) + "/ext", "imports come from the first source folder");
+		sys.io.File.saveContent(dir + "/bare.rayext", "{}");
+		var bare = Manifest.read(dir + "/bare.rayext");
+		check(bare.name == "bare" && bare.main == "main.rays" && bare.sources.join(",") == "." && bare.mocks == "studio.mocks.json", 'the defaults: ${bare.name} ${bare.main} ${bare.sources} ${bare.mocks}');
+		check(bare.problems.length == 1 && bare.problems[0].indexOf("main.rays is not there") > 0, 'a missing main script is a problem: ${bare.problems}');
+		sys.io.File.saveContent(dir + "/inner.rayext", '{"main": "ext/start.rays"}');
+		var inFolder = Manifest.read(dir + "/inner.rayext");
+		check(inFolder.sources.join(",") == "ext" && inFolder.mocks == "ext/studio.mocks.json", 'defaults follow the main script: ${inFolder.sources} ${inFolder.mocks}');
+		sys.io.File.saveContent(dir + "/broken.rayext", "{ not json");
+		var broken = Manifest.read(dir + "/broken.rayext");
+		check(broken.problems.length > 0 && StringTools.startsWith(broken.problems[0], "The file is not JSON"), 'bad JSON is said to be: ${broken.problems}');
+		sys.io.File.saveContent(dir + "/list.rayext", "[1, 2]");
+		check(Manifest.read(dir + "/list.rayext").problems[0] == "The file should hold one JSON object.", "a JSON file that is not an object is refused");
+		sys.io.File.saveContent(dir + "/types.rayext", '{"name": 3, "sources": "ext", "capabilities": [1]}');
+		var types = Manifest.read(dir + "/types.rayext");
+		check(types.name == "types" && types.problems.length >= 3, 'wrong types are named: ${types.problems}');
+		check(Manifest.isManifest("a/notes.rayext") && !Manifest.isManifest("build.hxml"), "a config file is known by its extension");
 	}
 
 	/** An extension in a real rayscript-host: a view comes back as operations, an event goes in, an error comes with its place. */
@@ -316,6 +350,7 @@ class Checks {
 		keyChecks();
 		settingsChecks();
 		terminalChecks();
+		manifestChecks();
 		extensionHostChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);

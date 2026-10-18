@@ -19,6 +19,7 @@ import ashui.ui.Component;
 import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
+import rayde.ext.Studio;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.keys.Keymaps;
@@ -33,6 +34,8 @@ import rayde.run.Tasks;
 import rayde.term.Terminal;
 import rayde.ui.FileTabs;
 import rayde.ui.SettingsPage;
+import rayde.ui.StudioPanels;
+import rayde.ui.StudioView;
 import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
@@ -176,7 +179,15 @@ class Workbench extends Component<WorkbenchProps> {
 	final terminalView = new Ref<TerminalView>();
 	final profilesMenu = new Ref<DropdownMenu>();
 
-	/** The tab shown below the editor: problems or console, which the panel calls Output. */
+	/** The extensions open in the Studio, by their main file, and the one of the file in front, if it is one. */
+	final studios = new Map<String, Studio>();
+
+	final activeStudio = Signal.make((null : Null<Studio>));
+
+	/** The Preview's width beside the code. */
+	final previewWidth = Signal.make(440.);
+
+	/** The tab shown below the editor: problems, console (which the panel calls Output), terminal or extension. */
 	public final bottom = Signal.make("problems");
 
 	/** What the build and the program have printed, and where the run is: idle, building, running, finished or failed. */
@@ -262,6 +273,12 @@ class Workbench extends Component<WorkbenchProps> {
 			return;
 		var rest = files.copy();
 		rest.splice(at, 1);
+		var studio = studios.get(file);
+		if (studio != null) {
+			studio.dispose();
+			studios.remove(file);
+			activeStudio.set(null);
+		}
 		if (active.get() == file)
 			active.set(rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
 		open.set(rest);
@@ -741,6 +758,8 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "extensions", label: "Show Extensions", icon: Icons.PUZZLE_LINE, run: () -> openSettings("extensions")},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
+			{id: "extension", label: "Show Extension Console", icon: Icons.PUZZLE_LINE, run: () -> showPanel("extension")},
+			{id: "extensionreload", label: "Reload Extension", icon: Icons.REFRESH_LINE, run: () -> if (isExtension(active.get())) studioOf(active.get()).reload()},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, run: toggleTerminal},
 			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
 			{id: "splitterminal", label: "Split Terminal", icon: Icons.LAYOUT_COLUMN_LINE, run: () -> splitTerminal()},
@@ -816,12 +835,44 @@ class Workbench extends Component<WorkbenchProps> {
 		if (dirty.get().indexOf(file) < 0)
 			dirty.set(dirty.get().concat([file]));
 		check(file);
+		var studio = studios.get(file);
+		if (studio != null)
+			studio.edited();
+	}
+
+	/** The Studio running the extension whose main file is `file`, if it is open. */
+	public function extension(file:String):Null<Studio>
+		return studios.get(file);
+
+	static function isExtension(file:String):Bool
+		return StringTools.endsWith(file, ".rays");
+
+	/** The Studio for an extension's main file, started the first time it is asked for. */
+	function studioOf(file:String):Studio {
+		var studio = studios.get(file);
+		if (studio != null)
+			return studio;
+		var name = StringTools.replace(relative(file), "/", "_");
+		studio = new Studio(file, haxe.io.Path.join([props.display.cwd, ".rayde", "studio", name]), () -> buffer(file).get(), tree);
+		studios.set(file, studio);
+		studio.onProblems = list -> problems.set([for (p in problems.get()) if (p.file != file) p].concat(list));
+		studio.onError = kind -> {
+			if (panelShown.get())
+				return;
+			showPanel(kind == "syntax" || kind == "compile" ? "problems" : "extension");
+		};
+		studio.reload();
+		return studio;
 	}
 
 	/** Writes every edited buffer to its file: a build reads the files, so it should see them as they are in the editor. */
 	public function saveAll():Void {
-		for (file in dirty.get())
+		for (file in dirty.get()) {
 			sys.io.File.saveContent(file, buffer(file).get());
+			var studio = studios.get(file);
+			if (studio != null && !studio.live.get())
+				studio.reload();
+		}
 		if (dirty.get().length > 0)
 			dirty.set([]);
 	}
@@ -829,6 +880,11 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
 		saveAll();
+		if (isExtension(active.get())) {
+			studioOf(active.get()).reload();
+			showPanel("extension");
+			return;
+		}
 		runner.start();
 		showPanel("console");
 		poll();
@@ -898,6 +954,7 @@ class Workbench extends Component<WorkbenchProps> {
 		refreshShortcuts();
 		loadRecent();
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
+		new ashui.reactive.Watch(() -> active.get(), file -> activeStudio.set(studios.get(file)));
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
 		// The terminal starts when its tab is first in view, not when RayDE does.
 		new ashui.reactive.Watch(() -> {
@@ -1111,7 +1168,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return file == SETTINGS ? "Settings" : haxe.io.Path.withoutDirectory(file);
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == SETTINGS ? Icons.SETTINGS_3_LINE : StringTools.endsWith(file, ".hx") ? Icons.HAXE : Icons.BRACES_LINE;
+		return file == SETTINGS ? Icons.SETTINGS_3_LINE : StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)
@@ -1171,14 +1228,37 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The grammar the editor highlights `file` by. */
 	static function languageOf(file:String):String
-		return StringTools.endsWith(file, ".hx") ? "haxe" : StringTools.endsWith(file, ".json") ? "json" : "plain";
+		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") ? "json" : "plain";
 
-	function pageOfFile(file:String):Element
+	function pageOfFile(file:String):Element {
+		if (isExtension(file))
+			return studioPage(file);
+		return <tabs-content value={file} class="flex-1 min-h-0">${codeEditor(file)}</tabs-content>;
+	}
+
+	function codeEditor(file:String):Element
+		return <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
+			class="flex-1 min-h-0"/>;
+
+	/** An extension: its code, and beside it the Preview of what it draws. */
+	function studioPage(file:String):Element {
+		var studio = studioOf(file);
 		return <tabs-content value={file} class="flex-1 min-h-0">
-			<code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
-				lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
-				class="flex-1 min-h-0"/>
+			<resizable id="rayde-studio-columns" class="flex-1 min-h-0">
+				<resizable-panel minSize={200}>${codeEditor(file)}</resizable-panel>
+				<resizable-panel size={previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)}/></resizable-panel>
+			</resizable>
 		</tabs-content>;
+	}
+
+	/** Opens the file that answers the extension's remote calls while it is developed, making it when there is none. */
+	function openMocks(studio:Studio):Void {
+		var path = studio.mocksPath();
+		if (!sys.FileSystem.exists(path))
+			sys.io.File.saveContent(path, "{\n}\n");
+		openFile(path);
+	}
 
 	/** Problems and the Output of a run, as VS Code's panel names them. */
 	function bottomCard():Element
@@ -1188,12 +1268,14 @@ class Workbench extends Component<WorkbenchProps> {
 					<tabs-trigger id="rayde-tab-problems" value="problems">Problems</tabs-trigger>
 					<tabs-trigger id="rayde-tab-console" value="console">Output</tabs-trigger>
 					<tabs-trigger id="rayde-tab-terminal" value="terminal">Terminal</tabs-trigger>
+					<tabs-trigger id="rayde-tab-extension" value="extension">Extension</tabs-trigger>
 				</tabs-list>
 				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><for {list in [problems.get()]}>${problemsPane(list)}</for></tabs-content>
 				<tabs-content value="console" class="flex-1 min-h-0 pt-1">
 					<code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>
 				</tabs-content>
 				<tabs-content value="terminal" class="flex-1 min-h-0 pt-1"><for {g in [terminalGeneration.get()]}>${terminalPane()}</for></tabs-content>
+				<tabs-content value="extension" class="flex-1 min-h-0 pt-1"><studio-panels studio={activeStudio} onOpen={goTo}/></tabs-content>
 			</tabs>
 			<div class="flex items-center gap-1" position={Absolute} right={8} top={6}>
 				<for {tab in [bottom.get()]}>${panelTools(tab)}</for>

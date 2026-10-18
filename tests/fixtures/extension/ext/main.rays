@@ -1,0 +1,26 @@
+import rayde.workspace.activeFile;
+
+var count = signal(0);
+var notes = signal(['Read the brief', 'Draft the panel', 'Try it in the Preview']);
+var file = signal('…');
+
+function Row(props) {
+  return <li class="flex items-center gap-2 px-2 py-1 rounded-md bg-surface-elevated">
+    <span class="size-2 rounded-full bg-accent"></span>
+    <span class="flex-1">{props.text}</span>
+  </li>;
+}
+
+trace('Notes panel started');
+
+mount(() -> <div class="flex flex-col gap-3 p-4">
+  <h2 class="text-xl font-semibold">Notes</h2>
+  <p class="text-sm text-text-secondary">Editing {file}</p>
+  <div class="flex items-center gap-2">
+    <button class="px-3 py-1 rounded-md bg-primary text-text-inverse" onClick={() -> count.value++}>Add note</button>
+    <span class="text-sm">{count} added</span>
+  </div>
+  <ul class="flex flex-col gap-1"><for {n in notes}><Row text={n}/></for></ul>
+</div>, 'notes');
+
+file.value = await activeFile();

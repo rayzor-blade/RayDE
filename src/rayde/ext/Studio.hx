@@ -33,15 +33,21 @@ class Studio {
 	/** Called when `problems` is replaced. */
 	public var onProblems:Null<Array<Diagnostic>->Void>;
 
+	/** Called when the console gets an error, with its kind (syntax, compile, runtime or view), so a panel can come into view. */
+	public var onError:Null<String->Void>;
+
 	public var file(default, null):String;
+
+	/** What the extension's view is, as nodes of the tree. It outlives the pages that show it: `detach` takes it out of one, `attach` puts it in the next. */
 	public var preview(default, null):Null<Preview>;
 
 	final binary:Null<String>;
 	final dir:String;
 	final root:String;
+	final manifest:Null<Manifest>;
 	final source:Void->String;
 	var host:Null<ExtensionHost>;
-	var tree:Null<LayoutTree>;
+	final tree:LayoutTree;
 	var container:Null<Node>;
 	var mocks:Dynamic = {};
 	var mocksFile:String;
@@ -53,14 +59,18 @@ class Studio {
 	/** Counts what the Console shows. */
 	static inline var MAX_ENTRIES = 1000;
 
-	/** `file` is the script that is the extension's main, `source` gives it as the editor holds it; `dir` holds the host's logs. */
-	public function new(file:String, dir:String, source:Void->String, ?binary:String) {
+	/** `file` is the script that is the extension's main, `source` gives it as the editor holds it; `dir` holds the host's logs; the view's nodes are made in `tree`. */
+	public function new(file:String, dir:String, source:Void->String, tree:LayoutTree, ?manifest:Manifest, ?binary:String) {
 		this.file = file;
 		this.dir = dir;
 		this.source = source;
+		this.tree = tree;
+		this.manifest = manifest;
+		Utilities.install();
+		preview = new Preview(tree, send);
 		this.binary = binary != null ? binary : HostBinary.find();
-		root = haxe.io.Path.directory(file);
-		mocksFile = haxe.io.Path.join([root, "studio.mocks.json"]);
+		root = manifest != null ? manifest.importRoot() : haxe.io.Path.directory(file);
+		mocksFile = manifest != null ? manifest.mocksPath() : haxe.io.Path.join([root, "studio.mocks.json"]);
 		if (this.binary == null)
 			state.set("unavailable");
 	}
@@ -68,23 +78,36 @@ class Studio {
 	public function mocksPath():String
 		return mocksFile;
 
-	/** Shows the Preview in `container`, a node of `tree`. */
-	public function attach(tree:LayoutTree, container:Node):Void {
-		this.tree = tree;
+	/** Shows the Preview in `container`, a node of the tree. */
+	public function attach(container:Node):Void {
+		if (this.container != null && this.container.id != container.id) {
+			tree.detachChildren(this.container.id);
+			attached = [];
+		}
 		this.container = container;
-		Utilities.install();
-		preview = new Preview(tree, send);
+		adopt();
+	}
+
+	/**
+	 * Takes the Preview out of `from`, a page that is about to go; the extension and its view go on. A page
+	 * built to replace it may already have the view, in which case there is nothing to take.
+	 */
+	public function detach(from:Node):Void {
+		if (container == null || container.id != from.id)
+			return;
+		tree.detachChildren(container.id);
+		container = null;
 		attached = [];
 	}
 
-	/** Stops showing the Preview. The extension goes on until `stop`. */
-	public function detach():Void {
+	/** Ends the extension and takes its view down, for good. */
+	public function dispose():Void {
+		stop();
+		if (container != null)
+			detach(container);
 		if (preview != null)
 			preview.clear();
 		preview = null;
-		tree = null;
-		container = null;
-		attached = [];
 	}
 
 	function note(list:Signal<Array<Entry>>, kind:String, text:String, ?at:{file:String, line:Int, col:Int}):Void {
@@ -107,6 +130,9 @@ class Studio {
 		if (preview != null)
 			preview.clear();
 		attached = [];
+		problems = [];
+		if (onProblems != null)
+			onProblems(problems);
 		readMocks();
 		host = new ExtensionHost(binary, dir, root);
 		host.start();
@@ -213,7 +239,7 @@ class Studio {
 
 	/** Puts the roots the extension has mounted in the container. */
 	function adopt():Void {
-		if (preview == null || tree == null || container == null)
+		if (preview == null || container == null)
 			return;
 		preview.findRoots();
 		for (r in preview.roots)
@@ -240,6 +266,8 @@ class Studio {
 				onProblems(problems);
 		}
 		var first = items.length > 0 ? items[0] : null;
+		if (onError != null)
+			onError(kind);
 		note(console, "error", firstLine(m.message), first == null || first.line == null ? null : place(first));
 		for (i in 1...items.length) {
 			var it = items[i];

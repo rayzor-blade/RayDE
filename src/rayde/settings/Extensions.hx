@@ -1,11 +1,13 @@
 package rayde.settings;
 
+import rayde.ext.Manifest;
+
 /** An extension folder as found: what its manifest says, where it is, and what is wrong with it. */
 typedef Extension = {id:String, name:String, version:String, description:String, path:String, scope:String, ?problem:String};
 
 /**
- * The extensions installed: a folder with an `extension.json` under `.rayde/extensions` in the workspace or
- * in the user's own `.rayde/extensions`. Nothing runs them yet; this is what the Settings page lists.
+ * The extensions installed: a folder under `.rayde/extensions` in the workspace or in the user's own
+ * `.rayde/extensions` that holds a `.rayext` config file. Nothing runs them yet; this is what the Settings page lists.
  */
 class Extensions {
 	public static function list(root:String):Array<Extension> {
@@ -25,21 +27,23 @@ class Extensions {
 		var names = sys.FileSystem.readDirectory(dir);
 		names.sort(Reflect.compare);
 		for (name in names) {
-			var folder = haxe.io.Path.join([dir, name]), manifest = haxe.io.Path.join([folder, "extension.json"]);
-			if (name.charAt(0) == "." || !sys.FileSystem.isDirectory(folder) || !sys.FileSystem.exists(manifest))
+			var folder = haxe.io.Path.join([dir, name]);
+			if (name.charAt(0) == "." || !sys.FileSystem.isDirectory(folder))
 				continue;
-			try {
-				var json:Dynamic = haxe.Json.parse(sys.io.File.getContent(manifest));
-				out.push({
-					id: name,
-					name: json.name != null ? Std.string(json.name) : name,
-					version: json.version != null ? Std.string(json.version) : "",
-					description: json.description != null ? Std.string(json.description) : "",
-					path: folder,
-					scope: scope
-				});
-			} catch (e:Dynamic)
-				out.push({id: name, name: name, version: "", description: "", path: folder, scope: scope, problem: "extension.json cannot be read"});
+			var configs = [for (f in sys.FileSystem.readDirectory(folder)) if (Manifest.isManifest(f)) f];
+			if (configs.length == 0)
+				continue;
+			configs.sort(Reflect.compare);
+			var m = Manifest.read(haxe.io.Path.join([folder, configs[0]]));
+			out.push({
+				id: name,
+				name: m.name,
+				version: m.version,
+				description: m.description,
+				path: folder,
+				scope: scope,
+				problem: m.problems.length == 0 ? null : m.problems[0]
+			});
 		}
 	}
 }

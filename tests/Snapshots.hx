@@ -440,6 +440,41 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
+		for (dark in [true, false])
+			scenario(dark, "extension", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var rays = haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), "ext", "main.rays"]);
+				bench.openFile(rays);
+				settle();
+				var studio = bench.extension(rays);
+				if (studio == null)
+					throw "opening a .rays file should start its extension";
+				if (studio.state.get() == "unavailable") {
+					Sys.println("extension snapshots skipped: no rayscript-host");
+					return;
+				}
+				var says = (text:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text == text);
+				until(() -> says("src/Main.hx"), "the extension's view, with the file a mocked call answered with");
+				shot("extension-preview");
+				bench.showPanel("extension");
+				shot("extension-console");
+				click("#rayde-studio-surface button");
+				until(() -> says("1"), "the click to reach the extension and its change to come back");
+				click("#rayde-extension-activity");
+				shot("extension-activity");
+				click("#rayde-extension-elements");
+				shot("extension-elements");
+				// A mistake as it is typed: the extension is run again a moment later, the error lands in Problems, and the line opens from the Console.
+				var buffer = bench.buffer(rays), good = buffer.get();
+				buffer.set(StringTools.replace(good, "var count = signal(0);", "var = signal(0);"));
+				bench.edited(rays);
+				until(() -> bench.problems.get().length > 0, "the typed mistake to be found");
+				bench.showPanel("problems");
+				shot("extension-error");
+				buffer.set(good);
+				bench.edited(rays);
+				until(() -> bench.problems.get().length == 0 && says("src/Main.hx"), "the fixed extension to run again");
+				shot("extension-fixed");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 
@@ -488,6 +523,10 @@ class Snapshots {
 	}
 
 	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void, String->Void, (window.Key, ?Bool, ?Bool, ?Bool, ?Bool)->Void, (Void->Bool)->String->Void) -> Void):Void {
+		// SNAPSHOT_ONLY=extension runs just that scenario.
+		var only = Sys.getEnv("SNAPSHOT_ONLY");
+		if (only != null && only != "" && only != name)
+			return;
 		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
