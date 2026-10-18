@@ -199,7 +199,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function explorerItem(shown:Bool):Element {
 		var item = <div id="rayde-activity-explorer" class="rayde-activity-item flex" onClick={_ -> treeWidth.set(shown ? 0 : EXPLORER_WIDTH)}>
-			<icon document={Icons.FILE_COPY_LINE} class="size-5"/>
+			<icon document={Icons.FOLDERS_LINE} class="size-5"/>
 		</div>;
 		if (shown)
 			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
