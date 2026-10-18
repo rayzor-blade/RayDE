@@ -264,6 +264,12 @@ impl Session {
         lock(&self.parser).screen().contents_between(row1, col1, row2, col2)
     }
 
+    /// Makes the next ask of `dirty` report every row, for a view that has just taken over from another.
+    pub fn invalidate(&self) {
+        lock(&self.hashes).clear();
+        self.revision.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn kill(&self) {
         let _ = lock(&self.child).kill();
     }
@@ -457,6 +463,20 @@ pub unsafe extern "C" fn term_text(handle: i32, row1: i32, col1: i32, row2: i32,
     .unwrap_or(ptr::null_mut())
 }
 define_prim!(hlp_term_text, term_text, "Piiiii_B");
+
+/// Has the next `term_dirty` report every row. 1 when there is such a session.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn term_invalidate(handle: i32) -> i32 {
+    catch_unwind(|| match session(handle) {
+        Some(s) => {
+            s.invalidate();
+            1
+        }
+        None => 0,
+    })
+    .unwrap_or(0)
+}
+define_prim!(hlp_term_invalidate, term_invalidate, "Pi_i");
 
 /// Ends the program and frees the session.
 #[unsafe(no_mangle)]

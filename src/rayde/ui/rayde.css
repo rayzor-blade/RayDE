@@ -149,3 +149,12 @@
 /* The terminal: its screen is drawn on a canvas that fills the panel's tab. */
 #rayde .rayde-terminal { min-width: 0; outline-width: 0; }
 #rayde .rayde-term-text { font-family: var(--font-mono); font-size: 13px; line-height: 18px; white-space: pre; }
+
+/* The terminals' list beside the screen, and the menu button of profiles next to +. */
+#rayde .rayde-term-list { border-left: 1px solid var(--border); }
+#rayde .rayde-term-item { border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-secondary); }
+#rayde .rayde-term-item:hover { background: var(--accent-subtle); color: var(--text-primary); }
+#rayde .rayde-term-item[data-on] { background: var(--accent-subtle); color: var(--text-primary); }
+#rayde .rayde-term-kill { --ui-button-height: 20px; --ui-button-width: 20px; opacity: 0; }
+#rayde .rayde-term-item:hover .rayde-term-kill, #rayde .rayde-term-item[data-on] .rayde-term-kill { opacity: 1; }
+#rayde .rayde-split { --ui-button-width: 18px; margin-left: -4px; }

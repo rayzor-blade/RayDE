@@ -160,6 +160,11 @@ class Terminal {
 		return length == 0 ? "" : b.sub(4, length).toBytes(length).toString();
 	}
 
+	/** Has the next `dirtyRows` list every row, for a view that has taken the terminal over from another. */
+	public function invalidate():Void
+		if (!closed)
+			invalidateNative(handle);
+
 	/** Ends the program and frees the screen. */
 	public function close():Void {
 		if (!closed)
@@ -196,6 +201,9 @@ class Terminal {
 
 	@:hlNative("cterm", "term_text") static function textNative(handle:Int, row1:Int, col1:Int, row2:Int, col2:Int):hl.Bytes
 		return null;
+
+	@:hlNative("cterm", "term_invalidate") static function invalidateNative(handle:Int):Int
+		return 0;
 
 	@:hlNative("cterm", "term_close") static function closeNative(handle:Int):Int
 		return 0;

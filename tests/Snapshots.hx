@@ -124,7 +124,34 @@ class Snapshots {
 				}
 				settle(4);
 				shot("terminal-typing");
+				// A second terminal beside the first, which keeps running; the list of terminals, and the menu of profiles.
+				var first = bench.terminal();
+				bench.newTerminal();
+				var second = bench.terminal();
+				if (bench.terminalCount() != 2 || second == null || first == null || second.handle == first.handle || first.exitCode() != -1)
+					throw 'a new terminal should start beside the first: ${bench.terminalCount()} running';
+				var until = haxe.Timer.stamp() + 6;
+				while (second.line(4).indexOf("orange") < 0 && haxe.Timer.stamp() < until) {
+					Sys.sleep(.03);
+					settle(1);
+				}
+				settle(8);
+				shot("terminals");
+				bench.showTerminalMenu(true);
+				shot("terminal-profiles");
+				bench.showTerminalMenu(false);
+				// Choosing the first brings it to the front, still running with what it printed; killing the one in front leaves the other.
+				bench.selectTerminal(bench.terminalIds()[0]);
+				if (bench.terminal() == null || bench.terminal().handle != first.handle)
+					throw "choosing a terminal in the list should bring it to the front";
+				settle(8);
+				shot("terminals-first");
 				bench.killTerminal();
+				if (bench.terminalCount() != 1 || bench.terminal() == null || bench.terminal().handle != second.handle)
+					throw 'killing a terminal should leave the other in front: ${bench.terminalCount()} running';
+				bench.closeTerminals();
+				if (bench.terminalCount() != 0)
+					throw "every terminal should be ended";
 				bench.closePanel();
 				// Every tab closed: the welcome page, now with recent files.
 				bench.closeAll();

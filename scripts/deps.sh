@@ -44,6 +44,8 @@ stage_natives() {
   mkdir -p "$out"
   local ui="$ashui/target/release/${prefix}blinc_abi.$ext" gpu="$hlwgpu/target/release/${prefix}hlwgpu.$ext" window="$hlwindow/target/release/${prefix}hlwindow.$ext"
   for lib in "$ui" "$gpu" "$window"; do [ -f "$lib" ] || fail "missing native library: $lib"; done
+  # Each is put in as a new file: macOS kills a program that loads a library copied over its old file in place.
+  rm -f "$out/blinc_abi.hdll" "$out/xgpu.hdll" "$out/xwindow.hdll"
   cp "$ui" "$out/blinc_abi.hdll"
   cp "$gpu" "$out/xgpu.hdll"
   cp "$window" "$out/xwindow.hdll"

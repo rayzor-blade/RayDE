@@ -9,4 +9,6 @@ case "$(uname -s)" in
 esac
 (cd "$here/native/terminal" && nice -n 10 cargo build --release --quiet)
 mkdir -p "$here/bin"
+# A new file, not a copy over the old: macOS keeps a library's signature by its file, and kills a program that loads one copied over in place.
+rm -f "$here/bin/cterm.hdll"
 cp "$here/native/terminal/target/release/${prefix}rayde_terminal.$ext" "$here/bin/cterm.hdll"

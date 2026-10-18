@@ -21,6 +21,8 @@ import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.lang.Display;
 import rayde.run.Runner;
+import rayde.term.Profiles;
+import rayde.term.Profiles.Profile;
 import rayde.term.Terminal;
 import rayde.ui.BuildSettings;
 import rayde.ui.FileTabs;
@@ -37,6 +39,9 @@ typedef WorkbenchProps = {
 	/** The runtime the project runs on, as its profile names it: ash or rayzor. */
 	?runtime:String
 };
+
+/** A terminal that is running, and the profile it was started from. */
+private typedef Session = {id:Int, terminal:Terminal, profile:Profile};
 
 /**
  * The IDE, laid out as VS Code is: a title bar naming the project, the side
@@ -117,9 +122,16 @@ class Workbench extends Component<WorkbenchProps> {
 
 	public var terminalArgs:Null<Array<String>>;
 
-	var session:Null<Terminal>;
+	var sessions:Array<Session> = [];
+	var activeSession = -1;
+	var nextSession = 1;
+
+	/** Set while a new terminal is being made on purpose, so showing the panel does not also start one. */
+	var starting = false;
+
 	final terminalGeneration = Signal.make(0);
 	final terminalView = new Ref<TerminalView>();
+	final profilesMenu = new Ref<DropdownMenu>();
 
 	/** The tab shown below the editor: problems or console, which the panel calls Output. */
 	public final bottom = Signal.make("problems");
@@ -376,35 +388,98 @@ class Workbench extends Component<WorkbenchProps> {
 	public function setPanelHeight(height:Float):Void
 		problemsHeight.set(height);
 
-	/** The terminal's session, null before it starts and after it is killed. */
-	public function terminal():Null<Terminal>
-		return session;
+	function current():Null<Session> {
+		for (s in sessions)
+			if (s.id == activeSession)
+				return s;
+		return null;
+	}
 
-	/** Starts the terminal if it is not running. */
-	function ensureTerminal():Void {
-		if (session != null)
+	/** The terminal in view, null when none runs. */
+	public function terminal():Null<Terminal> {
+		var s = current();
+		return s == null ? null : s.terminal;
+	}
+
+	/** How many terminals are running. */
+	public function terminalCount():Int
+		return sessions.length;
+
+	/** The ids of the terminals running, in the order they were started. */
+	public function terminalIds():Array<Int>
+		return [for (s in sessions) s.id];
+
+	/** Ends every terminal. */
+	public function closeTerminals():Void
+		for (id in terminalIds())
+			endSession(id);
+
+	/** The profile a plain + starts: the first the machine offers, unless a test names a program. */
+	function defaultProfile():Profile {
+		if (terminalProgram != null)
+			return {name: haxe.io.Path.withoutDirectory(terminalProgram), program: terminalProgram, args: terminalArgs};
+		var all = Profiles.list();
+		return all.length > 0 ? all[0] : {name: "sh", program: "/bin/sh"};
+	}
+
+	/** Starts the first terminal if none runs. */
+	function ensureTerminal():Void
+		if (!starting && sessions.length == 0)
+			startSession(defaultProfile());
+
+	/** Runs `profile` in the project's folder as another terminal, which comes to the front. */
+	function startSession(profile:Profile):Void {
+		var t = Terminal.open(100, 12, props.display.cwd, profile.program, profile.args);
+		if (t == null) {
+			say("Could not start " + profile.name);
 			return;
-		session = Terminal.open(100, 12, props.display.cwd, terminalProgram, terminalArgs);
-		if (session == null)
-			say("Could not start a shell");
+		}
+		var session = {id: nextSession++, terminal: t, profile: profile};
+		sessions.push(session);
+		activeSession = session.id;
 		terminalGeneration.set(terminalGeneration.get() + 1);
 	}
 
-	/** Ends the terminal and starts another in the project's folder, and gives it the keyboard. */
-	public function newTerminal():Void {
-		killTerminal();
+	/** Starts another terminal, from `profile` or the default, beside the ones running, and gives it the keyboard. */
+	public function newTerminal(?profile:Profile):Void {
+		starting = true;
 		showPanel("terminal");
-		ensureTerminal();
+		starting = false;
+		startSession(profile == null ? defaultProfile() : profile);
 		focusTerminal();
 	}
 
-	/** Ends the terminal; the pane then offers a new one. */
-	public function killTerminal():Void {
-		if (session != null)
-			session.close();
-		session = null;
+	/** Brings terminal `id` to the front. */
+	public function selectTerminal(id:Int):Void {
+		if (id == activeSession)
+			return;
+		activeSession = id;
+		terminalGeneration.set(terminalGeneration.get() + 1);
+		focusTerminal();
+	}
+
+	/** Ends the terminal in view; the one beside it comes forward, and with none left the pane offers a new one. */
+	public function killTerminal():Void
+		endSession(activeSession);
+
+	function endSession(id:Int):Void {
+		var at = -1;
+		for (i => s in sessions)
+			if (s.id == id)
+				at = i;
+		if (at < 0)
+			return;
+		sessions[at].terminal.close();
+		sessions.splice(at, 1);
+		if (activeSession == id)
+			activeSession = sessions.length == 0 ? -1 : sessions[Std.int(Math.min(at, sessions.length - 1))].id;
 		terminalGeneration.set(terminalGeneration.get() + 1);
 	}
+
+	/** Opens or closes the menu of terminal profiles, as its button does. */
+	public function showTerminalMenu(on:Bool):Void
+		if (profilesMenu.get() != null)
+			profilesMenu.get().opened.set(on);
 
 	/** Opens the panel on the terminal and gives it the keyboard, or closes the panel when the terminal is what it shows. */
 	public function toggleTerminal():Void {
@@ -486,7 +561,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, shortcut: "Ctrl+`", run: toggleTerminal},
-			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: newTerminal},
+			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J", run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
@@ -614,7 +689,8 @@ class Workbench extends Component<WorkbenchProps> {
 			0;
 		}, _ -> if (bottom.get() == "terminal" && panelShown.get())
 			ensureTerminal(), (_, _) -> false);
-		Owner.onCleanup(() -> if (session != null) session.close());
+		Owner.onCleanup(() -> for (s in sessions)
+			s.terminal.close());
 		new ashui.reactive.Watch(() -> {
 			active.get();
 			folderStates.get();
@@ -901,25 +977,69 @@ class Workbench extends Component<WorkbenchProps> {
 			</div>
 		</div>;
 
-	/** The terminal, or an offer of one while none is running. */
+	/** The terminal in view, with the list of terminals beside it when there are several, or an offer of one while none is running. */
 	function terminalPane():Element {
+		var session = current();
 		if (session == null)
 			return <div id="rayde-terminal-empty" class="flex flex-col flex-1 items-center justify-center gap-3">
 				<text class="text-sm text-text-tertiary">No terminal is running.</text>
 				<button id="rayde-terminal-new" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> newTerminal()}>New terminal</button>
 			</div>;
-		return <terminal-view ref={terminalView} terminal={session} shown={() -> panelShown.get() && bottom.get() == "terminal"} onExit={code -> say("The terminal exited with code " + code)}/>;
+		// A view that takes a terminal over from another shows all of its rows.
+		session.terminal.invalidate();
+		return <div class="flex flex-1 min-h-0 min-w-0">
+			<terminal-view ref={terminalView} terminal={session.terminal} shown={() -> panelShown.get() && bottom.get() == "terminal"}
+				onExit={code -> say("The terminal exited with code " + code)}/>
+			<if {sessions.length > 1}>${terminalList()}</if>
+		</div>;
 	}
 
-	/** What the panel's tab row holds for the tab in view, before its close button. */
+	/** The terminals running, by their profiles, down the right of the pane; the one in front lit. */
+	function terminalList():Element
+		return <div id="rayde-terminal-list" class="rayde-term-list flex flex-col shrink-0 gap-1 p-1" width={170}>{terminalRows()}</div>;
+
+	function terminalRows():Array<Element>
+		return [for (s in sessions) terminalRow(s)];
+
+	function terminalRow(s:Session):Element {
+		var id = s.id, row = <div id={"rayde-terminal-item-" + id} class="rayde-term-item flex items-center gap-2 px-2 shrink-0 cursor-pointer" height={28} onClick={_ -> selectTerminal(id)}>
+			<icon document={Icons.TERMINAL_BOX_LINE} class="size-4 shrink-0"/>
+			<text class="text-xs flex-1 min-w-0">${s.profile.name}</text>
+			<tooltip label="Kill terminal" side="left"><button variant={Ghost} size={Icon} class="rayde-remove rayde-term-kill" onClick={e -> {
+				e.stopPropagation();
+				endSession(id);
+			}}><icon document={Icons.CLOSE_LINE} class="size-3.5"/></button></tooltip>
+		</div>;
+		if (s.id == activeSession)
+			ashui.css.Identity.of(row.tree, row.node.id).setAttribute("data-on", "");
+		return row;
+	}
+
+	/** What the panel's tab row holds for the tab in view, before its close button: for the terminal, + and a menu of profiles, and a bin. */
 	function panelTools(tab:String):Element {
 		if (tab != "terminal")
 			return <div/>;
 		return <div class="flex items-center gap-1">
-			<tooltip label="New terminal" side="top"><button id="rayde-terminal-add" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> newTerminal()}><icon document={Icons.ADD_LINE} class="size-4"/></button></tooltip>
+			<div class="flex items-center">
+				<tooltip label="New terminal" side="top"><button id="rayde-terminal-add" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> newTerminal()}><icon document={Icons.ADD_LINE} class="size-4"/></button></tooltip>
+				<dropdown-menu ref={profilesMenu} id="rayde-terminal-profiles">
+					<dropdown-menu-trigger id="rayde-terminal-profiles-trigger" variant={Ghost} size={Icon} class="rayde-panel-button rayde-split"></dropdown-menu-trigger>
+					<dropdown-menu-content>
+						<dropdown-menu-label>New terminal with</dropdown-menu-label>
+						{profileItems()}
+					</dropdown-menu-content>
+				</dropdown-menu>
+			</div>
 			<tooltip label="Kill terminal" side="top"><button id="rayde-terminal-kill" variant={Ghost} size={Icon} class="rayde-panel-button rayde-remove" onClick={_ -> killTerminal()}><icon document={Icons.DELETE_BIN_LINE} class="size-4"/></button></tooltip>
 		</div>;
 	}
+
+	/** One item for each shell the machine has, with where it is, the default marked. */
+	function profileItems():Array<Element>
+		return [for (p in Profiles.list()) profileItem(p)];
+
+	function profileItem(p:Profile):Element
+		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.isDefault == true ? p.name + " (default)" : p.name}</dropdown-menu-item>;
 
 	function problemsPane(list:Array<Diagnostic>):Element
 		return <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">
