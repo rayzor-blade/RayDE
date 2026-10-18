@@ -15,8 +15,10 @@ import ashui.reactive.Signal;
 import ashui.input.Events.KeyEvent;
 import ashui.ui.Component;
 import ashui.ui.Ref;
+import rayde.build.HxmlFile;
 import rayde.lang.Display;
 import rayde.run.Runner;
+import rayde.ui.BuildSettings;
 import rayde.ui.FileTabs;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
@@ -46,6 +48,9 @@ class Workbench extends Component<WorkbenchProps> {
 	static inline var ACTIVITY = 48.;
 
 	static inline var EXPLORER_WIDTH = 260.;
+
+	/** The page of the build form, which a tab holds in place of a file. */
+	public static inline var BUILD = "rayde:build";
 
 	public final open = Signal.make(([] : Array<String>));
 	public final active = Signal.make("");
@@ -84,6 +89,12 @@ class Workbench extends Component<WorkbenchProps> {
 	final buffers = new Map<String, Signal<String>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
+
+	/** The build file as the form edits it, read when the form opens. */
+	var buildModel:Null<HxmlFile>;
+
+	/** Bumped when the build file changes, so what is drawn from it is made again. */
+	final buildRevision = Signal.make(0);
 	/** The side panel's width, activity bar included. */
 	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
 	final explorerShown:Computed<Bool>;
@@ -111,8 +122,36 @@ class Workbench extends Component<WorkbenchProps> {
 		if (open.get().indexOf(file) < 0)
 			open.set(open.get().concat([file]));
 		active.set(file);
+		if (file == BUILD)
+			return;
 		remember(file);
 		check(file);
+	}
+
+	/** Opens the build form in a tab, or brings it forward, reading the build file as it is now. */
+	public function openBuild():Void {
+		if (props.display.hxml == null)
+			return;
+		if (open.get().indexOf(BUILD) < 0)
+			buildModel = HxmlFile.read(props.display.hxml);
+		openFile(BUILD);
+	}
+
+	/** The language layer the workbench asks, for tests that look at what it was given. */
+	public function display():Display
+		return props.display;
+
+	/** The build file the form is editing; null while the form is not open. */
+	public function buildFile():Null<HxmlFile>
+		return buildModel;
+
+	/** What the form wrote to the build file is now the project's: the compiler reads it, the Explorer and the problems follow it. */
+	public function buildChanged():Void {
+		props.display.reload();
+		buildRevision.set(buildRevision.get() + 1);
+		for (file in open.get())
+			if (file != BUILD)
+				check(file);
 	}
 
 	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
@@ -270,7 +309,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Puts the path of the file in front on the clipboard, in full or from the project's folder. */
 	function copyPath(relative:Bool):Void {
-		var file = active.get();
+		var file = active.get() == BUILD && props.display.hxml != null ? props.display.hxml : active.get();
 		if (file == "")
 			return;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
@@ -325,6 +364,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, shortcut: mod + "S", run: saveAll},
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, shortcut: mod + "W", run: () -> if (active.get() != "") closeFile(active.get())},
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, shortcut: "F12", run: goToDefinition},
+			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> bottom.set("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> bottom.set("console")},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
@@ -400,6 +440,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
+		if (file == BUILD)
+			return;
 		var found = try props.display.diagnostics(file, buffer(file).get()) catch (_:Dynamic) [];
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
 	}
@@ -484,14 +526,25 @@ class Workbench extends Component<WorkbenchProps> {
 	function sideBar():Element
 		return <div id="rayde-side" class="rayde-card panel flex flex-1 min-h-0">
 			${activityBar()}
-			<for {shown in [explorerShown.get()]}>${explorer(shown)}</for>
+			<for {k in [{shown: explorerShown.get(), build: buildRevision.get()}]}>${explorer(k.shown)}</for>
 		</div>;
 
 	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
-		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 pt-2" width={ACTIVITY}>
+		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={ACTIVITY}>
 			<for {shown in [explorerShown.get()]}>${explorerItem(shown)}</for>
+			<div class="flex-1"/>
+			<for {on in [active.get() == BUILD]}>${buildItem(on)}</for>
 		</div>;
+
+	function buildItem(on:Bool):Element {
+		var item = <div id="rayde-activity-build" class="rayde-activity-item flex" onClick={_ -> openBuild()}>
+			<icon document={Icons.SETTINGS_3_LINE} class="size-5"/>
+		</div>;
+		if (on)
+			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
+		return <tooltip label="Build settings" side="right">{item}</tooltip>;
+	}
 
 	function explorerItem(shown:Bool):Element {
 		var item = <div id="rayde-activity-explorer" class="rayde-activity-item flex" onClick={_ -> toggleExplorer()}>
@@ -508,8 +561,8 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
-				<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
-					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>{folders()}</tree-item>
+				<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (v.endsWith(".hx")) openFile(v) else if (v == props.display.hxml) openBuild()}>
+					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>
 				</tree-view>
 			</div>
 		</div>;
@@ -529,6 +582,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The row of the Explorer that stands for the file in front: the file, or the top-most closed folder above it. */
 	function selectionRow():String {
 		var file = active.get(), root = props.display.cwd;
+		if (file == BUILD && props.display.hxml != null)
+			return props.display.hxml;
 		if (file == "" || !file.startsWith(root))
 			return file;
 		var chain = [], dir = haxe.io.Path.directory(file);
@@ -561,6 +616,13 @@ class Workbench extends Component<WorkbenchProps> {
 					out.push({label: args[i + 1], dir: dir});
 			}
 		return out;
+	}
+
+	/** The build file in the tree, which opens the form and not the text. */
+	function buildRow():Element {
+		if (props.display.hxml == null)
+			return <div/>;
+		return <tree-item value={props.display.hxml} label={haxe.io.Path.withoutDirectory(props.display.hxml)} icon={Icons.SETTINGS_3_LINE}/>;
 	}
 
 	function folders():Array<Element>
@@ -616,10 +678,16 @@ class Workbench extends Component<WorkbenchProps> {
 			<for {files in [open.get()]}>${editors(files)}</for>
 		</div>;
 
+	function tabLabel(file:String):String
+		return file == BUILD ? haxe.io.Path.withoutDirectory(props.display.hxml) : haxe.io.Path.withoutDirectory(file);
+
+	function tabIcon(file:String):ashui.svg.SvgDocument
+		return file == BUILD ? Icons.SETTINGS_3_LINE : Icons.HAXE;
+
 	function tabStrip(has:Bool):Element {
 		if (!has)
 			return <div/>;
-		return <file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} trailing={editorMenu()}/>;
+		return <file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} label={tabLabel} icon={tabIcon} trailing={editorMenu()}/>;
 	}
 
 	function editors(files:Array<String>):Element {
@@ -638,10 +706,12 @@ class Workbench extends Component<WorkbenchProps> {
 		return <welcome name={props.name} runtime={runtime()} root={props.display.cwd}
 			build={props.display.hxml == null ? "build.hxml" : haxe.io.Path.withoutDirectory(props.display.hxml)} haxe={compilerVersion()}
 			sources={[for (cp in classpaths()) cp.label]} files={projectFiles().length} main={mainFile()} recent={recent} problems={problems}
-			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run}/>;
+			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run} onBuild={openBuild}/>;
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
+		if (file == BUILD)
+			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(props.display.hxml), "Build"])}</breadcrumb>;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
 		var parts = (file.startsWith(root) ? file.substr(root.length) : file).split("/");
 		return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(parts)}</breadcrumb>;
@@ -660,7 +730,15 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** One open file's editor, which checks the file as it is typed. */
-	function page(file:String):Element
+	function page(file:String):Element {
+		if (file == BUILD)
+			return <tabs-content value={file} class="flex-1 min-h-0">
+				<build-settings file={buildModel} root={props.display.cwd} onChanged={buildChanged}/>
+			</tabs-content>;
+		return pageOfFile(file);
+	}
+
+	function pageOfFile(file:String):Element
 		return <tabs-content value={file} class="flex-1 min-h-0">
 			<code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language="haxe"
 				lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}

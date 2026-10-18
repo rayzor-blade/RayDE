@@ -23,6 +23,9 @@ typedef FileTabsProps = {
 	/** The files with edits not yet saved. */
 	dirty:Signal<Array<String>>,
 	onClose:String->Void,
+	/** What a tab says and shows for the entry `file`, which is a path or one of the workbench's own pages. */
+	label:String->String,
+	icon:String->ashui.svg.SvgDocument,
 	/** What sits at the strip's far end: the editor's actions menu. */
 	trailing:Element
 };
@@ -98,11 +101,11 @@ class FileTabs extends Component<FileTabsProps> {
 		return [for (i => file in files) tab(file, file == front, dirty.indexOf(file) >= 0, i == 0)];
 
 	function tab(file:String, selected:Bool, edited:Bool, first:Bool):Element {
-		var name = haxe.io.Path.withoutDirectory(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
+		var name = props.label(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
 			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">
-				<icon document={Icons.HAXE} class="rayde-tab-icon size-4"/>
+				<icon document={props.icon(file)} class="rayde-tab-icon size-4"/>
 				<text class="rayde-tab-name text-sm">${name}</text>
 				<tooltip label="Close">
 					<div id={id + "-close"} class="rayde-close flex items-center justify-center rounded-md corner-squircle" width={22} height={22}

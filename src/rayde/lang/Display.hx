@@ -40,7 +40,8 @@ class DisplayError extends haxe.Exception {}
 class Display {
 	public final server:CompilerServer;
 	public final cwd:String;
-	public final args:Array<String>;
+	/** The compiler's arguments for the project; `reload` reads them again after the build file changes. */
+	public var args(default, null):Array<String>;
 
 	/** The build file this was read from, when it was read from one. */
 	public final hxml:Null<String>;
@@ -56,6 +57,11 @@ class Display {
 		this.args = args;
 		this.hxml = hxml;
 	}
+
+	/** Reads the build file again, so requests use what it says now. Nothing happens for a project not read from one. */
+	public function reload():Void
+		if (hxml != null)
+			args = Hxml.read(hxml);
 
 	/** A project read from its `.hxml`, run from that file's folder. */
 	public static function ofHxml(server:CompilerServer, hxml:String):Display {

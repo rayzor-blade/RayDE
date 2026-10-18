@@ -23,7 +23,8 @@ typedef WelcomeProps = {
 	onOpen:String->Void,
 	onFiles:Void->Void,
 	onCommands:Void->Void,
-	onRun:Void->Void
+	onRun:Void->Void,
+	onBuild:Void->Void
 };
 
 /**
@@ -50,9 +51,10 @@ class Welcome extends Component<WelcomeProps> {
 							<text class="rayde-section">Start</text>
 							<div class="flex flex-col gap-1">
 								<if {props.main != null}>${action("welcome-main", Icons.HAXE, "Open " + haxe.io.Path.withoutDirectory(props.main), "The project's main class", [], () -> props.onOpen(props.main))}</if>
-								${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Find anything in the project by name", [mod, "P"], props.onFiles)}
-								${action("welcome-commands", Icons.COMMAND_LINE, "Show all commands", "Run, save, close and more", ["⇧", mod, "P"], props.onCommands)}
+								${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", [mod, "P"], props.onFiles)}
+								${action("welcome-commands", Icons.COMMAND_LINE, "Show all commands", "Run, save, close, go to line and the rest", ["⇧", mod, "P"], props.onCommands)}
 								${action("welcome-run", Icons.PLAY_FILL, "Run the project", "Build " + props.build + " and run it on " + props.runtime, ["F5"], props.onRun)}
+								${action("welcome-build", Icons.SETTINGS_3_LINE, "Configure the build", "Target, main class, class paths, libraries, defines", [], props.onBuild)}
 							</div>
 						</div>
 						<div class="flex flex-col gap-2">

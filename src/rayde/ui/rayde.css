@@ -117,3 +117,16 @@
 #rayde .rayde-action:hover .rayde-tile { background: color-mix(in srgb, var(--primary) 22%, transparent); color: var(--text-primary); }
 #rayde .rayde-kbd { min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: color-mix(in srgb, var(--surface-elevated) 50%, transparent); color: var(--text-secondary); }
 #rayde .rayde-summary { background: color-mix(in srgb, var(--surface-elevated) 40%, transparent); border: 1px solid var(--border); border-radius: var(--radius-2xl); corner-shape: squircle; }
+
+/* Build settings: a form of cards in the editor area. */
+#rayde .rayde-setting-card { background: color-mix(in srgb, var(--surface-elevated) 40%, transparent); border: 1px solid var(--border); border-radius: var(--radius-2xl); corner-shape: squircle; }
+#rayde .rayde-setting-row { border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-remove { color: var(--text-tertiary); }
+#rayde .rayde-remove:hover { color: var(--error); }
+#rayde .rayde-note { background: color-mix(in srgb, var(--warning) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent); border-radius: var(--radius-xl); corner-shape: squircle; color: var(--text-primary); }
+#rayde .rayde-mono { font-family: var(--font-mono); }
+#rayde .rayde-chip { border-radius: var(--radius-lg); corner-shape: squircle; }
+#rayde .rayde-control { width: 224px; }
+#rayde .rayde-control-narrow { width: 160px; }
+#rayde .rayde-control-wide { width: 288px; }
+#rayde .rayde-settings { min-width: 0; }

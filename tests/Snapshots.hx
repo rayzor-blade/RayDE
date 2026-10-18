@@ -22,7 +22,7 @@ class Snapshots {
 
 	static function main():Void {
 		for (dark in [true, false]) {
-			scenario(dark, "basic", (bench, file, shot, settle) -> {
+			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type) -> {
 				shot("empty");
 				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
@@ -92,11 +92,56 @@ class Snapshots {
 				shot("tabs-many");
 				bench.active.set(file);
 				shot("tabs-many-first");
+				bench.openBuild();
+				shot("build-tab");
 				// Every tab closed: the welcome page, now with recent files.
 				bench.closeAll();
 				shot("welcome-recent");
 			});
-			scenario(dark, "broken", (bench, file, shot, settle) -> {
+			// A build file with a target, libraries, defines and an argument the form does not manage, as the form shows it.
+			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type) -> {
+				bench.openBuild();
+				shot("build-settings");
+				scroll("#rayde-build", 520);
+				shot("build-settings-middle");
+				scroll("#rayde-build", 5000);
+				shot("build-settings-end");
+				scroll("#rayde-build", 0);
+				var model = bench.buildFile();
+				if (model == null || model.values("-cp").join(",") != "src,lib" || model.value("--main") != "app.Main")
+					throw "the build form should open the build file as it is";
+				// The form's own controls, driven as the pointer would: each writes the file, and the compiler is given the result.
+				function written(what:String):String {
+					var text = sys.io.File.getContent(model.path);
+					return text;
+				}
+				var args = () -> bench.display().args;
+				click("#rayde-build-folders-section .rayde-chip");
+				if (written("class path").indexOf("-cp tools") < 0 || args().indexOf("tools") < 0)
+					throw "choosing a suggested class path did not write it:\n" + written("");
+				type("#rayde-build-library", "tink_macro");
+				click("#rayde-build-library-add");
+				if (written("library").indexOf("-lib tink_macro") < 0 || args().indexOf("tink_macro") < 0)
+					throw "adding a library did not write it:\n" + written("");
+				click("#rayde-build-debug");
+				if (!model.has("--debug") || written("debug").indexOf("--debug") < 0)
+					throw "the debug switch did not write the file:\n" + written("");
+				var defines = model.values("-D").length;
+				click("#rayde-build-defines-section .rayde-remove");
+				if (model.values("-D").length != defines - 1 || written("define").indexOf("analyzer-optimize") >= 0)
+					throw "removing a define did not write the file:\n" + written("");
+				var text = written("");
+				if (text.indexOf("# The app's build") < 0 || text.indexOf("--macro include('app')") < 0 || text.indexOf("not_installed_yet") < 0)
+					throw "the form lost something it does not manage:\n" + text;
+				shot("build-settings-edited");
+				// What the form writes is what the compiler is then given.
+				model.add("-D", "from-the-form");
+				model.save();
+				bench.buildChanged();
+				if (bench.display().args.indexOf("from-the-form") < 0)
+					throw "the compiler's arguments did not follow the build file";
+			});
+			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type) -> {
 				bench.openFile(file);
 				bench.run();
 				wait(bench);
@@ -152,7 +197,7 @@ class Snapshots {
 			sys.FileSystem.deleteFile(path);
 	}
 
-	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void) -> Void):Void {
+	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void) -> Void):Void {
 		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
@@ -180,7 +225,42 @@ class Snapshots {
 			Snapshot.capture('rayde-${dark ? "dark" : "light"}-$name-$what', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
 		}
 		settle();
-		steps(bench, root + "/src/Main.hx", shot, settle);
+		// Scrolls the scroll view that `selector` finds, as far as `y`.
+		function scroll(selector:String, y:Float):Void {
+			var found = ashui.css.Css.query(tree, view.node.id, selector);
+			var scroller = found.length == 0 ? null : ashui.input.Scroll.at(found[0], tree);
+			if (scroller != null)
+				scroller.scrollTo(0, y);
+			settle();
+		}
+		// A press and release on the first element `selector` finds, as the pointer makes them, once the form it is in has been scrolled to show it.
+		function click(selector:String):Void {
+			var found = ashui.css.Css.query(tree, view.node.id, selector), area = ashui.css.Css.query(tree, view.node.id, "#rayde-build");
+			if (found.length == 0)
+				throw 'nothing matches $selector';
+			var scroller = area.length == 0 ? null : ashui.input.Scroll.at(area[0], tree);
+			var box = tree.getScrolledBounds(new ashui.layout.Node(found[0]));
+			var frame = area.length == 0 ? null : tree.getScrolledBounds(new ashui.layout.Node(area[0]));
+			if (scroller != null && box != null && frame != null) {
+				scroller.scrollTo(0, scroller.y.get() + box.y + box.height / 2 - (frame.y + frame.height / 2));
+				settle(2);
+			}
+			// Where it shows now, in the scrolled form: the pointer goes there, as a hand would.
+			var at = tree.getScrolledBounds(new ashui.layout.Node(found[0]));
+			ashui.input.Pointer.move(tree, at.x + at.width / 2, at.y + at.height / 2);
+			ashui.input.Pointer.press(tree);
+			ashui.input.Pointer.release(tree);
+			settle(3);
+		}
+		// Puts `text` in the input `selector` finds.
+		function type(selector:String, text:String):Void {
+			var found = ashui.css.Css.query(tree, view.node.id, selector);
+			if (found.length == 0)
+				throw 'no input matches $selector';
+			ashui.ui.Input.at(tree, found[0]).value.set(text);
+			settle(2);
+		}
+		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type);
 		stop();
 		tree.dispose();
 		server.stop();

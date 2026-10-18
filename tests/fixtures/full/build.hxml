@@ -1,0 +1,12 @@
+# The app's build
+-cp src
+-cp lib
+--main app.Main
+-lib hashlink
+-lib tink_hxx:0.25.1
+-lib not_installed_yet
+-D analyzer-optimize
+-D app-version=1.2
+-dce full
+--macro include('app')
+--hl bin/app.hl

@@ -1,6 +1,9 @@
+import rayde.build.HxmlFile;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.run.Runner;
+
+using StringTools;
 
 /**
  * The language layer against the real Haxe compiler: one fixture project,
@@ -34,7 +37,40 @@ class Checks {
 		return runner.state;
 	}
 
+	/** The build file model: what it reads of a file, and that an edit changes only the lines it names. */
+	static function hxmlChecks():Void {
+		var text = "# the build\n-cp src\n-cp test\n-main Main\n-lib hxcpp\n--library tink_hxx:0.25.1\n-D debug\n--define my-flag=on\n-dce full\n--macro Sys.println('x')\n-hl out/app.hl\n\n";
+		var f = new HxmlFile("x.hxml", text);
+		check(f.values("-cp").join(",") == "src,test", 'class paths: ${f.values("-cp")}');
+		check(f.value("--main") == "Main", "the main class, named with -main");
+		check(f.values("-lib").join(",") == "hxcpp,tink_hxx:0.25.1", 'libraries: ${f.values("-lib")}');
+		check(f.values("-D").join(",") == "debug,my-flag=on", 'defines: ${f.values("-D")}');
+		check(f.value("--dce") == "full", "dead code elimination, named with -dce");
+		check(f.target() != null && f.target().kind == "hl" && f.target().output == "out/app.hl", "the target and its output");
+		check(f.others().length == 1 && f.others()[0].text.startsWith("--macro"), 'arguments the form leaves alone: ${f.others()}');
+		check(f.text() == text, "a file read and written again is the same");
+		f.set("--main", "App");
+		f.add("-cp", "extra");
+		f.remove("-lib", "hxcpp");
+		f.setSwitch("--debug", true);
+		f.setTarget("js", "bin/app.js");
+		f.set("--dce", null);
+		var edited = f.text();
+		check(edited.startsWith("# the build\n-cp src\n-cp test\n--main App\n"), "the comment and the lines before the edit stay, the main class is rewritten in place");
+		check(edited.indexOf("--macro Sys.println('x')") > 0, "an argument the form does not know is kept");
+		check(edited.indexOf("hxcpp") < 0 && edited.indexOf("-dce") < 0 && edited.indexOf("-hl") < 0, "removed lines are gone");
+		check(edited.indexOf("--js bin/app.js") > 0 && edited.indexOf("--debug") > 0 && edited.indexOf("-cp extra") > 0, "added lines are there");
+		check(edited.endsWith("\n\n") && StringTools.trim(edited.substr(edited.length - 40)).indexOf("--js bin/app.js") >= 0, "new lines go before the blank lines that end the file");
+		var multi = new HxmlFile("y.hxml", "-cp a\n--next\n-cp b\n");
+		multi.add("-cp", "c");
+		check(multi.multiple() && multi.values("-cp").join(",") == "a,c" && multi.text() == "-cp a\n-cp c\n--next\n-cp b\n", 'only the first compilation is edited: ${multi.text()}');
+		var spaced = new HxmlFile("z.hxml", "");
+		spaced.add("-D", "key=a value");
+		check(spaced.text().indexOf('-D "key=a value"') >= 0 && spaced.value("-D") == "key=a value", "a value with a space is quoted and read back");
+	}
+
 	static function main():Void {
+		hxmlChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
 		var server = new CompilerServer(), display = Display.ofHxml(server, root + "/build.hxml");
@@ -110,6 +146,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }
