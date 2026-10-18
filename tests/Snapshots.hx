@@ -67,6 +67,12 @@ class Snapshots {
 				bench.showEditorMenu(false);
 				bench.active.set(haxe.io.Path.join([folder, "Util.hx"]));
 				shot("tab-middle");
+				// Choosing a folder in the Explorer selects it there, and leaves the open files and the one in front alone.
+				bench.treeSelected.set(folder);
+				settle();
+				if (bench.active.get() == "" || bench.open.get().length != 3)
+					throw 'choosing a folder changed what is open: ${bench.open.get().length} files, in front "${bench.active.get()}"';
+				shot("folder-chosen");
 				// Twelve more files, which do not fit the strip: it scrolls to keep the one in front in view.
 				for (n in 1...13) {
 					var more = haxe.io.Path.join([folder, 'Module$n.hx']);

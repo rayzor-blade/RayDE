@@ -49,6 +49,9 @@ class Workbench extends Component<WorkbenchProps> {
 
 	public final open = Signal.make(([] : Array<String>));
 	public final active = Signal.make("");
+
+	/** What the Explorer's tree has selected: the file in front, and a folder while one is clicked. The tree writes it, so it is not `active`, which only a file may be. */
+	public final treeSelected = Signal.make("");
 	public final problems = Signal.make(([] : Array<Diagnostic>));
 
 	/** The open files with edits not yet written to disk. */
@@ -424,6 +427,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function render():Element {
 		runner = new Runner(props.display);
 		loadRecent();
+		new ashui.reactive.Watch(() -> active.get(), file -> treeSelected.set(file));
 		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
@@ -486,7 +490,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
-				<tree-view id="rayde-tree" selected={active} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
+				<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
 					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={true}>{folders()}</tree-item>
 				</tree-view>
 			</div>
