@@ -88,7 +88,8 @@ class FileTabs extends Component<FileTabsProps> {
 
 	function strip(files:Array<String>, front:String, dirty:Array<String>):Element {
 		reveal();
-		return <div class="flex items-end shrink-0">{tabs(files, front, dirty)}</div>;
+		// A trailing space the width of a foot, so the last tab's foot is not cut off at the end of the row.
+		return <div class="flex items-end shrink-0">{tabs(files, front, dirty)}<div class="shrink-0" width={SWEEP}/></div>;
 	}
 
 	function tabs(files:Array<String>, front:String, dirty:Array<String>):Array<Element>
@@ -98,7 +99,7 @@ class FileTabs extends Component<FileTabsProps> {
 		var name = haxe.io.Path.withoutDirectory(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
 			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first)}/></if>
-			<div class="rayde-tab-body relative flex items-center gap-2 px-2">
+			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">
 				<icon document={Icons.HAXE} class="rayde-tab-icon size-4"/>
 				<text class="rayde-tab-name text-sm">${name}</text>
 				<tooltip label="Close">

@@ -40,6 +40,9 @@ typedef WorkbenchProps = {
  * drives the clock itself can call `tick`.
  */
 class Workbench extends Component<WorkbenchProps> {
+	/** The activity bar's width, and the Explorer's beside it: the side panel holds both. */
+	static inline var ACTIVITY = 48.;
+
 	static inline var EXPLORER_WIDTH = 260.;
 
 	public final open = Signal.make(([] : Array<String>));
@@ -60,7 +63,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final buffers = new Map<String, Signal<String>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
-	final treeWidth = Signal.make(EXPLORER_WIDTH);
+	/** The side panel's width, activity bar included. */
+	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
 	final explorerShown:Computed<Bool>;
 	final problemsHeight = Signal.make(190.);
 
@@ -77,7 +81,7 @@ class Workbench extends Component<WorkbenchProps> {
 	var lastBuild:Null<Array<Diagnostic>>;
 
 	public function new(props:WorkbenchProps) {
-		explorerShown = Computed.make(() -> treeWidth.get() > 8);
+		explorerShown = Computed.make(() -> treeWidth.get() > ACTIVITY + 8);
 		super(props);
 	}
 
@@ -223,6 +227,10 @@ class Workbench extends Component<WorkbenchProps> {
 		</tooltip>;
 	}
 
+	/** Folds the Explorer away, leaving the activity bar, or brings it back. */
+	function toggleExplorer():Void
+		treeWidth.set(explorerShown.get() ? ACTIVITY : ACTIVITY + EXPLORER_WIDTH);
+
 	/** Moves the cursor of the file in front to `line` (from 1). */
 	function goToLine(line:Int):Void {
 		var file = active.get();
@@ -241,7 +249,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, shortcut: "F12", run: goToDefinition},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> bottom.set("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> bottom.set("console")},
-			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: () -> treeWidth.set(treeWidth.get() > 8 ? 0 : EXPLORER_WIDTH)}
+			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
 	}
 
@@ -353,14 +361,11 @@ class Workbench extends Component<WorkbenchProps> {
 		runner = new Runner(props.display);
 		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
-			<div class="flex flex-1 min-h-0 pr-2">
-				${activityBar()}
+			<div class="flex flex-1 min-h-0 px-2">
 				<resizable id="rayde-rows" direction="vertical" class="flex-1 min-h-0">
 					<resizable-panel minSize={160}>
 						<resizable id="rayde-columns" class="flex-1 min-h-0">
-							<resizable-panel size={treeWidth} minSize={0} maxSize={480}>
-								<for {shown in [explorerShown.get()]}>${explorer(shown)}</for>
-							</resizable-panel>
+							<resizable-panel size={treeWidth} minSize={ACTIVITY} maxSize={ACTIVITY + 480}>${sideBar()}</resizable-panel>
 							<resizable-panel minSize={320}>${editorCard()}</resizable-panel>
 						</resizable>
 					</resizable-panel>
@@ -388,14 +393,21 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 	}
 
-	/** Views down the left edge; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
+	/** The side panel: the activity bar and the Explorer beside it, in one card. */
+	function sideBar():Element
+		return <div id="rayde-side" class="rayde-card panel flex flex-1 min-h-0">
+			${activityBar()}
+			<for {shown in [explorerShown.get()]}>${explorer(shown)}</for>
+		</div>;
+
+	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
-		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 pt-1" width={48}>
+		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 pt-2" width={ACTIVITY}>
 			<for {shown in [explorerShown.get()]}>${explorerItem(shown)}</for>
 		</div>;
 
 	function explorerItem(shown:Bool):Element {
-		var item = <div id="rayde-activity-explorer" class="rayde-activity-item flex" onClick={_ -> treeWidth.set(shown ? 0 : EXPLORER_WIDTH)}>
+		var item = <div id="rayde-activity-explorer" class="rayde-activity-item flex" onClick={_ -> toggleExplorer()}>
 			<icon document={Icons.FOLDERS_LINE} class="size-5"/>
 		</div>;
 		if (shown)
@@ -406,9 +418,9 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
-		return <div id="rayde-files" class="rayde-card panel flex flex-col flex-1 min-h-0">
-			<div class="flex items-center px-4 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
-			<div class="flex flex-col flex-1 min-h-0 overflow-auto px-2 pb-2">
+		return <div id="rayde-files" class="flex flex-col flex-1 min-w-0 min-h-0">
+			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
+			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
 				<tree-view id="rayde-tree" selected={active} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
 					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={true}>{folders()}</tree-item>
 				</tree-view>
