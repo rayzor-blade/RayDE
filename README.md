@@ -1,4 +1,4 @@
-<h1 align="center">RayDE</h1>
+<p align="center"><img style="display: block;" src="assets/logo.svg" alt="RayDE" width="250"/></p>
 
 <h2 align="center">Integrated Development Environment For The Haxe Programming Language</h2>
 <p align="center">
