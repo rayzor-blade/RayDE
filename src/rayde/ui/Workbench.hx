@@ -31,9 +31,10 @@ typedef WorkbenchProps = {
 };
 
 /**
- * The IDE, laid out as VS Code is: a title bar naming the project, an activity
- * bar, the Explorer, the open files as tabs over a breadcrumb and the code
- * editor, below them the Problems and the Output of a run, and a status bar.
+ * The IDE, laid out as VS Code is: a title bar naming the project, the side
+ * panel (activity bar and Explorer) down the left at full height, beside it the
+ * open files as tabs over a breadcrumb and the code editor with the Problems
+ * and the Output of a run below, and a status bar.
  * Each region is a card with a gap between, each part resizable. What is open,
  * and each buffer as edited, lives here, so the panes can be rebuilt without
  * losing either. `run` keeps its own watch on a build or run; a host that
@@ -362,14 +363,14 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
-				<resizable id="rayde-rows" direction="vertical" class="flex-1 min-h-0">
-					<resizable-panel minSize={160}>
-						<resizable id="rayde-columns" class="flex-1 min-h-0">
-							<resizable-panel size={treeWidth} minSize={ACTIVITY} maxSize={ACTIVITY + 480}>${sideBar()}</resizable-panel>
-							<resizable-panel minSize={320}>${editorCard()}</resizable-panel>
+				<resizable id="rayde-columns" class="flex-1 min-h-0">
+					<resizable-panel size={treeWidth} minSize={ACTIVITY} maxSize={ACTIVITY + 480}>${sideBar()}</resizable-panel>
+					<resizable-panel minSize={320}>
+						<resizable id="rayde-rows" direction="vertical" class="flex-1 min-h-0">
+							<resizable-panel minSize={160}>${editorCard()}</resizable-panel>
+							<resizable-panel size={problemsHeight} minSize={96} maxSize={480}>${bottomCard()}</resizable-panel>
 						</resizable>
 					</resizable-panel>
-					<resizable-panel size={problemsHeight} minSize={96} maxSize={480}>${bottomCard()}</resizable-panel>
 				</resizable>
 			</div>
 			${statusBar()}
