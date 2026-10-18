@@ -7,6 +7,7 @@ import rayde.ext.ExtensionHost;
 import rayde.ui.AppIcon;
 import rayde.files.FileOps;
 import rayde.ext.HostBinary;
+import rayde.ext.Hooks;
 import rayde.ext.Manifest;
 import rayde.ext.OrderedJson;
 import rayde.keys.Keymaps;
@@ -410,6 +411,11 @@ class Checks {
 		check(Manifest.applies({kind: null, ext: [], name: "*.test.hx"}, "a/Foo.test.hx", "file") && !Manifest.applies({kind: null, ext: [], name: "*.test.hx"}, "a/Foo.hx", "file") && Manifest.applies({kind: null, ext: [], name: "a*c"}, "abc", "file") && !Manifest.applies({kind: null, ext: [], name: "a*c"}, "abcd", "file"), "a name pattern takes * for any run");
 		check(odd.location == "sidebar" && odd.problems.length == 2, 'a wrong location and a missing icon are named: ${odd.problems}');
 		// An item shows its command's icon unless it has one of its own; an SVG file that is missing is named.
+		sys.io.File.saveContent(dir + "/places.rayext", '{"name": "P", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a"}], "menus": {"editor/title": [{"command": "a"}], "explorer/context": [{"command": "a"}], "moon/context": [{"command": "a"}]}}}');
+		var places = Manifest.read(dir + "/places.rayext");
+		check(places.problems.length == 1 && places.problems[0].indexOf('"moon/context"') > 0 && places.problems[0].indexOf("explorer/context or editor/title") > 0, 'a menu location that does not exist is named with the ones that do: ${places.problems}');
+		check(places.menuFor("editor/title", "a.md", "file").length == 1, "each location has its own items");
+		check(Hooks.knownEvent("file.saved") && !Hooks.knownEvent("file.save") && Hooks.knownMenu("editor/title") && !Hooks.knownMenu("editor/context"), "hooks and menus are told apart by name");
 		sys.io.File.saveContent(dir + "/icons.rayext", '{"name": "I", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a", "title": "A", "icon": "ext/notes.svg"}, {"id": "b", "title": "B", "icon": "eye"}, {"id": "c", "title": "C", "icon": "gone.svg"}, {"id": "d"}], "menus": {"explorer/context": [{"command": "a"}, {"command": "b", "icon": "star"}, {"command": "d"}, {"command": "d", "icon": "nowhere.svg"}]}}}');
 		var icons = Manifest.read(dir + "/icons.rayext");
 		var shown = icons.menuFor("explorer/context", "x", "file").map(i -> i.command + ":" + i.icon);

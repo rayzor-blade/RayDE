@@ -39,7 +39,17 @@ function Block(props) {
   return <if {b.kind == 'heading'}><Line text={b.text} class={headingClass(b.level)}/><else><if {b.kind == 'paragraph'}><Line text={b.text} class="leading-relaxed"/><else><if {b.kind == 'list'}><div class="flex flex-col gap-1 pl-2"><for {e in entries(b)}><div class="flex gap-2"><span class="text-text-secondary">{e.marker}</span><Line text={e.text} class="flex-1"/></div></for></div><else><if {b.kind == 'quote'}><div class="border-l-2 border-border pl-3 text-text-secondary"><Line text={b.text}/></div><else><if {b.kind == 'code'}><pre class="p-3 rounded-md bg-surface-elevated text-sm overflow-auto">{b.text}</pre><else><hr/></if></if></if></if></if>;
 }
 
+// A closed tab's view is unmounted, which runs its cleanup: the file is no longer previewed.
+function forget(path) {
+  var kept = [];
+  for (p in open) {
+    if (p.path != path) kept.push(p);
+  }
+  open = kept;
+}
+
 function Document(props) {
+  onCleanup(() -> forget(props.path));
   return <div class="flex flex-col gap-3 p-6">
     <for {block in blocks(props.source.value)}><Block block={block}/></for>
   </div>;
@@ -59,7 +69,7 @@ function show(path) {
   }
   var source = signal(await readFile(path));
   open.push({path: path, source: source});
-  mount(() -> <Document source={source}/>, 'tab:Preview of ' + name(path));
+  mount(() -> <Document source={source} path={path}/>, 'tab:Preview of ' + name(path));
 }
 
 registerCommand('preview', (args) -> show(args.path));

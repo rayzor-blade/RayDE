@@ -42,7 +42,9 @@ typedef SettingsPageProps = {
 	/** The extension this project is, when it is one: its config is a section, and the build and libraries are not. */
 	extension:Null<Manifest>,
 	onExtensionChanged:Manifest->Void,
-	onEditExtensionText:Void->Void
+	onEditExtensionText:Void->Void,
+	/** The hooks the extension running now listens for. */
+	?listening:Void->Array<String>
 };
 
 /**
@@ -100,7 +102,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root}/>;
-			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText}/>;
+			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}
 

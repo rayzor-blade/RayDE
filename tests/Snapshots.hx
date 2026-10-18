@@ -628,11 +628,31 @@ class Snapshots {
 				bench.closeFile(previews()[0]);
 				until(() -> studio.tabViews.length == 0 && !says("Rewritten"), "the extension to unmount the closed tab");
 				shot("markdown-closed");
+				// The editor's actions menu has the extension's item for the file in front, when its conditions hold.
+				bench.openFile(readme);
+				click("#rayde-editor-menu-trigger");
+				if (!has("#rayde-menu-ext-preview"))
+					throw "a Markdown file should have the extension's Preview in the editor's menu";
+				shot("markdown-title-menu");
+				press(Named(Escape));
+				bench.openFile(rays);
+				click("#rayde-editor-menu-trigger");
+				if (has("#rayde-menu-ext-preview"))
+					throw "a script should not have Preview in the editor's menu";
+				press(Named(Escape));
+				bench.openFile(readme);
+				click("#rayde-editor-menu-trigger");
+				click("#rayde-menu-ext-preview");
+				until(() -> previews().length == 1 && says("Rewritten"), "the editor menu's Preview to open the tab");
+				bench.closeFile(previews()[0]);
+				until(() -> studio.tabViews.length == 0, "the closed tab to be unmounted");
 				// The config form lists the extension's commands and menu items, and adds to both; each is written to the file at once.
 				bench.openSettings("extension");
 				settle(10);
 				scroll("#rayde-extension-config", 760);
 				shot("markdown-config");
+				scroll("#rayde-extension-config", 1330);
+				shot("markdown-hooks");
 				var config = root + "/markdown.rayext";
 				click("#rayde-ext-cmd-id");
 				type("#rayde-ext-cmd-id", "refresh");

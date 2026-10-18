@@ -44,7 +44,7 @@ typedef ViewTool = {id:String, title:String, icon:Null<String>};
  * (a tab among the open files).
  *
  * `contributes` adds to the workbench: `commands` (each an `id`, a `title` and optionally an `icon`; the script
- * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`), each a list of
+ * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`, `editor/title`), each a list of
  * items naming a `command` and a `when`: `{"kind": "file", "ext": [".md"], "name": "README*"}`. A menu item runs its
  * command with `{path, kind}` of what the menu was opened on, and shows the command's `icon` unless it has one of
  * its own. An `icon` is an SVG file, relative to the config, or the name of one of RayDE's own.
@@ -181,6 +181,8 @@ class Manifest {
 			problems.push('"contributes.menus" must be an object of locations.');
 		else if (menuObject != null)
 			for (location in Reflect.fields(menuObject)) {
+				if (!Hooks.knownMenu(location))
+					problems.push('Unknown menu location "$location"; expected ${Hooks.menuIds().join(" or ")}.');
 				var items:Dynamic = Reflect.field(menuObject, location);
 				if (!Std.isOfType(items, Array)) {
 					problems.push('"contributes.menus.$location" must be an array.');

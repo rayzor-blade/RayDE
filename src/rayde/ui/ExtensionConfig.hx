@@ -8,6 +8,7 @@ import ashui.components.Tooltip;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
+import rayde.ext.Hooks;
 import rayde.ext.Manifest;
 
 using StringTools;
@@ -18,7 +19,9 @@ typedef ExtensionConfigProps = {
 	/** Called after a change has been written, with the config read again. */
 	onChanged:Manifest->Void,
 	/** Opens the config file as text. */
-	onEditText:Void->Void
+	onEditText:Void->Void,
+	/** The hooks the extension running now listens for. */
+	?listening:Void->Array<String>
 };
 
 /**
@@ -118,7 +121,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 			${SettingsParts.card("rayde-ext-view", "View", "Workbench contribution: activity bar icon, view title and location.", view())}
 			${SettingsParts.card("rayde-ext-tools", "View actions", "Actions in the view's title bar. Invoking one calls the handler registered with onTool(id).", tools())}
 			${SettingsParts.card("rayde-ext-commands", "Commands", "Commands the script registers with registerCommand(id). Listed in the command palette; bindable in Keyboard Shortcuts as ext.<id>.", commands())}
-			${SettingsParts.card("rayde-ext-menus", "Explorer context menu", "Items for matching files and folders. Choosing one runs its command with { path, kind }.", menuItems())}
+			${SettingsParts.card("rayde-ext-hooks", "Hooks", "Editor events delivered to onHook handlers, and the menus that accept items from this extension.", hooks())}
 			${SettingsParts.card("rayde-ext-capabilities", "Capabilities", "Permissions the extension requests.", caps())}
 			<div class="flex items-center gap-2">
 				<button id="rayde-ext-edit-text" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> props.onEditText()}><icon document={Icons.CODE_BOX_LINE} class="size-4"/>Open as JSON</button>
@@ -265,7 +268,8 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		change(() -> Manifest.addCommand(m.file, {id: id, title: title == "" ? id : title, icon: icon == "" ? null : icon}));
 	}
 
-	static final EXPLORER = "explorer/context";
+	/** The menu whose items are listed and added to. */
+	var location = "explorer/context";
 
 	/** What an item applies to, as the row says it: kind, extensions, name pattern. */
 	static function whenText(w:MenuWhen):String {
@@ -277,8 +281,34 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		return parts.join("  ·  ");
 	}
 
+	function hooks():Array<Element> {
+		var listening = props.listening == null ? [] : props.listening();
+		var out:Array<Element> = [<text class="text-xs font-semibold text-text-secondary">Events</text>];
+		for (e in Hooks.events)
+			out.push(eventRow(e, listening.indexOf(e.name) >= 0));
+		out.push(<text class="text-xs font-semibold text-text-secondary pt-2">Menus</text>);
+		var places:Array<Element> = [for (l in Hooks.menus) <select-item value={l.id}>${l.label}</select-item>];
+		var place = Lambda.find(Hooks.menus, l -> l.id == location);
+		out.push(SettingsParts.field("Location", place == null ? "" : place.detail,
+			<select id="rayde-ext-menu-location" value={location} size={Sm} class="rayde-control" onChange={v -> {
+				location = v;
+				revision.set(revision.get() + 1);
+			}}>{places}</select>));
+		return out.concat(menuItems());
+	}
+
+	function eventRow(e:rayde.ext.Hooks.HookInfo, listening:Bool):Element
+		return <div id={"rayde-ext-hook-" + e.name} class="rayde-setting-row flex items-center gap-3 px-3" height={52}>
+			{listening ? <div class="rayde-dot size-2 rounded-full bg-success shrink-0"/> : <div class="rayde-dot size-2 rounded-full bg-text-tertiary shrink-0"/>}
+			<div class="flex flex-col gap-1 flex-1 min-w-0">
+				<div class="flex items-center gap-2"><text class="rayde-mono text-sm">${e.name}</text><text class="rayde-mono text-xs text-text-tertiary">${e.data}</text></div>
+				<text class="text-xs text-text-tertiary truncate">${e.detail}</text>
+			</div>
+			<text class="text-xs text-text-tertiary shrink-0">${listening ? "Listening" : "Not subscribed"}</text>
+		</div>;
+
 	function menuItems():Array<Element> {
-		var items = m.menus.get(EXPLORER);
+		var items = m.menus.get(location);
 		var out:Array<Element> = [];
 		if (items != null)
 			for (i => item in items)
@@ -314,7 +344,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 			<icon document={icon == null ? Icons.PUZZLE_LINE : icon} class="size-4 shrink-0 text-text-secondary"/>
 			<text class="rayde-mono text-sm">${item.command}</text>
 			<text class="text-xs text-text-tertiary flex-1 min-w-0 truncate">${whenText(item.when)}</text>
-			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeMenuItem(m.file, EXPLORER, index))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+			<tooltip label="Remove"><button variant={Ghost} size={Icon} class="rayde-remove" onClick={_ -> change(() -> Manifest.removeMenuItem(m.file, location, index))}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
 		</div>;
 	}
 
@@ -334,7 +364,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		itemName.set("");
 		itemTitle.set("");
 		itemIcon.set("");
-		change(() -> Manifest.addMenuItem(m.file, EXPLORER, {
+		change(() -> Manifest.addMenuItem(m.file, location, {
 			command: itemCommand,
 			title: title == "" ? null : title,
 			icon: icon == "" ? null : icon,

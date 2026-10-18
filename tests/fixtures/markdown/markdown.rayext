@@ -16,6 +16,9 @@
     "menus": {
       "explorer/context": [
         {"command": "preview", "when": {"kind": "file", "ext": [".md", ".markdown"]}}
+      ],
+      "editor/title": [
+        {"command": "preview", "when": {"kind": "file", "ext": [".md", ".markdown"]}}
       ]
     }
   }

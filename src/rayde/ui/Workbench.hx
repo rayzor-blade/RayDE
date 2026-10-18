@@ -589,9 +589,24 @@ class Workbench extends Component<WorkbenchProps> {
 					<dropdown-menu-separator/>
 					<dropdown-menu-item id="rayde-menu-copy-path" disabled={noFile} onSelect={() -> copyPath(false)}>Copy Path</dropdown-menu-item>
 					<dropdown-menu-item id="rayde-menu-copy-relative" disabled={noFile} onSelect={() -> copyPath(true)}>Copy Relative Path</dropdown-menu-item>
+					<for {file in [active.get()]}>${titleItems(file)}</for>
 				</dropdown-menu-content>
 			</dropdown-menu>
 		</tooltip>;
+	}
+
+	/** The items an extension adds to the editor's actions menu for the file in front, after a separator; none for a page that is not a file. */
+	function titleItems(file:String):Element {
+		var entries = extension == null || isVirtual(file) || file == "" ? [] : extension.menuFor("editor/title", file, "file");
+		if (entries.length == 0)
+			return <div/>;
+		var items:Array<Element> = [<dropdown-menu-separator/>];
+		for (e in entries) {
+			var icon = ViewIcons.named(extension, e.icon), keys = bindings.label(extensionKey(e.command));
+			var label = icon == null ? <text>${e.title}</text> : <div class="flex items-center justify-between gap-3 flex-1 min-w-0"><text>${e.title}</text><icon document={icon} class="size-4 shrink-0 text-text-secondary"/></div>;
+			items.push(<dropdown-menu-item id={"rayde-menu-ext-" + e.command} shortcut={keys} onSelect={() -> runExtensionCommand(e.command, file)}>${label}</dropdown-menu-item>);
+		}
+		return <div class="flex flex-col">{items}</div>;
 	}
 
 	/** Sets the bottom panel's height, as a drag of its handle would. */
@@ -1830,7 +1845,8 @@ class Workbench extends Component<WorkbenchProps> {
 				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} terminal={terminalSettings} appearance={appearance} bindings={bindings}
 					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
 					onAppearanceChanged={() -> settingsRevision.set(settingsRevision.get() + 1)} onBindingsChanged={bindingsChanged} bindingChanges={bindingsRevision}
-					extension={extension} onExtensionChanged={extensionChanged} onEditExtensionText={() -> openFile(extension.file)}/>
+					extension={extension} onExtensionChanged={extensionChanged} onEditExtensionText={() -> openFile(extension.file)}
+					listening={() -> extension == null ? [] : extensionStudio().listening()}/>
 			</tabs-content>;
 		return pageOfFile(file);
 	}

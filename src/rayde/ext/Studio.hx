@@ -325,6 +325,8 @@ class Studio {
 			case "subscribe":
 				var name = Std.string(m.hook);
 				subscribed.set(name, true);
+				if (!Hooks.knownEvent(name))
+					note(console, "error", 'Unknown hook "$name"; expected ${Hooks.eventNames().join(", ")}.');
 				// What a hook reports about the present is told once, so an extension that starts late is not behind.
 				var now = services == null ? null : services.replay(name);
 				if (now != null)
@@ -397,6 +399,10 @@ class Studio {
 		if (host != null)
 			host.send({t: "closed", root: root});
 	}
+
+	/** The hooks the running extension listens for. */
+	public function listening():Array<String>
+		return [for (name in subscribed.keys()) name];
 
 	/** Tells the extension of something that happened in the editor, if it listens for it. `key` makes a later call replace an earlier one still waiting. */
 	public function hook(name:String, data:Dynamic, ?delay:Float):Void {
