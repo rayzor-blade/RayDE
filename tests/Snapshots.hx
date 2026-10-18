@@ -58,6 +58,12 @@ class Snapshots {
 				bench.openCenter(">");
 				shot("command-center-commands");
 				bench.quickOpen.set(false);
+				// The front tab as the last of three, then as the middle one: its feet go only where there is a neighbour.
+				var folder = haxe.io.Path.directory(file);
+				bench.openFile(haxe.io.Path.join([folder, "Names.hx"]));
+				shot("tab-last");
+				bench.active.set(haxe.io.Path.join([folder, "Util.hx"]));
+				shot("tab-middle");
 			});
 			scenario(dark, "broken", (bench, file, shot, settle) -> {
 				bench.openFile(file);
@@ -69,7 +75,7 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
-		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center and after a failed build, in both themes");
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front and after a failed build, in both themes");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */

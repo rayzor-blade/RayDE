@@ -48,12 +48,12 @@ class FileTabs extends Component<FileTabsProps> {
 		return <div class="flex items-end">{tabs(files, front, dirty)}</div>;
 
 	function tabs(files:Array<String>, front:String, dirty:Array<String>):Array<Element>
-		return [for (file in files) tab(file, file == front, dirty.indexOf(file) >= 0)];
+		return [for (i => file in files) tab(file, file == front, dirty.indexOf(file) >= 0, i == 0, i == files.length - 1)];
 
-	function tab(file:String, selected:Bool, edited:Bool):Element {
+	function tab(file:String, selected:Bool, edited:Bool, first:Bool, last:Bool):Element {
 		var name = haxe.io.Path.withoutDirectory(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
-			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={notch}/></if>
+			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first, last)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 px-2">
 				<icon document={Icons.HAXE} class="rayde-tab-icon size-4"/>
 				<text class="rayde-tab-name text-sm">${name}</text>
@@ -72,29 +72,41 @@ class FileTabs extends Component<FileTabsProps> {
 			identity.setAttribute("data-front", "");
 		if (edited)
 			identity.setAttribute("data-dirty", "");
+		if (first)
+			identity.setAttribute("data-first", "");
+		if (last)
+			identity.setAttribute("data-last", "");
 		return element;
 	}
 
 	/**
-	 * The front tab's shape: rounded top corners and lower corners that sweep out
-	 * into the strip, each a quarter of the theme's superellipse, so they curve
-	 * as the cards beside them do. The canvas fills the tab's box, whose sides
-	 * keep a sweep clear for the feet.
+	 * The front tab's shape: rounded top corners and, where it has a neighbour,
+	 * lower corners that sweep out into the strip, each a quarter of the theme's
+	 * superellipse, so they curve as the cards beside them do. The first tab has
+	 * no neighbour to its left and the last none to its right, so their sides
+	 * go straight down. The canvas fills the tab's box, which keeps a sweep
+	 * clear on each side that has a foot.
 	 */
-	function notch(ctx:DrawContext):Void {
+	function notch(ctx:DrawContext, first:Bool, last:Bool):Void {
 		var theme = ThemeState.get();
 		theme.revision.get();
 		var k = theme.shape().effectiveMathExponent();
-		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width, w = full - 2 * s, h = ctx.height;
+		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width, h = ctx.height;
+		var left = first ? 0. : s, right = last ? full : full - s;
 		var path = new Path();
 		path.moveTo(0, h);
-		corner(path, 0, h - s, s, k, Math.PI / 2, 0);
-		path.lineTo(s, r);
-		corner(path, s + r, r, r, k, Math.PI, 1.5 * Math.PI);
-		path.lineTo(s + w - r, 0);
-		corner(path, s + w - r, r, r, k, 1.5 * Math.PI, 2 * Math.PI);
-		path.lineTo(s + w, h - s);
-		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
+		if (!first)
+			corner(path, 0, h - s, s, k, Math.PI / 2, 0);
+		path.lineTo(left, r);
+		corner(path, left + r, r, r, k, Math.PI, 1.5 * Math.PI);
+		path.lineTo(right - r, 0);
+		corner(path, right - r, r, r, k, 1.5 * Math.PI, 2 * Math.PI);
+		if (last)
+			path.lineTo(full, h);
+		else {
+			path.lineTo(right, h - s);
+			corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
+		}
 		path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
 	}
