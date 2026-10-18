@@ -12,6 +12,9 @@ import rayde.build.HxmlFile;
 
 using StringTools;
 
+/** A library as the column shows it: whether the build names it, whether haxelib has it, and which version. */
+private typedef LibraryRow = {name:String, entry:String, pin:Null<String>, used:Bool, version:String, installed:Bool};
+
 typedef BuildSettingsProps = {
 	file:HxmlFile,
 	/** The project's folder, which the build's paths are relative to. */
@@ -28,7 +31,7 @@ typedef BuildSettingsProps = {
  * listed at the end, so nothing in the file is out of sight.
  */
 class BuildSettings extends Component<BuildSettingsProps> {
-	static var haxelibs:Null<Array<String>> = null;
+	static var haxelibs:Null<Array<{name:String, version:String}>> = null;
 
 	static final targetLabels = [
 		"hl" => "HashLink (--hl)", "js" => "JavaScript (--js)", "cpp" => "C++ (--cpp)", "neko" => "Neko (--neko)", "lua" => "Lua (--lua)", "php" => "PHP (--php)",
@@ -116,7 +119,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 		];
 		if (t != null && t.kind != "interp")
 			out.push(field("File", "Output path from the project root",
-				<input id="rayde-build-output" value={output} placeholder="bin/app" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) commitOutput()}/>));
+				<input height={32} id="rayde-build-output" value={output} placeholder="bin/app" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) commitOutput()}/>));
 		return out;
 	}
 
@@ -155,7 +158,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 		var name = mainClass.get().trim(), found = name == "" ? null : locate(name);
 		return [
 			field("Class", "Fully qualified, such as app.Main",
-				<input id="rayde-build-main" value={mainClass} placeholder="Main" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) commitMain()}/>),
+				<input height={32} id="rayde-build-main" value={mainClass} placeholder="Main" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) commitMain()}/>),
 			<if {name != "" && found != null}><div class="flex items-center gap-2"><icon document={Icons.CHECK_LINE} class="size-4 text-success"/><text id="rayde-build-main-found" class="text-xs text-text-secondary">${relative(found)}</text></div>
 			<else><if {name != ""}><div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-build-main-missing" class="text-xs text-warning">${"No " + name.split(".").join("/") + ".hx on the class paths"}</text></div></if></if>
 		];
@@ -236,27 +239,49 @@ class BuildSettings extends Component<BuildSettingsProps> {
 
 	// Libraries
 
-	function libraryFields():Array<Element> {
-		var libs = props.file.values("-lib"), installed = installedLibraries();
-		var out:Array<Element> = [
-			for (l in libs) {
-				var colon = l.indexOf(":"), name = colon < 0 ? l : l.substr(0, colon), version = colon < 0 ? null : l.substr(colon + 1);
-				row(Icons.PUZZLE_LINE, version == null ? name : name + "  " + version, installed.indexOf(name) >= 0 ? null : "Not installed", () -> change(() -> props.file.remove("-lib", l)));
-			}
+	/** One row of the library column: a library of the build, or one haxelib has. */
+	function libraryFields():Array<Element>
+		return [
+			<div class="flex items-center gap-2">
+				<input height={32} id="rayde-build-library" value={newLibrary} placeholder="Filter, or type a name to add" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) addLibrary()}/>
+				<input height={32} id="rayde-build-version" value={newVersion} placeholder="Version (optional)" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addLibrary()}/>
+				<button id="rayde-build-library-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addLibrary()}>Add</button>
+			</div>,
+			<div class="flex flex-col"><for {q in [newLibrary.get()]}>${libraryList(q)}</for></div>
 		];
-		if (libs.length == 0)
-			out.push(<text class="text-xs text-text-tertiary">No libraries.</text>);
-		out.push(<div class="flex items-center gap-2">
-			<input id="rayde-build-library" value={newLibrary} placeholder="Library name" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addLibrary()}/>
-			<input id="rayde-build-version" value={newVersion} placeholder="Version (optional)" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addLibrary()}/>
-			<button id="rayde-build-library-add" variant={Secondary} size={Sm} onClick={_ -> addLibrary()}>Add</button>
-		</div>);
-		var taken = [for (l in libs) l.indexOf(":") < 0 ? l : l.substr(0, l.indexOf(":"))];
-		var suggestions = [for (l in installed) if (taken.indexOf(l) < 0) l].slice(0, 8);
-		if (suggestions.length > 0)
-			out.push(chips("Installed", [for (s in suggestions) {label: s, run: () -> change(() -> props.file.add("-lib", s))}]));
-		return out;
+
+	/** A column of the build's libraries first and the installed ones after, each switched in or out of the build by a click. */
+	function libraryList(query:String):Element {
+		var used = props.file.values("-lib"), installed = installedLibraries(), filter = query.trim().toLowerCase();
+		var rows:Array<LibraryRow> = [], seen = new Map<String, Bool>();
+		for (entry in used) {
+			var colon = entry.indexOf(":"), name = colon < 0 ? entry : entry.substr(0, colon);
+			var lib = Lambda.find(installed, i -> i.name == name);
+			rows.push({name: name, entry: entry, pin: colon < 0 ? null : entry.substr(colon + 1), used: true, version: lib == null ? "" : lib.version, installed: lib != null});
+			seen.set(name, true);
+		}
+		for (lib in installed)
+			if (!seen.exists(lib.name))
+				rows.push({name: lib.name, entry: lib.name, pin: null, used: false, version: lib.version, installed: true});
+		var shown = [for (r in rows) if (filter == "" || r.name.toLowerCase().indexOf(filter) >= 0) r];
+		return <div id="rayde-build-library-list" class="rayde-lib-list flex flex-col overflow-auto">
+			<if {shown.length == 0}><div class="px-3 py-3"><text class="text-xs text-text-tertiary">${filter == "" ? "No libraries." : "No library matches. Enter adds " + query.trim() + "."}</text></div></if>
+			{libraryRows(shown)}
+		</div>;
 	}
+
+	function libraryRows(rows:Array<LibraryRow>):Array<Element>
+		return [for (r in rows) libraryRow(r)];
+
+	function libraryRow(r:LibraryRow):Element
+		return <div id={"rayde-lib-" + r.name} class="rayde-lib-row flex items-center gap-3 px-3 shrink-0 cursor-pointer" height={36}
+			onClick={_ -> change(() -> if (r.used) props.file.remove("-lib", r.entry) else props.file.add("-lib", r.name))}>
+			<if {r.used}><icon document={Icons.CHECKBOX_CIRCLE_FILL} class="size-4 text-primary shrink-0"/>
+			<else><icon document={Icons.CHECKBOX_BLANK_CIRCLE_LINE} class="size-4 text-text-tertiary shrink-0"/></if>
+			<text class="rayde-mono text-sm flex-1 min-w-0">${r.name}</text>
+			<if {r.used && !r.installed}><text class="text-xs text-warning">Not installed</text></if>
+			<text class="text-xs text-text-tertiary">${r.pin != null ? "pinned " + r.pin : r.version}</text>
+		</div>;
 
 	function addLibrary():Void {
 		var name = newLibrary.get().trim(), version = newVersion.get().trim();
@@ -267,19 +292,22 @@ class BuildSettings extends Component<BuildSettingsProps> {
 		change(() -> props.file.add("-lib", version == "" ? name : name + ":" + version));
 	}
 
-	/** The libraries haxelib has, asked for once. */
-	static function installedLibraries():Array<String> {
+	/** The libraries haxelib has, each with the version it uses, asked for once. */
+	static function installedLibraries():Array<{name:String, version:String}> {
 		if (haxelibs == null)
 			haxelibs = try {
 				var p = new sys.io.Process("haxelib", ["list"]);
-				var names = [];
+				var libs = [];
 				for (line in p.stdout.readAll().toString().split("\n")) {
 					var colon = line.indexOf(":");
-					if (colon > 0 && line.indexOf(" ") < 0 || colon > 0 && line.indexOf(" ") > colon)
-						names.push(line.substr(0, colon));
+					if (colon <= 0 || line.substr(0, colon).indexOf(" ") >= 0)
+						continue;
+					var open = line.indexOf("["), close = line.indexOf("]");
+					var version = open > colon && close > open ? line.substring(open + 1, close) : "";
+					libs.push({name: line.substr(0, colon), version: version.startsWith("dev:") ? "dev" : version});
 				}
 				p.close();
-				names;
+				libs;
 			} catch (_:Dynamic) [];
 		return haxelibs;
 	}
@@ -292,9 +320,9 @@ class BuildSettings extends Component<BuildSettingsProps> {
 		if (defines.length == 0)
 			out.push(<text class="text-xs text-text-tertiary">No defines.</text>);
 		out.push(<div class="flex items-center gap-2">
-			<input id="rayde-build-define" value={newKey} placeholder="Name" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addDefine()}/>
-			<input id="rayde-build-define-value" value={newValue} placeholder="Value (optional)" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addDefine()}/>
-			<button id="rayde-build-define-add" variant={Secondary} size={Sm} onClick={_ -> addDefine()}>Add</button>
+			<input height={32} id="rayde-build-define" value={newKey} placeholder="Name" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addDefine()}/>
+			<input height={32} id="rayde-build-define-value" value={newValue} placeholder="Value (optional)" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addDefine()}/>
+			<button id="rayde-build-define-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addDefine()}>Add</button>
 		</div>);
 		var suggestions = [for (d in commonDefines) if (!Lambda.exists(defines, x -> x == d || x.startsWith(d + "="))) d];
 		if (suggestions.length > 0)
@@ -347,8 +375,8 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	/** An input and the button that adds what is typed in it. */
 	function adder(value:Signal<String>, placeholder:String, id:String, add:Void->Void):Element
 		return <div class="flex items-center gap-2">
-			<input id={id} value={value} placeholder={placeholder} class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) add()}/>
-			<button id={id + "-add"} variant={Secondary} size={Sm} onClick={_ -> add()}>Add</button>
+			<input height={32} id={id} value={value} placeholder={placeholder} class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) add()}/>
+			<button id={id + "-add"} variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> add()}>Add</button>
 		</div>;
 
 	/** A line of suggestions, each a button that adds itself. */

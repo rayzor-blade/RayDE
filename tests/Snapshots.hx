@@ -23,6 +23,8 @@ class Snapshots {
 	static function main():Void {
 		for (dark in [true, false]) {
 			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type) -> {
+				if (bench.panelOpen())
+					throw "the bottom panel should start closed";
 				shot("empty");
 				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
@@ -34,6 +36,7 @@ class Snapshots {
 				settle();
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
+				bench.showPanel("problems");
 				shot("problems");
 				// Put the edit back; from the call on line 8, go to where it is defined.
 				buffer.set(original);
@@ -123,6 +126,16 @@ class Snapshots {
 				click("#rayde-build-library-add");
 				if (written("library").indexOf("-lib tink_macro") < 0 || args().indexOf("tink_macro") < 0)
 					throw "adding a library did not write it:\n" + written("");
+				// The column of libraries: a click switches an installed one into the build, and the same click out again.
+				click("#rayde-lib-ash-simd");
+				if (model.values("-lib").indexOf("ash-simd") < 0 || args().indexOf("ash-simd") < 0)
+					throw "choosing an installed library in the column did not add it:\n" + written("");
+				click("#rayde-lib-ash-simd");
+				if (model.values("-lib").indexOf("ash-simd") >= 0)
+					throw "choosing it again did not take it out:\n" + written("");
+				click("#rayde-lib-tink_macro");
+				if (model.values("-lib").indexOf("tink_macro") >= 0)
+					throw "a library of the build did not come out with a click:\n" + written("");
 				click("#rayde-build-debug");
 				if (!model.has("--debug") || written("debug").indexOf("--debug") < 0)
 					throw "the debug switch did not write the file:\n" + written("");
@@ -133,6 +146,10 @@ class Snapshots {
 				var text = written("");
 				if (text.indexOf("# The app's build") < 0 || text.indexOf("--macro include('app')") < 0 || text.indexOf("not_installed_yet") < 0)
 					throw "the form lost something it does not manage:\n" + text;
+				// An input, a select and a button in a row of the form are one height.
+				var input = bench.boundsOf("#rayde-build-define"), button = bench.boundsOf("#rayde-build-define-add"), select = bench.boundsOf("#rayde-build-dce");
+				if (input == null || button == null || select == null || input.height != button.height || select.height != button.height)
+					throw 'the form\'s controls should share a height: input ${input == null ? "?" : "" + input.height}, button ${button == null ? "?" : "" + button.height}, select ${select == null ? "?" : "" + select.height}';
 				shot("build-settings-edited");
 				// What the form writes is what the compiler is then given.
 				model.add("-D", "from-the-form");

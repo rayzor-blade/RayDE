@@ -130,3 +130,18 @@
 #rayde .rayde-control-narrow { width: 160px; }
 #rayde .rayde-control-wide { width: 288px; }
 #rayde .rayde-settings { min-width: 0; }
+
+/* The bottom panel starts closed; with it closed the handle above it goes too. Its close button sits at the far end of the tab row. */
+#rayde #rayde-rows[data-closed] > .ui-resizable-handle { display: none; }
+#rayde .rayde-panel-button { --ui-button-height: 26px; --ui-button-width: 26px; border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
+#rayde .rayde-panel-button:hover { color: var(--text-primary); }
+#rayde .rayde-status-item[data-on] { color: var(--text-primary); background: var(--accent-subtle); }
+
+/* The library column: a scrolling list of the build's libraries and the installed ones. */
+#rayde .rayde-lib-list { max-height: 264px; border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-lib-row:hover { background: var(--accent-subtle); }
+
+/* Inputs, selects and their buttons share one height of 32px, and the buttons carry no shadow. */
+#rayde { --ui-input-height: 32px; --ui-input-radius: var(--radius-md); --ui-button-shadow: none; }
+#rayde input.ui-input { box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px; corner-shape: squircle; }
+#rayde .rayde-add { --ui-button-height: 32px; border-radius: var(--radius-md); corner-shape: squircle; }

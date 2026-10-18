@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Breadcrumb;
+import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
 import ashui.components.CodeView;
@@ -14,6 +15,7 @@ import ashui.reactive.Computed;
 import ashui.reactive.Signal;
 import ashui.input.Events.KeyEvent;
 import ashui.ui.Component;
+import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.lang.Display;
@@ -98,7 +100,14 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The side panel's width, activity bar included. */
 	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
 	final explorerShown:Computed<Bool>;
-	final problemsHeight = Signal.make(190.);
+	/** The bottom panel's height: 0 while it is closed, which is how it starts. */
+	final problemsHeight = Signal.make(0.);
+
+	/** Its height when it was last open, which opening it again goes back to. */
+	var panelHeight = 190.;
+
+	final panelShown:Computed<Bool>;
+	final rowsRef = new Ref<Resizable>();
 
 	/** The tab shown below the editor: problems or console, which the panel calls Output. */
 	public final bottom = Signal.make("problems");
@@ -114,6 +123,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	public function new(props:WorkbenchProps) {
 		explorerShown = Computed.make(() -> treeWidth.get() > ACTIVITY + 8);
+		panelShown = Computed.make(() -> problemsHeight.get() > 40);
 		super(props);
 	}
 
@@ -135,6 +145,12 @@ class Workbench extends Component<WorkbenchProps> {
 		if (open.get().indexOf(BUILD) < 0)
 			buildModel = HxmlFile.read(props.display.hxml);
 		openFile(BUILD);
+	}
+
+	/** The size of the element a selector finds, for tests. */
+	public function boundsOf(selector:String):Null<ashui.layout.Bounds> {
+		var found = ashui.css.Css.query(tree, this.node.id, selector);
+		return found.length == 0 ? null : tree.getBounds(new ashui.layout.Node(found[0]));
 	}
 
 	/** The language layer the workbench asks, for tests that look at what it was given. */
@@ -344,6 +360,38 @@ class Workbench extends Component<WorkbenchProps> {
 		</tooltip>;
 	}
 
+	/** Whether the bottom panel, Problems and Output, is open. */
+	public function panelOpen():Bool
+		return panelShown.get();
+
+	/** Opens the bottom panel on `tab`: problems or console, which it calls Output. */
+	public function showPanel(tab:String):Void {
+		bottom.set(tab);
+		if (!panelShown.get())
+			problemsHeight.set(panelHeight);
+	}
+
+	public function closePanel():Void
+		problemsHeight.set(0);
+
+	public function togglePanel():Void
+		if (panelShown.get())
+			closePanel();
+		else
+			problemsHeight.set(panelHeight);
+
+	/** Tells the stylesheet whether the panel is closed, so the handle above it goes with it. */
+	function markPanel(shown:Bool):Void {
+		var hook:ashui.layout.LayoutTree->Void = null;
+		hook = _ -> {
+			ashui.layout.LayoutTree.flushHooks.remove(hook);
+			var rows = rowsRef.get();
+			if (rows != null)
+				ashui.css.Identity.of(rows.tree, rows.node.id).setAttribute("data-closed", shown ? null : "");
+		};
+		ashui.layout.LayoutTree.flushHooks.push(hook);
+	}
+
 	/** Folds the Explorer away, leaving the activity bar, or brings it back. */
 	function toggleExplorer():Void
 		treeWidth.set(explorerShown.get() ? ACTIVITY : ACTIVITY + EXPLORER_WIDTH);
@@ -365,8 +413,9 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, shortcut: mod + "W", run: () -> if (active.get() != "") closeFile(active.get())},
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, shortcut: "F12", run: goToDefinition},
 			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
-			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> bottom.set("problems")},
-			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> bottom.set("console")},
+			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
+			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
+			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J", run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
 	}
@@ -406,7 +455,7 @@ class Workbench extends Component<WorkbenchProps> {
 	public function run():Void {
 		saveAll();
 		runner.start();
-		bottom.set("console");
+		showPanel("console");
 		poll();
 	}
 
@@ -434,7 +483,7 @@ class Workbench extends Component<WorkbenchProps> {
 			lastBuild = runner.problems;
 			problems.set([for (p in problems.get()) if (!Lambda.exists(runner.problems, b -> b.file == p.file)) p].concat(runner.problems));
 			if (runner.state == "failed")
-				bottom.set("problems");
+				showPanel("problems");
 		}
 	}
 
@@ -462,6 +511,8 @@ class Workbench extends Component<WorkbenchProps> {
 				saveAll();
 			case Character("w") | Character("W") if (command && active.get() != ""):
 				closeFile(active.get());
+			case Character("j") | Character("J") if (command):
+				togglePanel();
 			case Named(F12):
 				goToDefinition();
 			case Named(F5) if (e.shift):
@@ -480,6 +531,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function render():Element {
 		runner = new Runner(props.display);
 		loadRecent();
+		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
+		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
 		new ashui.reactive.Watch(() -> {
 			active.get();
 			folderStates.get();
@@ -494,9 +547,9 @@ class Workbench extends Component<WorkbenchProps> {
 				<resizable id="rayde-columns" class="flex-1 min-h-0">
 					<resizable-panel size={treeWidth} minSize={ACTIVITY} maxSize={ACTIVITY + 480}>${sideBar()}</resizable-panel>
 					<resizable-panel minSize={320}>
-						<resizable id="rayde-rows" direction="vertical" class="flex-1 min-h-0">
+						<resizable ref={rowsRef} id="rayde-rows" direction="vertical" class="flex-1 min-h-0">
 							<resizable-panel minSize={160}>${editorCard()}</resizable-panel>
-							<resizable-panel size={problemsHeight} minSize={96} maxSize={480}>${bottomCard()}</resizable-panel>
+							<resizable-panel size={problemsHeight} minSize={0} maxSize={480}>${bottomCard()}</resizable-panel>
 						</resizable>
 					</resizable-panel>
 				</resizable>
@@ -747,7 +800,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Problems and the Output of a run, as VS Code's panel names them. */
 	function bottomCard():Element
-		return <div id="rayde-panel" class="rayde-card panel flex flex-col flex-1 min-h-0">
+		return <div id="rayde-panel" class="rayde-card panel relative flex flex-col flex-1 min-h-0">
 			<tabs id="rayde-bottom" value={bottom} size={Sm} class="flex-1 min-h-0 px-2 pt-2">
 				<tabs-list class="shrink-0">
 					<tabs-trigger id="rayde-tab-problems" value="problems">Problems</tabs-trigger>
@@ -758,6 +811,9 @@ class Workbench extends Component<WorkbenchProps> {
 					<code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>
 				</tabs-content>
 			</tabs>
+			<div class="flex items-center gap-1" position={Absolute} right={8} top={6}>
+				<tooltip label="Close panel" side="top"><button id="rayde-panel-close" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> closePanel()}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
+			</div>
 		</div>;
 
 	function problemsPane(list:Array<Diagnostic>):Element
@@ -784,13 +840,22 @@ class Workbench extends Component<WorkbenchProps> {
 			<div class="flex-1"/>
 			<if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>
 			<for {state in [runState.get()]}>${runStatus(state)}</for>
+			<for {on in [panelShown.get()]}>${panelItem(on)}</for>
 			<div class="rayde-status-item flex"><text>Haxe</text></div>
 		</div>;
+
+	/** Opens and closes the bottom panel; lit while it is open. */
+	function panelItem(on:Bool):Element {
+		var item = <div id="rayde-panel-toggle" class="rayde-status-item action flex" onClick={_ -> togglePanel()}><icon document={Icons.LAYOUT_BOTTOM_LINE} class="size-3.5"/></div>;
+		if (on)
+			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
+		return <tooltip label={"Toggle panel (" + (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J)"} side="top">{item}</tooltip>;
+	}
 
 	function problemCounts(list:Array<Diagnostic>):Element {
 		var errors = Lambda.count(list, p -> p.severity == 1), warnings = Lambda.count(list, p -> p.severity == 2);
 		return <tooltip label="Problems in the open files" side="top">
-			<div id="rayde-problem-counts" class="rayde-status-item action flex" onClick={_ -> bottom.set("problems")}>
+			<div id="rayde-problem-counts" class="rayde-status-item action flex" onClick={_ -> showPanel("problems")}>
 				<icon document={Icons.CLOSE_CIRCLE_LINE} class="size-3.5"/><text>${errors}</text>
 				<icon document={Icons.ALERT_LINE} class="size-3.5"/><text>${warnings}</text>
 			</div>
