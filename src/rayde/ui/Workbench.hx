@@ -178,13 +178,10 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 	}
 
-	/** The wordmark, and the project in a pill in the middle. */
+	/** The project in a pill in the middle; the window has its own title and icon. */
 	function titleBar():Element
 		return <div id="rayde-bar" class="flex items-center px-4 shrink-0" height={40}>
-			<div class="flex flex-1 items-center gap-2">
-				<icon document={Icons.BRACES_LINE} class="size-4 text-primary"/>
-				<text class="text-sm font-semibold">RayDE</text>
-			</div>
+			<div class="flex-1"/>
 			<tooltip label={"Project in " + props.display.cwd} side="bottom">
 				<div id="rayde-project" class="rayde-pill flex items-center justify-center gap-2" width={420} height={26}>
 					<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
