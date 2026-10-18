@@ -50,8 +50,19 @@ class Workbench extends Component<WorkbenchProps> {
 	public final open = Signal.make(([] : Array<String>));
 	public final active = Signal.make("");
 
-	/** What the Explorer's tree has selected: the file in front, and a folder while one is clicked. The tree writes it, so it is not `active`, which only a file may be. */
+	/**
+	 * What the Explorer's tree shows selected, which the tree writes when a row is
+	 * clicked. It is not `active`, which only a file may be: it comes back to the
+	 * file in front after a click on a folder, and rests on the top-most closed
+	 * folder above that file while one is closed.
+	 */
 	public final treeSelected = Signal.make("");
+
+	/** Whether each folder of the Explorer is open, kept when the tree is built again. */
+	final folderOpen = new Map<String, Signal<Bool>>();
+
+	/** Bumped when a folder first has an open state, so the selection looks at it. */
+	final folderStates = Signal.make(0);
 	public final problems = Signal.make(([] : Array<Diagnostic>));
 
 	/** The open files with edits not yet written to disk. */
@@ -427,7 +438,14 @@ class Workbench extends Component<WorkbenchProps> {
 	function render():Element {
 		runner = new Runner(props.display);
 		loadRecent();
-		new ashui.reactive.Watch(() -> active.get(), file -> treeSelected.set(file));
+		new ashui.reactive.Watch(() -> {
+			active.get();
+			folderStates.get();
+			for (open in folderOpen)
+				open.get();
+			treeSelected.get();
+			0;
+		}, _ -> keepSelection(), (_, _) -> false);
 		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary" onKeyDown={key}>
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
@@ -491,10 +509,46 @@ class Workbench extends Component<WorkbenchProps> {
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
 				<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
-					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={true}>{folders()}</tree-item>
+					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>{folders()}</tree-item>
 				</tree-view>
 			</div>
 		</div>;
+	}
+
+	/** Whether the folder `dir` shows its contents; a folder not yet seen takes `initially`. */
+	public function folderState(dir:String, initially = false):Signal<Bool> {
+		var open = folderOpen.get(dir);
+		if (open == null) {
+			open = Signal.make(initially);
+			folderOpen.set(dir, open);
+			folderStates.set(folderStates.get() + 1);
+		}
+		return open;
+	}
+
+	/** The row of the Explorer that stands for the file in front: the file, or the top-most closed folder above it. */
+	function selectionRow():String {
+		var file = active.get(), root = props.display.cwd;
+		if (file == "" || !file.startsWith(root))
+			return file;
+		var chain = [], dir = haxe.io.Path.directory(file);
+		while (dir.length > root.length && dir.startsWith(root)) {
+			chain.unshift(dir);
+			dir = haxe.io.Path.directory(dir);
+		}
+		for (d in chain) {
+			var open = folderOpen.get(d);
+			if (open != null && !open.get())
+				return d;
+		}
+		return file;
+	}
+
+	/** Puts the tree's selection back on the file in front, or on the closed folder above it, after a click took it elsewhere. */
+	function keepSelection():Void {
+		var row = selectionRow();
+		if (treeSelected.get() != row)
+			treeSelected.set(row);
 	}
 
 	/** The project's source folders as the build names them: the label as written, and the folder in full. */
@@ -552,7 +606,7 @@ class Workbench extends Component<WorkbenchProps> {
 			else if (name.endsWith(".hx"))
 				children.push(<tree-item value={path} label={name} icon={Icons.HAXE}/>);
 		}
-		return <tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={expanded}>{children}</tree-item>;
+		return <tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)}>{children}</tree-item>;
 	}
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */

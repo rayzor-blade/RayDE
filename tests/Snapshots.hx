@@ -67,12 +67,22 @@ class Snapshots {
 				bench.showEditorMenu(false);
 				bench.active.set(haxe.io.Path.join([folder, "Util.hx"]));
 				shot("tab-middle");
-				// Choosing a folder in the Explorer selects it there, and leaves the open files and the one in front alone.
+				// Choosing a folder in the Explorer leaves the open files and the one in front alone, and the selection on that file.
+				var front = bench.active.get();
 				bench.treeSelected.set(folder);
 				settle();
-				if (bench.active.get() == "" || bench.open.get().length != 3)
-					throw 'choosing a folder changed what is open: ${bench.open.get().length} files, in front "${bench.active.get()}"';
-				shot("folder-chosen");
+				if (front == "" || bench.open.get().length != 3 || bench.active.get() != front || bench.treeSelected.get() != front)
+					throw 'choosing a folder changed what is open or selected: ${bench.open.get().length} files, in front "${bench.active.get()}", selected "${bench.treeSelected.get()}"';
+				// With the folder above the file closed, the selection rests on the folder; opened again, it goes back to the file.
+				bench.folderState(folder).set(false);
+				settle();
+				if (bench.treeSelected.get() != folder || bench.active.get() != front)
+					throw 'a closed folder should carry the selection: selected "${bench.treeSelected.get()}"';
+				shot("folder-closed");
+				bench.folderState(folder).set(true);
+				settle();
+				if (bench.treeSelected.get() != front)
+					throw 'the selection should return to the file: "${bench.treeSelected.get()}"';
 				// Twelve more files, which do not fit the strip: it scrolls to keep the one in front in view.
 				for (n in 1...13) {
 					var more = haxe.io.Path.join([folder, 'Module$n.hx']);
