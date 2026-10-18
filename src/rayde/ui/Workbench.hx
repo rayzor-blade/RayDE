@@ -2041,7 +2041,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function codeEditor(file:String):Element {
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
-			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
 			class="flex-1 min-h-0"/>;
 		holdCaretWhileScrolling(editorRef(file).get());
 		return editor;
