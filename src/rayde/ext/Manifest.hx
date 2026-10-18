@@ -2,6 +2,18 @@ package rayde.ext;
 
 import rayde.ext.OrderedJson.J;
 
+/** A command an extension contributes: the id its script registers a handler for, the title shown for it, and its icon (an SVG file or the name of one of RayDE's), null when it has none. */
+typedef ViewCommand = {id:String, title:String, icon:Null<String>};
+
+/** When a menu item applies: the kind of thing it is opened on, the extensions of the files it takes, and a name pattern with `*`. Each condition given must hold. */
+typedef MenuWhen = {kind:Null<String>, ext:Array<String>, name:Null<String>};
+
+/** An item an extension adds to a menu: the command it runs, an optional title and icon of its own, and when it appears. */
+typedef MenuItem = {command:String, title:Null<String>, icon:Null<String>, when:MenuWhen};
+
+/** An item of a menu as it is shown: the command it runs, its title, and its icon, which is the item's own or else the command's. */
+typedef MenuEntry = {command:String, title:String, icon:Null<String>};
+
 /** A button in the header of an extension's view. `icon` is an SVG file or the name of an icon of RayDE's, null when it has none. */
 typedef ViewTool = {id:String, title:String, icon:Null<String>};
 
@@ -30,6 +42,12 @@ typedef ViewTool = {id:String, title:String, icon:Null<String>};
  * `sidebar` (the default: its icon joins the activity bar and its view takes the Explorer's place when the
  * icon is chosen), `secondary` (the side bar on the right), `panel` (a tab of the bottom panel) or `editor`
  * (a tab among the open files).
+ *
+ * `contributes` adds to the workbench: `commands` (each an `id`, a `title` and optionally an `icon`; the script
+ * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`), each a list of
+ * items naming a `command` and a `when`: `{"kind": "file", "ext": [".md"], "name": "README*"}`. A menu item runs its
+ * command with `{path, kind}` of what the menu was opened on, and shows the command's `icon` unless it has one of
+ * its own. An `icon` is an SVG file, relative to the config, or the name of one of RayDE's own.
  *
  * `tools` are the buttons in the view's header, beside its title: each has an `id`, a `title` (its tooltip) and an
  * `icon`, an SVG file or the name of one of RayDE's own (`add`, `refresh`, `search`...). Choosing one tells the
@@ -65,6 +83,12 @@ class Manifest {
 
 	/** The buttons of the view's header. */
 	public final tools:Array<ViewTool> = [];
+
+	/** The commands the extension contributes. */
+	public final commands:Array<ViewCommand> = [];
+
+	/** The menu items the extension contributes, by the location of the menu. */
+	public final menus:Map<String, Array<MenuItem>> = new Map();
 
 	/** What is wrong with the file, as sentences; the fields above are filled in with their defaults where they were wrong or missing. */
 	public final problems:Array<String> = [];
@@ -119,10 +143,118 @@ class Manifest {
 					problems.push('Icon $icon of tool "$id" not found.');
 				tools.push({id: id, title: text(t, "title", id), icon: icon == "" ? null : icon});
 			}
+		contributions(Reflect.field(json, "contributes"));
 		if (viewIcon != null && !sys.FileSystem.exists(absolute(viewIcon)))
 			problems.push('Icon ${viewIcon} not found.');
 		if (!sys.FileSystem.exists(mainPath()))
 			problems.push('Main script ${main} not found.');
+	}
+
+	function contributions(c:Dynamic):Void {
+		if (c == null)
+			return;
+		if (Std.isOfType(c, String) || Std.isOfType(c, Array) || !Reflect.isObject(c)) {
+			problems.push('"contributes" must be an object.');
+			return;
+		}
+		var listed:Dynamic = Reflect.field(c, "commands");
+		if (listed != null && !Std.isOfType(listed, Array))
+			problems.push('"contributes.commands" must be an array.');
+		else if (listed != null)
+			for (x in (listed : Array<Dynamic>)) {
+				var id = Std.isOfType(x, String) || x == null ? "" : text(x, "id", "");
+				if (id == "") {
+					problems.push("Each command needs an id.");
+					continue;
+				}
+				if (Lambda.exists(commands, k -> k.id == id)) {
+					problems.push('Duplicate command id "$id".');
+					continue;
+				}
+				var icon = text(x, "icon", "");
+				if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+					problems.push('Icon $icon of command "$id" not found.');
+				commands.push({id: id, title: text(x, "title", id), icon: icon == "" ? null : icon});
+			}
+		var menuObject:Dynamic = Reflect.field(c, "menus");
+		if (menuObject != null && (Std.isOfType(menuObject, Array) || Std.isOfType(menuObject, String) || !Reflect.isObject(menuObject)))
+			problems.push('"contributes.menus" must be an object of locations.');
+		else if (menuObject != null)
+			for (location in Reflect.fields(menuObject)) {
+				var items:Dynamic = Reflect.field(menuObject, location);
+				if (!Std.isOfType(items, Array)) {
+					problems.push('"contributes.menus.$location" must be an array.');
+					continue;
+				}
+				var out = [];
+				for (x in (items : Array<Dynamic>)) {
+					var command = Std.isOfType(x, String) || x == null ? "" : text(x, "command", "");
+					if (command == "") {
+						problems.push('A menu item in $location needs a command.');
+						continue;
+					}
+					if (!Lambda.exists(commands, k -> k.id == command))
+						problems.push('Menu item in $location names unknown command "$command".');
+					var icon = text(x, "icon", "");
+					if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+						problems.push('Icon $icon of a menu item in $location not found.');
+					var when:Dynamic = Reflect.field(x, "when");
+					var kind = when == null ? "" : text(when, "kind", "");
+					if (kind != "" && kind != "file" && kind != "folder")
+						problems.push('Unknown "when.kind" "$kind"; expected file or folder.');
+					out.push({
+						command: command,
+						title: Reflect.hasField(x, "title") ? text(x, "title", "") : null,
+						icon: icon == "" ? null : icon,
+						when: {
+							kind: kind == "" ? null : kind,
+							ext: when == null ? [] : [for (e in strings(when, "ext")) e.toLowerCase()],
+							name: when == null || text(when, "name", "") == "" ? null : text(when, "name", "")
+						}
+					});
+				}
+				menus.set(location, out);
+			}
+	}
+
+	/** Whether a menu item applies to `path`, which is a `kind` of file or folder. */
+	public static function applies(when:MenuWhen, path:String, kind:String):Bool {
+		if (when.kind != null && when.kind != kind)
+			return false;
+		var name = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path));
+		if (when.ext.length > 0) {
+			var dot = name.lastIndexOf(".");
+			var ext = dot < 0 ? "" : name.substr(dot).toLowerCase();
+			if (when.ext.indexOf(ext) < 0)
+				return false;
+		}
+		if (when.name != null && !wildcard(when.name, name))
+			return false;
+		return true;
+	}
+
+	/** `*` matches any run of characters; the rest must match as written, without regard to case. */
+	static function wildcard(pattern:String, name:String):Bool {
+		var escaped = [for (part in pattern.split("*")) ~/[.+?^${}()|[\]\\]/g.replace(part, "\\$0")].join(".*");
+		return new EReg("^" + escaped + "$", "i").match(name);
+	}
+
+	/** The items of the menu at `location` that apply to `path`, each with the command it runs and the title to show. */
+	public function menuFor(location:String, path:String, kind:String):Array<MenuEntry> {
+		var out = [];
+		var items = menus.get(location);
+		if (items == null)
+			return out;
+		for (i in items)
+			if (applies(i.when, path, kind)) {
+				var command = Lambda.find(commands, k -> k.id == i.command);
+				out.push({
+					command: i.command,
+					title: i.title != null && i.title != "" ? i.title : command == null ? i.command : command.title,
+					icon: i.icon != null ? i.icon : command == null ? null : command.icon
+				});
+			}
+		return out;
 	}
 
 	/** Reads the config file; one that cannot be read gives an extension with the defaults and the reason in `problems`. */
@@ -177,7 +309,11 @@ class Manifest {
 
 	/** The SVG file of a tool's icon, in full; null when the icon is the name of one of RayDE's. */
 	public function toolIconPath(tool:ViewTool):Null<String>
-		return tool.icon != null && StringTools.endsWith(tool.icon, ".svg") ? absolute(tool.icon) : null;
+		return iconFile(tool.icon);
+
+	/** The SVG file an icon names, in full; null when it names one of RayDE's own, or none. */
+	public function iconFile(icon:Null<String>):Null<String>
+		return icon != null && StringTools.endsWith(icon, ".svg") ? absolute(icon) : null;
 
 	/** The icon file, in full; null when the view names none. */
 	public function iconPath():Null<String>

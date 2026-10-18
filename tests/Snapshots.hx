@@ -567,6 +567,68 @@ class Snapshots {
 				until(() -> bench.problems.get().length == 0 && !studio.stale.get() && says("ext/main.rays"), "the fixed extension to run again");
 				shot("extension-fixed");
 			});
+		for (dark in [true, false])
+			scenario(dark, "markdown", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				var studio = bench.studioFor(rays);
+				if (studio == null)
+					throw "opening an extension project should start its extension";
+				if (studio.state.get() == "unavailable") {
+					Sys.println("markdown snapshots skipped: no rayscript-host");
+					return;
+				}
+				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), readme = root + "/docs/README.md", tree = bench.tree;
+				// Text is placed word by word, so the view is looked at for a word.
+				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);
+				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
+				var menuOn = (path:String) -> {
+					var found = ashui.css.Css.query(tree, bench.node.id, '[data-path$="$path"] > .ui-tree-row');
+					if (found.length == 0)
+						throw 'no row for $path';
+					var b = tree.getScrolledBounds(new ashui.layout.Node(found[0]));
+					ashui.input.Pointer.move(tree, b.x + b.width / 2, b.y + b.height / 2);
+					ashui.input.Pointer.press(tree, Right);
+					ashui.input.Pointer.release(tree, Right);
+					settle(8);
+				};
+				var previews = () -> [for (f in bench.open.get()) if (StringTools.startsWith(f, Workbench.TAB)) f];
+				// The extension's view has the sidebar; the Explorer's icon brings the Explorer back, with the extension's item in the menu of a Markdown file only.
+				click("#rayde-activity-explorer");
+				until(() -> studio.state.get() == "running", "the extension to start");
+				menuOn("README.md");
+				if (!has("#rayde-explorer-preview"))
+					throw "a Markdown file should have the extension's Preview in its menu";
+				shot("markdown-menu");
+				press(Named(Escape));
+				menuOn("ext/main.rays");
+				if (has("#rayde-explorer-preview"))
+					throw "a script should not have Preview in its menu";
+				press(Named(Escape));
+				// Choosing Preview runs the extension's command on the file, and what it mounts opens as a tab.
+				menuOn("README.md");
+				click("#rayde-explorer-preview");
+				until(() -> previews().length == 1 && says("Markdown"), "the preview to open as a tab");
+				if (bench.active.get() != previews()[0])
+					throw "the new tab should be in front";
+				shot("markdown-tab");
+				// Preview again on the same file brings it up to date and opens nothing more.
+				menuOn("README.md");
+				click("#rayde-explorer-preview");
+				settle(30);
+				if (previews().length != 1 || studio.tabViews.length != 1)
+					throw "a file should have one preview";
+				// Saving the file brings the tab up to date, from the editor's text.
+				var text = bench.buffer(readme);
+				text.set("# Rewritten heading\n\nA line, with `code` and **weight**.\n");
+				bench.edited(readme);
+				bench.saveAll();
+				until(() -> says("Rewritten") && !says("Markdown"), "the saved text to reach the tab");
+				shot("markdown-saved");
+				// Closing the tab tells the extension, which unmounts the view.
+				bench.closeFile(previews()[0]);
+				until(() -> studio.tabViews.length == 0 && !says("Rewritten"), "the extension to unmount the closed tab");
+				shot("markdown-closed");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 
@@ -623,7 +685,8 @@ class Snapshots {
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
 		// A fixture with a .rayext is an extension project, opened from that file with no build.
-		var rayext = root + "/notes.rayext", extension = sys.FileSystem.exists(rayext) ? Manifest.read(rayext) : null;
+		var config = Lambda.find(sys.FileSystem.readDirectory(root), f -> StringTools.endsWith(f, ".rayext"));
+		var extension = config == null ? null : Manifest.read(root + "/" + config);
 		var display = extension != null ? new Display(server, root, []) : Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
 		var view = Owner.root(tree, s -> {
 			stop = s;

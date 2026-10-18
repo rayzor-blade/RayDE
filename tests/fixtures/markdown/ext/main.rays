@@ -1,0 +1,72 @@
+import rayde.workspace.readFile;
+import markdown.blocks;
+import markdown.words;
+
+// The previews open, each with the signal that holds its source.
+var open = [];
+
+function look(kind) {
+  if (kind == 'strong') return 'font-semibold';
+  if (kind == 'em') return 'italic';
+  if (kind == 'code') return 'rounded bg-surface-elevated';
+  if (kind == 'link') return 'text-link underline';
+  return '';
+}
+
+// A line of text: its words in a wrapping row, which is how a view that places text box by box flows a paragraph.
+function Line(props) {
+  return <div class={'flex flex-wrap min-w-0 ' + (props.class || '')}>
+    <for {w in words(props.text)}><span class={look(w.kind)}>{w.text}</span></for>
+  </div>;
+}
+
+function entries(b) {
+  var out = [];
+  for (i in 0...b.items.length) {
+    out.push({marker: b.ordered ? (i + 1) + '.' : '\u2022', text: b.items[i]});
+  }
+  return out;
+}
+
+function headingClass(level) {
+  if (level == 1) return 'text-2xl font-semibold';
+  if (level == 2) return 'text-xl font-semibold';
+  return 'text-lg font-semibold';
+}
+
+function Block(props) {
+  var b = props.block;
+  return <if {b.kind == 'heading'}><Line text={b.text} class={headingClass(b.level)}/><else><if {b.kind == 'paragraph'}><Line text={b.text} class="leading-relaxed"/><else><if {b.kind == 'list'}><div class="flex flex-col gap-1 pl-2"><for {e in entries(b)}><div class="flex gap-2"><span class="text-text-secondary">{e.marker}</span><Line text={e.text} class="flex-1"/></div></for></div><else><if {b.kind == 'quote'}><div class="border-l-2 border-border pl-3 text-text-secondary"><Line text={b.text}/></div><else><if {b.kind == 'code'}><pre class="p-3 rounded-md bg-surface-elevated text-sm overflow-auto">{b.text}</pre><else><hr/></if></if></if></if></if>;
+}
+
+function Document(props) {
+  return <div class="flex flex-col gap-3 p-6">
+    <for {block in blocks(props.source.value)}><Block block={block}/></for>
+  </div>;
+}
+
+function name(path) {
+  var at = path.lastIndexOf('/');
+  return at < 0 ? path : path.substr(at + 1);
+}
+
+function show(path) {
+  for (p in open) {
+    if (p.path == path) {
+      p.source.value = await readFile(path);
+      return;
+    }
+  }
+  var source = signal(await readFile(path));
+  open.push({path: path, source: source});
+  mount(() -> <Document source={source}/>, 'tab:Preview of ' + name(path));
+}
+
+registerCommand('preview', (args) -> show(args.path));
+
+// Saving a file that is previewed brings its preview up to date.
+onHook('file.saved', (e) -> {
+  for (p in open) {
+    if (p.path == e.path) p.source.value = await readFile(e.path);
+  }
+});

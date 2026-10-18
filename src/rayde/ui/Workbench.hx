@@ -41,6 +41,7 @@ import rayde.ui.Prompt;
 import rayde.ui.Prompt.PromptRequest;
 import rayde.ui.SettingsPage;
 import rayde.ui.StudioPanels;
+import rayde.ui.StudioTab;
 import rayde.ui.StudioView;
 import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
@@ -85,6 +86,22 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The tab of an extension's view that is shown among the files. */
 	public static inline var EXTENSION_TAB = "rayde:extension";
+
+	/** Prefix of the id of a tab an extension presented: the id is `rayde:tab:<main file>#<root>`. */
+	public static inline var TAB = "rayde:tab:";
+
+	static function isTab(file:String):Bool
+		return StringTools.startsWith(file, TAB);
+
+	static function tabStudio(file:String):String
+		return file.substring(TAB.length, file.lastIndexOf("#"));
+
+	static function tabRoot(file:String):Int
+		return Std.parseInt(file.substr(file.lastIndexOf("#") + 1));
+
+	/** A page of the workbench that is not a file: Settings, the extension's own tab, or a tab an extension presented. */
+	static function isVirtual(file:String):Bool
+		return file == SETTINGS || file == EXTENSION_TAB || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -274,13 +291,16 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
 	public function openFile(file:String):Void {
-		if (open.get().indexOf(file) < 0)
+		var fresh = open.get().indexOf(file) < 0;
+		if (fresh)
 			open.set(open.get().concat([file]));
 		active.set(file);
-		if (file == SETTINGS || file == EXTENSION_TAB)
+		if (isVirtual(file))
 			return;
 		remember(file);
 		check(file);
+		if (fresh)
+			emit("file.opened", {path: file});
 	}
 
 	/** Opens the Settings page in a tab, or brings it forward, on the section `category` when one is named; the build file is read as it is now. */
@@ -346,9 +366,45 @@ class Workbench extends Component<WorkbenchProps> {
 			studios.remove(file);
 			activeStudio.set(null);
 		}
+		if (isTab(file)) {
+			var owner = studios.get(tabStudio(file));
+			if (owner != null)
+				owner.closeTab(tabRoot(file));
+		}
 		if (active.get() == file)
 			active.set(rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
 		open.set(rest);
+		if (!isVirtual(file))
+			emit("file.closed", {path: file});
+	}
+
+	/** Tells every extension that listens for `name` that it happened; `delay` collects repeats of it into one. */
+	function emit(name:String, data:Dynamic, ?delay:Float):Void
+		for (s in studios)
+			s.hook(name, data, delay);
+
+	/** The file a page stands for, null for the pages that are not files. */
+	function realFile(file:String):Null<String>
+		return file == "" || isVirtual(file) ? null : file;
+
+	/** Adds the tabs of an extension to the editor, and takes those it has unmounted away. */
+	function syncTabs(studio:Studio, list:Array<TabView>):Void {
+		var mine = TAB + studio.file + "#", ids = [for (t in list) mine + t.root];
+		var before = open.get();
+		var kept = [for (f in before) if (!StringTools.startsWith(f, mine) || ids.indexOf(f) >= 0) f];
+		var added = [for (i in ids) if (before.indexOf(i) < 0) i];
+		open.set(kept.concat(added));
+		if (added.length > 0)
+			active.set(added[added.length - 1]);
+		else if (before.indexOf(active.get()) >= 0 && kept.indexOf(active.get()) < 0)
+			active.set(kept.length == 0 ? "" : kept[kept.length - 1]);
+	}
+
+	/** The title an extension gave the tab `file`. */
+	function tabTitle(file:String):String {
+		var studio = studios.get(tabStudio(file)), root = tabRoot(file);
+		var view = studio == null ? null : Lambda.find(studio.tabViews, t -> t.root == root);
+		return view == null ? "Extension" : view.title;
 	}
 
 	function recentFile():String
@@ -856,7 +912,25 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
+		].concat(contributedCommands());
+
+	/** The id a command of the extension has among the workbench's, which its key is bound by. */
+	static function extensionKey(command:String):String
+		return "ext." + command;
+
+	/** The commands the extension contributes, run by the extension on the file the Explorer or the editor has in front. */
+	function contributedCommands():Array<CenterAction>
+		return extension == null ? [] : [
+			for (c in extension.commands)
+				{id: extensionKey(c.id), label: c.title, icon: ViewIcons.named(extension, c.icon) ?? Icons.PUZZLE_LINE, run: () -> runExtensionCommand(c.id, (explorerFocused() ? selectedPath() : null) ?? realFile(active.get()))}
 		];
+
+	/** Runs a command of the extension; `path` is the file it applies to. */
+	function runExtensionCommand(command:String, path:Null<String>):Void {
+		var studio = extensionStudio();
+		if (studio != null)
+			studio.command(command, {path: path});
+	}
 
 	/** Writes each command's key beside it, as the center shows them; asked again when a binding changes. */
 	function refreshShortcuts():Void
@@ -927,6 +1001,7 @@ class Workbench extends Component<WorkbenchProps> {
 			studio.edited();
 		else if (extension != null && isExtension(file))
 			extensionStudio().edited();
+		emit("file.changed", {path: file}, .3);
 	}
 
 	/** The Studio running the extension whose main file is `file`, if it is open. */
@@ -945,6 +1020,8 @@ class Workbench extends Component<WorkbenchProps> {
 		var own = extension != null && extension.mainPath() == file ? extension : null;
 		studio = new Studio(file, haxe.io.Path.join([props.display.cwd, ".rayde", "studio", name]), () -> buffer(file).get(), tree, own);
 		studios.set(file, studio);
+		studio.services = services();
+		studio.onTabs = list -> syncTabs(studio, list);
 		studio.onProblems = list -> problems.set([for (p in problems.get()) if (p.file != file) p].concat(list));
 		studio.onError = kind -> {
 			if (panelShown.get())
@@ -955,6 +1032,44 @@ class Workbench extends Component<WorkbenchProps> {
 		return studio;
 	}
 
+	/** Resolves a path an extension gave against the project, refusing one outside it. */
+	function projectPath(path:String):String {
+		var full = haxe.io.Path.normalize(haxe.io.Path.isAbsolute(path) ? path : haxe.io.Path.join([props.display.cwd, path]));
+		if (!FileOps.inside(props.display.cwd, full))
+			throw "That is outside the project.";
+		return full;
+	}
+
+	/** What an extension may ask of the workbench through `rayde.workspace`. */
+	function services():Services
+		return {
+			readFile: p -> {
+				var full = projectPath(p);
+				buffers.exists(full) ? buffers.get(full).get() : sys.FileSystem.exists(full) && !sys.FileSystem.isDirectory(full) ? sys.io.File.getContent(full) : null;
+			},
+			activeFile: () -> realFile(active.get()),
+			root: () -> props.display.cwd,
+			openFile: p -> openFile(projectPath(p)),
+			writeFile: (p, text) -> {
+				var full = projectPath(p);
+				sys.io.File.saveContent(full, text);
+				var b = buffers.get(full);
+				if (b != null)
+					b.set(text);
+				dirty.set([for (d in dirty.get()) if (d != full) d]);
+				refreshExplorer();
+			},
+			replay: replayOf
+		};
+
+	/** What a hook reports about the present, told to an extension when it starts listening for it. */
+	function replayOf(name:String):Dynamic
+		return switch name {
+			case "active.changed": ({path: realFile(active.get())} : Dynamic);
+			case "project.opened": ({root: props.display.cwd} : Dynamic);
+			case _: null;
+		};
+
 	/** Writes every edited buffer to its file: a build reads the files, so it should see them as they are in the editor. */
 	public function saveAll():Void {
 		for (file in dirty.get()) {
@@ -962,6 +1077,7 @@ class Workbench extends Component<WorkbenchProps> {
 			var studio = studios.get(file);
 			if (studio != null && !studio.live.get())
 				studio.reload();
+			emit("file.saved", {path: file});
 		}
 		if (dirty.get().length > 0)
 			dirty.set([]);
@@ -1010,7 +1126,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
-		if (file == SETTINGS || !StringTools.endsWith(file, ".hx"))
+		if (isVirtual(file) || !StringTools.endsWith(file, ".hx"))
 			return;
 		var found = try props.display.diagnostics(file, buffer(file).get()) catch (_:Dynamic) [];
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
@@ -1057,7 +1173,10 @@ class Workbench extends Component<WorkbenchProps> {
 		refreshShortcuts();
 		loadRecent();
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
-		new ashui.reactive.Watch(() -> active.get(), file -> activeStudio.set(extension != null ? extensionStudio() : studios.get(file)));
+		new ashui.reactive.Watch(() -> active.get(), file -> {
+			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
+			emit("active.changed", {path: realFile(file)});
+		});
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
 		// The terminal starts when its tab is first in view, not when RayDE does.
 		new ashui.reactive.Watch(() -> {
@@ -1243,6 +1362,11 @@ class Workbench extends Component<WorkbenchProps> {
 		var studio = extensionStudio();
 		if (studio != null)
 			studio.useManifest(m);
+		commandList.splice(0, commandList.length);
+		for (a in commands())
+			commandList.push(a);
+		refreshShortcuts();
+		bindingsRevision.set(bindingsRevision.get() + 1);
 		if (layoutKey(m) == before)
 			return;
 		containers = makeContainers();
@@ -1316,25 +1440,43 @@ class Workbench extends Component<WorkbenchProps> {
 	static function menuId(label:String):String
 		return "rayde-explorer-" + [for (w in label.split(" ")) w.toLowerCase().replace("…", "")].join("-");
 
-	function menuItem(label:String, command:Null<String>, run:Void->Void, enabled = true):Element {
+	/** An item's label, with its icon at the right end. */
+	function itemLabel(label:String, icon:Null<ashui.svg.SvgDocument>):Element {
+		if (icon == null)
+			return <text>${label}</text>;
+		return <div class="flex items-center justify-between gap-3 flex-1 min-w-0">
+			<text>${label}</text>
+			<icon document={icon} class="size-4 shrink-0 text-text-secondary"/>
+		</div>;
+	}
+
+	function menuItem(label:String, command:Null<String>, run:Void->Void, enabled = true, ?icon:ashui.svg.SvgDocument):Element {
 		var keys = command == null ? null : bindings.label(command);
-		return <context-menu-item id={menuId(label)} shortcut={keys} disabled={!enabled} onSelect={run}>${label}</context-menu-item>;
+		return <context-menu-item id={menuId(label)} shortcut={keys} disabled={!enabled} onSelect={run}>${itemLabel(label, icon)}</context-menu-item>;
 	}
 
 	function dangerItem(label:String, command:Null<String>, run:Void->Void):Element {
 		var keys = command == null ? null : bindings.label(command);
-		return <context-menu-item id={menuId(label)} shortcut={keys} destructive={true} onSelect={run}>${label}</context-menu-item>;
+		return <context-menu-item id={menuId(label)} shortcut={keys} destructive={true} onSelect={run}>${itemLabel(label, null)}</context-menu-item>;
 	}
 
 	/** The items of the Explorer's menu for a file, a folder or the project's own folder. */
 	function explorerItems(path:String):Element {
 		var folder = path != "" && sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path), top = path == props.display.cwd;
 		var items:Array<Element> = [];
+		var contributed = extension == null ? [] : extension.menuFor("explorer/context", path, folder ? "folder" : "file");
+		var icons = [for (c in contributed) extension == null ? null : ViewIcons.named(extension, c.icon)];
 		if (!folder && path != "")
 			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (Manifest.isManifest(path)) openSettings("extension")));
 		if (folder) {
 			items.push(menuItem("New File…", "newfile", () -> askCreate(path, false)));
 			items.push(menuItem("New Folder…", "newfolder", () -> askCreate(path, true)));
+		}
+		if (contributed.length > 0) {
+			if (items.length > 0)
+				items.push(<context-menu-separator/>);
+			for (i => c in contributed)
+				items.push(menuItem(c.title, extensionKey(c.command), () -> runExtensionCommand(c.command, path), true, icons[i]));
 		}
 		if (items.length > 0)
 			items.push(<context-menu-separator/>);
@@ -1370,7 +1512,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The file or closed folder the Explorer has selected, the one the file commands act on; not the project's own folder. */
 	function selectedPath():Null<String> {
 		var path = treeSelected.get();
-		return path == null || path == "" || path == props.display.cwd || path == SETTINGS || path == EXTENSION_TAB ? null : path;
+		return path == null || path == "" || path == props.display.cwd || isVirtual(path) ? null : path;
 	}
 
 	function withSelected(run:String->Void):Void {
@@ -1611,14 +1753,14 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function tabLabel(file:String):String
-		return file == SETTINGS ? "Settings" : file == EXTENSION_TAB ? (extension == null ? "Extension" : extension.viewTitle) : haxe.io.Path.withoutDirectory(file);
+		return isTab(file) ? tabTitle(file) : file == SETTINGS ? "Settings" : file == EXTENSION_TAB ? (extension == null ? "Extension" : extension.viewTitle) : haxe.io.Path.withoutDirectory(file);
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == SETTINGS ? Icons.SETTINGS_3_LINE : file == EXTENSION_TAB && extension != null ? ViewIcons.of(extension) : fileIcon(file);
+		return isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : file == EXTENSION_TAB && extension != null ? ViewIcons.of(extension) : fileIcon(file);
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
-		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : Icons.BRACES_LINE;
+		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : StringTools.endsWith(file, ".md") ? Icons.MARKDOWN_LINE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)
@@ -1650,6 +1792,8 @@ class Workbench extends Component<WorkbenchProps> {
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(["Settings", SettingsPage.category(settingsCategory.get()).label])}</breadcrumb>;
 		if (file == EXTENSION_TAB)
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([extension == null ? "Extension" : extension.viewTitle])}</breadcrumb>;
+		if (isTab(file))
+			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([extension == null ? "Extension" : extension.viewTitle, tabTitle(file)])}</breadcrumb>;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
 		var parts = (file.startsWith(root) ? file.substr(root.length) : file).split("/");
 		return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(parts)}</breadcrumb>;
@@ -1669,6 +1813,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String):Element {
+		if (isTab(file)) {
+			var owner = studios.get(tabStudio(file));
+			return <tabs-content value={file} class="flex-1 min-h-0">
+				{owner == null ? <div/> : <studio-tab studio={owner} root={tabRoot(file)}/>}
+			</tabs-content>;
+		}
 		if (file == EXTENSION_TAB) {
 			var studio = extensionStudio();
 			return <tabs-content value={file} class="flex-1 min-h-0">

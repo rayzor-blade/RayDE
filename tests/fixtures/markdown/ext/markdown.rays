@@ -134,3 +134,25 @@ function inlines(s) {
   flush();
   return out;
 }
+
+// The words of a line, each with the kind of piece it came from. The space after a word stays on the word as a
+// no-break space, since a view that lays text out box by box drops the spaces at the edge of each box.
+function words(s) {
+  var nbsp = ' ';
+  var out = [];
+  for (piece in inlines(s)) {
+    var text = piece.text;
+    var parts = [];
+    for (w in text.split(' ')) {
+      if (w != '') parts.push(w);
+    }
+    if (text.startsWith(' ') && out.length > 0 && !out[out.length - 1].text.endsWith(nbsp)) {
+      out[out.length - 1].text += nbsp;
+    }
+    for (i in 0...parts.length) {
+      var closes = i == parts.length - 1 && !text.endsWith(' ');
+      out.push({kind: piece.kind, text: closes ? parts[i] : parts[i] + nbsp, href: piece.href});
+    }
+  }
+  return out;
+}

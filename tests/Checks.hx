@@ -398,7 +398,24 @@ class Checks {
 		check(tools.tools.length == 3 && tools.tools[0].id == "add" && tools.tools[0].title == "Add" && tools.tools[1].title == "refresh" && tools.tools[1].icon == "refresh", 'tools are read, the title defaulting to the id: ${tools.tools}');
 		check(tools.toolIconPath(tools.tools[0]) == sys.FileSystem.fullPath(dir) + "/ext/notes.svg" && tools.toolIconPath(tools.tools[1]) == null, "a tool's icon is a file or a name");
 		check(tools.problems.length == 4, 'the tools that are wrong are named: ${tools.problems}');
+		sys.io.File.saveContent(dir + "/contrib.rayext", '{"name": "C", "main": "ext/main.rays", "contributes": {"commands": [{"id": "preview", "title": "Markdown: Open Preview"}, {"id": "other"}], "menus": {"explorer/context": [{"command": "preview", "when": {"kind": "file", "ext": [".MD", ".markdown"]}}, {"command": "other", "title": "Do it", "when": {"name": "README*"}}], "editor/title": [{"command": "ghost"}, {"nothing": 1}]}}}');
+		var contrib = Manifest.read(dir + "/contrib.rayext");
+		check(contrib.commands.length == 2 && contrib.commands[0].title == "Markdown: Open Preview" && contrib.commands[1].title == "other", 'commands are read: ${contrib.commands}');
+		check(contrib.problems.length == 2 && contrib.problems[0].indexOf('unknown command "ghost"') > 0, 'menu mistakes are named: ${contrib.problems}');
+		var menu = (path:String, kind:String) -> contrib.menuFor("explorer/context", path, kind).map(i -> i.command + ":" + i.title);
+		check(menu("a/README.md", "file").join(",") == "preview:Markdown: Open Preview,other:Do it", 'a README.md gets both: ${menu("a/README.md", "file")}');
+		check(menu("a/notes.markdown", "file").join(",") == "preview:Markdown: Open Preview", "the extension is matched without regard to case");
+		check(menu("a/README.md", "folder").join(",") == "other:Do it" && menu("a/notes.txt", "file").length == 0 && menu("a/Main.hx", "file").length == 0, "kind and extension limit an item");
+		check(contrib.menuFor("editor/context", "x.md", "file").length == 0, "a location with no items gives none");
+		check(Manifest.applies({kind: null, ext: [], name: "*.test.hx"}, "a/Foo.test.hx", "file") && !Manifest.applies({kind: null, ext: [], name: "*.test.hx"}, "a/Foo.hx", "file") && Manifest.applies({kind: null, ext: [], name: "a*c"}, "abc", "file") && !Manifest.applies({kind: null, ext: [], name: "a*c"}, "abcd", "file"), "a name pattern takes * for any run");
 		check(odd.location == "sidebar" && odd.problems.length == 2, 'a wrong location and a missing icon are named: ${odd.problems}');
+		// An item shows its command's icon unless it has one of its own; an SVG file that is missing is named.
+		sys.io.File.saveContent(dir + "/icons.rayext", '{"name": "I", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a", "title": "A", "icon": "ext/notes.svg"}, {"id": "b", "title": "B", "icon": "eye"}, {"id": "c", "title": "C", "icon": "gone.svg"}, {"id": "d"}], "menus": {"explorer/context": [{"command": "a"}, {"command": "b", "icon": "star"}, {"command": "d"}, {"command": "d", "icon": "nowhere.svg"}]}}}');
+		var icons = Manifest.read(dir + "/icons.rayext");
+		var shown = icons.menuFor("explorer/context", "x", "file").map(i -> i.command + ":" + i.icon);
+		check(shown.join(",") == "a:ext/notes.svg,b:star,d:null,d:nowhere.svg", 'a menu item takes its command\'s icon, or its own: $shown');
+		check(icons.iconFile("ext/notes.svg") == sys.FileSystem.fullPath(dir) + "/ext/notes.svg" && icons.iconFile("eye") == null && icons.iconFile(null) == null, "an icon is a file in the extension, or a name of RayDE's");
+		check(icons.problems.length == 2 && icons.problems[0].indexOf("gone.svg") > 0 && icons.problems[1].indexOf("nowhere.svg") > 0, 'icon files that are missing are named: ${icons.problems}');
 
 		// A form edits the file and leaves the rest of it alone: the order of the keys, the keys it does not know, the text of numbers.
 		var text = '{\n  "zeta": 1.50,\n  "name": "Keep",\n  "contributes": {"commands": [{"id": "a"}]},\n  "main": "ext/main.rays"\n}\n';
@@ -489,6 +506,62 @@ class Checks {
 		}
 		check(second.state == "exited" && second.exitCode == 0, 'a shut down host exits: ${second.state} ${second.exitCode}');
 		Sys.println('extension host: ${seen.length} messages from ${binary}');
+		markdownExtensionChecks(binary);
+	}
+
+	/**
+	 * The Markdown preview extension in a real host: a command mounts a tab built from a file's text, a hook
+	 * brings it up to date, and closing the tab unmounts it. The file reads are answered here, as the workbench would.
+	 */
+	static function markdownExtensionChecks(binary:String):Void {
+		var fixture = Sys.getCwd() + "tests/fixtures/markdown/";
+		var manifest = Manifest.read(fixture + "markdown.rayext");
+		check(manifest.problems.length == 0, 'the markdown config reads cleanly: ${manifest.problems.join("; ")}');
+		var items = manifest.menuFor("explorer/context", "docs/README.md", "file");
+		check(items.length == 1 && items[0].command == "preview" && items[0].title == "Preview", "the config puts Preview in the Explorer's menu for a Markdown file");
+		check(items[0].icon == "ext/preview.svg" && sys.FileSystem.exists(manifest.iconFile(items[0].icon)), "with the icon of its command");
+		check(manifest.menuFor("explorer/context", "docs/notes.txt", "file").length == 0, "and for no other file");
+		var host = new ExtensionHost(binary, Sys.getCwd() + "bin/check-markdown", manifest.importRoot());
+		host.start();
+		var text = "# First\n\nSome **bold** text.";
+		// Messages not yet looked at, so one batch can answer several waits.
+		var queue:Array<Dynamic> = [];
+		function until(want:Dynamic->Bool):Null<Dynamic> {
+			var end = haxe.Timer.stamp() + 5;
+			while (haxe.Timer.stamp() < end) {
+				for (m in host.poll())
+					queue.push(m);
+				while (queue.length > 0) {
+					var m = queue.shift();
+					if (m.t == "call")
+						host.send({t: "resolve", id: m.id, value: text});
+					if (want(m))
+						return m;
+				}
+				Sys.sleep(.01);
+			}
+			return null;
+		}
+		function ops(contains:String):Null<Dynamic>
+			return until(m -> m.t == "ops" && Std.string(m.ops).indexOf(contains) >= 0);
+		host.send({t: "module", path: "rayde.workspace", functions: ["readFile"]});
+		host.send({t: "run", name: manifest.mainPath(), source: sys.io.File.getContent(manifest.mainPath())});
+		check(until(m -> m.t == "started") != null, "the extension starts");
+		var command = until(m -> m.t == "registered");
+		check(command != null && command.id == "preview", "it registers the command the config lists");
+		check(until(m -> m.t == "subscribe" && m.hook == "file.saved") != null, "and listens for saves");
+		host.send({t: "command", id: "preview", args: {path: "README.md"}});
+		var first = ops("tab:Preview of README.md");
+		check(first != null, "the command mounts a tab titled for the file");
+		check(first != null && Std.string(first.ops).indexOf("First") >= 0, "the tab shows the file's heading");
+		var named:Null<Array<Dynamic>> = first == null ? null : Lambda.find((first.ops : Array<Array<Dynamic>>), o -> o[0] == "set" && o[2] == "name");
+		var root:Int = named == null ? -1 : (named[1] : Int);
+		text = "# Second";
+		host.send({t: "hook", name: "file.saved", data: {path: "README.md"}});
+		check(ops("Second") != null, "a save brings the tab up to date");
+		host.send({t: "closed", root: root});
+		check(until(m -> m.t == "ops" && Std.string(m.ops).indexOf("remove") >= 0) != null, "closing the tab unmounts the view");
+		host.stop();
 	}
 
 	static function main():Void {

@@ -420,6 +420,10 @@ class Preview {
 			forget(c);
 	}
 
+	/** Takes a mounted root down, as the extension's own unmount does. */
+	public function removeRoot(id:Int):Void
+		remove(id);
+
 	/** Finds the roots the extension has mounted, and records them in `roots`; the one already known is left. */
 	public function findRoots():Void {
 		for (id => p in parts) {

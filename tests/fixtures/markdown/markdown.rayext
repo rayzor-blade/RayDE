@@ -1,0 +1,22 @@
+{
+  "name": "Markdown Preview",
+  "version": "0.1.0",
+  "description": "Previews Markdown files in a tab beside the editor",
+  "main": "ext/main.rays",
+  "sources": ["ext", "docs"],
+  "capabilities": ["workspace.read"],
+  "view": {
+    "title": "Markdown",
+    "location": "sidebar"
+  },
+  "contributes": {
+    "commands": [
+      {"id": "preview", "title": "Preview", "icon": "ext/preview.svg"}
+    ],
+    "menus": {
+      "explorer/context": [
+        {"command": "preview", "when": {"kind": "file", "ext": [".md", ".markdown"]}}
+      ]
+    }
+  }
+}

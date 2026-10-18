@@ -86,15 +86,15 @@ class ViewIcons {
 
 	/** The icon of a tool in the view's header: its SVG file, or the icon of RayDE's it names. */
 	public static function tool(m:Manifest, t:ViewTool):ashui.svg.SvgDocument {
-		var doc = file(m.toolIconPath(t));
+		var icon = named(m, t.icon);
+		return icon == null ? Icons.APPS_LINE : icon;
+	}
+
+	/** An icon an extension's config wrote: its SVG file, or the icon of RayDE's it names; null when it names none, or none that exists. */
+	public static function named(m:Manifest, icon:Null<String>):Null<ashui.svg.SvgDocument> {
+		var doc = file(m.iconFile(icon));
 		if (doc != null)
 			return doc;
-		if (t.icon != null) {
-			var name = StringTools.endsWith(t.icon, "-line") ? t.icon.substr(0, t.icon.length - 5) : t.icon;
-			var named = NAMED.get(name);
-			if (named != null)
-				return named;
-		}
-		return Icons.APPS_LINE;
+		return icon == null ? null : NAMED.get(StringTools.endsWith(icon, "-line") ? icon.substr(0, icon.length - 5) : icon);
 	}
 }
