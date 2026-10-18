@@ -1,5 +1,6 @@
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
+import rayde.run.Runner;
 
 /**
  * The language layer against the real Haxe compiler: one fixture project,
@@ -19,6 +20,18 @@ class Checks {
 		if (i < 0)
 			throw 'fixture has no "$marker"';
 		return haxe.io.Bytes.ofString(text.substr(0, i)).length + shift;
+	}
+
+	/** Ticks a run until it ends, or a minute passes; its final state. */
+	static function finish(runner:Runner):String {
+		runner.start();
+		var end = haxe.Timer.stamp() + 90;
+		while (runner.active() && haxe.Timer.stamp() < end) {
+			runner.tick();
+			Sys.sleep(.02);
+		}
+		runner.tick();
+		return runner.state;
 	}
 
 	static function main():Void {
@@ -70,6 +83,24 @@ class Checks {
 			server.stop();
 			check(display.hover(file, at(text, "var greeting", 5)) != null, "a request after the server stopped starts it again");
 
+			// Building and running through the same warm server, a program that works and one that does not build.
+			var runner = new Runner(display), done = finish(runner);
+			check(done == "finished" && runner.exitCode == 0, 'the fixture did not run to its end: $done, exit ${runner.exitCode}');
+			check(runner.console.indexOf("hello") >= 0, "the program's output is not in the console: " + runner.console);
+			check(runner.problems.length == 0, "a good build reports problems");
+			// A project of its own has a server of its own: two with a module Main would share it.
+			var other = new CompilerServer(), broken = Display.ofHxml(other, Sys.getCwd() + "tests/fixtures/broken/build.hxml");
+			var bad = new Runner(broken), result = finish(bad);
+			check(result == "failed", 'the broken fixture ended as $result');
+			check(bad.problems.length == 1 && bad.problems[0].message == "String should be Int" && bad.problems[0].range.start.line == 2
+				&& StringTools.endsWith(bad.problems[0].file, "tests/fixtures/broken/src/Main.hx"), 'the build error as a problem: ${bad.problems.map(p -> p.message + "@" + p.range.start.line + " " + p.file)}');
+			check(!sys.FileSystem.exists(bad.program()), "a failed build left a program behind");
+			var stopped = new Runner(display);
+			stopped.start();
+			stopped.stop();
+			check(stopped.state == "idle" && !stopped.active(), "stopping a build did not return it to idle");
+			other.stop();
+
 			Sys.println('language: first request ${Math.round(cold * 1000)} ms, warm ${Math.round(warm * 1000)} ms');
 		} catch (e:Dynamic) {
 			failures.push("threw: " + Std.string(e));
@@ -79,6 +110,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics and restart passed");
+		Sys.println("rayde checks: compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }

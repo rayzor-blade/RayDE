@@ -10,52 +10,116 @@ import rayde.lang.Display;
 import rayde.ui.Workbench;
 
 /**
- * RayDE's workbench on the fixture project, captured in both themes: as it
- * opens, and with a file open and an edit the compiler finds wrong. Pictures
- * go to bin/snapshots, or ASHUI_SNAPSHOT_DIR.
+ * RayDE's workbench on the fixture projects, captured in both themes: as it
+ * opens, with a file open and an edit the compiler finds wrong, after a run of
+ * a program that works, and after a build that fails. Pictures go to
+ * bin/snapshots, or ASHUI_SNAPSHOT_DIR. A run saves what is edited, so each
+ * scenario works on a copy of its fixture, never the fixture itself.
  */
 class Snapshots {
 	static inline var WIDTH = 1280;
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
-		var root = Sys.getCwd() + "tests/fixtures/basic", server = new CompilerServer();
-		for (dark in [true, false])
-			capture(dark, root, server);
-		server.stop();
-		Sys.println("rayde snapshots: the workbench, empty and with problems, in both themes");
+		for (dark in [true, false]) {
+			scenario(dark, "basic", (bench, file, shot, settle) -> {
+				shot("empty");
+				bench.openFile(file);
+				var buffer = bench.buffer(file), original = buffer.get();
+				buffer.set(StringTools.replace(original, 'var greeting = "hello";', 'var greeting:Int = "hello";'));
+				bench.check(file);
+				settle();
+				if (bench.problems.get().length != 2)
+					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
+				shot("problems");
+				// Put the edit back, and run the program.
+				buffer.set(original);
+				bench.check(file);
+				bench.run();
+				wait(bench);
+				settle();
+				if (bench.runner.state != "finished" || bench.runner.console.indexOf("hello") < 0)
+					throw 'the program did not run: ${bench.runner.state}: ${bench.runner.console}';
+				shot("run");
+			});
+			scenario(dark, "broken", (bench, file, shot, settle) -> {
+				bench.openFile(file);
+				bench.run();
+				wait(bench);
+				settle();
+				if (bench.runner.state != "failed" || bench.runner.problems.length != 1)
+					throw 'the build should have failed with one problem: ${bench.runner.state}, ${bench.runner.problems.length}';
+				shot("build-failed");
+			});
+		}
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run and after a failed build, in both themes");
 	}
 
-	static function capture(dark:Bool, root:String, server:CompilerServer):Void {
+	/** Ticks the workbench until its run ends, or a minute and a half passes. */
+	static function wait(bench:Workbench):Void {
+		var end = haxe.Timer.stamp() + 90;
+		while (bench.runner.active() && haxe.Timer.stamp() < end) {
+			bench.tick();
+			Sys.sleep(.02);
+		}
+		bench.tick();
+	}
+
+	/** A copy of the fixture project `name` under bin/fixtures, which a run may change. */
+	static function copyOf(name:String):String {
+		var from = Sys.getCwd() + "tests/fixtures/" + name, to = Sys.getCwd() + "bin/fixtures/" + name;
+		function copy(a:String, b:String):Void {
+			sys.FileSystem.createDirectory(b);
+			for (entry in sys.FileSystem.readDirectory(a)) {
+				var source = haxe.io.Path.join([a, entry]), target = haxe.io.Path.join([b, entry]);
+				if (sys.FileSystem.isDirectory(source))
+					copy(source, target)
+				else
+					sys.io.File.saveContent(target, sys.io.File.getContent(source));
+			}
+		}
+		if (sys.FileSystem.exists(to))
+			for (entry in sys.FileSystem.readDirectory(to))
+				if (entry != ".rayde")
+					deleteTree(haxe.io.Path.join([to, entry]));
+		copy(from, to);
+		return to;
+	}
+
+	static function deleteTree(path:String):Void {
+		if (sys.FileSystem.isDirectory(path)) {
+			for (entry in sys.FileSystem.readDirectory(path))
+				deleteTree(haxe.io.Path.join([path, entry]));
+			sys.FileSystem.deleteDirectory(path);
+		} else
+			sys.FileSystem.deleteFile(path);
+	}
+
+	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void) -> Void):Void {
+		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
 		var display = Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
 		var view = Owner.root(tree, s -> {
 			stop = s;
-			return bench = new Workbench({display: display, name: "basic", runtime: "ash"});
+			return bench = new Workbench({display: display, name: name, runtime: "ash"});
 		});
-		function settle(frames = 20)
-			for (_ in 0...frames) {
+		function settle(?frames:Int):Void
+			for (_ in 0...(frames == null ? 20 : frames)) {
 				Offscreen.advance(1 / 60);
 				Css.setViewport(WIDTH, HEIGHT);
 				Css.update();
 				tree.flush();
 				tree.computeLayout(view.node, WIDTH, HEIGHT);
 			}
-		function shot(name:String)
-			Snapshot.capture('rayde-${dark ? "dark" : "light"}-$name', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
+		function shot(what:String):Void {
+			settle();
+			Snapshot.capture('rayde-${dark ? "dark" : "light"}-$name-$what', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
+		}
 		settle();
-		shot("empty");
-		var main = root + "/src/Main.hx";
-		bench.openFile(main);
-		var buffer = bench.buffer(main);
-		buffer.set(StringTools.replace(buffer.get(), 'var greeting = "hello";', 'var greeting:Int = "hello";'));
-		bench.check(main);
-		settle();
-		if (bench.problems.get().length != 2)
-			throw 'the edited file should show two problems, not ${bench.problems.get().length}';
-		shot("problems");
+		steps(bench, root + "/src/Main.hx", shot, settle);
 		stop();
 		tree.dispose();
+		server.stop();
 	}
 }

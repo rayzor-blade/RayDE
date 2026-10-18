@@ -5,6 +5,9 @@ package rayde.lang;
  * to it. The server keeps what it has typed between requests, so asking again
  * after an edit costs only what changed.
  *
+ * Keep one server for each project: the server caches typed modules by name,
+ * so two projects that each have a module `Main` would be given each other's.
+ *
  * Its protocol is the one `haxe --connect` speaks: one connection per request,
  * the compiler's arguments one per line, then a NUL byte; the reply is what the
  * compiler printed, and the server closes the connection when done.
@@ -22,6 +25,11 @@ class CompilerServer {
 	/** Whether the server process is running. */
 	public function running():Bool
 		return process != null && process.exitCode(false) == null;
+
+	/** Starts the server when it is not running, so its port is known. */
+	public function ensure():Void
+		if (!running())
+			start();
 
 	/** What the compiler printed for `args`, run in `cwd`; starts the server first when it is not running. */
 	public function request(cwd:String, args:Array<String>):String {

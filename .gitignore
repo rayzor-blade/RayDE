@@ -1,3 +1,4 @@
 /bin/
 /.deps/
 .DS_Store
+.rayde/
