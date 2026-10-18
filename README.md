@@ -25,7 +25,7 @@ Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P opens the command center,
 
 ### The window
 
-RayDE opens without the system's frame and draws its own title bar: the bar moves the window, a double click on it maximizes, the edges and corners resize it, and the close, minimize and maximize controls are RayDE's, in the style of the platform (macOS lights on the left; Windows, GNOME and KDE controls on the right). Settings > Color scheme > Window controls picks another style, and `appearance.windowControls` in `.rayde/settings.json` (`auto`, `macos`, `windows`, `gnome`, `kde`) keeps it. `rayde.ui.WindowChrome` is what the controls ask of the window; with no window, as in the snapshots, it records the requests.
+RayDE opens without the system's frame and draws its own title bar: the bar moves the window, a double click on it maximizes, the edges and corners resize it, and the close, minimize and maximize controls are RayDE's, in the style of the platform (macOS lights on the left; Windows, GNOME and KDE controls on the right). Settings > Color scheme > Window controls picks another style, and `appearance.windowControls` in `.rayde/settings.json` (`auto`, `macos`, `windows`, `gnome`, `kde`) keeps it. The window is transparent so it can have rounded corners (macOS, GNOME and KDE styles; Windows's are square), and `RAYDE_OPAQUE=1` fills it instead. `rayde.ui.WindowChrome` is what the controls ask of the window; with no window, as in the snapshots, it records the requests.
 
 ### Checks
 

@@ -31,8 +31,10 @@ class Main {
 			minWidth: 800,
 			minHeight: 560,
 			icon: rayde.ui.AppIcon.window(),
-			// RayDE draws the title bar and the window's controls itself.
+			// RayDE draws the title bar, the window's controls and its rounded corners itself, over what is behind it.
 			decorations: false,
+			// RAYDE_OPAQUE=1 fills the window instead, for a display where a transparent window misbehaves; safe either way.
+			transparent: Sys.getEnv("RAYDE_OPAQUE") == null,
 			theme: Theming.bundle(appearance.theme),
 			appearance: Theming.windowTheme(appearance)
 		}, () -> {

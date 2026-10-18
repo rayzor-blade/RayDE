@@ -1333,7 +1333,7 @@ class Workbench extends Component<WorkbenchProps> {
 			treeSelected.get();
 			0;
 		}, _ -> keepSelection(), (_, _) -> false);
-		return <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary relative" onKeyDown={key}>
+		var window = <div id="rayde-window" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary relative">
 			${titleBar()}
 			<div class="flex flex-1 min-h-0 px-2">
 				<for {revision in [layoutRevision.get()]}>${columns()}</for>
@@ -1344,6 +1344,13 @@ class Workbench extends Component<WorkbenchProps> {
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
+		// A window of its own, not filling the screen, has rounded corners (but Windows's) and, where the system draws no frame, an outline.
+		// They are on a card inside the root, which is the whole of what the window draws and cannot be clipped.
+		var root = <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col text-text-primary" onKeyDown={key}>{window}</div>;
+		var identity = ashui.css.Identity.of(window.tree, window.node.id);
+		identity.bindBooleanAttribute("data-round", Computed.make(() -> chrome.resizable() && windowStyle.get() != "windows"));
+		identity.bindBooleanAttribute("data-outline", Computed.make(() -> chrome.resizable() && windowStyle.get() != "macos"));
+		return root;
 	}
 
 	/** The side panel, the editor with the bottom panel under it, and the right side bar when an extension view is there. */

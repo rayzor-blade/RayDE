@@ -734,6 +734,8 @@ class Snapshots {
 					@:privateAccess bench.windowStyle.set(style);
 					settle(10);
 					shot("bar-" + style);
+					// Over a bright colour, to see what the window leaves transparent at its corners.
+					Snapshot.capture('rayde-${dark ? "dark" : "light"}-chrome-corners-$style', bench.tree, bench.node, WIDTH, HEIGHT, 0xff00ff);
 					var middle = style == "macos" ? "#rayde-win-fullscreen" : "#rayde-win-maximize";
 					click("#rayde-win-minimize");
 					click(middle);

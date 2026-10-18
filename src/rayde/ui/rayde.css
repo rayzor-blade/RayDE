@@ -248,3 +248,7 @@
 #rayde .rayde-edge-sw { bottom: 0; left: 0; width: 10px; height: 10px; cursor: nesw-resize; }
 #rayde .rayde-edge-nw { top: 0; left: 0; width: 10px; height: 10px; cursor: nwse-resize; }
 #rayde .rayde-edge-se { bottom: 0; right: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+
+/* The window's own shape: rounded corners clip what is in it, and an outline stands where the system draws no frame. */
+#rayde #rayde-window[data-round] { border-radius: var(--radius-xl); corner-shape: squircle; overflow: hidden; }
+#rayde #rayde-window[data-outline] { border: 1px solid var(--border); }
