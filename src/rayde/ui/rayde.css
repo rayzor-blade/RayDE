@@ -9,8 +9,13 @@
 #rayde .ui-resizable-handle[data-dragging] > .ui-resizable-line,
 #rayde .ui-resizable-handle:focus-visible > .ui-resizable-line { background: var(--primary); }
 
+/*
+ * Corners are squircles throughout. The theme smooths a rounded corner of 12px or more, so the cards and
+ * the larger controls take a radius from there up; the smaller ones ask for the shape outright. Fully
+ * round things (the unsaved dot) stay round.
+ */
 /* Three tiers: the window on the background, the editor lifted on the surface, the side panels sunk below it, so the page being edited reads as the focus. */
-#rayde .rayde-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+#rayde .rayde-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; }
 #rayde .rayde-card.panel { background: var(--surface-overlay); --ui-code-bg: transparent; --ui-code-gutter-bg: transparent; }
 
 /* The editor and the console sit flush in their cards, and a gutter is not walled off from the text. */
@@ -18,11 +23,11 @@
 #rayde .ui-code-gutter { border-right-width: 0; }
 
 /* Title bar */
-#rayde .rayde-pill { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-secondary); }
+#rayde .rayde-pill { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); corner-shape: squircle; color: var(--text-secondary); }
 #rayde .rayde-pill-icon { color: var(--text-tertiary); }
 
 /* Activity bar */
-#rayde .rayde-activity-item { position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-tertiary); cursor: pointer; }
+#rayde .rayde-activity-item { position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-default); color: var(--text-tertiary); cursor: pointer; }
 #rayde .rayde-activity-item:hover { color: var(--text-primary); background: var(--accent-subtle); }
 #rayde .rayde-activity-item[data-on] { color: var(--text-primary); background: color-mix(in srgb, var(--primary) 24%, transparent); }
 
@@ -33,7 +38,7 @@
 #rayde .rayde-strip { background: var(--background); }
 /* A tab keeps the front tab's sweep clear on each side, so its flared feet have room to draw; the hover shows on the body only. */
 #rayde .rayde-tab { padding: 0 12px; }
-#rayde .rayde-tab-body { height: 28px; border-radius: var(--radius-md); }
+#rayde .rayde-tab-body { height: 28px; border-radius: var(--radius-lg); corner-shape: squircle; }
 #rayde .rayde-tab:hover .rayde-tab-body { background: var(--accent-subtle); }
 #rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
 #rayde .rayde-tab-icon { flex-shrink: 0; }
@@ -59,11 +64,11 @@
 
 /* Bottom panel */
 #rayde-bottom { --ui-tabs-list-bg: transparent; }
-#rayde .rayde-problem { border-radius: var(--radius-sm); }
+#rayde .rayde-problem { border-radius: var(--radius-md); corner-shape: squircle; }
 #rayde .rayde-problem:hover { background: var(--accent-subtle); }
 
 /* Status bar */
 #rayde .rayde-status { color: var(--text-secondary); font-size: var(--text-xs); }
-#rayde .rayde-status-item { align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-sm); height: 20px; }
+#rayde .rayde-status-item { align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-md); corner-shape: squircle; height: 20px; }
 #rayde .rayde-status-item.action { cursor: pointer; }
 #rayde .rayde-status-item.action:hover { background: var(--accent-subtle); color: var(--text-primary); }

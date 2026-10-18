@@ -36,6 +36,9 @@ class FileTabs extends Component<FileTabsProps> {
 	static inline var ROUND = 11;
 	static inline var HEIGHT = 40;
 
+	/** Segments to a corner. */
+	static inline var STEPS = 12;
+
 	function render():Element
 		return <div id="rayde-file-tabs" class="rayde-strip flex items-end px-1 shrink-0" height={HEIGHT}>
 			<for {k in [{files: props.files.get(), front: props.active.get(), dirty: props.dirty.get()}]}>${strip(k.files, k.front, k.dirty)}</for>
@@ -55,7 +58,7 @@ class FileTabs extends Component<FileTabsProps> {
 				<icon document={Icons.HAXE} class="rayde-tab-icon size-4"/>
 				<text class="rayde-tab-name text-sm">${name}</text>
 				<tooltip label="Close">
-					<div id={id + "-close"} class="rayde-close flex items-center justify-center rounded-md" width={22} height={22}
+					<div id={id + "-close"} class="rayde-close flex items-center justify-center rounded-md corner-squircle" width={22} height={22}
 						onClick={e -> { e.stopPropagation(); props.onClose(file); }}>
 						<div class="rayde-dirty rounded-full" width={8} height={8}/>
 						<icon document={Icons.CLOSE_LINE} class="rayde-close-icon size-3.5"/>
@@ -72,21 +75,37 @@ class FileTabs extends Component<FileTabsProps> {
 		return element;
 	}
 
-	/** The front tab's shape and its flaring feet, filling the tab's box, whose sides keep a sweep clear for the feet. */
+	/**
+	 * The front tab's shape: rounded top corners and lower corners that sweep out
+	 * into the strip, each a quarter of the theme's superellipse, so they curve
+	 * as the cards beside them do. The canvas fills the tab's box, whose sides
+	 * keep a sweep clear for the feet.
+	 */
 	function notch(ctx:DrawContext):Void {
 		var theme = ThemeState.get();
 		theme.revision.get();
-		var s:Float = SWEEP, r:Float = ROUND, w = ctx.width - 2 * s, h = ctx.height;
+		var k = theme.shape().effectiveMathExponent();
+		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width, w = full - 2 * s, h = ctx.height;
 		var path = new Path();
 		path.moveTo(0, h);
-		path.quadTo(s, h, s, h - s);
+		corner(path, 0, h - s, s, k, Math.PI / 2, 0);
 		path.lineTo(s, r);
-		path.quadTo(s, 0, s + r, 0);
+		corner(path, s + r, r, r, k, Math.PI, 1.5 * Math.PI);
 		path.lineTo(s + w - r, 0);
-		path.quadTo(s + w, 0, s + w, r);
+		corner(path, s + w - r, r, r, k, 1.5 * Math.PI, 2 * Math.PI);
 		path.lineTo(s + w, h - s);
-		path.quadTo(s + w, h, s + w + s, h);
+		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
 		path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
+	}
+
+	/** Lines along the superellipse of exponent `k` and radius `r` about (cx, cy), from angle `from` to `to` (screen angles: y grows down). */
+	static function corner(path:Path, cx:Float, cy:Float, r:Float, k:Float, from:Float, to:Float):Void {
+		inline function pow(v:Float):Float
+			return (v < 0 ? -1 : 1) * Math.pow(Math.abs(v), 2 / k);
+		for (i in 1...STEPS + 1) {
+			var a = from + (to - from) * i / STEPS;
+			path.lineTo(cx + r * pow(Math.cos(a)), cy + r * pow(Math.sin(a)));
+		}
 	}
 }
