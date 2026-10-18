@@ -344,6 +344,9 @@ class Snapshots {
 				if (Store.section(root, "appearance").scheme != (dark ? "light" : "dark") || ThemeState.get().scheme() != (dark ? Light : Dark))
 					throw 'choosing a scheme did not apply and write it: ${dark ? "dark" : "light"} run, file says ${Store.section(root, "appearance").scheme}, window is ${ThemeState.get().scheme()}';
 				shot("settings-appearance-switched");
+				// The landing page follows the scheme: its wordmark is the one drawn for the scheme in use.
+				bench.closeAll();
+				shot("welcome-switched");
 				// What the rest of the snapshots expect: the theme and scheme they began with.
 				var again = new Appearance();
 				again.scheme = dark ? "dark" : "light";

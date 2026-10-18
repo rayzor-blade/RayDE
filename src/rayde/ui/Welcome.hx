@@ -3,6 +3,7 @@ package rayde.ui;
 import ashui.components.Icon;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
+import ashui.theme.ThemeState;
 import ashui.ui.Component;
 import rayde.lang.Display.Diagnostic;
 
@@ -38,12 +39,9 @@ class Welcome extends Component<WelcomeProps> {
 		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl";
 		return <div id="rayde-welcome" class="rayde-welcome flex flex-1 min-h-0 items-center justify-center overflow-auto">
 			<div class="flex flex-col gap-7 px-10 py-6" width={900}>
-				<div class="flex items-center gap-5">
-					<div class="rayde-hero flex items-center justify-center shrink-0" width={76} height={76}><icon document={Icons.HAXE} class="size-11"/></div>
-					<div class="flex flex-col gap-1">
-						<text class="rayde-title text-4xl font-semibold tracking-tighter">RayDE</text>
-						<text class="text-sm text-text-secondary">${"Haxe, running on " + props.runtime}</text>
-					</div>
+				<div class="flex flex-col gap-3">
+					<for {dark in [darkScheme()]}>${wordmark(dark)}</for>
+					<text class="text-sm text-text-secondary">${"Haxe, running on " + props.runtime}</text>
 				</div>
 				<div class="flex gap-12">
 					<div class="flex flex-col gap-7 flex-1 min-w-0">
@@ -70,6 +68,17 @@ class Welcome extends Component<WelcomeProps> {
 			</div>
 		</div>;
 	}
+
+	/** Whether the theme in use is its dark scheme, read so that a change of scheme draws the page again. */
+	function darkScheme():Bool {
+		var state = ThemeState.get();
+		state.revision.get();
+		return state.scheme() == ashui.theme.ColorScheme.Dark;
+	}
+
+	/** The wordmark for the scheme, at the size the page gives its heading. */
+	function wordmark(dark:Bool):Element
+		return new ashui.ui.Svg(Icons.wordmark(dark), {width: 232, height: 70});
 
 	/** One way to start: its icon, what it does, and the keys that do it too. */
 	function action(id:String, icon:ashui.svg.SvgDocument, label:String, description:String, keys:Array<String>, run:Void->Void):Element
