@@ -22,9 +22,27 @@
 #rayde .ui-code { border-width: 0; border-radius: 0; }
 #rayde .ui-code-gutter { border-right-width: 0; }
 
+/* The command center: glass over the page, as ChimpMonk's, rising in with a spring. */
+#rayde .rayde-glass {
+	background: color-mix(in srgb, var(--surface-elevated) 30%, transparent);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-3xl);
+	corner-shape: squircle;
+	backdrop-filter: blur(12px) saturate(1.15);
+	box-shadow: var(--shadow-lg);
+}
+#rayde .rayde-command-center { animation: ui-rise-in var(--duration-normal) var(--ease-spring); }
+#rayde .rayde-command-center[closing] { animation: ui-rise-out var(--duration-faster) var(--ease-in) forwards; }
+#rayde .rayde-command-center .ui-command { border: 0; border-radius: 0; background: transparent; }
+#rayde .rayde-command-center .ui-command-list { --ui-command-height: 300px; padding: 4px 8px; }
+#rayde .rayde-command-center .ui-command-item { padding: 2px 8px; min-height: 36px; border-radius: var(--radius-md); corner-shape: squircle; }
+#rayde .rayde-cc-footer { height: 34px; border-top: 1px solid var(--border); }
+
 /* Title bar */
 #rayde .rayde-pill { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); corner-shape: squircle; color: var(--text-secondary); }
+#rayde .rayde-pill:hover { color: var(--text-primary); border-color: var(--border-hover); }
 #rayde .rayde-pill-icon { color: var(--text-tertiary); }
+#rayde .rayde-pill-hint { color: var(--text-tertiary); }
 
 /* Activity bar */
 #rayde .rayde-activity-item { position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-default); color: var(--text-tertiary); cursor: pointer; }

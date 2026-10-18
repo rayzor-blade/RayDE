@@ -53,8 +53,10 @@ class Snapshots {
 				if (bench.runner.state != "finished" || bench.runner.console.indexOf("hello") < 0)
 					throw 'the program did not run: ${bench.runner.state}: ${bench.runner.console}';
 				shot("run");
-				bench.quickOpen.set(true);
-				shot("quick-open");
+				bench.openCenter();
+				shot("command-center");
+				bench.openCenter(">");
+				shot("command-center-commands");
 				bench.quickOpen.set(false);
 			});
 			scenario(dark, "broken", (bench, file, shot, settle) -> {
@@ -67,7 +69,7 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
-		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in quick open and after a failed build, in both themes");
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center and after a failed build, in both themes");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */

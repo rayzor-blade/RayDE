@@ -17,7 +17,7 @@ import ashui.ui.Ref;
 import rayde.lang.Display;
 import rayde.run.Runner;
 import rayde.ui.FileTabs;
-import rayde.ui.QuickOpen;
+import rayde.ui.CommandCenter;
 
 using StringTools;
 
@@ -48,8 +48,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The open files with edits not yet written to disk. */
 	public final dirty = Signal.make(([] : Array<String>));
 
-	/** Whether Go to file is open. */
+	/** Whether the command center is open. */
 	public final quickOpen = Signal.make(false);
+
+	final centerRequest = Signal.make(({text: "", serial: 0} : CenterRequest));
 
 	/** A line the status bar shows for a few seconds: what a command could not do. */
 	final notice = Signal.make("");
@@ -69,6 +71,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final runState = Signal.make("idle");
 	public var runner(default, null):Null<Runner>;
 	var seen = -1;
+	var pill:Element;
 	var lastBuild:Null<Array<Diagnostic>>;
 
 	public function new(props:WorkbenchProps) {
@@ -156,6 +159,34 @@ class Workbench extends Component<WorkbenchProps> {
 			goTo(found[0].file, found[0].range.start.line, found[0].range.start.character);
 	}
 
+	/** Opens the command center with `text` in its filter: nothing for files, ">" for commands, ":" for a line. */
+	public function openCenter(text = ""):Void {
+		centerRequest.set({text: text, serial: centerRequest.get().serial + 1});
+		quickOpen.set(true);
+	}
+
+	/** Moves the cursor of the file in front to `line` (from 1). */
+	function goToLine(line:Int):Void {
+		var file = active.get();
+		if (file != "")
+			goTo(file, line - 1, 0);
+	}
+
+	/** The commands the center lists after `>`. */
+	function actions():Array<CenterAction> {
+		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
+		return [
+			{id: "run", label: "Run", icon: Icons.PLAY_FILL, shortcut: "F5", run: run},
+			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, shortcut: "⇧F5", run: stopRun},
+			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, shortcut: mod + "S", run: saveAll},
+			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, shortcut: mod + "W", run: () -> if (active.get() != "") closeFile(active.get())},
+			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, shortcut: "F12", run: goToDefinition},
+			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> bottom.set("problems")},
+			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> bottom.set("console")},
+			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: () -> treeWidth.set(treeWidth.get() > 8 ? 0 : EXPLORER_WIDTH)}
+		];
+	}
+
 	/** Shows `text` in the status bar for a few seconds. */
 	function say(text:String):Void {
 		notice.set(text);
@@ -229,14 +260,18 @@ class Workbench extends Component<WorkbenchProps> {
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
 	}
 
-	/** VS Code's keys: Go to file, Save, Close tab, Go to definition, Run and Stop. */
+	/** VS Code's keys: Go to file, Commands, Go to line, Save, Close tab, Go to definition, Run and Stop. */
 	function key(e:KeyEvent):Void {
 		if (e.defaultPrevented)
 			return;
 		var command = e.superKey || e.control;
 		switch e.key {
-			case Character("p") | Character("P") if (command && !e.shift):
-				quickOpen.set(true);
+			case Character("p") | Character("P") if (command && e.shift):
+				openCenter(">");
+			case Character("p") | Character("P") if (command):
+				openCenter();
+			case Character("g") | Character("G") if (command):
+				openCenter(":");
 			case Character("s") | Character("S") if (command):
 				saveAll();
 			case Character("w") | Character("W") if (command && active.get() != ""):
@@ -275,22 +310,25 @@ class Workbench extends Component<WorkbenchProps> {
 				</resizable>
 			</div>
 			${statusBar()}
-			<quick-open opened={quickOpen} files={projectFiles} root={props.display.cwd} onOpen={path -> openFile(path)}/>
+			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={actions()}
+				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
 	}
 
-	/** The project in a pill in the middle; the window has its own title and icon. */
-	function titleBar():Element
+	/** The project in a pill in the middle, which opens the command center; the window has its own title and icon. */
+	function titleBar():Element {
+		var hint = Sys.systemName() == "Mac" ? "⌘P" : "Ctrl+P";
+		pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onClick={_ -> if (quickOpen.get()) quickOpen.set(false) else openCenter()}>
+			<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
+			<text class="text-xs flex-1">${props.name}</text>
+			<text class="rayde-pill-hint text-xs">${hint}</text>
+		</div>;
 		return <div id="rayde-bar" class="flex items-center px-4 shrink-0" height={40}>
 			<div class="flex-1"/>
-			<tooltip label={"Project in " + props.display.cwd} side="bottom">
-				<div id="rayde-project" class="rayde-pill flex items-center justify-center gap-2" width={420} height={26}>
-					<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
-					<text class="text-xs">${props.name}</text>
-				</div>
-			</tooltip>
+			<tooltip label={"Search files and commands in " + props.display.cwd} side="bottom">{pill}</tooltip>
 			<div class="flex-1"/>
 		</div>;
+	}
 
 	/** Views down the left edge; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
@@ -334,6 +372,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function folders():Array<Element>
 		return [for (cp in classpaths()) folder(cp.dir, cp.label, true)];
+
+	/** The project's files with the open ones first, in the order of their tabs. */
+	function recentFiles():Array<String> {
+		var all = projectFiles(), open = open.get();
+		return [for (f in open) if (all.indexOf(f) >= 0) f].concat([for (f in all) if (open.indexOf(f) < 0) f]);
+	}
 
 	/** Every Haxe file under the project's source folders, folder by folder, in name order. */
 	function projectFiles():Array<String> {
