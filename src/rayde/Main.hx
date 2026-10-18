@@ -26,7 +26,16 @@ class Main {
 			minHeight: 560,
 			theme: RestrainedTheme.bundle(),
 			appearance: Dark
-		}, () -> new Workbench({display: display, name: name, runtime: "ash"}));
+		}, () -> {
+			var bench = new Workbench({display: display, name: name, runtime: "ash"});
+			// RAYDE_PANEL=terminal (or problems, console) opens the bottom panel on that tab at launch, for scripted runs.
+			var tab = Sys.getEnv("RAYDE_PANEL");
+			if (tab == "terminal")
+				bench.toggleTerminal();
+			else if (tab != null && tab != "")
+				bench.showPanel(tab);
+			return bench;
+		});
 		server.stop();
 	}
 }

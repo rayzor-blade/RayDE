@@ -417,7 +417,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** Once the terminal's view is made, gives it the keyboard. */
-	function focusTerminal():Void {
+	public function focusTerminal():Void {
 		var tries = 0, hook:ashui.layout.LayoutTree->Void = null;
 		hook = _ -> {
 			var view = terminalView.get();

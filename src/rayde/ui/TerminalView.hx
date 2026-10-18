@@ -74,6 +74,10 @@ class TerminalView extends Component<TerminalViewProps> {
 	var wantRows = 0;
 	var focused = false;
 	var blink = true;
+
+	/** When the keyboard or the program last did something: the cursor is solid then, and blinks after a pause. */
+	var lastActive = 0.;
+
 	var lastOutput = 0.;
 	var exited = false;
 	var gone = false;
@@ -99,6 +103,7 @@ class TerminalView extends Component<TerminalViewProps> {
 		new ashui.reactive.Watch(() -> interaction.focused.get(), on -> {
 			focused = on;
 			blink = true;
+			lastActive = haxe.Timer.stamp();
 			revision.set(revision.get() + 1);
 		});
 		// A new theme gives the text its colours again.
@@ -201,11 +206,12 @@ class TerminalView extends Component<TerminalViewProps> {
 			if (r != seen || changed) {
 				seen = r;
 				lastOutput = now;
+				lastActive = now;
 				refresh();
 				changed = true;
 			}
 			if (focused) {
-				var on = now * 1000 % 1060 < 530;
+				var on = (now - lastActive) * 1000 % 1060 < 530;
 				if (on != blink) {
 					blink = on;
 					changed = true;
@@ -357,6 +363,8 @@ class TerminalView extends Component<TerminalViewProps> {
 		if (screen.scrollback > 0)
 			props.terminal.scrollback(0);
 		anchor = head = null;
+		blink = true;
+		lastActive = haxe.Timer.stamp();
 		props.terminal.write(text);
 		e.preventDefault();
 	}

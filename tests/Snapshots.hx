@@ -114,6 +114,16 @@ class Snapshots {
 					throw 'the terminal did not show what the program printed: "${bench.terminal() == null ? "no terminal" : bench.terminal().line(0)}"';
 				settle(12);
 				shot("terminal");
+				// With the keyboard in it, and something typed: the cursor is a block behind the text, after it.
+				bench.focusTerminal();
+				bench.terminal().write("echo typed");
+				var typing = haxe.Timer.stamp() + 4;
+				while (bench.terminal().line(5).indexOf("typed") < 0 && haxe.Timer.stamp() < typing) {
+					Sys.sleep(.03);
+					settle(1);
+				}
+				settle(4);
+				shot("terminal-typing");
 				bench.killTerminal();
 				bench.closePanel();
 				// Every tab closed: the welcome page, now with recent files.
