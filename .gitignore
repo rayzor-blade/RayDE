@@ -2,3 +2,4 @@
 /.deps/
 .DS_Store
 .rayde/
+/native/terminal/target/

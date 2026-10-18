@@ -2,6 +2,7 @@ import rayde.build.HxmlFile;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.run.Runner;
+import rayde.term.Terminal;
 
 using StringTools;
 
@@ -69,8 +70,39 @@ class Checks {
 		check(spaced.text().indexOf('-D "key=a value"') >= 0 && spaced.value("-D") == "key=a value", "a value with a space is quoted and read back");
 	}
 
+	/** A shell through the native terminal: what it prints, in colour, on the screen; what is typed reaching it; and its exit. */
+	static function terminalChecks():Void {
+		var t = Terminal.open(40, 6, null, "/bin/sh", ["-c", "printf 'hello\\n'; printf '\\033[1;31mred\\033[0m plain\\n'; read x; printf 'got:%s\\n' $x"]);
+		if (t == null) {
+			failures.push("the terminal could not start a shell");
+			return;
+		}
+		var end = haxe.Timer.stamp() + 5;
+		while (t.line(1).indexOf("plain") < 0 && haxe.Timer.stamp() < end)
+			Sys.sleep(.02);
+		check(t.line(0) == "hello", 'the first row: "${t.line(0)}"');
+		var runs = t.row(1);
+		check(runs.length >= 2 && runs[0].text == "red" && runs[0].attrs & 1 == 1 && runs[0].fg == (1 << 24 | 1), 'colour and bold came as a run: ${runs}');
+		check(t.screen().rows == 6 && t.screen().cols == 40, "the screen's size");
+		check(t.exitCode() == -1, "the shell is still running");
+		check(t.write("abc\n"), "typing was written");
+		end = haxe.Timer.stamp() + 5;
+		while (t.line(3).indexOf("got:abc") < 0 && haxe.Timer.stamp() < end)
+			Sys.sleep(.02);
+		check(t.line(2) == "abc", 'the terminal echoed what was typed: "${t.line(2)}"');
+		check(t.line(3) == "got:abc", 'typing reached the program: "${t.line(3)}"');
+		end = haxe.Timer.stamp() + 5;
+		while (t.exitCode() == -1 && haxe.Timer.stamp() < end)
+			Sys.sleep(.02);
+		check(t.exitCode() == 0, "the exit code");
+		check(t.dirtyRows().length > 0, "rows are dirty at first");
+		check(t.dirtyRows().length == 0, "and clean once looked at");
+		t.close();
+	}
+
 	static function main():Void {
 		hxmlChecks();
+		terminalChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
 		var server = new CompilerServer(), display = Display.ofHxml(server, root + "/build.hxml");
@@ -146,6 +178,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }
