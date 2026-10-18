@@ -3,8 +3,12 @@ package rayde.ui;
 import ashui.components.Icon;
 import ashui.components.Tooltip;
 import ashui.draw.DrawContext;
+import ashui.css.Css;
 import ashui.draw.Path;
+import ashui.input.Interaction;
 import ashui.layout.Element;
+import ashui.layout.LayoutTree;
+import ashui.layout.Node;
 import ashui.reactive.Signal;
 import ashui.theme.ThemeState;
 import ashui.types.Brush;
@@ -18,7 +22,9 @@ typedef FileTabsProps = {
 	active:Signal<String>,
 	/** The files with edits not yet saved. */
 	dirty:Signal<Array<String>>,
-	onClose:String->Void
+	onClose:String->Void,
+	/** What sits at the strip's far end: the editor's actions menu. */
+	trailing:Element
 };
 
 /**
@@ -39,21 +45,59 @@ class FileTabs extends Component<FileTabsProps> {
 	/** Segments to a corner. */
 	static inline var STEPS = 12;
 
-	function render():Element
-		return <div id="rayde-file-tabs" class="rayde-strip flex items-end px-1 shrink-0" height={HEIGHT}>
+	var scroller:Element;
+
+	function render():Element {
+		scroller = <div id="rayde-tab-scroll" class="rayde-tab-scroll flex flex-1 min-w-0 items-end overflow-x-auto" height={HEIGHT}>
 			<for {k in [{files: props.files.get(), front: props.active.get(), dirty: props.dirty.get()}]}>${strip(k.files, k.front, k.dirty)}</for>
 		</div>;
+		// A mouse wheel only moves up and down, which scrolls a row of tabs along.
+		Interaction.of(scroller.node).onWheel(e -> {
+			var scroll = ashui.input.Scroll.of(scroller.node);
+			if (scroll != null && e.deltaX == 0 && e.deltaY != 0)
+				scroll.scrollTo(scroll.x.get() + e.deltaY, 0);
+		});
+		return <div id="rayde-file-tabs" class="rayde-strip flex items-end px-1 shrink-0" height={HEIGHT}>
+			${scroller}
+			<div class="rayde-strip-actions flex items-center shrink-0 pr-1" height={HEIGHT - 4}>{props.trailing}</div>
+		</div>;
+	}
 
-	function strip(files:Array<String>, front:String, dirty:Array<String>):Element
-		return <div class="flex items-end">{tabs(files, front, dirty)}</div>;
+	/** Scrolls the row of tabs so the tab in front shows, once layout has placed it. */
+	function reveal():Void {
+		var tries = 0, hook:LayoutTree->Void = null;
+		hook = tree -> {
+			var front = Css.query(scroller.tree, scroller.node.id, ".rayde-tab[data-front]");
+			var scroll = ashui.input.Scroll.of(scroller.node);
+			var box = front.length == 0 ? null : scroller.tree.getScrolledBounds(new Node(front[0])), view = scroller.tree.getScrolledBounds(scroller.node);
+			// A tab not yet laid out reads as no width at all.
+			if (box == null || box.width <= 0 || view == null || scroll == null) {
+				if (++tries > 20)
+					LayoutTree.flushHooks.remove(hook);
+				return;
+			}
+			LayoutTree.flushHooks.remove(hook);
+			var left = box.x - view.x, right = left + box.width;
+			if (left < 0)
+				scroll.scrollTo(scroll.x.get() + left - 8, 0);
+			else if (right > view.width)
+				scroll.scrollTo(scroll.x.get() + right - view.width + 8, 0);
+		};
+		LayoutTree.flushHooks.push(hook);
+	}
+
+	function strip(files:Array<String>, front:String, dirty:Array<String>):Element {
+		reveal();
+		return <div class="flex items-end shrink-0">{tabs(files, front, dirty)}</div>;
+	}
 
 	function tabs(files:Array<String>, front:String, dirty:Array<String>):Array<Element>
-		return [for (i => file in files) tab(file, file == front, dirty.indexOf(file) >= 0, i == 0, i == files.length - 1)];
+		return [for (i => file in files) tab(file, file == front, dirty.indexOf(file) >= 0, i == 0)];
 
-	function tab(file:String, selected:Bool, edited:Bool, first:Bool, last:Bool):Element {
+	function tab(file:String, selected:Bool, edited:Bool, first:Bool):Element {
 		var name = haxe.io.Path.withoutDirectory(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
-			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first, last)}/></if>
+			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 px-2">
 				<icon document={Icons.HAXE} class="rayde-tab-icon size-4"/>
 				<text class="rayde-tab-name text-sm">${name}</text>
@@ -74,25 +118,22 @@ class FileTabs extends Component<FileTabsProps> {
 			identity.setAttribute("data-dirty", "");
 		if (first)
 			identity.setAttribute("data-first", "");
-		if (last)
-			identity.setAttribute("data-last", "");
 		return element;
 	}
 
 	/**
-	 * The front tab's shape: rounded top corners and, where it has a neighbour,
-	 * lower corners that sweep out into the strip, each a quarter of the theme's
-	 * superellipse, so they curve as the cards beside them do. The first tab has
-	 * no neighbour to its left and the last none to its right, so their sides
-	 * go straight down. The canvas fills the tab's box, which keeps a sweep
-	 * clear on each side that has a foot.
+	 * The front tab's shape: rounded top corners and lower corners that sweep out
+	 * into the strip, each a quarter of the theme's superellipse, so they curve
+	 * as the cards beside them do. The first tab has nothing to its left to
+	 * flare into, so its left side goes straight down. The canvas fills the
+	 * tab's box, which keeps a sweep clear on each side that has a foot.
 	 */
-	function notch(ctx:DrawContext, first:Bool, last:Bool):Void {
+	function notch(ctx:DrawContext, first:Bool):Void {
 		var theme = ThemeState.get();
 		theme.revision.get();
 		var k = theme.shape().effectiveMathExponent();
 		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width, h = ctx.height;
-		var left = first ? 0. : s, right = last ? full : full - s;
+		var left = first ? 0. : s, right = full - s;
 		var path = new Path();
 		path.moveTo(0, h);
 		if (!first)
@@ -101,12 +142,8 @@ class FileTabs extends Component<FileTabsProps> {
 		corner(path, left + r, r, r, k, Math.PI, 1.5 * Math.PI);
 		path.lineTo(right - r, 0);
 		corner(path, right - r, r, r, k, 1.5 * Math.PI, 2 * Math.PI);
-		if (last)
-			path.lineTo(full, h);
-		else {
-			path.lineTo(right, h - s);
-			corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
-		}
+		path.lineTo(right, h - s);
+		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
 		path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
 	}

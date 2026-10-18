@@ -62,8 +62,20 @@ class Snapshots {
 				var folder = haxe.io.Path.directory(file);
 				bench.openFile(haxe.io.Path.join([folder, "Names.hx"]));
 				shot("tab-last");
+				bench.showEditorMenu(true);
+				shot("editor-menu");
+				bench.showEditorMenu(false);
 				bench.active.set(haxe.io.Path.join([folder, "Util.hx"]));
 				shot("tab-middle");
+				// Twelve more files, which do not fit the strip: it scrolls to keep the one in front in view.
+				for (n in 1...13) {
+					var more = haxe.io.Path.join([folder, 'Module$n.hx']);
+					sys.io.File.saveContent(more, 'class Module$n {}\n');
+					bench.openFile(more);
+				}
+				shot("tabs-many");
+				bench.active.set(file);
+				shot("tabs-many-first");
 			});
 			scenario(dark, "broken", (bench, file, shot, settle) -> {
 				bench.openFile(file);
@@ -75,7 +87,7 @@ class Snapshots {
 				shot("build-failed");
 			});
 		}
-		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front and after a failed build, in both themes");
+		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow and after a failed build, in both themes");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */

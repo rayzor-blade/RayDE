@@ -55,10 +55,17 @@
 /* File tabs: the strip sits on the page's background, a quiet tab brightens under the pointer, the front tab is drawn by its canvas. */
 #rayde .rayde-strip { background: var(--background); }
 /* A tab keeps the front tab's sweep clear on each side, so its flared feet have room to draw; the hover shows on the body only. */
-#rayde .rayde-tab { padding: 0 12px; }
-/* The first tab has no neighbour on its left to flare into, nor the last on its right, so they keep no room for a foot there. */
+#rayde .rayde-tab { padding: 0 12px; flex-shrink: 0; }
+/* Tabs that do not fit scroll along; the bar itself stays out of sight. */
+#rayde .rayde-tab-scroll { scrollbar-visibility: hidden; }
+/* The first tab has no neighbour on its left to flare into, so it keeps no room for a foot there. */
 #rayde .rayde-tab[data-first] { padding-left: 0; }
-#rayde .rayde-tab[data-last] { padding-right: 0; }
+/* The editor actions button at the strip's end. */
+#rayde .rayde-strip-actions { padding-left: 8px; }
+#rayde .rayde-more { --ui-button-height: 28px; --ui-button-width: 28px; border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); background: color-mix(in srgb, var(--accent-subtle) 60%, transparent); }
+/* The menu trigger adds a chevron of its own; this button is only the dots. */
+#rayde .rayde-more .ui-dropdown-menu-chevron { display: none; }
+#rayde .rayde-more:hover { color: var(--text-primary); background: var(--accent-subtle); }
 #rayde .rayde-tab-body { height: 28px; border-radius: var(--radius-lg); corner-shape: squircle; }
 #rayde .rayde-tab:hover .rayde-tab-body { background: var(--accent-subtle); }
 #rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
@@ -79,6 +86,9 @@
 /* Breadcrumb: the steps are plain text, not links. */
 #rayde a.ui-breadcrumb-item { text-decoration: none; }
 #rayde .rayde-crumbs { height: 28px; padding: 0 16px; align-items: center; flex-shrink: 0; }
+
+/* A page of an editor shows at once; no fade-in on switching files or panels. */
+#rayde .ui-tabs-content[data-state="active"] { animation: none; }
 
 /* The editor's tab list is unused: the strip above chooses the page. */
 #rayde .rayde-nolist { display: none; }

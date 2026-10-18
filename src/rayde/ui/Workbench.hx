@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Breadcrumb;
+import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
 import ashui.components.CodeView;
 import ashui.components.Icon;
@@ -58,6 +59,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	final buffers = new Map<String, Signal<String>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
+	final menuRef = new Ref<DropdownMenu>();
 	final treeWidth = Signal.make(EXPLORER_WIDTH);
 	final explorerShown:Computed<Bool>;
 	final problemsHeight = Signal.make(190.);
@@ -163,6 +165,62 @@ class Workbench extends Component<WorkbenchProps> {
 	public function openCenter(text = ""):Void {
 		centerRequest.set({text: text, serial: centerRequest.get().serial + 1});
 		quickOpen.set(true);
+	}
+
+	/** Closes every tab but the one in front. */
+	public function closeOthers():Void {
+		var file = active.get();
+		open.set(file == "" ? [] : [file]);
+	}
+
+	/** Closes the tabs with nothing unsaved; the one in front goes with them unless it has edits. */
+	public function closeSaved():Void {
+		var keep = [for (f in open.get()) if (dirty.get().indexOf(f) >= 0) f];
+		if (keep.indexOf(active.get()) < 0)
+			active.set(keep.length == 0 ? "" : keep[0]);
+		open.set(keep);
+	}
+
+	public function closeAll():Void {
+		active.set("");
+		open.set([]);
+	}
+
+	/** Puts the path of the file in front on the clipboard, in full or from the project's folder. */
+	function copyPath(relative:Bool):Void {
+		var file = active.get();
+		if (file == "")
+			return;
+		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
+		ashui.input.Clipboard.setText(relative && file.startsWith(root) ? file.substr(root.length) : file);
+		say(relative ? "Copied the relative path" : "Copied the path");
+	}
+
+	/** Opens or closes the editor actions menu, as its button does. */
+	public function showEditorMenu(on:Bool):Void
+		if (menuRef.get() != null)
+			menuRef.get().opened.set(on);
+
+	/** The editor's actions, from the button at the end of the tab strip. */
+	function editorMenu():Element {
+		var noFile = Computed.make(() -> active.get() == ""), noSaved = Computed.make(() -> open.get().length == dirty.get().length);
+		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
+		return <tooltip label="Editor actions" side="bottom">
+			<dropdown-menu ref={menuRef} id="rayde-editor-menu">
+				<dropdown-menu-trigger id="rayde-editor-menu-trigger" variant={Ghost} size={Icon} class="rayde-more"><icon document={Icons.MORE_FILL} class="size-4"/></dropdown-menu-trigger>
+				<dropdown-menu-content>
+					<dropdown-menu-item id="rayde-menu-save" shortcut={mod + "S"} onSelect={saveAll}>Save All</dropdown-menu-item>
+					<dropdown-menu-separator/>
+					<dropdown-menu-item id="rayde-menu-close" shortcut={mod + "W"} disabled={noFile} onSelect={() -> closeFile(active.get())}>Close Tab</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-close-others" disabled={noFile} onSelect={closeOthers}>Close Others</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-close-saved" disabled={noSaved} onSelect={closeSaved}>Close Saved</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-close-all" disabled={noFile} onSelect={closeAll}>Close All</dropdown-menu-item>
+					<dropdown-menu-separator/>
+					<dropdown-menu-item id="rayde-menu-copy-path" disabled={noFile} onSelect={() -> copyPath(false)}>Copy Path</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-copy-relative" disabled={noFile} onSelect={() -> copyPath(true)}>Copy Relative Path</dropdown-menu-item>
+				</dropdown-menu-content>
+			</dropdown-menu>
+		</tooltip>;
 	}
 
 	/** Moves the cursor of the file in front to `line` (from 1). */
@@ -419,7 +477,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The open files' tabs, the path to the file in front, and its editor. */
 	function editorCard():Element
 		return <div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0">
-			<file-tabs files={open} active={active} dirty={dirty} onClose={closeFile}/>
+			<file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} trailing={editorMenu()}/>
 			<for {files in [open.get()]}>${editors(files)}</for>
 		</div>;
 
