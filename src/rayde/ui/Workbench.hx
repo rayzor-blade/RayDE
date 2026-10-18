@@ -1,6 +1,8 @@
 package rayde.ui;
 
 import ashui.components.Breadcrumb;
+import ashui.components.ContextMenu;
+import ashui.components.ContextMenu.ContextMenuTrigger;
 import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
@@ -20,6 +22,7 @@ import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.ext.Manifest;
+import rayde.files.FileOps;
 import rayde.ext.Studio;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
@@ -34,6 +37,8 @@ import rayde.term.Settings;
 import rayde.run.Tasks;
 import rayde.term.Terminal;
 import rayde.ui.FileTabs;
+import rayde.ui.Prompt;
+import rayde.ui.Prompt.PromptRequest;
 import rayde.ui.SettingsPage;
 import rayde.ui.StudioPanels;
 import rayde.ui.StudioView;
@@ -190,6 +195,14 @@ class Workbench extends Component<WorkbenchProps> {
 	final terminalGeneration = Signal.make(0);
 	final terminalView = new Ref<TerminalView>();
 	final profilesMenu = new Ref<DropdownMenu>();
+
+	/** The question in force over the workbench: a name to ask for, or a deletion to confirm. */
+	final prompt = Signal.make((null : Null<PromptRequest>));
+
+	final explorerMenu = new Ref<ContextMenu>();
+
+	/** The path the Explorer's menu is open on: a file or folder, or the project's folder for the empty part of the tree. */
+	final menuTarget = Signal.make("");
 
 	/** What the side panel shows beside the activity bar: the Explorer, or the extension view with this id. */
 	public final sideView = Signal.make("explorer");
@@ -1045,6 +1058,7 @@ class Workbench extends Component<WorkbenchProps> {
 				<for {revision in [layoutRevision.get()]}>${columns()}</for>
 			</div>
 			${statusBar()}
+			<prompt request={prompt}/>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
@@ -1224,14 +1238,162 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
+		var root = tagged(<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>, props.display.cwd);
 		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
-			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
-				<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>
-					<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>
-				</tree-view>
-			</div>
+			<context-menu ref={explorerMenu} id="rayde-explorer-menu">
+				<context-menu-trigger id="rayde-explorer-trigger">
+					<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
+						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
+					</div>
+				</context-menu-trigger>
+				<context-menu-content id="rayde-explorer-menu-content"><for {target in [menuTarget.get()]}>${explorerItems(target)}</for></context-menu-content>
+			</context-menu>
 		</div>;
+	}
+
+	/** Marks a row of the tree with the path it stands for, so a press on it can be traced to the file. */
+	function tagged(item:Element, path:String):Element {
+		ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-path", path);
+		return item;
+	}
+
+	/** The path of the row of the tree under a point, or null. */
+	function rowAt(x:Float, y:Float):Null<String> {
+		for (hit in tree.hitTest(x, y))
+			for (id in [hit.id].concat(tree.ancestors(hit.id))) {
+				var identity = ashui.css.Identity.of(tree, id);
+				var path = identity == null ? null : identity.attribute("data-path");
+				if (path != null)
+					return path;
+			}
+		return null;
+	}
+
+	/** A secondary press on the tree opens the menu for the row under it, after the menu has been given that row's items. */
+	function explorerPress(e:ashui.input.Events.PointerEvent):Void {
+		if (e.button == null || !e.button.match(Right))
+			return;
+		// The trigger around the tree would open the menu at once, on the last row's items; it opens once this one's are in.
+		e.stopPropagation();
+		e.preventDefault();
+		var path = rowAt(e.x, e.y);
+		menuTarget.set(path == null ? props.display.cwd : path);
+		var x = e.x, y = e.y;
+		ashui.animation.AnimationScheduler.main.after(.02, () -> {
+			var menu = explorerMenu.get();
+			if (menu != null)
+				menu.openAt(x, y);
+		});
+	}
+
+	/** The id of a menu item, from its label: `New File…` is `rayde-explorer-new-file`. */
+	static function menuId(label:String):String
+		return "rayde-explorer-" + [for (w in label.split(" ")) w.toLowerCase().replace("…", "")].join("-");
+
+	function menuItem(label:String, run:Void->Void):Element
+		return <context-menu-item id={menuId(label)} onSelect={run}>${label}</context-menu-item>;
+
+	function dangerItem(label:String, run:Void->Void):Element
+		return <context-menu-item id={menuId(label)} destructive={true} onSelect={run}>${label}</context-menu-item>;
+
+	/** The items of the Explorer's menu for a file, a folder or the project's own folder. */
+	function explorerItems(path:String):Element {
+		var folder = path != "" && sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path), top = path == props.display.cwd;
+		var items:Array<Element> = [];
+		if (!folder && path != "")
+			items.push(menuItem("Open", () -> if (isSource(path)) openFile(path) else if (Manifest.isManifest(path)) openSettings("extension")));
+		if (folder) {
+			items.push(menuItem("New File…", () -> askCreate(path, false)));
+			items.push(menuItem("New Folder…", () -> askCreate(path, true)));
+			items.push(<context-menu-separator/>);
+		}
+		items.push(menuItem("Copy Path", () -> ashui.input.Clipboard.setText(path)));
+		items.push(menuItem("Copy Relative Path", () -> ashui.input.Clipboard.setText(FileOps.relative(props.display.cwd, path))));
+		items.push(menuItem(Sys.systemName() == "Mac" ? "Reveal in Finder" : "Reveal in File Manager", () -> FileOps.reveal(path)));
+		if (!top) {
+			items.push(<context-menu-separator/>);
+			items.push(menuItem("Rename…", () -> askRename(path)));
+			items.push(dangerItem("Delete…", () -> askDelete(path)));
+		}
+		items.push(<context-menu-separator/>);
+		items.push(menuItem("Refresh", refreshExplorer));
+		return <div class="flex flex-col">{items}</div>;
+	}
+
+	/** Builds the tree again from the files as they are. */
+	public function refreshExplorer():Void
+		buildRevision.set(buildRevision.get() + 1);
+
+	function askCreate(dir:String, folder:Bool):Void
+		prompt.set({
+			title: folder ? "New Folder" : "New File",
+			description: "Create in " + (dir == props.display.cwd ? props.name : FileOps.relative(props.display.cwd, dir)),
+			action: "Create",
+			hasInput: true,
+			placeholder: folder ? "Folder name" : "File name",
+			check: FileOps.invalid,
+			accept: name -> {
+				var made = folder ? FileOps.createFolder(props.display.cwd, dir, name) : FileOps.createFile(props.display.cwd, dir, name);
+				folderState(dir, true).set(true);
+				refreshExplorer();
+				if (!folder)
+					openFile(made);
+			}
+		});
+
+	function askRename(path:String):Void
+		prompt.set({
+			title: "Rename",
+			description: FileOps.relative(props.display.cwd, path),
+			action: "Rename",
+			hasInput: true,
+			value: haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path)),
+			check: FileOps.invalid,
+			accept: name -> {
+				var to = FileOps.rename(props.display.cwd, path, name);
+				moveTabs(path, to);
+				refreshExplorer();
+			}
+		});
+
+	function askDelete(path:String):Void
+		prompt.set({
+			title: "Delete",
+			description: "Permanently delete " + FileOps.summary(path) + ". This cannot be undone.",
+			action: "Delete",
+			destructive: true,
+			accept: _ -> {
+				for (f in FileOps.under(open.get(), path))
+					closeFile(f);
+				FileOps.delete(props.display.cwd, path);
+				for (f in FileOps.under([for (k in buffers.keys()) k], path))
+					buffers.remove(f);
+				dirty.set([for (f in dirty.get()) if (FileOps.under([f], path).length == 0) f]);
+				refreshExplorer();
+			}
+		});
+
+	/** A file or folder was renamed: the tabs, buffers and edits under it follow it to the new path. */
+	function moveTabs(from:String, to:String):Void {
+		var moved = FileOps.moved(open.get(), from, to);
+		for (old => now in FileOps.moved([for (k in buffers.keys()) k], from, to)) {
+			buffers.set(now, buffers.get(old));
+			buffers.remove(old);
+		}
+		for (old => now in moved) {
+			editorRefs.remove(old);
+			var studio = studios.get(old);
+			if (studio != null) {
+				studio.dispose();
+				studios.remove(old);
+			}
+		}
+		var remap = (f:String) -> moved.exists(f) ? moved.get(f) : f;
+		var front = active.get();
+		open.set([for (f in open.get()) remap(f)]);
+		dirty.set([for (f in dirty.get()) FileOps.moved([f], from, to).exists(f) ? FileOps.moved([f], from, to).get(f) : f]);
+		active.set(remap(front));
 	}
 
 	/** Whether the folder `dir` shows its contents; a folder not yet seen takes `initially`. */
@@ -1289,10 +1451,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The build file in the tree, which opens the form and not the text; for an extension, its config file, which opens its form. */
 	function buildRow():Element {
 		if (extension != null)
-			return <tree-item value={extension.file} label={haxe.io.Path.withoutDirectory(extension.file)} icon={Icons.SETTINGS_3_LINE}/>;
+			return tagged(<tree-item value={extension.file} label={haxe.io.Path.withoutDirectory(extension.file)} icon={Icons.SETTINGS_3_LINE}/>, extension.file);
 		if (props.display.hxml == null)
 			return <div/>;
-		return <tree-item value={props.display.hxml} label={haxe.io.Path.withoutDirectory(props.display.hxml)} icon={Icons.SETTINGS_3_LINE}/>;
+		return tagged(<tree-item value={props.display.hxml} label={haxe.io.Path.withoutDirectory(props.display.hxml)} icon={Icons.SETTINGS_3_LINE}/>, props.display.hxml);
 	}
 
 	function folders():Array<Element>
@@ -1336,9 +1498,9 @@ class Workbench extends Component<WorkbenchProps> {
 			if (sys.FileSystem.isDirectory(path))
 				children.push(folder(path, name, false));
 			else if (isSource(path))
-				children.push(<tree-item value={path} label={name} icon={fileIcon(path)}/>);
+				children.push(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path));
 		}
-		return <tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)}>{children}</tree-item>;
+		return tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)}>{children}</tree-item>, dir);
 	}
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */

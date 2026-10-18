@@ -34,8 +34,8 @@ class StudioPanels extends Component<StudioPanelsProps> {
 	function body(studio:Null<Studio>, which:String):Element {
 		if (studio == null)
 			return <div class="flex flex-col gap-1 px-2 py-1">
-				<text id="rayde-extension-empty" class="text-xs text-text-secondary">No extension in front.</text>
-				<text class="text-xs text-text-tertiary">Open a .rays file to run it here and see its view beside the code.</text>
+				<text id="rayde-extension-empty" class="text-xs text-text-secondary">No active extension.</text>
+				<text class="text-xs text-text-tertiary">Open a .rays file or a .rayext project to run an extension.</text>
 			</div>;
 		return <div class="flex flex-1 min-h-0">
 			<div class="flex flex-col gap-1 shrink-0 pr-2" width={116}>
@@ -59,9 +59,9 @@ class StudioPanels extends Component<StudioPanelsProps> {
 
 	function pane(studio:Studio, which:String):Element
 		return switch which {
-			case "activity": <for {list in [studio.activity.get()]}>${entries(list, "Nothing has happened yet.", false)}</for>;
+			case "activity": <for {list in [studio.activity.get()]}>${entries(list, "No activity.", false)}</for>;
 			case "elements": <for {n in [studio.elements.get()]}>${outline(studio)}</for>;
-			case _: <for {list in [studio.console.get()]}>${entries(list, "The extension has said nothing.", true)}</for>;
+			case _: <for {list in [studio.console.get()]}>${entries(list, "No console output.", true)}</for>;
 		}
 
 	function entries(list:Array<Entry>, none:String, jump:Bool):Element {
@@ -98,7 +98,7 @@ class StudioPanels extends Component<StudioPanelsProps> {
 	function outline(studio:Studio):Element {
 		var rows = studio.preview == null ? [] : studio.preview.outline();
 		return <div id="rayde-elements" class="flex flex-col flex-1 min-h-0 overflow-auto">
-			<if {rows.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">The extension has not made a view yet.</text></div></if>
+			<if {rows.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">No view mounted.</text></div></if>
 			{[for (r in rows) <div class="rayde-element flex items-center gap-2 py-0.5" paddingLeft={8 + r.depth * 14}>
 				<if {r.tag == null}><text class="text-xs text-text-tertiary">${"\"" + r.text + "\""}</text>
 				<else><text class="text-xs text-primary">${"<" + r.tag + ">"}</text></if>

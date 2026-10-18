@@ -29,19 +29,19 @@ typedef ExtensionConfigProps = {
 class ExtensionConfig extends Component<ExtensionConfigProps> {
 	/** What an extension can ask to do, and what each lets it do. */
 	static final capabilities = [
-		{id: "workspace.read", label: "Read the workspace", hint: "Files and folders of the project"},
-		{id: "workspace.write", label: "Change the workspace", hint: "Create, edit and delete files"},
-		{id: "process.spawn", label: "Run programs", hint: "Start processes, from a list the user allows"},
-		{id: "net.fetch", label: "Use the network", hint: "Fetch from hosts the user allows"},
-		{id: "terminal", label: "Use the terminal", hint: "Open terminals and send them text"},
-		{id: "clipboard", label: "Use the clipboard", hint: "Read and write what was copied"}
+		{id: "workspace.read", label: "Workspace read", hint: "Read files and folders in the project"},
+		{id: "workspace.write", label: "Workspace write", hint: "Create, modify and delete files"},
+		{id: "process.spawn", label: "Process spawn", hint: "Start processes from an allow-list"},
+		{id: "net.fetch", label: "Network fetch", hint: "HTTP requests to allow-listed hosts"},
+		{id: "terminal", label: "Terminal", hint: "Open terminals and write to them"},
+		{id: "clipboard", label: "Clipboard", hint: "Read and write the system clipboard"}
 	];
 
 	static final locations = [
-		{id: "sidebar", label: "Sidebar, in the Explorer's place"},
-		{id: "secondary", label: "Side bar on the right"},
-		{id: "panel", label: "A tab of the bottom panel"},
-		{id: "editor", label: "A tab among the open files"}
+		{id: "sidebar", label: "Sidebar (replaces the Explorer)"},
+		{id: "secondary", label: "Secondary side bar (right)"},
+		{id: "panel", label: "Panel tab (bottom)"},
+		{id: "editor", label: "Editor tab"}
 	];
 
 	var m:Manifest;
@@ -63,7 +63,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		load();
 		return <div id="rayde-extension-config" class="rayde-settings flex flex-1 min-h-0 justify-center overflow-auto">
 			<div class="flex flex-col gap-6 px-8 py-8" width={780}>
-				${SettingsParts.header(Icons.PUZZLE_LINE, "Extension", haxe.io.Path.withoutDirectory(m.file) + ". Each change is written to the file at once.")}
+				${SettingsParts.header(Icons.PUZZLE_LINE, "Extension", haxe.io.Path.withoutDirectory(m.file) + ". Edits are written to the file immediately.")}
 				<for {r in [revision.get()]}>${sections(r)}</for>
 				<div class="shrink-0" height={40}/>
 			</div>
@@ -86,7 +86,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		try
 			edit()
 		catch (e:Dynamic) {
-			problem.set(Std.string(e));
+			problem.set("Cannot write " + haxe.io.Path.withoutDirectory(m.file) + ": " + Std.string(e));
 			revision.set(revision.get() + 1);
 			return;
 		}
@@ -104,13 +104,13 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		return <div class="flex flex-col gap-6">
 			<if {problem.get() != ""}><div class="rayde-note flex items-center gap-3 px-4 py-3"><icon document={Icons.ALERT_LINE} class="size-4 shrink-0 text-warning"/><text id="rayde-extension-write-problem" class="text-xs">${problem.get()}</text></div></if>
 			<if {m.problems.length > 0}>${problems()}</if>
-			${SettingsParts.card("rayde-ext-identity", "Extension", "Who it is, as the Extensions list shows it.", identity())}
-			${SettingsParts.card("rayde-ext-scripts", "Scripts", "Where its code is. It starts at the main script; imports are looked for in the first source folder.", scripts())}
-			${SettingsParts.card("rayde-ext-view", "View", "How it shows itself: its icon in the activity bar, its heading, and where its view goes.", view())}
-			${SettingsParts.card("rayde-ext-tools", "Header tools", "Buttons beside the heading of its view. Choosing one runs the handler the script gave onTool(id).", tools())}
-			${SettingsParts.card("rayde-ext-capabilities", "Capabilities", "What it asks to be allowed to do.", caps())}
+			${SettingsParts.card("rayde-ext-identity", "Extension", "Identifier and metadata shown in the Extensions list.", identity())}
+			${SettingsParts.card("rayde-ext-scripts", "Scripts", "Entry point and module search path. Imports resolve against the first source folder.", scripts())}
+			${SettingsParts.card("rayde-ext-view", "View", "Workbench contribution: activity bar icon, view title and location.", view())}
+			${SettingsParts.card("rayde-ext-tools", "View actions", "Actions in the view's title bar. Invoking one calls the handler registered with onTool(id).", tools())}
+			${SettingsParts.card("rayde-ext-capabilities", "Capabilities", "Permissions the extension requests.", caps())}
 			<div class="flex items-center gap-2">
-				<button id="rayde-ext-edit-text" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> props.onEditText()}><icon document={Icons.CODE_BOX_LINE} class="size-4"/>Edit as text</button>
+				<button id="rayde-ext-edit-text" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> props.onEditText()}><icon document={Icons.CODE_BOX_LINE} class="size-4"/>Open as JSON</button>
 			</div>
 		</div>;
 
@@ -126,9 +126,9 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 
 	function identity():Array<Element>
 		return [
-			text("Name", "Shown in the title bar and the Extensions list", "rayde-ext-name", name, "My extension", () -> save("name", name)),
-			text("Version", "Such as 0.1.0", "rayde-ext-version", version, "0.1.0", () -> save("version", version)),
-			text("Description", "One line on what it does", "rayde-ext-description", description, "", () -> save("description", description))
+			text("Name", "Display name", "rayde-ext-name", name, "my-extension", () -> save("name", name)),
+			text("Version", "Semantic version", "rayde-ext-version", version, "0.1.0", () -> save("version", version)),
+			text("Description", "Short summary", "rayde-ext-description", description, "", () -> save("description", description))
 		];
 
 	function save(field:String, value:Signal<String>, inView = false):Void {
@@ -137,17 +137,17 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 	}
 
 	function scripts():Array<Element> {
-		var out:Array<Element> = [text("Main script", "The file that starts the extension, from this file's folder", "rayde-ext-main", main, "main.rays", () -> save("main", main))];
+		var out:Array<Element> = [text("Main script", "Entry script, relative to the .rayext", "rayde-ext-main", main, "main.rays", () -> save("main", main))];
 		out.push(sys.FileSystem.exists(m.mainPath())
 			? <div class="flex items-center gap-2"><icon document={Icons.CHECK_LINE} class="size-4 text-success"/><text id="rayde-ext-main-found" class="text-xs text-text-secondary">${relative(m.mainPath())}</text></div>
-			: <div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-main-missing" class="text-xs text-warning">${m.main + " is not there"}</text></div>);
+			: <div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-main-missing" class="text-xs text-warning">${m.main + " not found"}</text></div>);
 		for (s in m.sources)
 			out.push(row(Icons.FOLDER_LINE, s, sys.FileSystem.exists(absolute(s)) ? null : "Not found", () -> change(() -> Manifest.setList(m.file, "sources", [for (x in m.sources) if (x != s) x]))));
 		out.push(<div class="flex items-center gap-2">
-			<input height={32} id="rayde-ext-source" value={newSource} placeholder="Add a source folder" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) addSource()}/>
+			<input height={32} id="rayde-ext-source" value={newSource} placeholder="Source folder" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) addSource()}/>
 			<button id="rayde-ext-source-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addSource()}>Add</button>
 		</div>);
-		out.push(text("Mocked answers", "A JSON file that answers the extension's remote calls while it is developed", "rayde-ext-mocks", mocks, "ext/studio.mocks.json", () -> save("mocks", mocks)));
+		out.push(text("Mocks", "JSON file that stubs remote module calls during development", "rayde-ext-mocks", mocks, "ext/studio.mocks.json", () -> save("mocks", mocks)));
 		return out;
 	}
 
@@ -164,20 +164,20 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		var items:Array<Element> = [for (l in locations) <select-item value={l.id}>${l.label}</select-item>];
 		var found = m.viewIcon == null ? null : (sys.FileSystem.exists(m.iconPath()));
 		var out:Array<Element> = [
-			text("Heading", "Over its view; the script can change it with setTitle(text). The extension's name when empty", "rayde-ext-title", title, m.name, () -> save("title", title, true)),
-			SettingsParts.field("Location", "Which part of the layout draws the view",
+			text("Title", "View title. Scripts can change it with setTitle(). Defaults to the extension name", "rayde-ext-title", title, m.name, () -> save("title", title, true)),
+			SettingsParts.field("Location", "Where the view is rendered",
 				<select id="rayde-ext-location" value={m.location} size={Sm} class="rayde-control" onChange={v -> change(() -> Manifest.setText(m.file, "location", v == "sidebar" ? null : v, true))}>{items}</select>),
-			SettingsParts.field("Icon", "An SVG file for its button in the activity bar; RayDE's puzzle piece when empty",
+			SettingsParts.field("Icon", "SVG file for the activity bar icon. Defaults to the generic extension icon",
 				<div class="flex items-center gap-3">
 					<div id="rayde-ext-icon-preview" class="rayde-tile flex items-center justify-center shrink-0" width={32} height={32}><icon document={doc} class="size-4"/></div>
 					<input height={32} id="rayde-ext-icon" value={icon} placeholder="ext/icon.svg" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) save("icon", icon, true)}/>
 				</div>)
 		];
 		if (m.viewIcon != null && found == false)
-			out.push(<div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-icon-missing" class="text-xs text-warning">${m.viewIcon + " is not there"}</text></div>);
+			out.push(<div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-icon-missing" class="text-xs text-warning">${m.viewIcon + " not found"}</text></div>);
 		var svgs = svgFiles();
 		if (svgs.length > 0)
-			out.push(chips("SVG files in the project", [for (s in svgs) {label: s, run: () -> change(() -> Manifest.setText(m.file, "icon", s, true))}]));
+			out.push(chips("SVG files", [for (s in svgs) {label: s, run: () -> change(() -> Manifest.setText(m.file, "icon", s, true))}]));
 		return out;
 	}
 
@@ -187,14 +187,14 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 				toolRow(t)
 		];
 		if (m.tools.length == 0)
-			out.push(<text class="text-xs text-text-tertiary">No tools. The header shows only the heading.</text>);
+			out.push(<text class="text-xs text-text-tertiary">No actions declared.</text>);
 		out.push(<div class="flex items-center gap-2">
-			<input height={32} id="rayde-ext-tool-id" value={toolId} placeholder="Id" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
+			<input height={32} id="rayde-ext-tool-id" value={toolId} placeholder="Action id" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
 			<input height={32} id="rayde-ext-tool-title" value={toolTitle} placeholder="Tooltip" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
-			<input height={32} id="rayde-ext-tool-icon" value={toolIcon} placeholder="Icon: refresh, or a .svg file" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
+			<input height={32} id="rayde-ext-tool-icon" value={toolIcon} placeholder="Icon name or .svg path" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) addTool()}/>
 			<button id="rayde-ext-tool-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addTool()}>Add</button>
 		</div>);
-		out.push(chips("RayDE's icons", [for (n in ["add", "refresh", "search", "filter", "settings", "play", "stop", "edit", "delete", "more"]) {label: n, run: () -> toolIcon.set(n)}]));
+		out.push(chips("Built-in icons", [for (n in ["add", "refresh", "search", "filter", "settings", "play", "stop", "edit", "delete", "more"]) {label: n, run: () -> toolIcon.set(n)}]));
 		return out;
 	}
 
@@ -225,7 +225,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		];
 		for (c in m.capabilities)
 			if (!Lambda.exists(capabilities, k -> k.id == c))
-				out.push(row(Icons.QUESTION_LINE, c, "Not known to this RayDE", () -> setCapability(c, false)));
+				out.push(row(Icons.QUESTION_LINE, c, "Unknown capability", () -> setCapability(c, false)));
 		return out;
 	}
 

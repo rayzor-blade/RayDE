@@ -64,8 +64,8 @@ class StudioView extends Component<StudioViewProps> {
 					<dropdown-menu-label>${label(state, stale)}</dropdown-menu-label>
 					<dropdown-menu-separator/>
 					<dropdown-menu-item id="rayde-menu-reload" onSelect={() -> studio.reload()}>Reload extension</dropdown-menu-item>
-					<dropdown-menu-item id="rayde-menu-live" onSelect={() -> studio.live.set(!studio.live.get())}>${live ? "Turn off reloading as you type" : "Reload as you type"}</dropdown-menu-item>
-					<dropdown-menu-item id="rayde-menu-mocks" onSelect={() -> props.onMocks()}>Edit mocked answers…</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-live" onSelect={() -> studio.live.set(!studio.live.get())}>${live ? "Disable live reload" : "Enable live reload"}</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-mocks" onSelect={() -> props.onMocks()}>Edit mocks…</dropdown-menu-item>
 					<dropdown-menu-item id="rayde-menu-console" onSelect={() -> props.onConsole()}>Show extension console</dropdown-menu-item>
 				</dropdown-menu-content>
 			</dropdown-menu>
@@ -88,15 +88,15 @@ class StudioView extends Component<StudioViewProps> {
 		if (!stale)
 			return <div/>;
 		return <div id="rayde-studio-stale" class="rayde-stale flex items-center px-3 shrink-0" height={26}>
-			<text class="text-xs text-text-secondary truncate">Showing the last version that ran</text>
+			<text class="text-xs text-text-secondary truncate">Showing last successful run</text>
 		</div>;
 	}
 
 	static function label(state:String, stale:Bool):String
-		return stale ? "Showing the last version that ran" : switch state {
+		return stale ? "Showing last successful run" : switch state {
 			case "running": "Running";
-			case "exited": "The extension stopped";
-			case "unavailable": "rayscript-host was not found";
-			case _: "Not running";
+			case "exited": "Exited";
+			case "unavailable": "rayscript-host not found";
+			case _: "Stopped";
 		}
 }

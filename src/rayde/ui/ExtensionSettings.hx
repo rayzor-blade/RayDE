@@ -13,7 +13,7 @@ class ExtensionSettings extends Component<ExtensionSettingsProps> {
 	function render():Element {
 		var found = Extensions.list(props.root);
 		return SettingsParts.page("rayde-extensions", <div class="flex flex-col gap-6">
-			${SettingsParts.header(Icons.PUZZLE_LINE, "Extensions", "Folders with a .rayext file, in .rayde/extensions here or in your home folder.")}
+			${SettingsParts.header(Icons.PUZZLE_LINE, "Extensions", "Folders containing a .rayext config, under .rayde/extensions in the workspace or the user's home directory.")}
 			${SettingsParts.card("rayde-extensions-card", "Installed", "RayDE lists what it finds. It does not run extensions yet.", rows(found))}
 		</div>);
 	}

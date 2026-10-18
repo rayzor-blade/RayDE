@@ -51,6 +51,46 @@ class Snapshots {
 				shot("explorer-hover");
 				hover("#rayde-bottom");
 				shot("explorer-away");
+				// A secondary press on a file and on a folder opens a menu for it; the items act on the files and the tabs.
+				var tree = bench.tree;
+				var rowOf = (path:String) -> {
+					var found = ashui.css.Css.query(tree, bench.node.id, '[data-path$="$path"] > .ui-tree-row');
+					if (found.length == 0)
+						throw 'no row for $path';
+					return tree.getScrolledBounds(new ashui.layout.Node(found[0]));
+				};
+				var menuOn = (path:String) -> {
+					var b = rowOf(path);
+					ashui.input.Pointer.move(tree, b.x + b.width / 2, b.y + b.height / 2);
+					ashui.input.Pointer.press(tree, Right);
+					ashui.input.Pointer.release(tree, Right);
+					settle(8);
+				};
+				var folder = haxe.io.Path.directory(file);
+				menuOn("src/Main.hx");
+				shot("explorer-menu-file");
+				press(Named(Escape));
+				menuOn("/src");
+				shot("explorer-menu-folder");
+				click("#rayde-explorer-new-file");
+				type("#rayde-prompt-input", "Fresh.hx");
+				shot("explorer-prompt");
+				click("#rayde-prompt-accept");
+				if (!sys.FileSystem.exists(haxe.io.Path.join([folder, "Fresh.hx"])) || bench.active.get() != haxe.io.Path.join([folder, "Fresh.hx"]))
+					throw "New File should make the file and open it";
+				menuOn("src/Fresh.hx");
+				click("#rayde-explorer-rename");
+				type("#rayde-prompt-input", "Renamed.hx");
+				click("#rayde-prompt-accept");
+				var renamed = haxe.io.Path.join([folder, "Renamed.hx"]);
+				if (!sys.FileSystem.exists(renamed) || sys.FileSystem.exists(haxe.io.Path.join([folder, "Fresh.hx"])) || bench.open.get().indexOf(renamed) < 0 || bench.active.get() != renamed)
+					throw "Rename should move the file and its tab";
+				menuOn("src/Renamed.hx");
+				click("#rayde-explorer-delete");
+				shot("explorer-delete");
+				click("#rayde-prompt-accept");
+				if (sys.FileSystem.exists(renamed) || bench.open.get().indexOf(renamed) >= 0)
+					throw "Delete should remove the file and close its tab";
 				// Two files open, the first in front, so the strip shows the front tab beside another.
 				bench.openFile(file);
 				bench.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), "Util.hx"]));

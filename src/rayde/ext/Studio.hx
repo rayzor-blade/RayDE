@@ -216,7 +216,7 @@ class Studio {
 		try
 			mocks = haxe.Json.parse(sys.io.File.getContent(mocksFile))
 		catch (e:Dynamic)
-			note(console, "error", 'The mocks file ${haxe.io.Path.withoutDirectory(mocksFile)} cannot be read: $e');
+			note(console, "error", 'Cannot read mocks file ${haxe.io.Path.withoutDirectory(mocksFile)}: $e');
 	}
 
 	/** Polls faster for a while after something happened, so a click and its answer feel immediate. */
@@ -250,7 +250,7 @@ class Studio {
 		}
 		if (host.state == "exited") {
 			var err = StringTools.trim(host.errors());
-			note(console, "error", 'The extension host stopped (exit ${host.exitCode}).' + (err == "" ? "" : "\n" + err));
+			note(console, "error", 'Extension host exited with code ${host.exitCode}.' + (err == "" ? "" : "\n" + err));
 			host = null;
 			state.set("exited");
 		}
@@ -350,7 +350,7 @@ class Studio {
 		note(activity, "call", name + "(" + [for (a in (call.args : Array<Dynamic>)) haxe.Json.stringify(a)].join(", ") + ")");
 		var group = Reflect.field(mocks, module);
 		if (group == null || !Reflect.hasField(group, fn)) {
-			reply({t: "reject", id: call.id, message: 'no mock for $name: add it to ${haxe.io.Path.withoutDirectory(mocksFile)}'});
+			reply({t: "reject", id: call.id, message: 'No mock for $name; add it to ${haxe.io.Path.withoutDirectory(mocksFile)}'});
 			return;
 		}
 		var value:Dynamic = Reflect.field(group, fn);

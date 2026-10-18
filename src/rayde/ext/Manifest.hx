@@ -84,7 +84,7 @@ class Manifest {
 		capabilities = strings(json, "capabilities");
 		var view:Dynamic = Reflect.field(json, "view");
 		if (view != null && !Reflect.isObject(view)) {
-			problems.push('"view" should be an object.');
+			problems.push('"view" must be an object.');
 			view = null;
 		}
 		viewTitle = view == null ? name : text(view, "title", name);
@@ -92,37 +92,37 @@ class Manifest {
 		viewIcon = icon == "" ? null : icon;
 		var where = view == null ? "sidebar" : text(view, "location", "sidebar");
 		if (LOCATIONS.indexOf(where) < 0) {
-			problems.push('The view\'s location "$where" is not one of ${LOCATIONS.join(", ")}.');
+			problems.push('Unknown view location "$where"; expected one of ${LOCATIONS.join(", ")}.');
 			where = "sidebar";
 		}
 		location = where;
 		var listed:Dynamic = view == null ? null : Reflect.field(view, "tools");
 		if (listed != null && !Std.isOfType(listed, Array))
-			problems.push('"tools" should be a list.');
+			problems.push('"tools" must be an array.');
 		else if (listed != null)
 			for (t in (listed : Array<Dynamic>)) {
 				if (t == null || Std.isOfType(t, String) || Std.isOfType(t, Array) || !Reflect.isObject(t)) {
-					problems.push("A tool should be an object with an id.");
+					problems.push("Each tool must be an object with an id.");
 					continue;
 				}
 				var id = text(t, "id", "");
 				if (id == "") {
-					problems.push("A tool needs an id.");
+					problems.push("Tool is missing an id.");
 					continue;
 				}
 				if (Lambda.exists(tools, x -> x.id == id)) {
-					problems.push('The tool "$id" is listed twice.');
+					problems.push('Duplicate tool id "$id".');
 					continue;
 				}
 				var icon = text(t, "icon", "");
 				if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
-					problems.push('The icon $icon of the tool "$id" is not there.');
+					problems.push('Icon $icon of tool "$id" not found.');
 				tools.push({id: id, title: text(t, "title", id), icon: icon == "" ? null : icon});
 			}
 		if (viewIcon != null && !sys.FileSystem.exists(absolute(viewIcon)))
-			problems.push('The icon ${viewIcon} is not there.');
+			problems.push('Icon ${viewIcon} not found.');
 		if (!sys.FileSystem.exists(mainPath()))
-			problems.push('The main script ${main} is not there.');
+			problems.push('Main script ${main} not found.');
 	}
 
 	/** Reads the config file; one that cannot be read gives an extension with the defaults and the reason in `problems`. */
@@ -132,9 +132,9 @@ class Manifest {
 		try
 			json = haxe.Json.parse(sys.io.File.getContent(file))
 		catch (e:Dynamic)
-			why = 'The file is not JSON: $e';
+			why = 'Invalid JSON: $e';
 		if (why == null && (json == null || Std.isOfType(json, Array) || !Reflect.isObject(json))) {
-			why = "The file should hold one JSON object.";
+			why = "The config must be a JSON object.";
 			json = {};
 		}
 		var m = new Manifest(sys.FileSystem.fullPath(file), why == null ? json : {});
@@ -151,7 +151,7 @@ class Manifest {
 		if (v == null)
 			return fallback;
 		if (!Std.isOfType(v, String)) {
-			problems.push('"$field" should be text.');
+			problems.push('"$field" must be a string.');
 			return fallback;
 		}
 		return v == "" ? fallback : v;
@@ -162,7 +162,7 @@ class Manifest {
 		if (v == null)
 			return [];
 		if (!Std.isOfType(v, Array) || !Lambda.foreach((v : Array<Dynamic>), x -> Std.isOfType(x, String))) {
-			problems.push('"$field" should be a list of text.');
+			problems.push('"$field" must be an array of strings.');
 			return [];
 		}
 		return v;
@@ -193,7 +193,7 @@ class Manifest {
 		var json = StringTools.trim(text) == "" ? Obj([]) : OrderedJson.parse(text);
 		switch json {
 			case Obj(_):
-			case _: throw "The file should hold one JSON object.";
+			case _: throw "The config must be a JSON object.";
 		}
 		edit(json);
 		sys.io.File.saveContent(file, OrderedJson.stringify(json) + "\n");

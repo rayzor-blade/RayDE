@@ -4,6 +4,7 @@ import rayde.lang.Display;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.ext.ExtensionHost;
+import rayde.files.FileOps;
 import rayde.ext.HostBinary;
 import rayde.ext.Manifest;
 import rayde.ext.OrderedJson;
@@ -256,6 +257,50 @@ class Checks {
 		check(KeyMap.mouse(0, 5, 3, false, 2) == "\x1b[<0;5;3M" && KeyMap.mouse(0, 5, 3, true, 2) == "\x1b[<0;5;3m", "mouse reports in the sgr form");
 	}
 
+	/** What the Explorer's menus do to files: made, renamed and deleted inside the project, and refused with a reason outside it or on a bad name. */
+	static function fileOpsChecks():Void {
+		var root = Sys.getCwd() + "bin/check-fileops";
+		if (sys.FileSystem.exists(root))
+			for (e in sys.FileSystem.readDirectory(root))
+				FileOps.delete(root, root + "/" + e);
+		else
+			sys.FileSystem.createDirectory(root);
+		var refused = (f:Void->Void) -> {
+			try {
+				f();
+				return null;
+			} catch (e:Dynamic)
+				return Std.string(e);
+		};
+		var a = FileOps.createFile(root, root, "a.txt");
+		check(a == root + "/a.txt" && sys.FileSystem.exists(a), "a file is made");
+		check(refused(() -> FileOps.createFile(root, root, "a.txt")) == "a.txt is already there.", "a file that is there is not made again");
+		var dir = FileOps.createFolder(root, root, "src");
+		check(sys.FileSystem.isDirectory(dir), "a folder is made");
+		for (bad in ["", ".", "..", "a/b", "a\\b", " a", "a ", "x\x01"])
+			check(FileOps.invalid(bad) != null && refused(() -> FileOps.createFile(root, root, bad)) != null, 'the name "${StringTools.replace(bad, "\x01", "^A")}" is refused');
+		check(FileOps.invalid("Notes v2.md") == null, "a name with a space inside is fine");
+		check(refused(() -> FileOps.createFile(root, "/tmp", "x.txt")) == "That is outside the project.", "nothing is made outside the project");
+		sys.io.File.saveContent(dir + "/Main.hx", "class Main {}");
+		sys.FileSystem.createDirectory(dir + "/deep");
+		sys.io.File.saveContent(dir + "/deep/Util.hx", "class Util {}");
+		var b = FileOps.rename(root, a, "b.txt");
+		check(b == root + "/b.txt" && !sys.FileSystem.exists(a) && sys.FileSystem.exists(b), "a file is renamed");
+		check(refused(() -> FileOps.rename(root, b, "src")) == "src is already there.", "a name that is taken is refused");
+		check(FileOps.rename(root, b, "B.txt") == root + "/B.txt", "a change of capitals alone is allowed");
+		check(refused(() -> FileOps.rename(root, root, "x")) != null && refused(() -> FileOps.delete(root, root)) != null, "the project's own folder is not renamed or deleted");
+		check(FileOps.summary(dir) == "src (2 files)" && FileOps.summary(root + "/B.txt") == "B.txt", 'what a delete would take: ${FileOps.summary(dir)}');
+		var open = [dir + "/Main.hx", dir + "/deep/Util.hx", root + "/B.txt"];
+		var renamed = FileOps.rename(root, dir, "lib");
+		var moved = FileOps.moved(open, dir, renamed);
+		check(moved.get(open[0]) == root + "/lib/Main.hx" && moved.get(open[1]) == root + "/lib/deep/Util.hx" && !moved.exists(open[2]), "the open files under a renamed folder follow it");
+		check(FileOps.under(open, dir).length == 2 && FileOps.under(open, root + "/B.txt").length == 1, "the open files under a path are found");
+		FileOps.delete(root, renamed);
+		check(!sys.FileSystem.exists(renamed), "a folder is deleted with what is in it");
+		check(refused(() -> FileOps.delete(root, "/tmp/nothing-here")) == "That is outside the project.", "nothing is deleted outside the project");
+		check(FileOps.relative(root, root + "/lib/Main.hx") == "lib/Main.hx", "paths are shown from the project");
+	}
+
 	/** The .rayext config file: what it says, what it defaults to, and what is wrong with one that is wrong. */
 	static function manifestChecks():Void {
 		var dir = Sys.getCwd() + "bin/check-manifest";
@@ -274,15 +319,15 @@ class Checks {
 		sys.io.File.saveContent(dir + "/bare.rayext", "{}");
 		var bare = Manifest.read(dir + "/bare.rayext");
 		check(bare.name == "bare" && bare.main == "main.rays" && bare.sources.join(",") == "." && bare.mocks == "studio.mocks.json", 'the defaults: ${bare.name} ${bare.main} ${bare.sources} ${bare.mocks}');
-		check(bare.problems.length == 1 && bare.problems[0].indexOf("main.rays is not there") > 0, 'a missing main script is a problem: ${bare.problems}');
+		check(bare.problems.length == 1 && bare.problems[0] == "Main script main.rays not found.", 'a missing main script is a problem: ${bare.problems}');
 		sys.io.File.saveContent(dir + "/inner.rayext", '{"main": "ext/start.rays"}');
 		var inFolder = Manifest.read(dir + "/inner.rayext");
 		check(inFolder.sources.join(",") == "ext" && inFolder.mocks == "ext/studio.mocks.json", 'defaults follow the main script: ${inFolder.sources} ${inFolder.mocks}');
 		sys.io.File.saveContent(dir + "/broken.rayext", "{ not json");
 		var broken = Manifest.read(dir + "/broken.rayext");
-		check(broken.problems.length > 0 && StringTools.startsWith(broken.problems[0], "The file is not JSON"), 'bad JSON is said to be: ${broken.problems}');
+		check(broken.problems.length > 0 && StringTools.startsWith(broken.problems[0], "Invalid JSON"), 'bad JSON is said to be: ${broken.problems}');
 		sys.io.File.saveContent(dir + "/list.rayext", "[1, 2]");
-		check(Manifest.read(dir + "/list.rayext").problems[0] == "The file should hold one JSON object.", "a JSON file that is not an object is refused");
+		check(Manifest.read(dir + "/list.rayext").problems[0] == "The config must be a JSON object.", "a JSON file that is not an object is refused");
 		sys.io.File.saveContent(dir + "/types.rayext", '{"name": 3, "sources": "ext", "capabilities": [1]}');
 		var types = Manifest.read(dir + "/types.rayext");
 		check(types.name == "types" && types.problems.length >= 3, 'wrong types are named: ${types.problems}');
@@ -399,6 +444,7 @@ class Checks {
 		settingsChecks();
 		terminalChecks();
 		manifestChecks();
+		fileOpsChecks();
 		extensionHostChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
