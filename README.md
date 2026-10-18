@@ -21,6 +21,7 @@ scripts/rayde.sh path/to/build.hxml   # opens that project; Run builds it and ru
 ```sh
 scripts/check.sh      # the language and run layers against the real compiler, run with ash (ASH, or ash on PATH)
 scripts/snapshot.sh   # the workbench in both themes, empty, with problems, after a run and after a failed build, into bin/snapshots
+scripts/scroll-bench.sh # frames of a long file flicked and left to decelerate, offscreen: layout, encode and finish times (ROWS=<n> sets the length; DRIFT=<frames> STEP=<px> scrolls at a steady pace; ALONE=gfib puts the editor on its own, a letter for each feature on)
 ```
 
 The UI builds against a pinned ashui commit (`ashui_rev` in `scripts/deps.sh`), checked out under `.deps` and built once; `ASHUI=<dir>` uses another checkout. hlwgpu and hlwindow are read from beside RayDE. Look at the snapshots after any change to how something looks.
