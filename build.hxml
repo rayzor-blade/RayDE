@@ -1,0 +1,13 @@
+-cp src
+
+-L hashlink
+-L ash-simd
+
+--class-path ../ashui/haxe
+--class-path ../ashui/components/haxe
+
+-D ash_simd
+-D ashui_scene_stencil
+-D ashui_css=src/rayde/ui/rayde.css
+--macro ashui.core.render.UiFramework.register()
+--macro ashui.ui.Markup.enable()
