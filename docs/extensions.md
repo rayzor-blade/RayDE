@@ -181,12 +181,32 @@ Opening a `.rayext` runs the extension. Its views are drawn in the Preview, each
 
 ![The activity list, with a command, the read it made and its answer](images/studio-activity.png)
 
+## Debugging
+
+An extension stops where you put a breakpoint, and you can look at what it holds. Put the cursor on a line of a `.rays` file and choose **Toggle Breakpoint** (F9); the breakpoint is kept with the project (`breakpoints` in `.rayde/settings.json`) and is listed in the Debug part of the panel, where a row opens its line and its button takes the breakpoint off. A line with no code moves the breakpoint to the next line that has some.
+
+When the extension reaches the line, it stops before the line runs, the editor goes to it, and the Extension panel shows **Debug**:
+
+- the toolbar: **Continue** (F5, which is Run while the extension is stopped), **Pause** (F6, for a script that is running), **Step Over** (F10), **Step Into** (F11) and **Step Out** (Shift+F11);
+- the **call stack**, innermost first; choosing a frame opens its line and shows its variables;
+- the **variables** of the frame, its locals and then those of its module; a value with members (an array, an object, a map, a signal) opens to show them;
+- a field that **evaluates** a name and a path of members and indexes in the frame (`entry.amount`, `todo.items[2].title`), not arithmetic or calls.
+
+![The extension stopped on the line that updates the total, with its call stack and breakpoints](images/debug-stopped.png)
+
+Nothing of the extension runs while it is stopped: the events and hooks that arrive are held and run when it goes on, and what the stopped code changed in the view is drawn then. Breakpoints in a handler stop it when you click in the view, or choose a header action.
+
+![An expression evaluated in the frame, and a variable opened](images/debug-variables.png)
+
+The debugger is in the VM, so a script that is not being debugged pays nothing for it: a breakpoint replaces one instruction, with the original kept, and none is in place when there are no breakpoints.
+
 ## Trying it
 
 ```sh
 scripts/rayde.sh tests/fixtures/markdown/markdown.rayext   # right-click docs/README.md, choose Preview
 scripts/check.sh                                           # the extension in a real rayscript-host, with the workbench's answers played by the test
 SNAPSHOT_ONLY=markdown scripts/snapshot.sh                 # the menu, the tab, a save, closing it, and the config form, into bin/snapshots
+SNAPSHOT_ONLY=debug scripts/snapshot.sh                    # a breakpoint, the stop, the variables, stepping and going on
 ```
 
 The host, `rayscript-host`, is found beside RayDE (`../rayscript/target/release`) or named by `RAYSCRIPT_HOST`. Its protocol, one JSON object a line in each direction, is documented in the crate.
@@ -199,4 +219,6 @@ The host, `rayscript-host`, is found beside RayDE (`../rayscript/target/release`
 - Only `workspace.read` and `workspace.write` are backed by a service. The other capabilities in the form (`process.spawn`, `net.fetch`, `terminal`, `clipboard`) are recorded in the config and not yet acted on.
 - The Preview lays text out box by box, so inline emphasis inside a paragraph needs the per-word markup `words()` produces; ashui's inline flow is not attached to extension markup.
 - A menu icon sits inside the item's label, at its right end, until ashui's menu items take an icon of their own.
-- The Studio has no debugger yet: no breakpoints and no stepping.
+- The editor draws no marker in its gutter for a breakpoint and does not highlight the line an extension is stopped on, because the code editor has no such extension points yet; the line is shown by moving the cursor to it, and breakpoints by the list in the Debug panel.
+- A call that a built-in makes back into the script (`array.map(f)`, a computed value, an effect) cannot be stopped in, and the extension does not stop on an error or on a `debugger` statement.
+- Evaluation takes names, members and indexes only, and the variables of an enclosing function that a closure captures are not named.

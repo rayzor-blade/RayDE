@@ -1,0 +1,10 @@
+{
+  "name": "Counter",
+  "version": "0.1.0",
+  "description": "A counter to stop in",
+  "main": "ext/main.rays",
+  "sources": ["ext"],
+  "views": [
+    {"id": "main", "title": "Counter", "icon": "add", "location": "sidebar", "tools": [{"id": "add", "title": "Add 5", "icon": "add"}]}
+  ]
+}

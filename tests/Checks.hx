@@ -116,9 +116,10 @@ class Checks {
 		var keys = new KeyBindings(true), p = parse.bind(_, true);
 		check(keys.commandFor(p("cmd+p")) == "quickopen" && keys.commandFor(p("cmd+shift+p")) == "commands", "the defaults are bound");
 		check(keys.commandFor(p("ctrl+p")) == null && keys.label("terminal") == "⌃`", "a default is bound to its own chord only");
-		check(keys.commandFor(p("cmd+m")) == "minimize" && keys.commandFor(p("ctrl+cmd+f")) == "fullscreen" && keys.commandFor(p("f11")) == null, "the window's keys on a Mac: minimize, and full screen where macOS has it");
+		check(keys.commandFor(p("cmd+m")) == "minimize" && keys.commandFor(p("ctrl+cmd+f")) == "fullscreen" && keys.commandFor(p("f11")) == "stepinto", "the window's keys on a Mac: minimize, and full screen where macOS has it; F11 is Step Into, as in VS Code's debugger");
+		check(keys.commandFor(p("f9")) == "togglebreakpoint" && keys.commandFor(p("f10")) == "stepover" && keys.commandFor(p("shift+f11")) == "stepout" && keys.commandFor(p("f6")) == "pause", "the debugger's keys");
 		var other = KeyBindings.read(root, false);
-		check(other.commandFor(p("f11")) == "fullscreen" && other.label("minimize") == null, "and elsewhere: F11 is full screen, and minimize has no key");
+		check(other.commandFor(p("alt+shift+enter")) == "fullscreen" && other.label("minimize") == null, "and elsewhere: Alt+Shift+Enter is full screen, and minimize has no key");
 		keys.set("run", p("f6"));
 		check(keys.commandFor(p("f5")) == null && keys.commandFor(p("f6")) == "run" && keys.changed("run"), "a rebound command answers to its new key");
 		keys.set("close", null);

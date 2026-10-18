@@ -54,6 +54,12 @@ class Studio {
 	/** Changes with the Preview's tree, for the Elements panel. */
 	public final elements = Signal.make(0);
 
+	/** The extension's breakpoints, and where it is stopped. */
+	public final debug = new Debugger();
+
+	/** Which part of the extension's panel is in view: console, activity, elements or debug. */
+	public final panel = Signal.make("console");
+
 	/** The views the extension presented as tabs, in the order it mounted them. */
 	public var tabViews(default, null):Array<TabView> = [];
 
@@ -222,6 +228,7 @@ class Studio {
 		}
 		for (module => names in modules)
 			host.send({t: "module", path: module, functions: names});
+		debug.connect(m -> host.send(m));
 		host.send({t: "run", name: file, source: source()});
 		note(activity, "info", "Reloaded");
 		activeNow();
@@ -235,6 +242,7 @@ class Studio {
 	}
 
 	public function stop():Void {
+		debug.disconnect();
 		if (host != null)
 			host.stop();
 		host = null;
@@ -315,6 +323,7 @@ class Studio {
 		if (host.state == "exited") {
 			var err = StringTools.trim(host.errors());
 			note(console, "error", 'Extension host exited with code ${host.exitCode}.' + (err == "" ? "" : "\n" + err));
+			debug.disconnect();
 			host = null;
 			state.set("exited");
 		}
@@ -344,6 +353,10 @@ class Studio {
 				var now = services == null ? null : services.replay(name);
 				if (now != null)
 					hook(name, now);
+			case "paused" | "resumed" | "variables" | "children" | "evaluated" | "breakpoints":
+				if (m.t == "paused")
+					note(activity, "event", "stopped: " + m.reason);
+				debug.handle(m);
 			case "log":
 				note(console, "log", m.message);
 			case "call":

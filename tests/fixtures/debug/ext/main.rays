@@ -1,0 +1,17 @@
+var total = signal(0);
+var history = signal([]);
+
+function record(amount) {
+  var before = total.value;
+  var entry = {amount: amount, before: before};
+  total.value = before + amount;
+  history.value = history.value.concat([entry]);
+  return entry;
+}
+
+onTool('add', () -> {
+  var e = record(5);
+  trace('added ' + e.amount);
+});
+
+mount(() -> <div class="p-4"><p>Total {total}</p><ul><for {h in history}><li>{h.amount}</li></for></ul></div>, 'main');

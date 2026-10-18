@@ -786,6 +786,85 @@ class Snapshots {
 					throw 'the edges should resize from where they are: $edges';
 				shot("bar-after");
 			});
+		for (dark in [true, false])
+			scenario(dark, "debug", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				var studio = bench.studioFor(rays);
+				if (studio == null)
+					throw "opening an extension project should start its extension";
+				if (studio.state.get() == "unavailable") {
+					Sys.println("debug snapshots skipped: no rayscript-host");
+					return;
+				}
+				var d = studio.debug, root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
+				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
+				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);
+				var stoppedAt = (line:Int) -> () -> d.stopped.get() != null && d.stopped.get().frames[0].line == line;
+				until(() -> studio.state.get() == "running" && says("Total"), "the extension to start");
+				// A breakpoint from the editor: the command puts one on the line the cursor is on, and keeps it in the project.
+				bench.openFile(rays);
+				bench.goTo(rays, 6, 0);
+				settle(5);
+				@:privateAccess bench.toggleBreakpoint();
+				if (d.linesOf(rays).join(",") != "7")
+					throw 'the breakpoint should be on line 7: ${d.linesOf(rays)}';
+				if (sys.io.File.getContent(root + "/.rayde/settings.json").indexOf('"ext/main.rays"') < 0)
+					throw "the breakpoint should be kept in the project's settings";
+				// An action runs the handler, which calls the function with the breakpoint, and the extension stops there.
+				click("#rayde-tool-add");
+				until(stoppedAt(7), "the extension to stop at the breakpoint");
+				var stop = d.stopped.get();
+				if (stop.frames.length != 2 || stop.frames[0].name != "record" || stop.frames[0].file != rays || stop.reason != "breakpoint")
+					throw 'the stack should be record and its caller: ${stop.frames}';
+				until(() -> d.locals.get().length == 3, "the locals of the frame");
+				var locals = [for (v in d.locals.get()) v.name + "=" + v.value].join(",");
+				if (locals != "amount=5,before=0,entry={amount: 5, before: 0}")
+					throw 'the locals of record: $locals';
+				// The editor goes to the line and the panel shows the stop.
+				if (bench.active.get() != rays || bench.caretLine(rays) != 6 || bench.bottom.get() != "extension" || studio.panel.get() != "debug")
+					throw "a stop should show its line in the editor and open the Debug panel";
+				if (!has("#rayde-debug-continue") || has("#rayde-debug-pause"))
+					throw "while stopped the toolbar offers Continue, not Pause";
+				shot("debug-stopped");
+				// An expression in the frame, and the members of a variable.
+				click("#rayde-debug-evaluate");
+				type("#rayde-debug-evaluate", "entry.amount");
+				press(Named(Enter));
+				until(() -> d.evaluation.get() != null && d.evaluation.get().ok && d.evaluation.get().text == "5", "the expression to be evaluated");
+				var entry = Lambda.find(d.locals.get(), v -> v.name == "entry");
+				d.toggleOpen(entry.ref);
+				until(() -> d.membersOf(entry.ref).length == 2, "the members of entry");
+				settle(5);
+				shot("debug-variables");
+				// The caller's frame has its own variables.
+				click("#rayde-frame-1");
+				until(() -> d.frame.get() == 1 && d.locals.get().length == 0, "the caller's variables");
+				d.select(0);
+				until(() -> d.locals.get().length == 3, "the variables of the top frame again");
+				// Stepping: over to the next line, and out to the caller.
+				click("#rayde-debug-over");
+				until(stoppedAt(8), "the step to the next line");
+				if (d.stopped.get().reason != "step")
+					throw "a step stops because of the step";
+				if (says("5"))
+					throw "line 7 has run, so the signal has changed, but the view has not been flushed while stopped";
+				click("#rayde-debug-out");
+				until(stoppedAt(14), "the step out to the caller");
+				shot("debug-stepped-out");
+				// Going on: the extension runs, the view shows the change, and nothing is stopped.
+				click("#rayde-debug-continue");
+				until(() -> d.stopped.get() == null && says("5"), "the extension to go on and show the total");
+				// A breakpoint comes off with the same command and is not kept.
+				bench.goTo(rays, 6, 0);
+				settle(5);
+				@:privateAccess bench.toggleBreakpoint();
+				if (d.linesOf(rays).length != 0 || sys.io.File.getContent(root + "/.rayde/settings.json").indexOf('"ext/main.rays"') >= 0)
+					throw "removing the breakpoint should remove it from the project's settings";
+				click("#rayde-tool-add");
+				settle(30);
+				if (d.stopped.get() != null)
+					throw "without a breakpoint the action does not stop";
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 

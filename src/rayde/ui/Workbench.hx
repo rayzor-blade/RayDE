@@ -32,6 +32,8 @@ import rayde.lang.Display;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
 import rayde.settings.Appearance;
+import rayde.settings.Store;
+import rayde.ext.Debugger;
 import rayde.term.Profiles;
 import rayde.term.Profiles.Profile;
 import rayde.term.Settings;
@@ -946,6 +948,21 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "minimize", label: "Minimize Window", icon: Icons.SUBTRACT_LINE, run: () -> chrome.minimize()},
 			{id: "fullscreen", label: "Toggle Full Screen", icon: Icons.FULLSCREEN_LINE, run: () -> chrome.toggleFullscreen()},
 			{id: "maximize", label: "Toggle Maximize Window", icon: Icons.CHECKBOX_BLANK_LINE, run: () -> chrome.toggleMaximize()},
+			{id: "togglebreakpoint", label: "Toggle Breakpoint", icon: Icons.CIRCLE_FILL, run: toggleBreakpoint},
+			{id: "continue", label: "Continue", icon: Icons.PLAY_FILL, run: () -> debugResume("continue")},
+			{id: "pause", label: "Pause Extension", icon: Icons.PAUSE_FILL, run: () -> {
+				var d = debugger();
+				if (d != null)
+					d.pause();
+			}},
+			{id: "stepover", label: "Step Over", icon: Icons.ARROW_GO_FORWARD_LINE, run: () -> debugResume("stepOver")},
+			{id: "stepinto", label: "Step Into", icon: Icons.CORNER_RIGHT_DOWN_LINE, run: () -> debugResume("stepIn")},
+			{id: "stepout", label: "Step Out", icon: Icons.CORNER_UP_RIGHT_LINE, run: () -> debugResume("stepOut")},
+			{id: "clearbreakpoints", label: "Remove All Breakpoints", icon: Icons.DELETE_BIN_LINE, run: () -> {
+				var d = debugger();
+				if (d != null)
+					d.clear();
+			}},
 			{id: "extensionreload", label: "Reload Extension", icon: Icons.REFRESH_LINE, run: () -> if (extension != null) extensionStudio().reload() else if (isExtension(active.get())) studioOf(active.get()).reload()},
 			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, run: toggleTerminal},
 			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
@@ -1057,6 +1074,67 @@ class Workbench extends Component<WorkbenchProps> {
 	static function isExtension(file:String):Bool
 		return StringTools.endsWith(file, ".rays");
 
+	/** The breakpoints kept for this project, by file. */
+	function readBreakpoints():Array<rayde.ext.Debugger.Breakpoint> {
+		var saved = Store.section(props.display.cwd, "breakpoints"), out = [];
+		for (rel in Reflect.fields(saved)) {
+			var lines:Dynamic = Reflect.field(saved, rel);
+			if (Std.isOfType(lines, Array))
+				for (l in (lines : Array<Dynamic>))
+					out.push({file: haxe.io.Path.join([props.display.cwd, rel]), line: Std.int(l)});
+		}
+		return out;
+	}
+
+	function saveBreakpoints(d:Debugger):Void {
+		var saved:Dynamic = {};
+		for (b in d.breakpoints.get()) {
+			var rel = relative(b.file);
+			var lines:Array<Int> = Reflect.hasField(saved, rel) ? Reflect.field(saved, rel) : [];
+			lines.push(b.line);
+			Reflect.setField(saved, rel, lines);
+		}
+		Store.save(props.display.cwd, "breakpoints", saved);
+	}
+
+	/** The extension stopped: its place is shown in the editor and its stack and variables in the panel. */
+	function showStop(studio:Studio, stop:rayde.ext.Debugger.Stop):Void {
+		var top = stop.frames[0];
+		if (top != null && sys.FileSystem.exists(top.file))
+			goTo(top.file, top.line - 1, Std.int(Math.max(0, top.col - 1)));
+		studio.panel.set("debug");
+		showPanel("extension");
+	}
+
+	/** The debugger of the extension in front, if there is one. */
+	function debugger():Null<Debugger> {
+		var studio = extension != null ? extensionStudio() : studios.get(active.get());
+		return studio == null ? null : studio.debug;
+	}
+
+	/** Puts a breakpoint on the line the cursor is on in the file in front, or takes the one there away. */
+	function toggleBreakpoint():Void {
+		var file = realFile(active.get());
+		var d = debugger();
+		if (file == null || !isExtension(file) || d == null) {
+			say("Breakpoints go on a line of a RayScript file");
+			return;
+		}
+		var line = caretLine(file);
+		if (line < 0)
+			return;
+		say(d.toggle(file, line + 1) ? "Breakpoint on " + haxe.io.Path.withoutDirectory(file) + ":" + (line + 1) : "Breakpoint removed");
+	}
+
+	/** Lets the stopped extension go on as `how` says; said so when none is stopped. */
+	function debugResume(how:String):Void {
+		var d = debugger();
+		if (d == null || d.stopped.get() == null)
+			say("The extension is not stopped");
+		else
+			d.resume(how);
+	}
+
 	/** The Studio for an extension's main file, started the first time it is asked for. */
 	function studioOf(file:String):Studio {
 		var studio = studios.get(file);
@@ -1067,6 +1145,9 @@ class Workbench extends Component<WorkbenchProps> {
 		studio = new Studio(file, haxe.io.Path.join([props.display.cwd, ".rayde", "studio", name]), () -> buffer(file).get(), tree, own);
 		studios.set(file, studio);
 		studio.services = services();
+		studio.debug.load(readBreakpoints());
+		studio.debug.onChange = () -> saveBreakpoints(studio.debug);
+		studio.debug.onStop = stop -> showStop(studio, stop);
 		studio.onTabs = list -> syncTabs(studio, list);
 		studio.onProblems = list -> problems.set([for (p in problems.get()) if (p.file != file) p].concat(list));
 		studio.onError = kind -> {
@@ -1131,6 +1212,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
+		// Run is Continue while the extension is stopped.
+		var d = debugger();
+		if (d != null && d.stopped.get() != null) {
+			d.resume("continue");
+			return;
+		}
 		saveAll();
 		if (extension != null || isExtension(active.get())) {
 			(extension != null ? extensionStudio() : studioOf(active.get())).reload();
