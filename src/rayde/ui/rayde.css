@@ -166,3 +166,7 @@
 #rayde #rayde-terminal-split > .ui-resizable-handle[data-dragging] > .ui-resizable-line { background: var(--primary); }
 #rayde .rayde-term-item[data-split] { margin-left: 12px; }
 #rayde .rayde-term-note { font-family: var(--font-mono); font-size: 12px; color: var(--text-tertiary); }
+
+/* The Explorer's guide lines, which show how deep a folder is, are out of sight until the pointer is over the tree. */
+#rayde #rayde-tree .ui-tree-group { border-left-color: transparent; }
+#rayde #rayde-tree:hover .ui-tree-group { border-left-color: var(--border); }
