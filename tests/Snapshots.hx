@@ -198,6 +198,14 @@ class Snapshots {
 				bench.openCenter("task ");
 				shot("center-tasks");
 				bench.quickOpen.set(false);
+				// Closed and opened again while it is part-way through closing, as a quick Esc and Cmd+P do.
+				settle(3);
+				bench.openCenter();
+				settle(30);
+				if (!bench.quickOpen.get())
+					throw "the center asked for while it was closing should open once it has closed";
+				bench.quickOpen.set(false);
+				settle(40);
 				var before = bench.terminalCount();
 				bench.runTask(Lambda.find(tasks, t -> t.label == "Say hello"));
 				if (bench.terminalCount() != before + 1)

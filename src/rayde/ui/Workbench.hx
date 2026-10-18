@@ -102,6 +102,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	final centerRequest = Signal.make(({text: "", serial: 0} : CenterRequest));
 
+	/** When, on the animation clock, the center last began to close. */
+	var centerClosedAt = Math.NEGATIVE_INFINITY;
+
+	/** The request that is to open the center once it has finished closing. */
+	var centerWaiting:Null<CenterRequest> = null;
+
 	/** A line the status bar shows for a few seconds: what a command could not do. */
 	final notice = Signal.make("");
 
@@ -377,9 +383,35 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** Opens the command center with `text` in its filter: nothing for files, ">" for commands, ":" for a line. */
-	public function openCenter(text = ""):Void {
-		centerRequest.set({text: text, serial: centerRequest.get().serial + 1});
-		quickOpen.set(true);
+	public function openCenter(text = ""):Void
+		showCenter({text: text, serial: 0});
+
+	/**
+	 * Opens the center with `request`. The top layer cannot take a panel opened again while it is part-way through
+	 * closing, so such a request waits until the closing has played; one made in the frame it closed in, or after, goes
+	 * straight through. A request made while one waits replaces it.
+	 */
+	function showCenter(request:CenterRequest):Void {
+		var scheduler = ashui.animation.AnimationScheduler.main, theme = ashui.theme.ThemeState.tryGet();
+		var closing = (theme == null ? .2 : theme.animations().durationFaster / 1000) + .1, since = scheduler.clock - centerClosedAt;
+		var open = (r:CenterRequest) -> {
+			centerRequest.set({text: r.text, serial: centerRequest.get().serial + 1, picker: r.picker});
+			quickOpen.set(true);
+		};
+		if (!quickOpen.get() && since > 0 && since < closing) {
+			var waiting = centerWaiting != null;
+			centerWaiting = request;
+			if (!waiting)
+				scheduler.after(closing - since, () -> {
+					var next = centerWaiting;
+					centerWaiting = null;
+					if (next != null)
+						open(next);
+				});
+		} else {
+			centerWaiting = null;
+			open(request);
+		}
 	}
 
 	/** Closes every tab but the one in front. */
@@ -610,10 +642,8 @@ class Workbench extends Component<WorkbenchProps> {
 		openPicker("Select the default profile", profileChoices(p -> setDefaultProfile(p.name)));
 
 	/** Opens the center to choose among `items`, in place of its files and commands. */
-	function openPicker(placeholder:String, items:Array<CenterAction>):Void {
-		centerRequest.set({text: "", serial: centerRequest.get().serial + 1, picker: {placeholder: placeholder, items: items}});
-		quickOpen.set(true);
-	}
+	function openPicker(placeholder:String, items:Array<CenterAction>):Void
+		showCenter({text: "", serial: 0, picker: {placeholder: placeholder, items: items}});
 
 	// Tasks
 
@@ -857,6 +887,7 @@ class Workbench extends Component<WorkbenchProps> {
 		runner = new Runner(props.display);
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
+		new ashui.reactive.Watch(() -> quickOpen.get(), open -> if (!open) centerClosedAt = ashui.animation.AnimationScheduler.main.clock);
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
 		commandList = commands();
