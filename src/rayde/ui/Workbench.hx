@@ -419,7 +419,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
-		return <div id="rayde-files" class="flex flex-col flex-1 min-w-0 min-h-0">
+		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2">
 				<tree-view id="rayde-tree" selected={active} onSelect={v -> if (v.endsWith(".hx")) openFile(v)}>
