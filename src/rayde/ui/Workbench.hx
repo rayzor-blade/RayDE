@@ -19,16 +19,19 @@ import ashui.ui.Component;
 import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
+import rayde.keys.Chord;
+import rayde.keys.KeyBindings;
 import rayde.lang.Display;
+import rayde.run.LibraryManager;
 import rayde.run.Runner;
+import rayde.settings.Appearance;
 import rayde.term.Profiles;
 import rayde.term.Profiles.Profile;
 import rayde.term.Settings;
 import rayde.run.Tasks;
 import rayde.term.Terminal;
-import rayde.ui.BuildSettings;
 import rayde.ui.FileTabs;
-import rayde.ui.TerminalSettings;
+import rayde.ui.SettingsPage;
 import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
@@ -62,11 +65,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	static inline var EXPLORER_WIDTH = 260.;
 
-	/** The page of the build form, which a tab holds in place of a file. */
-	public static inline var BUILD = "rayde:build";
-
-	/** The page of the terminal's settings. */
-	public static inline var TERMINAL_SETTINGS = "rayde:terminal";
+	/** The Settings page, which a tab holds in place of a file. */
+	public static inline var SETTINGS = "rayde:settings";
 
 	/** The most terminals one screen is split among. */
 	static inline var MAX_SPLITS = 4;
@@ -109,8 +109,23 @@ class Workbench extends Component<WorkbenchProps> {
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
 
-	/** The build file as the form edits it, read when the form opens. */
+	/** The build file as the form edits it, read when the Settings page opens. */
 	var buildModel:Null<HxmlFile>;
+
+	/** The section of the Settings page in view. */
+	final settingsCategory = Signal.make("build");
+
+	/** How the window looks: the theme and whether it is light or dark, kept in .rayde/settings.json. */
+	var appearance:Appearance;
+
+	/** Which key does which command, with the changes kept in .rayde/keybindings.json. */
+	var bindings:KeyBindings;
+
+	/** haxelib's installs and removals, which go on while the Settings page is out of view. */
+	var libraries:LibraryManager;
+
+	/** The commands, which the center lists, the Settings page shows and the keys run. */
+	var commandList:Array<CenterAction> = [];
 
 	/** Bumped when the build file changes, so what is drawn from it is made again. */
 	final buildRevision = Signal.make(0);
@@ -177,25 +192,35 @@ class Workbench extends Component<WorkbenchProps> {
 		if (open.get().indexOf(file) < 0)
 			open.set(open.get().concat([file]));
 		active.set(file);
-		if (file == BUILD || file == TERMINAL_SETTINGS)
+		if (file == SETTINGS)
 			return;
 		remember(file);
 		check(file);
 	}
 
-	/** Opens the build form in a tab, or brings it forward, reading the build file as it is now. */
-	public function openBuild():Void {
-		if (props.display.hxml == null)
-			return;
-		if (open.get().indexOf(BUILD) < 0)
-			buildModel = HxmlFile.read(props.display.hxml);
-		openFile(BUILD);
+	/** Opens the Settings page in a tab, or brings it forward, on the section `category` when one is named; the build file is read as it is now. */
+	public function openSettings(?category:String):Void {
+		if (category != null)
+			settingsCategory.set(SettingsPage.category(category).id);
+		if (open.get().indexOf(SETTINGS) < 0)
+			buildModel = props.display.hxml == null ? null : HxmlFile.read(props.display.hxml);
+		openFile(SETTINGS);
 	}
+
+	/** Opens the Settings page on the build form. */
+	public function openBuild():Void
+		openSettings("build");
 
 	/** The size of the element a selector finds, for tests. */
 	public function boundsOf(selector:String):Null<ashui.layout.Bounds> {
 		var found = ashui.css.Css.query(tree, this.node.id, selector);
 		return found.length == 0 ? null : tree.getBounds(new ashui.layout.Node(found[0]));
+	}
+
+	/** Whether the first element a selector finds has the keyboard, for tests. */
+	public function hasKeyboard(selector:String):Bool {
+		var found = ashui.css.Css.query(tree, this.node.id, selector), at = ashui.input.Focus.of(tree);
+		return found.length > 0 && at != null && at.node.id == found[0];
 	}
 
 	/** The language layer the workbench asks, for tests that look at what it was given. */
@@ -206,12 +231,20 @@ class Workbench extends Component<WorkbenchProps> {
 	public function buildFile():Null<HxmlFile>
 		return buildModel;
 
+	/** The id of the section of the Settings page in view, for tests. */
+	public function settingsSection():String
+		return settingsCategory.get();
+
+	/** Whether haxelib is installing, updating or removing a library, for tests that wait for it. */
+	public function librariesBusy():Bool
+		return libraries.busy();
+
 	/** What the form wrote to the build file is now the project's: the compiler reads it, the Explorer and the problems follow it. */
 	public function buildChanged():Void {
 		props.display.reload();
 		buildRevision.set(buildRevision.get() + 1);
 		for (file in open.get())
-			if (file != BUILD && file != TERMINAL_SETTINGS)
+			if (file != SETTINGS)
 				check(file);
 	}
 
@@ -370,8 +403,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Puts the path of the file in front on the clipboard, in full or from the project's folder. */
 	function copyPath(relative:Bool):Void {
-		var file = active.get() == BUILD && props.display.hxml != null ? props.display.hxml : active.get();
-		if (file == "")
+		var file = active.get() == SETTINGS ? settingsFile() : active.get();
+		if (file == null || file == "")
 			return;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
 		ashui.input.Clipboard.setText(relative && file.startsWith(root) ? file.substr(root.length) : file);
@@ -552,9 +585,9 @@ class Workbench extends Component<WorkbenchProps> {
 		if (profilesMenu.get() != null)
 			profilesMenu.get().opened.set(on);
 
-	/** Opens the terminal's settings in a tab. */
+	/** Opens the Settings page on the terminal's section. */
 	public function openTerminalSettings():Void
-		openFile(TERMINAL_SETTINGS);
+		openSettings("terminal");
 
 	/** The profiles of the machine as choices, each doing `then` with its profile when chosen. */
 	function profileChoices(then:Profile->Void):Array<CenterAction> {
@@ -681,28 +714,50 @@ class Workbench extends Component<WorkbenchProps> {
 			goTo(file, line - 1, 0);
 	}
 
-	/** The commands the center lists after `>`. */
-	function actions():Array<CenterAction> {
-		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
+	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
+	function commands():Array<CenterAction>
 		return [
-			{id: "run", label: "Run", icon: Icons.PLAY_FILL, shortcut: "F5", run: run},
-			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, shortcut: "⇧F5", run: stopRun},
-			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, shortcut: mod + "S", run: saveAll},
-			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, shortcut: mod + "W", run: () -> if (active.get() != "") closeFile(active.get())},
-			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, shortcut: "F12", run: goToDefinition},
-			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
+			{id: "quickopen", label: "Go to File...", icon: Icons.SEARCH_LINE, run: () -> openCenter()},
+			{id: "commands", label: "Show All Commands", icon: Icons.CODE_BOX_LINE, run: () -> openCenter(">")},
+			{id: "gotoline", label: "Go to Line...", icon: Icons.ARROW_RIGHT_LINE, run: () -> openCenter(":")},
+			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: run},
+			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: stopRun},
+			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: saveAll},
+			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (active.get() != "") closeFile(active.get())},
+			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, run: goToDefinition},
+			{id: "settings", label: "Open Settings", icon: Icons.SETTINGS_3_LINE, run: () -> openSettings()},
+			{id: "build", label: "Open Build Settings", icon: Icons.HAMMER_LINE, run: openBuild},
+			{id: "libraries", label: "Manage Libraries", icon: Icons.BOOK_2_LINE, run: () -> openSettings("libraries")},
+			{id: "colorscheme", label: "Color Scheme", icon: Icons.PALETTE_LINE, run: () -> openSettings("appearance")},
+			{id: "keybindings", label: "Open Keyboard Shortcuts", icon: Icons.KEYBOARD_LINE, run: () -> openSettings("keys")},
+			{id: "extensions", label: "Show Extensions", icon: Icons.PUZZLE_LINE, run: () -> openSettings("extensions")},
 			{id: "problems", label: "Show Problems", icon: Icons.CLOSE_CIRCLE_LINE, run: () -> showPanel("problems")},
 			{id: "output", label: "Show Output", icon: Icons.TERMINAL_BOX_LINE, run: () -> showPanel("console")},
-			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, shortcut: "Ctrl+`", run: toggleTerminal},
-			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, shortcut: "Ctrl+Shift+`", run: () -> newTerminal()},
-			{id: "splitterminal", label: "Split Terminal", icon: Icons.LAYOUT_COLUMN_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "\\", run: () -> splitTerminal()},
+			{id: "terminal", label: "Open Terminal", icon: Icons.TERMINAL_BOX_LINE, run: toggleTerminal},
+			{id: "newterminal", label: "New Terminal", icon: Icons.ADD_LINE, run: () -> newTerminal()},
+			{id: "splitterminal", label: "Split Terminal", icon: Icons.LAYOUT_COLUMN_LINE, run: () -> splitTerminal()},
 			{id: "terminalprofile", label: "Select Default Terminal Profile", icon: Icons.TERMINAL_BOX_LINE, run: selectDefaultProfile},
 			{id: "terminalsettings", label: "Configure Terminal Settings", icon: Icons.SETTINGS_3_LINE, run: openTerminalSettings},
 			{id: "runtask", label: "Run Task", icon: Icons.PLAY_FILL, run: runTaskPicker},
 			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
-			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, shortcut: (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J", run: togglePanel},
+			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		];
+
+	/** Writes each command's key beside it, as the center shows them; asked again when a binding changes. */
+	function refreshShortcuts():Void
+		for (a in commandList)
+			a.shortcut = bindings.label(a.id);
+
+	/** The file the Settings page in view is kept in, for copying its path. */
+	function settingsFile():Null<String> {
+		var root = props.display.cwd;
+		return switch settingsCategory.get() {
+			case "build": props.display.hxml;
+			case "keys": haxe.io.Path.join([root, ".rayde", "keybindings.json"]);
+			case "extensions": haxe.io.Path.join([root, ".rayde", "extensions"]);
+			case _: haxe.io.Path.join([root, ".rayde", "settings.json"]);
+		}
 	}
 
 	/** Shows `text` in the status bar for a few seconds. */
@@ -774,45 +829,24 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
-		if (file == BUILD || file == TERMINAL_SETTINGS || !StringTools.endsWith(file, ".hx"))
+		if (file == SETTINGS || !StringTools.endsWith(file, ".hx"))
 			return;
 		var found = try props.display.diagnostics(file, buffer(file).get()) catch (_:Dynamic) [];
 		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
 	}
 
-	/** VS Code's keys: Go to file, Commands, Go to line, Save, Close tab, Go to definition, Run and Stop. */
+	/** Runs the command whose key was pressed: the bindings say which, and the Settings page changes them. */
 	function key(e:KeyEvent):Void {
 		if (e.defaultPrevented)
 			return;
-		var command = e.superKey || e.control;
-		switch e.key {
-			case Character("p") | Character("P") if (command && e.shift):
-				openCenter(">");
-			case Character("p") | Character("P") if (command):
-				openCenter();
-			case Character("g") | Character("G") if (command):
-				openCenter(":");
-			case Character("s") | Character("S") if (command):
-				saveAll();
-			case Character("w") | Character("W") if (command && active.get() != ""):
-				closeFile(active.get());
-			case Character("j") | Character("J") if (command):
-				togglePanel();
-			case Character("`") | Character("~") if (e.control && e.shift):
-				newTerminal();
-			case Character("`") if (e.control || command):
-				toggleTerminal();
-			case Character("\\") if (command):
-				splitTerminal();
-			case Named(F12):
-				goToDefinition();
-			case Named(F5) if (e.shift):
-				stopRun();
-			case Named(F5):
-				run();
-			case _:
-				return;
-		}
+		var chord = Chord.ofEvent(e.key, e.shift, e.control, e.alt, e.superKey);
+		if (chord == null)
+			return;
+		var id = bindings.commandFor(chord);
+		var action = id == null ? null : Lambda.find(commandList, a -> a.id == id);
+		if (action == null)
+			return;
+		action.run();
 		e.preventDefault();
 	}
 
@@ -822,6 +856,11 @@ class Workbench extends Component<WorkbenchProps> {
 	function render():Element {
 		runner = new Runner(props.display);
 		terminalSettings = Settings.read(props.display.cwd);
+		appearance = Appearance.read(props.display.cwd);
+		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
+		libraries = new LibraryManager(props.display.cwd);
+		commandList = commands();
+		refreshShortcuts();
 		loadRecent();
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
@@ -836,6 +875,7 @@ class Workbench extends Component<WorkbenchProps> {
 			s.terminal.close());
 		new ashui.reactive.Watch(() -> {
 			active.get();
+			settingsCategory.get();
 			folderStates.get();
 			for (open in folderOpen)
 				open.get();
@@ -856,7 +896,7 @@ class Workbench extends Component<WorkbenchProps> {
 				</resizable>
 			</div>
 			${statusBar()}
-			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={actions()} tasks={taskChoices}
+			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 		</div>;
 	}
@@ -888,16 +928,16 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={ACTIVITY}>
 			<for {shown in [explorerShown.get()]}>${explorerItem(shown)}</for>
 			<div class="flex-1"/>
-			<for {on in [active.get() == BUILD]}>${buildItem(on)}</for>
+			<for {on in [active.get() == SETTINGS]}>${settingsItem(on)}</for>
 		</div>;
 
-	function buildItem(on:Bool):Element {
-		var item = <div id="rayde-activity-build" class="rayde-activity-item flex" onClick={_ -> openBuild()}>
+	function settingsItem(on:Bool):Element {
+		var item = <div id="rayde-activity-settings" class="rayde-activity-item flex" onClick={_ -> openSettings()}>
 			<icon document={Icons.SETTINGS_3_LINE} class="size-5"/>
 		</div>;
 		if (on)
 			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
-		return <tooltip label="Build settings" side="right">{item}</tooltip>;
+		return <tooltip label="Settings" side="right">{item}</tooltip>;
 	}
 
 	function explorerItem(shown:Bool):Element {
@@ -936,8 +976,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The row of the Explorer that stands for the file in front: the file, or the top-most closed folder above it. */
 	function selectionRow():String {
 		var file = active.get(), root = props.display.cwd;
-		if (file == BUILD && props.display.hxml != null)
-			return props.display.hxml;
+		if (file == SETTINGS)
+			return settingsCategory.get() == "build" && props.display.hxml != null ? props.display.hxml : file;
 		if (file == "" || !file.startsWith(root))
 			return file;
 		var chain = [], dir = haxe.io.Path.directory(file);
@@ -1033,10 +1073,10 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function tabLabel(file:String):String
-		return file == BUILD ? haxe.io.Path.withoutDirectory(props.display.hxml) : file == TERMINAL_SETTINGS ? "Terminal" : haxe.io.Path.withoutDirectory(file);
+		return file == SETTINGS ? "Settings" : haxe.io.Path.withoutDirectory(file);
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == BUILD ? Icons.SETTINGS_3_LINE : file == TERMINAL_SETTINGS ? Icons.TERMINAL_BOX_LINE : StringTools.endsWith(file, ".hx") ? Icons.HAXE : Icons.BRACES_LINE;
+		return file == SETTINGS ? Icons.SETTINGS_3_LINE : StringTools.endsWith(file, ".hx") ? Icons.HAXE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)
@@ -1048,7 +1088,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (files.length == 0)
 			return welcome();
 		return <div class="flex flex-col flex-1 min-h-0">
-			<for {file in [active.get()]}>${breadcrumb(file)}</for>
+			<for {file in [active.get() == SETTINGS ? SETTINGS + ":" + settingsCategory.get() : active.get()]}>${breadcrumb(active.get())}</for>
 			<tabs id="rayde-tabs" value={active} class="flex-1 min-h-0">
 				<tabs-list indicator={false} class="rayde-nolist"/>
 				{[for (f in files) page(f)]}
@@ -1064,10 +1104,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
-		if (file == BUILD)
-			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(props.display.hxml), "Build"])}</breadcrumb>;
-		if (file == TERMINAL_SETTINGS)
-			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([".rayde", "terminal.json", "Terminal"])}</breadcrumb>;
+		if (file == SETTINGS)
+			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(["Settings", SettingsPage.category(settingsCategory.get()).label])}</breadcrumb>;
 		var root = haxe.io.Path.addTrailingSlash(props.display.cwd);
 		var parts = (file.startsWith(root) ? file.substr(root.length) : file).split("/");
 		return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(parts)}</breadcrumb>;
@@ -1087,13 +1125,11 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String):Element {
-		if (file == BUILD)
+		if (file == SETTINGS)
 			return <tabs-content value={file} class="flex-1 min-h-0">
-				<build-settings file={buildModel} root={props.display.cwd} onChanged={buildChanged}/>
-			</tabs-content>;
-		if (file == TERMINAL_SETTINGS)
-			return <tabs-content value={file} class="flex-1 min-h-0">
-				<terminal-settings settings={terminalSettings} root={props.display.cwd} onChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}/>
+				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} terminal={terminalSettings} appearance={appearance} bindings={bindings}
+					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
+					onAppearanceChanged={() -> settingsRevision.set(settingsRevision.get() + 1)} onBindingsChanged={refreshShortcuts}/>
 			</tabs-content>;
 		return pageOfFile(file);
 	}

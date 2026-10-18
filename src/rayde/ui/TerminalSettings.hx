@@ -23,13 +23,7 @@ class TerminalSettings extends Component<TerminalSettingsProps> {
 		var items:Array<Element> = [for (p in profiles) <select-item value={p.name}>${p.name + "  " + p.program}</select-item>];
 		return <div id="rayde-terminal-settings" class="rayde-settings flex flex-1 min-h-0 justify-center overflow-auto">
 			<div class="flex flex-col gap-6 px-8 py-8" width={780}>
-				<div class="flex items-center gap-4">
-					<div class="rayde-tile flex items-center justify-center shrink-0" width={44} height={44}><icon document={Icons.TERMINAL_BOX_LINE} class="size-5"/></div>
-					<div class="flex flex-col gap-1">
-						<text class="text-2xl font-semibold tracking-tighter">Terminal</text>
-						<text class="text-sm text-text-secondary">.rayde/terminal.json. Each change is written to the file at once.</text>
-					</div>
-				</div>
+				${SettingsParts.header(Icons.TERMINAL_BOX_LINE, "Terminal", ".rayde/settings.json. Each change is written to the file at once.")}
 				<div class="rayde-setting-card flex flex-col gap-4 p-5">
 					<div class="flex flex-col gap-1">
 						<text class="text-sm font-semibold">Profile</text>
@@ -64,11 +58,5 @@ class TerminalSettings extends Component<TerminalSettingsProps> {
 	}
 
 	function field(label:String, hint:String, control:Element):Element
-		return <div class="flex items-center justify-between gap-6">
-			<div class="flex flex-col gap-1 min-w-0">
-				<text class="text-sm">${label}</text>
-				<text class="text-xs text-text-tertiary">${hint}</text>
-			</div>
-			<div class="shrink-0">${control}</div>
-		</div>;
+		return SettingsParts.field(label, hint, control);
 }

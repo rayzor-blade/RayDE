@@ -7,6 +7,10 @@ import ashui.theme.ThemeState;
 import ashui.theme.themes.RestrainedTheme;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
+import rayde.run.Haxelib;
+import rayde.settings.Appearance;
+import rayde.settings.Store;
+import rayde.ui.Theming;
 import rayde.ui.Workbench;
 
 /**
@@ -21,8 +25,21 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		// haxelib is a stand-in with a few libraries, so the page and what it runs do not depend on the machine or the network; home is empty.
+		var scratch = haxe.io.Path.join([Sys.getCwd(), "bin", "snapshot-tools"]);
+		if (!sys.FileSystem.exists(scratch))
+			sys.FileSystem.createDirectory(scratch);
+		var stub = haxe.io.Path.join([scratch, "haxelib.sh"]), home = haxe.io.Path.join([scratch, "home"]);
+		if (!sys.FileSystem.exists(home))
+			sys.FileSystem.createDirectory(home);
+		sys.io.File.saveContent(stub, "#!/bin/sh\nstate=\"$(dirname \"$0\")/libs.txt\"\ncase \"$1\" in\n list) cat \"$state\" 2>/dev/null ;;\n --always) shift; case \"$1\" in install) echo \"$2: [${3:-1.0.0}]\" >> \"$state\"; echo \"Installed $2\" ;; update) echo \"Updated $2\" ;; esac ;;\n remove) grep -v \"^$2:\" \"$state\" > \"$state.new\"; mv \"$state.new\" \"$state\"; echo \"Removed $2\" ;;\nesac\n");
+		Sys.command("chmod", ["+x", stub]);
+		Sys.putEnv("RAYDE_HAXELIB", stub);
+		Sys.putEnv("HOME", home);
 		for (dark in [true, false]) {
-			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover) -> {
+			sys.io.File.saveContent(haxe.io.Path.join([scratch, "libs.txt"]), "ash-simd: [0.1.0]\nformat: [3.7.0]\nhashlink: [1.14.0]\ntink_core: [2.1.1]\ntink_hxx: [0.25.1]\n");
+			Haxelib.refresh();
+			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				if (bench.panelOpen())
 					throw "the bottom panel should start closed";
 				shot("empty");
@@ -203,7 +220,7 @@ class Snapshots {
 				bench.openTerminalSettings();
 				bench.setDefaultProfile("bash");
 				shot("terminal-settings");
-				if (sys.io.File.getContent(haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), ".rayde", "terminal.json"])).indexOf('"bash"') < 0)
+				if (sys.io.File.getContent(haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), ".rayde", "settings.json"])).indexOf('"bash"') < 0)
 					throw "the default profile was not kept";
 				// Choosing the first brings it to the front, still running with what it printed; killing the one in front leaves the other.
 				bench.selectTerminal(bench.terminalIds()[0]);
@@ -218,12 +235,22 @@ class Snapshots {
 				if (bench.terminalCount() != 0)
 					throw "every terminal should be ended";
 				bench.closePanel();
+				// The other sections of the Settings page, reached from its list, and the extensions folder empty.
+				click("#rayde-activity-settings");
+				if (bench.settingsSection() != "terminal" || bench.active.get() != Workbench.SETTINGS)
+					throw "the gear should bring the Settings page forward on the section last in view";
+				click("#rayde-settings-nav-extensions");
+				if (bench.settingsSection() != "extensions")
+					throw "a click on a section in the list should show it";
+				shot("settings-extensions-empty");
+				click("#rayde-settings-nav-libraries");
+				shot("settings-libraries");
 				// Every tab closed: the welcome page, now with recent files.
 				bench.closeAll();
 				shot("welcome-recent");
 			});
 			// A build file with a target, libraries, defines and an argument the form does not manage, as the form shows it.
-			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type, hover) -> {
+			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openBuild();
 				shot("build-settings");
 				scroll("#rayde-build", 520);
@@ -243,10 +270,17 @@ class Snapshots {
 				click("#rayde-build-folders-section .rayde-chip");
 				if (written("class path").indexOf("-cp tools") < 0 || args().indexOf("tools") < 0)
 					throw "choosing a suggested class path did not write it:\n" + written("");
-				type("#rayde-build-library", "tink_macro");
-				click("#rayde-build-library-add");
+				// Libraries: a name typed in and added goes into the build file and is installed when haxelib lacks it.
+				bench.openSettings("libraries");
+				shot("settings-libraries-full");
+				type("#rayde-library-name", "tink_macro");
+				click("#rayde-library-add");
 				if (written("library").indexOf("-lib tink_macro") < 0 || args().indexOf("tink_macro") < 0)
 					throw "adding a library did not write it:\n" + written("");
+				until(() -> !bench.librariesBusy(), "haxelib to install tink_macro");
+				if (!Lambda.exists(Haxelib.installed(), l -> l.name == "tink_macro"))
+					throw "adding a library haxelib lacks did not install it";
+				shot("settings-libraries-installed");
 				// The column of libraries: a click switches an installed one into the build, and the same click out again.
 				click("#rayde-lib-ash-simd");
 				if (model.values("-lib").indexOf("ash-simd") < 0 || args().indexOf("ash-simd") < 0)
@@ -257,6 +291,18 @@ class Snapshots {
 				click("#rayde-lib-tink_macro");
 				if (model.values("-lib").indexOf("tink_macro") >= 0)
 					throw "a library of the build did not come out with a click:\n" + written("");
+				// An installed library is removed from the machine, and one the build names but haxelib lacks is installed from its row.
+				click("#rayde-lib-remove-tink_macro");
+				until(() -> !bench.librariesBusy(), "haxelib to remove tink_macro");
+				if (Lambda.exists(Haxelib.installed(), l -> l.name == "tink_macro"))
+					throw "removing a library did not remove it";
+				shot("settings-libraries-removed");
+				click("#rayde-lib-install-not_installed_yet");
+				until(() -> !bench.librariesBusy(), "haxelib to install not_installed_yet");
+				if (!Lambda.exists(Haxelib.installed(), l -> l.name == "not_installed_yet"))
+					throw "installing from the row did not install it";
+				bench.openSettings("build");
+				settle();
 				click("#rayde-build-debug");
 				if (!model.has("--debug") || written("debug").indexOf("--debug") < 0)
 					throw "the debug switch did not write the file:\n" + written("");
@@ -278,8 +324,76 @@ class Snapshots {
 				bench.buildChanged();
 				if (bench.display().args.indexOf("from-the-form") < 0)
 					throw "the compiler's arguments did not follow the build file";
+				var root = bench.display().cwd;
+				// Color scheme: a theme is chosen from its picture, applied at once and written down; so is light or dark.
+				bench.openSettings("appearance");
+				shot("settings-appearance");
+				click("#rayde-theme-hybrid");
+				if (Store.section(root, "appearance").theme != "hybrid")
+					throw "choosing a theme did not write it";
+				shot("settings-appearance-hybrid");
+				click(dark ? "#rayde-scheme-light" : "#rayde-scheme-dark");
+				if (Store.section(root, "appearance").scheme != (dark ? "light" : "dark") || ThemeState.get().scheme() != (dark ? Light : Dark))
+					throw 'choosing a scheme did not apply and write it: ${dark ? "dark" : "light"} run, file says ${Store.section(root, "appearance").scheme}, window is ${ThemeState.get().scheme()}';
+				shot("settings-appearance-switched");
+				// What the rest of the snapshots expect: the theme and scheme they began with.
+				var again = new Appearance();
+				again.scheme = dark ? "dark" : "light";
+				Theming.apply(again);
+				settle();
+				// Key bindings: a key is recorded for a command, a letter alone is refused, the new key runs the command, and a key on two commands is marked.
+				var keysFile = haxe.io.Path.join([root, ".rayde", "keybindings.json"]);
+				bench.openSettings("keys");
+				shot("settings-keys");
+				type("#rayde-keys-filter", "terminal");
+				shot("settings-keys-filtered");
+				type("#rayde-keys-filter", "toggle explorer");
+				click("#rayde-key-edit-explorer");
+				shot("settings-keys-recording");
+				if (bench.boundsOf("#rayde-key-recorder") == null)
+					throw "the pencil should show the recorder";
+				if (!bench.hasKeyboard("#rayde-key-recorder"))
+					throw "the recorder should have the keyboard";
+				press(Character("a"));
+				if (sys.FileSystem.exists(keysFile))
+					throw "a letter alone should not become a key";
+				shot("settings-keys-refused");
+				press(Character("e"), false, false, true);
+				if (!sys.FileSystem.exists(keysFile) || sys.io.File.getContent(keysFile).indexOf("alt+e") < 0)
+					throw "the key pressed was not written:\n" + (sys.FileSystem.exists(keysFile) ? sys.io.File.getContent(keysFile) : "no file");
+				shot("settings-keys-changed");
+				click("#rayde-keys-filter");
+				var before = bench.boundsOf("#rayde-files") != null;
+				press(Character("e"), false, false, true);
+				if ((bench.boundsOf("#rayde-files") != null) == before)
+					throw "the key chosen for Toggle Explorer did not run it";
+				press(Character("e"), false, false, true);
+				press(Character("p"), false, false, false, true);
+				if (!bench.quickOpen.get())
+					throw "Cmd+P should open the command center";
+				bench.quickOpen.set(false);
+				type("#rayde-keys-filter", "run");
+				click("#rayde-key-edit-run");
+				press(Character("p"), false, false, false, true);
+				shot("settings-keys-conflict");
+				click("#rayde-keys-reset-all");
+				if (sys.FileSystem.exists(keysFile))
+					throw "resetting every key should leave no file";
+				shot("settings-keys-reset");
+				// Extensions: a folder with a manifest is listed, and one whose manifest cannot be read says so.
+				var extensions = haxe.io.Path.join([root, ".rayde", "extensions"]);
+				if (!sys.FileSystem.exists(extensions))
+					sys.FileSystem.createDirectory(extensions);
+				for (name in ["hello", "broken"])
+					sys.FileSystem.createDirectory(haxe.io.Path.join([extensions, name]));
+				sys.io.File.saveContent(haxe.io.Path.join([extensions, "hello", "extension.json"]), '{"name": "Hello", "version": "0.1.0", "description": "Says hello in the status bar"}');
+				sys.io.File.saveContent(haxe.io.Path.join([extensions, "broken", "extension.json"]), "{ nope");
+				bench.openSettings("extensions");
+				click("#rayde-settings-nav-keys");
+				click("#rayde-settings-nav-extensions");
+				shot("settings-extensions");
 			});
-			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type, hover) -> {
+			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openFile(file);
 				bench.run();
 				wait(bench);
@@ -320,9 +434,10 @@ class Snapshots {
 				if (entry != ".rayde")
 					deleteTree(haxe.io.Path.join([to, entry]));
 		copy(from, to);
-		// What a run opened last is not carried into the next, so the welcome page starts as it would in a new project.
-		if (sys.FileSystem.exists(to + "/.rayde/recent.txt"))
-			sys.FileSystem.deleteFile(to + "/.rayde/recent.txt");
+		// What a run opened last, and what it set, is not carried into the next: the project starts as a new one would.
+		for (leftover in ["recent.txt", "settings.json", "keybindings.json", "extensions"])
+			if (sys.FileSystem.exists(to + "/.rayde/" + leftover))
+				deleteTree(to + "/.rayde/" + leftover);
 		return to;
 	}
 
@@ -335,7 +450,7 @@ class Snapshots {
 			sys.FileSystem.deleteFile(path);
 	}
 
-	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void, String->Void) -> Void):Void {
+	static function scenario(dark:Bool, name:String, steps:(Workbench, String, String->Void, ?Int->Void, String->Float->Void, String->Void, String->String->Void, String->Void, (window.Key, ?Bool, ?Bool, ?Bool, ?Bool)->Void, (Void->Bool)->String->Void) -> Void):Void {
 		var root = copyOf(name), server = new CompilerServer();
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
@@ -409,7 +524,24 @@ class Snapshots {
 			if (Sys.getEnv("RAYDE_DEBUG") != null)
 				Sys.println('hover $selector at ' + (at.x + at.width / 2) + "," + (at.y + at.height / 2) + " hovered=" + (ashui.input.Interaction.byId(tree, found[0]) == null ? "n/a" : "" + ashui.input.Interaction.byId(tree, found[0]).hovered.get()));
 		}
-		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type, hover);
+		// A key pressed and let go as the keyboard reports it, to what has the keyboard, with the modifiers held.
+		function press(key:window.Key, ?shift:Bool, ?control:Bool, ?alt:Bool, ?meta:Bool):Void {
+			var mods = window.Modifiers.State(shift == true, control == true, alt == true, meta == true, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+			for (state in [window.MouseElementState.Pressed, window.MouseElementState.Released])
+				ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), key, None, Standard, state, false, Unavailable), mods);
+			settle(4);
+		}
+		// Lets time pass, a process included, until `done` holds, or twenty seconds have gone by.
+		function until(done:Void->Bool, what:String):Void {
+			var end = haxe.Timer.stamp() + 20;
+			while (!done() && haxe.Timer.stamp() < end) {
+				settle(3);
+				Sys.sleep(.02);
+			}
+			if (!done())
+				throw 'timed out waiting for $what';
+		}
+		steps(bench, root + "/src/Main.hx", shot, settle, scroll, click, type, hover, press, until);
 		stop();
 		tree.dispose();
 		server.stop();

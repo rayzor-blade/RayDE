@@ -1,7 +1,13 @@
 import rayde.build.HxmlFile;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
+import rayde.keys.Chord;
+import rayde.keys.KeyBindings;
+import rayde.run.Haxelib;
 import rayde.run.Runner;
+import rayde.settings.Appearance;
+import rayde.settings.Extensions;
+import rayde.settings.Store;
 import rayde.term.KeyMap;
 import rayde.term.Terminal;
 import window.Key;
@@ -73,6 +79,97 @@ class Checks {
 	}
 
 	/** A shell through the native terminal: what it prints, in colour, on the screen; what is typed reaching it; and its exit. */
+	static function settingsChecks():Void {
+		var parse = (text:String, mac:Bool) -> Chord.parse(text, mac);
+		check(parse("mod+shift+p", true).toString() == "shift+cmd+p", "mod is Command on a Mac");
+		check(parse("mod+shift+p", false).toString() == "ctrl+shift+p", "mod is Control elsewhere");
+		check(parse("Cmd+Shift+P", true).equals(parse("mod+shift+p", true)), "chord text is read without regard to case");
+		check(parse("ctrl+shift+`", true).equals(Chord.ofEvent(Character("~"), true, true, false, false)), "Shift+` typed as ~ is the same chord");
+		check(parse("ctrl+up", true).key == "up" && parse("ctrl+ArrowUp", true).key == "up", "arrow keys have one name");
+		check(parse("f5", true).key == "f5" && parse("f21", true) == null, "function keys run to F20");
+		check(parse("mod+", true) == null && parse("shift", true) == null && parse("ctrl+ctrl+p", true) == null && parse("", true) == null, "chords without a key, or with a modifier twice, are refused");
+		check(parse("ctrl++", true).key == "=" && parse("ctrl++", true).shift, "ctrl++ is the plus key");
+		check(parse("cmd+p", true).label(true) == "⌘P" && parse("shift+f5", true).label(true) == "⇧F5" && parse("ctrl+`", true).label(true) == "⌃`", "labels on a Mac");
+		check(parse("ctrl+shift+p", false).label(false) == "Ctrl+Shift+P" && parse("alt+pageup", false).label(false) == "Alt+Page Up", "labels elsewhere");
+		check(Chord.ofEvent(Named(Control), false, true, false, false) == null && Chord.ofEvent(Named(Shift), true, false, false, false) == null, "a modifier alone is no chord");
+		check(Chord.ofEvent(Named(F12), false, false, false, false).key == "f12", "F12 is a chord");
+		var capital = Chord.ofEvent(Character("P"), true, false, false, true);
+		check(capital.key == "p" && capital.shift && capital.meta, "a capital letter with Shift is the lowercase key with Shift");
+
+		var root = Sys.getCwd() + "bin/check-settings";
+		if (sys.FileSystem.exists(root))
+			for (f in ["libs.txt", "haxelib-stub.sh", ".rayde/keybindings.json", ".rayde/settings.json", ".rayde/run/haxelib.log", ".rayde/extensions/hello/extension.json", ".rayde/extensions/broken/extension.json"])
+				if (sys.FileSystem.exists(root + "/" + f))
+					sys.FileSystem.deleteFile(root + "/" + f);
+		for (d in [root, root + "/.rayde", root + "/.rayde/run", root + "/.rayde/extensions", root + "/.rayde/extensions/hello", root + "/.rayde/extensions/broken"])
+			if (!sys.FileSystem.exists(d))
+				sys.FileSystem.createDirectory(d);
+
+		var keys = new KeyBindings(true), p = parse.bind(_, true);
+		check(keys.commandFor(p("cmd+p")) == "quickopen" && keys.commandFor(p("cmd+shift+p")) == "commands", "the defaults are bound");
+		check(keys.commandFor(p("ctrl+p")) == null && keys.label("terminal") == "⌃`", "a default is bound to its own chord only");
+		keys.set("run", p("f6"));
+		check(keys.commandFor(p("f5")) == null && keys.commandFor(p("f6")) == "run" && keys.changed("run"), "a rebound command answers to its new key");
+		keys.set("close", null);
+		check(keys.label("close") == null && keys.commandFor(p("cmd+w")) == null && keys.changed("close"), "a key can be taken away");
+		keys.save(root);
+		var again = KeyBindings.read(root, true);
+		check(again.label("run") == "F6" && again.label("close") == null && again.label("save") == "⌘S", "changes come back from the file");
+		again.reset("run");
+		check(again.label("run") == "F5" && !again.changed("run") && again.changed("close"), "reset puts the default back");
+		again.set("stop", p("f5"));
+		check(again.conflicts("run").join(",") == "stop" && again.conflicts("stop").join(",") == "run" && again.commandFor(p("f5")) == "run", "the same key on two commands is a conflict and the first one runs");
+		again.set("stop", p("shift+f5"));
+		check(!again.changed("stop"), "putting a command back where it was is not a change");
+		again.resetAll();
+		again.save(root);
+		check(!sys.FileSystem.exists(root + "/.rayde/keybindings.json") && !again.anyChanged(), "with nothing changed there is no file");
+
+		Store.save(root, "terminal", {cursor: "bar"});
+		Store.save(root, "elsewhere", {kept: true});
+		var a = new Appearance();
+		a.theme = "hybrid";
+		a.scheme = "system";
+		a.save(root);
+		check(Store.section(root, "terminal").cursor == "bar" && Store.section(root, "elsewhere").kept == true, "saving a section keeps the others");
+		var back = Appearance.read(root);
+		check(back.theme == "hybrid" && back.scheme == "system", "the colour scheme comes back from the file");
+		Store.save(root, "appearance", {theme: "nonesuch", scheme: "purple"});
+		check(Appearance.read(root).theme == "restrained" && Appearance.read(root).scheme == "dark", "an unknown theme or scheme falls back to the default");
+		check(Store.section(root + "/nowhere", "terminal").cursor == null, "a missing file is an empty section");
+
+		var libs = Haxelib.parse("3 libraries found:\nhashlink: [dev:/src/hashlink]\ntink_hxx: 0.4.0 [0.5.0]\nformat: 3.7.0\n");
+		check(libs.length == 3 && libs[0].version == "dev" && libs[1].version == "0.5.0" && libs[2].version == "", 'haxelib list is read: ${libs.map(l -> l.name + "=" + l.version)}');
+
+		var stub = root + "/haxelib-stub.sh";
+		sys.io.File.saveContent(stub, "#!/bin/sh\nstate=\"$(dirname \"$0\")/libs.txt\"\ncase \"$1\" in\n list) cat \"$state\" 2>/dev/null ;;\n --always) shift; case \"$1\" in install) echo \"$2: [${3:-1.0.0}]\" >> \"$state\"; echo \"Installed $2\" ;; update) echo \"Updated $2\" ;; esac ;;\n remove) grep -v \"^$2:\" \"$state\" > \"$state.new\"; mv \"$state.new\" \"$state\"; echo \"Removed $2\" ;;\nesac\n");
+		Sys.command("chmod", ["+x", stub]);
+		Sys.putEnv("RAYDE_HAXELIB", stub);
+		Haxelib.refresh();
+		check(Haxelib.installed().length == 0, "the stand-in starts with no libraries");
+		var wait = (job:rayde.run.Job) -> {
+			job.start();
+			var end = haxe.Timer.stamp() + 20;
+			while (job.running() && haxe.Timer.stamp() < end)
+				Sys.sleep(.02);
+			return job;
+		};
+		var install = wait(Haxelib.install(root, "tink_macro", "1.2.3"));
+		Haxelib.refresh();
+		check(install.exit == 0 && install.read().indexOf("Installed tink_macro") >= 0, "install runs and prints its output");
+		check(Haxelib.installed().length == 1 && Haxelib.installed()[0].name == "tink_macro" && Haxelib.installed()[0].version == "1.2.3", "an installed library is listed with its version");
+		wait(Haxelib.remove(root, "tink_macro"));
+		Haxelib.refresh();
+		check(Haxelib.installed().length == 0, "a removed library is no longer listed");
+		Sys.putEnv("RAYDE_HAXELIB", "");
+		Haxelib.refresh();
+
+		sys.io.File.saveContent(root + "/.rayde/extensions/hello/extension.json", '{"name": "Hello", "version": "0.1.0", "description": "Says hello"}');
+		sys.io.File.saveContent(root + "/.rayde/extensions/broken/extension.json", "{ not json");
+		var found = [for (e in Extensions.list(root)) if (e.scope == "Workspace") e];
+		check(found.length == 2 && found[0].id == "broken" && found[0].problem != null && found[1].name == "Hello" && found[1].version == "0.1.0", 'extensions are found: ${found.map(e -> e.id + ":" + e.problem)}');
+	}
+
 	static function terminalChecks():Void {
 		var t = Terminal.open(40, 6, null, "/bin/sh", ["-c", "printf 'hello\\n'; printf '\\033[1;31mred\\033[0m plain\\n'; read x; printf 'got:%s\\n' $x"]);
 		if (t == null) {
@@ -122,6 +219,7 @@ class Checks {
 	static function main():Void {
 		hxmlChecks();
 		keyChecks();
+		settingsChecks();
 		terminalChecks();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
@@ -198,6 +296,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, the terminal and its keys, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, haxelib, extensions, compilation server, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }

@@ -170,3 +170,24 @@
 /* The Explorer's guide lines, which show how deep a folder is, are out of sight until the pointer is over the tree. */
 #rayde #rayde-tree .ui-tree-group { border-left-color: transparent; }
 #rayde #rayde-tree:hover .ui-tree-group { border-left-color: var(--border); }
+
+/* The Settings page: its list of sections, the colour scheme's tiles and pictures, and the key bindings. */
+#rayde .rayde-settings-nav { border-right: 1px solid var(--border); }
+#rayde .rayde-nav-item { border-radius: var(--radius-lg); corner-shape: squircle; color: var(--text-secondary); }
+#rayde .rayde-nav-item:hover { background: var(--accent-subtle); color: var(--text-primary); }
+#rayde .rayde-nav-item[data-on] { background: color-mix(in srgb, var(--primary) 24%, transparent); color: var(--text-primary); }
+#rayde .rayde-scheme { border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; color: var(--text-secondary); background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-scheme:hover { border-color: var(--border-hover); color: var(--text-primary); }
+#rayde .rayde-scheme[data-on] { border-color: var(--primary); color: var(--text-primary); background: color-mix(in srgb, var(--primary) 14%, transparent); }
+#rayde .rayde-theme-card { border: 1px solid var(--border); border-radius: var(--radius-2xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-theme-card:hover { border-color: var(--border-hover); }
+#rayde .rayde-theme-card[data-on] { border-color: var(--primary); }
+#rayde .rayde-swatch { border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; overflow: hidden; }
+#rayde .rayde-swatch-line { border-radius: 3px; }
+#rayde .rayde-key-list { max-height: 440px; border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
+#rayde .rayde-key-row:hover { background: var(--accent-subtle); }
+#rayde .rayde-key-tools { opacity: 0; }
+#rayde .rayde-key-row:hover .rayde-key-tools { opacity: 1; }
+#rayde .rayde-keycap { min-width: 64px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }
+#rayde .rayde-keycap:hover { border-color: var(--border-hover); }
+#rayde .rayde-recorder { border: 1px solid var(--primary); border-radius: var(--radius-md); corner-shape: squircle; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--text-primary); }
