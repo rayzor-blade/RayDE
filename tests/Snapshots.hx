@@ -583,6 +583,14 @@ class Snapshots {
 				bench.edited(rays);
 				until(() -> bench.problems.get().length == 0 && !studio.stale.get() && says("ext/main.rays"), "the fixed extension to run again");
 				shot("extension-fixed");
+				var nextMain = haxe.io.Path.directory(rays) + "/other.rays";
+				sys.io.File.saveContent(nextMain, good);
+				bench.openSettings("extension");
+				click("#rayde-ext-main");
+				type("#rayde-ext-main", "ext/other.rays");
+				press(Named(Enter));
+				until(() -> studio.file == nextMain && studio.connection.file == nextMain && studio.running(), "changing the main script to retarget the managed host");
+				if (bench.extensionManager.extensions.length != 1 || bench.studioFor(nextMain) != studio) throw "changing the main script should keep one managed connection and Studio";
 			});
 		for (dark in [true, false])
 			scenario(dark, "markdown", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
@@ -805,6 +813,56 @@ class Snapshots {
 					throw 'the edges should resize from where they are: $edges';
 				shot("bar-after");
 			});
+		for (dark in [true, false])
+			scenario(dark, "extensions", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var manager = bench.extensionManager, markdown = manager.find("markdown"), dashboard = manager.find("dashboard");
+				if (markdown == null || dashboard == null) throw "both workspace extensions should be discovered";
+				var root = haxe.io.Path.directory(haxe.io.Path.directory(file));
+				var has = (selector:String) -> Css.query(bench.tree, bench.node.id, selector).length > 0;
+				until(() -> markdown.connection.listening().indexOf("file.saved") >= 0 && dashboard.connection.running(), "two installed extensions to start");
+				for (selector in ["#rayde-activity-ext-markdown-preview", "#rayde-activity-ext-dashboard-main"])
+					if (!has(selector)) throw 'installed view should have an activity icon: $selector';
+				bench.openFile(file);
+				click("#rayde-activity-ext-dashboard-main");
+				shot("workspace");
+				bench.openFile(root + "/README.md");
+				bench.openCenter(">Preview");
+				settle(5);
+				press(Named(Enter));
+				until(() -> Lambda.exists(bench.open.get(), f -> StringTools.startsWith(f, Workbench.TAB)), "the installed Markdown command to open its preview");
+				shot("markdown");
+				bench.openCenter(">Describe dashboard");
+				settle(5);
+				press(Named(Enter));
+				until(() -> dashboard.output.indexOf("dashboard ready") >= 0, "the other extension's command to run");
+				bench.openCenter(">Fail dashboard");
+				settle(5);
+				press(Named(Enter));
+				until(() -> dashboard.output.join("\n").indexOf("dashboard failure") >= 0, "a script error to reach its Output channel");
+				// Ending the real child process exercises restart supervision and its Output channel.
+				@:privateAccess dashboard.connection.host.process.kill();
+				until(() -> dashboard.restarts.length == 1 && dashboard.connection.running(), "the exited extension to restart");
+				bench.showPanel("console");
+				bench.setPanelHeight(260);
+				@:privateAccess bench.outputChannel.set("ext:dashboard");
+				@:privateAccess bench.refreshExtensionOutput();
+				if (dashboard.output.join("\n").indexOf("Restarting extension") < 0) throw "restart should be reported in the extension's Output channel";
+				shot("restart-output");
+				bench.openSettings("extensions");
+				bench.setPanelHeight(0);
+				settle(10);
+				click("#rayde-extension-setting-dashboard-dashboard-compact");
+				if (Reflect.field(Store.section(root, "extension.dashboard"), "dashboard.compact") != true) throw "a contributed setting should be saved in its extension's section";
+				shot("settings");
+				click("#rayde-extension-toggle-dashboard");
+				until(() -> dashboard.disabled && !dashboard.connection.running(), "the Settings toggle to stop an installed extension");
+				if (has("#rayde-activity-ext-dashboard-main")) throw "a disabled extension's icon should be removed";
+				if (rayde.settings.Extensions.disabled(root).indexOf("dashboard") < 0) throw "the disabled extension should be persisted in workspace settings";
+				shot("disabled");
+				click("#rayde-extension-toggle-dashboard");
+				until(() -> !dashboard.disabled && dashboard.connection.running() && has("#rayde-activity-ext-dashboard-main"), "enabling to restore the host and its contributions");
+			});
+
 		for (dark in [true, false])
 			scenario(dark, "debug", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
@@ -1203,6 +1261,34 @@ class Snapshots {
 		return to;
 	}
 
+	static function installExtensionsFixture(root:String):Void {
+		function copy(from:String, to:String):Void {
+			sys.FileSystem.createDirectory(to);
+			for (name in sys.FileSystem.readDirectory(from)) {
+				var source = from + "/" + name, target = to + "/" + name;
+				if (sys.FileSystem.isDirectory(source)) copy(source, target); else sys.io.File.copy(source, target);
+			}
+		}
+		var dir = root + "/.rayde/extensions";
+		copy(Sys.getCwd() + "tests/fixtures/markdown", dir + "/markdown");
+		copy(Sys.getCwd() + "tests/fixtures/views", dir + "/dashboard");
+		var config = dir + "/markdown/markdown.rayext", json:Dynamic = haxe.Json.parse(sys.io.File.getContent(config));
+		json.id = "markdown";
+		json.views = [{id: "preview", title: "Markdown", icon: "eye", location: "sidebar"}];
+		sys.io.File.saveContent(config, haxe.Json.stringify(json));
+		var script = dir + "/markdown/ext/main.rays";
+		sys.io.File.saveContent(script, sys.io.File.getContent(script) + "\nmount(() -> <p class='p-4 text-sm'>Markdown Preview is running</p>, 'preview');\n");
+		config = dir + "/dashboard/dashboard.rayext";
+		json = haxe.Json.parse(sys.io.File.getContent(config));
+		json.id = "dashboard";
+		json.contributes = {commands: [{id: "describe", title: "Describe dashboard"}, {id: "fail", title: "Fail dashboard"}], keybindings: [{command: "describe", key: "mod+alt+d"}],
+			configuration: {properties: {"dashboard.compact": {type: "boolean", title: "Compact view", description: "Reduce spacing between rows.", "default": false}}}};
+		sys.io.File.saveContent(config, haxe.Json.stringify(json));
+		script = dir + "/dashboard/ext/main.rays";
+		sys.io.File.saveContent(script, sys.io.File.getContent(script) + "\nregisterCommand('describe', args -> trace('dashboard ready'));\nregisterCommand('fail', args -> { throw 'dashboard failure'; });\n");
+		sys.io.File.saveContent(root + "/README.md", "# Workspace extensions\n\nA Haxe project with a Markdown preview and dashboard running in separate hosts.\n");
+	}
+
 	static function deleteTree(path:String):Void {
 		if (sys.FileSystem.isDirectory(path)) {
 			for (entry in sys.FileSystem.readDirectory(path))
@@ -1218,6 +1304,7 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		var root = copyOf(name), server = new CompilerServer();
+		if (name == "extensions") installExtensionsFixture(root);
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
 		// A fixture with a .rayext is an extension project, opened from that file with no build.

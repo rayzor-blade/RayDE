@@ -15,6 +15,8 @@ mkdir -p "$app/Contents/MacOS" "$res"
 stage_natives "$res"
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl "$res/rayde.hl"
 sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+mkdir -p "$res/extensions"
+[ ! -d extensions ] || cp -R extensions/. "$res/extensions/"
 cp assets/icons/rayde.icns "$res/RayDE.icns"
 host=${RAYSCRIPT_HOST:-$siblings/rayscript/target/release/rayscript-host}
 [ -x "$host" ] && cp "$host" "$res/rayscript-host"

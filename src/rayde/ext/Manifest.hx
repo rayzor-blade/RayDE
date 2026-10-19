@@ -23,7 +23,7 @@ typedef ViewTool = {id:String, title:String, icon:Null<String>};
 /**
  * An extension's config file, `<name>.rayext`: JSON that names the extension and says where its code is.
  * It is to an extension what a `.hxml` is to a Haxe project: RayDE opens it, and the folder it is in is the
- * project. Only `name` and `main` matter to the Studio so far; the rest is for when extensions are installed.
+ * project. The manager uses `id` and `activationEvents` to discover and start installed extensions.
  *
  *     {
  *       "name": "Notes",
@@ -76,6 +76,10 @@ class Manifest {
 	/** The folder the config file is in. */
 	public final root:String;
 
+	public final id:String;
+	public final activationEvents:Null<Array<String>>;
+	public final keybindings:Array<{command:String, key:String}> = [];
+	public final configuration:Dynamic;
 	public final name:String;
 	public final version:String;
 	public final description:String;
@@ -131,6 +135,14 @@ class Manifest {
 		this.file = file;
 		root = haxe.io.Path.directory(file);
 		var fallback = haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file));
+		id = text(json, "id", fallback);
+		if (!~/^[A-Za-z0-9_-]+$/.match(id)) problems.push("Extension id must contain letters, digits, underscores or hyphens.");
+		activationEvents = Reflect.hasField(json, "activationEvents") ? strings(json, "activationEvents") : null;
+		if (activationEvents != null)
+			for (event in activationEvents)
+				if (event != "onStartup" && !~/^(workspaceContains|onCommand|onView):.+$/.match(event)) problems.push('Unknown activation event "$event".');
+		var contributes = Reflect.field(json, "contributes");
+		configuration = contributes == null ? null : Reflect.field(contributes, "configuration");
 		name = text(json, "name", fallback);
 		version = text(json, "version", "");
 		description = text(json, "description", "");
@@ -244,6 +256,13 @@ class Manifest {
 					problems.push('Icon $icon of command "$id" not found.');
 				commands.push({id: id, title: text(x, "title", id), icon: icon == "" ? null : icon});
 			}
+		var keys:Dynamic = Reflect.field(c, "keybindings");
+		if (keys != null && !Std.isOfType(keys, Array)) problems.push('"contributes.keybindings" must be an array.');
+		else if (keys != null) for (entry in (keys:Array<Dynamic>)) {
+			var command = entry == null ? "" : text(entry, "command", ""), key = entry == null ? "" : text(entry, "key", "");
+			if (!Lambda.exists(commands, c -> c.id == command) || key == "") problems.push("Each key binding needs a declared command and a key.");
+			else keybindings.push({command: command, key: key});
+		}
 		var menuObject:Dynamic = Reflect.field(c, "menus");
 		if (menuObject != null && (Std.isOfType(menuObject, Array) || Std.isOfType(menuObject, String) || !Reflect.isObject(menuObject)))
 			problems.push('"contributes.menus" must be an object of locations.');

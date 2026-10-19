@@ -6,19 +6,10 @@ import ashui.reactive.Signal;
 import rayde.lang.Display.Diagnostic;
 
 /** One line of the Console or the Activity list. `kind` is log, error, info, event, call, answer or ops. */
-typedef Entry = {kind:String, text:String, time:Float, ?file:String, ?line:Int, ?col:Int};
+typedef Entry = rayde.ext.Connection.HostEntry;
 
 /** What an extension can ask of the workbench, through the `rayde.workspace` module; the workbench provides it. */
-typedef Services = {
-	/** The text of a file, as the editor holds it when it is open; null when there is no such file. */
-	readFile:String->Null<String>,
-	activeFile:Void->Null<String>,
-	root:Void->String,
-	openFile:String->Void,
-	writeFile:(String, String) -> Void,
-	/** The current state a hook reports, sent to an extension when it starts listening for it; null when the hook has none. */
-	replay:String->Dynamic
-};
+typedef Services = rayde.ext.Connection.WorkspaceServices;
 
 /** A view the extension presented as a tab: the root it mounted, and the title it gave. */
 typedef TabView = {root:Int, title:String};
@@ -67,10 +58,16 @@ class Studio {
 	public var onTabs:Null<Array<TabView>->Void>;
 
 	/** What the extension may ask of the workbench; set by whoever shows it. */
-	public var services:Null<Services>;
+	public var services(get, set):Null<Services>;
+	function get_services():Null<Services> return connection.services;
+	function set_services(value:Null<Services>):Null<Services> return connection.services = value;
+
+	public final connection:Connection;
+	public var development = true;
+	public var managed = false;
 
 	/** The functions of the modules RayDE answers itself, by module. */
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"]];
+	public static final builtin = Connection.builtin;
 
 	/** The syntax or compile errors of the last run of the source, where the editor can put them. */
 	public var problems(default, null):Array<Diagnostic> = [];
@@ -86,25 +83,14 @@ class Studio {
 	/** What the extension's view is, as nodes of the tree. It outlives the pages that show it: `detach` takes it out of one, `attach` puts it in the next. */
 	public var preview(default, null):Null<Preview>;
 
-	final binary:Null<String>;
-	final dir:String;
-	var root:String;
 	/** The config of the extension, when it was opened from one. */
 	public var manifest(default, null):Null<Manifest>;
-	final source:Void->String;
-	var host:Null<ExtensionHost>;
 	final tree:LayoutTree;
 	final surfaces:Array<Surface> = [];
-
-	/** The hooks the running extension listens for. */
-	final subscribed = new Map<String, Bool>();
 
 	/** The names of mounted views the config gives no place, said once each. */
 	final unhosted:Array<String> = [];
 
-	final pending = new Map<String, Dynamic>();
-	var mocks:Dynamic = {};
-	var mocksFile:String;
 	var changedAt = -1.;
 	var lastActive = 0.;
 	var scheduled = false;
@@ -119,32 +105,40 @@ class Studio {
 	static inline var MAX_ENTRIES = 1000;
 
 	/** `file` is the script that is the extension's main, `source` gives it as the editor holds it; `dir` holds the host's logs; the view's nodes are made in `tree`. */
-	public function new(file:String, dir:String, source:Void->String, tree:LayoutTree, ?manifest:Manifest, ?binary:String) {
+	public function new(file:String, dir:String, source:Void->String, tree:LayoutTree, ?manifest:Manifest, ?binary:String, ?connection:Connection) {
 		this.file = file;
-		this.dir = dir;
-		this.source = source;
 		this.tree = tree;
 		this.manifest = manifest;
 		title = Signal.make(manifest != null ? manifest.viewTitle : "Preview");
 		Utilities.install();
 		preview = new Preview(tree, send);
-		this.binary = binary != null ? binary : HostBinary.find();
-		root = manifest != null ? manifest.importRoot() : haxe.io.Path.directory(file);
-		mocksFile = manifest != null ? manifest.mocksPath() : haxe.io.Path.join([root, "studio.mocks.json"]);
-		if (this.binary == null)
-			state.set("unavailable");
+		this.connection = connection == null ? new Connection(file, dir, source, manifest, binary) : connection;
+		if (connection == null) this.connection.useMocks = true;
+		this.connection.onMessage = handle;
+		this.connection.onEntry = (list, entry) -> note(list == "console" ? console : activity, entry.kind, entry.text,
+			entry.line == null ? null : {file: entry.file, line: entry.line, col: entry.col});
+		this.connection.onState = value -> {
+			state.set(value);
+			if (value != "running") debug.disconnect();
+		};
+		this.connection.onStart = () -> {
+			replacing = true;
+			debug.connect(m -> this.connection.send(m));
+		};
+		this.connection.onWake = activeNow;
+		state.set(this.connection.state);
 	}
 
 	/** The config changed: the view's heading, where scripts are imported from and the mocks file are what it says now. */
 	public function useManifest(m:Manifest):Void {
 		manifest = m;
-		root = m.importRoot();
-		mocksFile = m.mocksPath();
+		file = m.mainPath();
+		connection.useManifest(m);
 		title.set(m.viewTitle);
 	}
 
 	public function mocksPath():String
-		return mocksFile;
+		return connection.mocksPath();
 
 	/**
 	 * Draws the view in `container`, a node of the tree: the main view, or only the root `root` for a tab.
@@ -179,6 +173,14 @@ class Studio {
 				release(s);
 	}
 
+	/** Takes down mounted views when an installed extension is disabled. */
+	public function clearView():Void {
+		if (preview != null) preview.clear();
+		for (surface in surfaces) surface.attached = [];
+		tabViews = [];
+		elements.set(elements.get() + 1);
+	}
+
 	/** Ends the extension and takes its view down, for good. */
 	public function dispose():Void {
 		// A reload that was waiting for typing to stop must not start the extension again.
@@ -206,39 +208,12 @@ class Studio {
 	/** Runs the extension afresh: a new process, the Preview emptied, the mocked modules registered, the source run. */
 	public function reload():Void {
 		changedAt = -1;
-		if (disposed)
-			return;
-		if (binary == null)
-			return;
-		stop();
-		replacing = true;
+		if (disposed) return;
 		title.set(manifest != null ? manifest.viewTitle : "Preview");
 		problems = [];
-		if (onProblems != null)
-			onProblems(problems);
-		readMocks();
-		subscribed.clear();
-		pending.clear();
+		if (onProblems != null) onProblems(problems);
 		unhosted.resize(0);
-		host = new ExtensionHost(binary, dir, root);
-		host.start();
-		state.set("running");
-		// What RayDE answers itself and what the mocks file adds, a mock answering in place of the real one.
-		var modules = new Map<String, Array<String>>();
-		for (module => names in builtin)
-			modules.set(module, names.copy());
-		for (module in Reflect.fields(mocks)) {
-			var names = modules.exists(module) ? modules.get(module) : [];
-			for (f in Reflect.fields(Reflect.field(mocks, module)))
-				if (names.indexOf(f) < 0)
-					names.push(f);
-			modules.set(module, names);
-		}
-		for (module => names in modules)
-			host.send({t: "module", path: module, functions: names});
-		debug.connect(m -> host.send(m));
-		host.send({t: "run", name: file, source: source()});
-		note(activity, "info", "Reloaded");
+		connection.start();
 		activeNow();
 	}
 
@@ -249,52 +224,34 @@ class Studio {
 		activeNow();
 	}
 
-	public function stop():Void {
-		debug.disconnect();
-		if (host != null)
-			host.stop();
-		host = null;
-		if (state.get() != "unavailable")
-			state.set("stopped");
-	}
+	public function stop():Void connection.stop();
 
-	public function running():Bool
-		return host != null && host.running();
+	public function running():Bool return connection.running();
 
 	/** The buttons the extension's config puts in its header. */
 	public function tools(?view:String):Array<rayde.ext.Manifest.ViewTool> {
 		if (manifest == null)
 			return [];
-		var v = view == null ? manifest.views[0] : manifest.viewOf(view);
+		var v = view == null ? (manifest.views.length == 0 ? null : manifest.views[0]) : manifest.viewOf(view);
 		return v == null ? [] : v.tools;
 	}
 
 	/** A tool of the header was chosen: tells the extension. */
 	public function tool(id:String):Void {
-		if (host == null)
+		if (!connection.running())
 			return;
-		host.send({t: "tool", id: id});
+		connection.send({t: "tool", id: id});
 		note(activity, "event", 'tool $id');
 		activeNow();
 	}
 
 	/** Sends an event for an element of the view, as a person using the Preview does. */
 	public function send(node:Int, event:String, payload:Dynamic):Void {
-		if (host == null)
+		if (!connection.running())
 			return;
-		host.send({t: "event", node: node, event: event, payload: payload});
+		connection.send({t: "event", node: node, event: event, payload: payload});
 		note(activity, "event", '$event on #$node' + (payload == null ? "" : " " + haxe.Json.stringify(payload)));
 		activeNow();
-	}
-
-	function readMocks():Void {
-		mocks = {};
-		if (!sys.FileSystem.exists(mocksFile))
-			return;
-		try
-			mocks = haxe.Json.parse(sys.io.File.getContent(mocksFile))
-		catch (e:Dynamic)
-			note(console, "error", 'Cannot read mocks file ${haxe.io.Path.withoutDirectory(mocksFile)}: $e');
 	}
 
 	/** Polls faster for a while after something happened, so a click and its answer feel immediate. */
@@ -312,29 +269,15 @@ class Studio {
 			tick();
 			// The longer the extension has been quiet, the less often it is looked at; a click or a command brings the next look forward.
 			var quiet = haxe.Timer.stamp() - lastActive;
-			if (host != null && host.running() || changedAt >= 0)
+			if (!disposed && (connection.running() || changedAt >= 0))
 				schedule(quiet < 1 ? .016 : quiet < 5 ? .1 : .5);
 		});
 	}
 
 	/** Moves the extension along: reads what the host said, and reloads after typing has stopped. */
 	public function tick():Void {
-		if (changedAt >= 0 && haxe.Timer.stamp() - changedAt > .4)
-			reload();
-		if (host == null)
-			return;
-		var messages = host.poll();
-		for (m in messages) {
-			handle(m);
-			lastActive = haxe.Timer.stamp();
-		}
-		if (host.state == "exited") {
-			var err = StringTools.trim(host.errors());
-			note(console, "error", 'Extension host exited with code ${host.exitCode}.' + (err == "" ? "" : "\n" + err));
-			debug.disconnect();
-			host = null;
-			state.set("exited");
-		}
+		if (changedAt >= 0 && haxe.Timer.stamp() - changedAt > .4) reload();
+		connection.tick();
 	}
 
 	function handle(m:Dynamic):Void {
@@ -352,23 +295,10 @@ class Studio {
 			case "view":
 				if (m.title != null)
 					title.set(Std.string(m.title));
-			case "subscribe":
-				var name = Std.string(m.hook);
-				subscribed.set(name, true);
-				if (!Hooks.knownEvent(name))
-					note(console, "error", 'Unknown hook "$name"; expected ${Hooks.eventNames().join(", ")}.');
-				// What a hook reports about the present is told once, so an extension that starts late is not behind.
-				var now = services == null ? null : services.replay(name);
-				if (now != null)
-					hook(name, now);
 			case "paused" | "resumed" | "variables" | "children" | "evaluated" | "breakpoints":
 				if (m.t == "paused")
 					note(activity, "event", "stopped: " + m.reason);
 				debug.handle(m);
-			case "log":
-				note(console, "log", m.message);
-			case "call":
-				answer(m);
 			case "error":
 				failed(m);
 			case _:
@@ -446,51 +376,16 @@ class Studio {
 		if (preview != null)
 			preview.removeRoot(root);
 		refreshTabs();
-		if (host != null)
-			host.send({t: "closed", root: root});
+		if (connection.running())
+			connection.send({t: "closed", root: root});
 	}
 
 	/** The hooks the running extension listens for. */
-	public function listening():Array<String>
-		return [for (name in subscribed.keys()) name];
+	public function listening():Array<String> return connection.listening();
 
-	/** Tells the extension of something that happened in the editor, if it listens for it. `key` makes a later call replace an earlier one still waiting. */
-	public function hook(name:String, data:Dynamic, ?delay:Float):Void {
-		if (host == null || !subscribed.exists(name))
-			return;
-		if (delay == null) {
-			deliver(name, data);
-			return;
-		}
-		var key = name + (data != null && Reflect.hasField(data, "path") ? ":" + data.path : "");
-		var waiting = pending.exists(key);
-		pending.set(key, data);
-		if (!waiting)
-			ashui.animation.AnimationScheduler.main.after(delay, () -> {
-				var d = pending.get(key);
-				pending.remove(key);
-				deliver(name, d);
-			});
-	}
+	public function hook(name:String, data:Dynamic, ?delay:Float):Void connection.hook(name, data, delay);
 
-	function deliver(name:String, data:Dynamic):Void {
-		if (host == null)
-			return;
-		host.send({t: "hook", name: name, data: data});
-		note(activity, "event", 'hook $name' + (data == null ? "" : " " + haxe.Json.stringify(data)));
-		activeNow();
-	}
-
-	/** Runs a command the extension registered, with `args`. */
-	public function command(id:String, args:Dynamic):Void {
-		if (host == null) {
-			note(console, "error", 'Cannot run command $id: the extension is not running.');
-			return;
-		}
-		host.send({t: "command", id: id, args: args});
-		note(activity, "event", 'command $id' + (args == null ? "" : " " + haxe.Json.stringify(args)));
-		activeNow();
-	}
+	public function command(id:String, args:Dynamic):Void connection.command(id, args);
 
 	function failed(m:Dynamic):Void {
 		var items:Array<Dynamic> = m.items == null ? [] : m.items;
@@ -510,93 +405,7 @@ class Studio {
 			if (onProblems != null)
 				onProblems(problems);
 		}
-		var first = items.length > 0 ? items[0] : null;
-		if (onError != null)
-			onError(kind);
-		note(console, "error", firstLine(m.message), first == null || first.line == null ? null : place(first));
-		for (i in 1...items.length) {
-			var it = items[i];
-			var function_:Null<String> = Reflect.field(it, "function");
-			if (kind == "runtime" && it.line != null)
-				note(console, "info", "  at " + (function_ == null ? "" : function_ + " ") + haxe.io.Path.withoutDirectory(it.file) + ":" + it.line + ":" + it.col, place(it));
-		}
+		if (onError != null) onError(kind);
 	}
 
-	static function place(item:Dynamic):{file:String, line:Int, col:Int}
-		return {file: item.file, line: Std.int(item.line), col: Std.int(item.col)};
-
-	/** The message, without the picture ariadne draws under it. */
-	static function firstLine(message:String):String {
-		var lines = message.split("\n");
-		return StringTools.trim(lines[0]);
-	}
-
-	function answer(call:Dynamic):Void {
-		var name:String = call.fn, at = name.lastIndexOf(".");
-		var module = name.substr(0, at), fn = name.substr(at + 1);
-		note(activity, "call", name + "(" + [for (a in (call.args : Array<Dynamic>)) haxe.Json.stringify(a)].join(", ") + ")");
-		var group = Reflect.field(mocks, module);
-		if (group == null || !Reflect.hasField(group, fn)) {
-			if (builtin.exists(module) && builtin.get(module).indexOf(fn) >= 0) {
-				reply(service(call, fn));
-				return;
-			}
-			reply({t: "reject", id: call.id, message: 'No mock for $name; add it to ${haxe.io.Path.withoutDirectory(mocksFile)}'});
-			return;
-		}
-		var value:Dynamic = Reflect.field(group, fn);
-		var delay = 0;
-		if (value != null && Reflect.hasField(value, "$after")) {
-			delay = Std.int(Reflect.field(value, "$after"));
-			value = Reflect.field(value, "$value");
-		}
-		var message:Dynamic = value != null && Reflect.hasField(value, "$error") ? {t: "reject", id: call.id, message: Std.string(Reflect.field(value, "$error"))} : {t: "resolve", id: call.id, value: value};
-		if (delay > 0)
-			ashui.animation.AnimationScheduler.main.after(delay / 1000, () -> reply(message));
-		else
-			reply(message);
-	}
-
-	/** The capability a call to `rayde.workspace` needs. */
-	static function capability(fn:String):String
-		return fn == "writeFile" ? "workspace.write" : "workspace.read";
-
-	/** Answers a call to a module RayDE provides, if the extension has the capability and the workbench can. */
-	function service(call:Dynamic, fn:String):Dynamic {
-		var need = capability(fn);
-		if (manifest != null && manifest.capabilities.indexOf(need) < 0)
-			return {t: "reject", id: call.id, message: 'Capability $need is not granted; add it to "capabilities" in ${haxe.io.Path.withoutDirectory(manifest.file)}'};
-		if (services == null)
-			return {t: "reject", id: call.id, message: "The workbench provides no services here."};
-		var args:Array<Dynamic> = call.args;
-		try {
-			var value:Dynamic = switch fn {
-				case "readFile":
-					var text = services.readFile(Std.string(args[0]));
-					if (text == null)
-						throw 'No such file: ${args[0]}';
-					text;
-				case "activeFile":
-					services.activeFile();
-				case "root":
-					services.root();
-				case "openFile":
-					services.openFile(Std.string(args[0]));
-					null;
-				case _:
-					services.writeFile(Std.string(args[0]), Std.string(args[1]));
-					null;
-			};
-			return {t: "resolve", id: call.id, value: value};
-		} catch (e:Dynamic)
-			return {t: "reject", id: call.id, message: Std.string(e)};
-	}
-
-	function reply(message:Dynamic):Void {
-		if (host == null)
-			return;
-		host.send(message);
-		note(activity, "answer", (message.t == "resolve" ? "resolved " : "rejected ") + (message.t == "resolve" ? haxe.Json.stringify(message.value) : message.message));
-		activeNow();
-	}
 }

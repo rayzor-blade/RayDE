@@ -15,7 +15,7 @@ RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://gith
 - **Command center.** Files, commands and line numbers from one prompt. Key bindings follow VS Code and are editable.
 - **Terminal.** Integrated terminal panel with configurable profiles.
 - **Libraries.** haxelib libraries are listed and managed from Settings.
-- **Extensions.** Written in RayScript and described by a `.rayext` file: commands, menus, hooks, views in any part of the layout. The Extension Studio reloads an extension as it is edited and has a console, an activity log, an element tree and a debugger.
+- **Extensions.** Written in RayScript and described by a `.rayext` file: commands, menus, hooks, views in any part of the layout. Built-in, user and workspace extensions activate on events and run in separate processes. The Extension Studio reloads an extension as it is edited and has a console, an activity log, an element tree and a debugger.
 - **Themes.** A `.raytheme` bundle sets colours, radii, type, custom fonts and CSS over a built-in theme. The Theme Studio edits one with the window as the live preview.
 - **Window.** RayDE draws its own title bar, resize edges and window controls in the style of the platform.
 

@@ -3,21 +3,64 @@ package rayde.settings;
 import rayde.ext.Manifest;
 
 /** An extension folder as found: what its manifest says, where it is, and what is wrong with it. */
-typedef Extension = {id:String, name:String, version:String, description:String, path:String, scope:String, ?problem:String};
+typedef Extension = {id:String, name:String, version:String, description:String, path:String, scope:String, ?problem:String, manifest:Manifest};
 
-/**
- * The extensions installed: a folder under `.rayde/extensions` in the workspace or in the user's own
- * `.rayde/extensions` that holds a `.rayext` config file. Nothing runs them yet; this is what the Settings page lists.
- */
+/** Finds extension manifests with workspace, user and built-in precedence. */
 class Extensions {
-	public static function list(root:String):Array<Extension> {
+	public static function home():String
+		return Sys.getEnv("HOME") ?? Sys.getEnv("USERPROFILE") ?? ".";
+
+	public static function builtins():String {
+		var overridePath = Sys.getEnv("RAYDE_EXTENSIONS");
+		if (overridePath != null && overridePath != "")
+			return overridePath;
+		var program = haxe.io.Path.directory(Sys.programPath());
+		var candidates = [
+			haxe.io.Path.join([program, "extensions"]),
+			haxe.io.Path.join([program, "../../share/rayde/extensions"]),
+			haxe.io.Path.join([Sys.getCwd(), "extensions"])
+		];
+		for (path in candidates)
+			if (sys.FileSystem.exists(path))
+				return haxe.io.Path.normalize(path);
+		return candidates[0];
+	}
+
+	/** Workspace fields override user fields; saving a workspace toggle preserves the other settings. */
+	public static function disabled(root:String, ?userHome:String):Array<String> {
+		var user = Store.section(userHome ?? home(), "extensions"),
+			workspace = Store.section(root, "extensions");
+		var value:Dynamic = Reflect.hasField(workspace, "disabled") ? workspace.disabled : user.disabled;
+		return Std.isOfType(value, Array) ? [for (id in (value : Array<Dynamic>)) if (Std.isOfType(id, String)) (id : String)] : [];
+	}
+
+	public static function setDisabled(root:String, id:String, disabled:Bool):Void {
+		var section = Store.section(root, "extensions"),
+			ids = Extensions.disabled(root);
+		ids.remove(id);
+		if (disabled)
+			ids.push(id);
+		Reflect.setField(section, "disabled", ids);
+		Store.save(root, "extensions", section);
+	}
+
+	public static function list(root:String, ?builtins:String, ?user:String):Array<Extension> {
 		var out = [];
+		if (builtins != null)
+			scan(builtins, "Built-in", out);
+		if (user == null) {
+			var home = Sys.getEnv("HOME") ?? Sys.getEnv("USERPROFILE");
+			if (home != null && home != "")
+				user = haxe.io.Path.join([home, ".rayde", "extensions"]);
+		}
+		if (user != null)
+			scan(user, "User", out);
 		scan(haxe.io.Path.join([root, ".rayde", "extensions"]), "Workspace", out);
-		var home = Sys.getEnv("HOME");
-		if (home == null || home == "")
-			home = Sys.getEnv("USERPROFILE");
-		if (home != null && home != "")
-			scan(haxe.io.Path.join([home, ".rayde", "extensions"]), "User", out);
+		var chosen = new Map<String, Extension>();
+		for (e in out)
+			chosen.set(e.id, e);
+		out = [for (e in chosen) e];
+		out.sort((a, b) -> Reflect.compare(a.id, b.id));
 		return out;
 	}
 
@@ -36,7 +79,8 @@ class Extensions {
 			configs.sort(Reflect.compare);
 			var m = Manifest.read(haxe.io.Path.join([folder, configs[0]]));
 			out.push({
-				id: name,
+				id: m.id,
+				manifest: m,
 				name: m.name,
 				version: m.version,
 				description: m.description,

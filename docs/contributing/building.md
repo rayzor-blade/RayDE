@@ -20,6 +20,7 @@ scripts/rayde.sh --build                 # rebuild bin/rayde.hl without opening 
 | --- | --- |
 | `RAYDE_PANEL=<tab>` | Open the bottom panel on `terminal`, `problems` or `console`. |
 | `RAYDE_SETTINGS=<section>` | Open Settings on `build`, `libraries`, `terminal`, `appearance`, `keys` or `extensions`. |
+| `RAYDE_EXTENSIONS=<folder>` | Built-in extensions folder instead of the packaged or source folder. |
 | `RAYDE_THEMES=<folder>` | User theme folder instead of `~/.rayde/themes`. |
 | `RAYDE_OPAQUE=1` | Opaque window instead of a transparent one. |
 | `RAYDE_ASH=<path>` | ash for the packaged launchers. |

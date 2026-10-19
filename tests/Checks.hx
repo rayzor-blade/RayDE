@@ -791,6 +791,7 @@ class Checks {
 		iconChecks();
 		fileOpsChecks();
 		extensionHostChecks();
+		ExtensionManagerChecks.run();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
 		var server = new CompilerServer(), display = Display.ofHxml(server, root + "/build.hxml");

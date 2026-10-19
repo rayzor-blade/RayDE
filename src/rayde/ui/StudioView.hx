@@ -34,7 +34,7 @@ class StudioView extends Component<StudioViewProps> {
 			<div id="rayde-studio-bar" class="rayde-studio-bar flex items-center gap-1 pl-3 pr-2 shrink-0" height={36}>
 				<text id="rayde-studio-title" class="rayde-heading flex-1 min-w-0 truncate">${shownTitle(studio)}</text>
 				{[for (t in studio.tools(viewId())) tool(t)]}
-				<for {k in [{state: studio.state.get(), stale: studio.stale.get(), live: studio.live.get()}]}>${menu(k.state, k.stale, k.live)}</for>
+				<if {studio.development}><for {k in [{state: studio.state.get(), stale: studio.stale.get(), live: studio.live.get()}]}>${menu(k.state, k.stale, k.live)}</for></if>
 			</div>
 			<for {stale in [studio.stale.get()]}>${banner(stale)}</for>
 			<div ref={surface} id="rayde-studio-surface" class="rayde-studio-surface flex flex-col flex-1 min-h-0 overflow-auto"/>

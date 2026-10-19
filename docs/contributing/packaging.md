@@ -13,3 +13,7 @@ The icon is `assets/rayde-icon.png`, a rounded square on a transparent margin. `
 - Without an argument a launcher opens a file dialog for a `.hxml`, `.rayext` or `.raytheme`.
 - File types registered: Linux `text/x-hxml`, `application/x-rayext`, `application/x-raytheme`.
 - The Windows scripts have not been run on Windows.
+
+## Built-in extensions
+
+Packaging copies `extensions/` with the program. macOS places it in `RayDE.app/Contents/Resources/extensions`; Linux in `<prefix>/share/rayde/extensions`. The Windows distribution places it beside `rayde.hl` and `RayDE.cmd`. The host binary is staged beside `rayde.hl`; `RAYSCRIPT_HOST` can name another host. `RAYDE_EXTENSIONS` overrides the built-in extensions folder.

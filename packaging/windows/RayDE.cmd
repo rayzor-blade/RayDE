@@ -3,6 +3,7 @@ rem Starts RayDE on ash: a project given on the command line, else one chosen in
 rem RAYDE_ASH names ash.exe; without it, ash on PATH is used.
 setlocal
 set "HERE=%~dp0"
+set "RAYDE_EXTENSIONS=%HERE%extensions"
 if "%RAYDE_ASH%"=="" set "RAYDE_ASH=ash"
 if exist "%HERE%rayscript-host.exe" set "RAYSCRIPT_HOST=%HERE%rayscript-host.exe"
 if "%~1"=="" (

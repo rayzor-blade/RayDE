@@ -4,6 +4,44 @@ RayDE extensions are written in RayScript, run in a process of their own, and de
 
 ![The Explorer's menu for README.md, with Preview at the right end of its item](images/markdown-menu.png)
 
+## Installed extensions
+
+RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own `rayscript-host` process; opening the Extension Studio is not required.
+
+| Scope | Folder |
+| --- | --- |
+| Built-in | Packaged with RayDE, under `extensions/`. |
+| User | `~/.rayde/extensions/<id>/`. |
+| Workspace | `.rayde/extensions/<id>/` under the project root. |
+
+A folder contains a `.rayext` file and its scripts. The config's `id` identifies the extension; it defaults to the config's file name without its extension. A workspace copy replaces a user copy of the same id, which replaces the built-in copy. Opening a `.rayext` project replaces the installed copy with the development project and enables the Studio's controls and mocks.
+
+![Two extensions in a Haxe project](images/extensions-workspace.png)
+
+**Settings > Extensions** shows scope, state, the activation event, host state and capabilities. Its toggle stops or enables an extension for the workspace. Disabled ids are stored under `extensions.disabled` in `.rayde/settings.json`; the field overrides the same field in `~/.rayde/settings.json`.
+
+![Installed extensions and a contributed setting](images/extensions-settings.png)
+
+An extension starts on one of its `activationEvents`:
+
+```json
+{
+  "id": "markdown",
+  "activationEvents": ["workspaceContains:**/*.md", "onCommand:preview", "onView:preview"]
+}
+```
+
+- `onStartup`: when the workspace opens. This is the default when `activationEvents` is absent. An empty list leaves the extension inactive.
+- `workspaceContains:<glob>`: a matching path under the project root. `*` and `?` match within a path segment; `**` crosses folders.
+- `onCommand:<id>`: when a contributed command is chosen. `*` matches several command ids. The command waits until the script registers its handler.
+- `onView:<id>`: when the activity bar opens that view.
+
+Views, commands and menu items from enabled extensions share the workbench. Views and command bindings are identified by their owning extension. A failed host is restarted at most three times in a minute; after the limit it stays stopped until disabled and enabled again. **Output** has a channel per extension for logs, errors and restart reports, alongside the Build channel.
+
+`contributes.keybindings` supplies defaults such as `[{"command": "preview", "key": "mod+alt+p"}]`. Saved user bindings override them. The full command key is `ext.<extension-id>.<command>`; a saved `ext.<command>` binding migrates when exactly one installed extension declares that command. Ambiguous old bindings are kept for manual reassignment.
+
+`contributes.configuration` accepts a schema with `properties`: boolean, string, number, integer and enum fields render under the extension's name in Settings. Values are stored in the `extension.<id>` section of the settings file, with workspace values overriding user values and schema defaults. A `describe` command returning structured state is the convention for extension inspection.
+
 ## The pieces
 
 An extension is a folder with a config file and some scripts:
@@ -101,7 +139,7 @@ There are two menu locations:
 
 ![The editor's menu, with Preview for the file in front](images/markdown-title-menu.png)
 
-Commands are also in the command center (`>`), with the file in front, or the one selected in the Explorer, as `path`. Each is bound as `ext.<id>` in **Key bindings**, and a menu shows its key beside the item.
+Commands are also in the command center (`>`), with the file in front, or the one selected in the Explorer, as `path`. Each is bound as `ext.<extension-id>.<command>` in **Key bindings**, and a menu shows its key beside the item.
 
 An `icon`, on a command or on one menu item (the item's own wins), is an SVG file relative to the config, or the name of one of RayDE's own icons (`eye`, `refresh`, `star`; the Extension page lists them). A menu shows it at the right end of the item. A file that is missing is reported as a problem on the config.
 
@@ -210,6 +248,7 @@ The debugger is in the VM and costs nothing without breakpoints: a breakpoint re
 scripts/rayde.sh tests/fixtures/markdown/markdown.rayext   # right-click docs/README.md, choose Preview
 scripts/check.sh                                           # the extension in a real rayscript-host, with the workbench's answers played by the test
 SNAPSHOT_ONLY=markdown scripts/snapshot.sh                 # the menu, the tab, a save, closing it, and the config form, into bin/snapshots
+SNAPSHOT_ONLY=extensions scripts/snapshot.sh               # two installed extensions, commands, restart, configuration and toggles
 SNAPSHOT_ONLY=debug scripts/snapshot.sh                    # a breakpoint, the stop, the variables, stepping and going on
 ```
 
@@ -217,7 +256,6 @@ The host, `rayscript-host`, is found beside RayDE (`../rayscript/target/release`
 
 ## Limits
 
-- One extension per project, and one process for it.
 - `setTitle` changes the first view's title; the others keep the title they declare.
 - The Explorer of an extension project lists its `sources` and the config, not the whole folder: the sample lists `docs` as a source so `README.md` has a menu.
 - Only `workspace.read` and `workspace.write` are backed by a service. The other capabilities in the form (`process.spawn`, `net.fetch`, `terminal`, `clipboard`) are recorded in the config and not yet acted on.

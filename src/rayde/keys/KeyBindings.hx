@@ -27,6 +27,8 @@ class KeyBindings {
 	public var preset(default, null) = Keymaps.DEFAULT;
 
 	var base = new Map<String, Chord>();
+	var contributed = new Map<String, Chord>();
+	var contributedOrder:Array<String> = [];
 
 	/** The commands that have a key, in listing order, and the chord text each is found by. */
 	var index = new Map<String, String>();
@@ -43,7 +45,8 @@ class KeyBindings {
 		preset = map.id;
 		base = new Map();
 		for (e in map.keys) {
-			var text = Keymaps.key(map, e.command, mac), chord = text == null ? null : Chord.parse(text, mac);
+			var text = Keymaps.key(map, e.command, mac),
+				chord = text == null ? null : Chord.parse(text, mac);
 			if (chord != null)
 				base.set(e.command, chord);
 		}
@@ -96,7 +99,9 @@ class KeyBindings {
 			if (changes.keys().hasNext()) {
 				if (!sys.FileSystem.exists(dir))
 					sys.FileSystem.createDirectory(dir);
-				var out = [for (c in order) {command: c, key: changes.get(c) == null ? "" : changes.get(c).toString()}];
+				var out = [
+					for (c in order) {command: c, key: changes.get(c) == null ? "" : changes.get(c).toString()}
+				];
 				sys.io.File.saveContent(file(root), haxe.Json.stringify(out, null, "\t") + "\n");
 			} else if (sys.FileSystem.exists(file(root)))
 				sys.FileSystem.deleteFile(file(root));
@@ -104,7 +109,9 @@ class KeyBindings {
 
 	function put(command:String, chord:Null<Chord>):Void {
 		// A change that puts a command back where it was is not a change.
-		if (base.exists(command) ? chord != null && chord.equals(base.get(command)) : chord == null) {
+		if ((base.exists(command) || contributed.exists(command))
+			&& chord != null
+			&& chord.equals(base.exists(command) ? base.get(command) : contributed.get(command))) {
 			changes.remove(command);
 			order.remove(command);
 			return;
@@ -116,7 +123,7 @@ class KeyBindings {
 
 	/** The key `command` has now, or null. */
 	public function of(command:String):Null<Chord>
-		return changes.exists(command) ? changes.get(command) : base.get(command);
+		return changes.exists(command) ? changes.get(command) : contributed.exists(command) ? contributed.get(command) : base.get(command);
 
 	/** Whether the user changed `command`'s key. */
 	public function changed(command:String):Bool
@@ -169,11 +176,52 @@ class KeyBindings {
 	}
 
 	function commandsWithKeys():Array<String> {
-		var out = Keymaps.order.copy();
+		var out = Keymaps.order.concat(contributedOrder);
 		for (c in order)
 			if (out.indexOf(c) < 0)
 				out.push(c);
 		return [for (c in out) if (of(c) != null) c];
+	}
+
+	/** Replaces extension defaults; explicit user bindings, including removed keys, stay on top. */
+	public function setContributions(keys:Array<{command:String, key:String}>):Void {
+		contributed.clear();
+		contributedOrder = [];
+		for (entry in keys) {
+			var chord = Chord.parse(entry.key, mac);
+			if (chord != null) {
+				contributed.set(entry.command, chord);
+				contributedOrder.push(entry.command);
+			}
+		}
+		rebuild();
+	}
+
+	/** Migrates an old extension command only when exactly one installed extension declares it. */
+	public function migrateExtensions(root:String, owners:Map<String, Array<String>>):Void {
+		var changed = false, qualified = new Map<String, Bool>();
+		for (targets in owners)
+			for (target in targets)
+				qualified.set(target, true);
+		for (old in order.copy()) {
+			if (qualified.exists(old))
+				continue;
+			var targets = owners.get(old);
+			if (targets == null || targets.length != 1)
+				continue;
+			var target = targets[0];
+			if (!changes.exists(target)) {
+				changes.set(target, changes.get(old));
+				order.insert(order.indexOf(old), target);
+			}
+			changes.remove(old);
+			order.remove(old);
+			changed = true;
+		}
+		if (changed) {
+			rebuild();
+			saveChanges(root);
+		}
 	}
 
 	function rebuild():Void {

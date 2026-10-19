@@ -6,6 +6,7 @@ import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.build.HxmlFile;
 import rayde.ext.Manifest;
+import rayde.ext.Manager;
 import rayde.keys.KeyBindings;
 import rayde.run.LibraryManager;
 import rayde.settings.Appearance;
@@ -26,6 +27,9 @@ typedef SettingsPageProps = {
 	/** The section in view, which the workbench keeps so it is the same when the page is made again. */
 	category:Signal<String>,
 	root:String,
+	manager:Manager,
+	extensionChanges:Signal<Int>,
+	onExtensionToggle:(String, Bool)->Void,
 	/** The build file the Build section edits; null when the project has none. */
 	build:Null<HxmlFile>,
 	terminal:Settings,
@@ -105,7 +109,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
-			case "extensions": <extension-settings root={props.root}/>;
+			case "extensions": <extension-settings root={props.root} manager={props.manager} changes={props.extensionChanges} onToggle={props.onExtensionToggle}/>;
 			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}

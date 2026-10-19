@@ -9,6 +9,7 @@ import ashui.components.CodeEditor;
 import ashui.components.CodeView;
 import ashui.components.Icon;
 import ashui.components.Resizable;
+import ashui.components.Select;
 import ashui.components.Tabs;
 import ashui.components.Tooltip;
 import ashui.components.TreeView;
@@ -22,6 +23,9 @@ import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
 import rayde.ext.Manifest;
+import rayde.ext.Manager;
+import rayde.ext.Manager.ManagedExtension;
+import rayde.settings.Extensions;
 import rayde.ext.Manifest.ViewDecl;
 import rayde.files.FileOps;
 import rayde.ext.Studio;
@@ -71,7 +75,7 @@ typedef WorkbenchProps = {
 };
 
 /** A part of the layout an extension view takes: its icon in the activity bar, and where its view is drawn. */
-private typedef Container = {id:String, title:String, icon:ashui.svg.SvgDocument, location:String, view:ViewDecl};
+private typedef Container = {id:String, title:String, icon:ashui.svg.SvgDocument, location:String, view:ViewDecl, extension:Manifest};
 
 /** A terminal that is running, and the profile it was started from. */
 private typedef Session = {id:Int, group:Int, terminal:Terminal, profile:Profile};
@@ -120,9 +124,17 @@ class Workbench extends Component<WorkbenchProps> {
 	static function isViewTab(file:String):Bool
 		return file == EXTENSION_TAB || StringTools.startsWith(file, EXTENSION_TAB + ":");
 
-	/** The view an editor tab of the extension shows. */
-	function viewOfTab(file:String):Null<ViewDecl>
-		return extension == null ? null : extension.viewOf(file == EXTENSION_TAB ? "main" : file.substr(EXTENSION_TAB.length + 1));
+	function containerTab(c:Container):String
+		return extension != null && c.extension.id == extension.id ? viewTabId(c.view.id) : EXTENSION_TAB + ":" + c.id;
+
+	function containerOfTab(file:String):Null<Container>
+		return Lambda.find(containers, c -> containerTab(c) == file);
+
+	/** The view an editor tab of an extension shows. */
+	function viewOfTab(file:String):Null<ViewDecl> {
+		var c = containerOfTab(file);
+		return c == null ? null : c.view;
+	}
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
@@ -269,6 +281,11 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The extension this project is, as its config says now: the form changes the file, and it is read again. */
 	var extension:Null<Manifest>;
+	public var extensionManager(default, null):Manager;
+	final extensionRevision = Signal.make(0);
+	final outputChannel = Signal.make("build");
+	var supervisionScheduled = false;
+	final extensionOutput = Signal.make("");
 
 	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
 	var themeStudio:Null<ThemeStudio>;
@@ -326,7 +343,7 @@ class Workbench extends Component<WorkbenchProps> {
 				case "panel":
 					showPanel("ext-" + c.id);
 				case "editor":
-					openFile(viewTabId(c.view.id));
+					openFile(containerTab(c));
 				case _:
 			}
 		if (main != null)
@@ -405,7 +422,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var rest = files.copy();
 		rest.splice(at, 1);
 		var studio = studios.get(file);
-		if (studio != null) {
+		if (studio != null && !studio.managed) {
 			studio.dispose();
 			studios.remove(file);
 			activeStudio.set(null);
@@ -643,14 +660,15 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The items an extension adds to the editor's actions menu for the file in front, after a separator; none for a page that is not a file. */
 	function titleItems(file:String):Element {
-		var entries = extension == null || isVirtual(file) || file == "" ? [] : extension.menuFor("editor/title", file, "file");
+		var entries = isVirtual(file) || file == "" ? [] : contributedMenu("editor/title", file, "file");
 		if (entries.length == 0)
 			return <div/>;
 		var items:Array<Element> = [<dropdown-menu-separator/>];
-		for (e in entries) {
-			var icon = ViewIcons.named(extension, e.icon), keys = bindings.label(extensionKey(e.command));
+		for (entry in entries) {
+			var e = entry.item, m = entry.extension;
+			var icon = ViewIcons.named(m, e.icon), keys = bindings.label(extensionKey(m.id, e.command));
 			var label = icon == null ? <text>${e.title}</text> : <div class="flex items-center justify-between gap-3 flex-1 min-w-0"><text>${e.title}</text><icon document={icon} class="size-4 shrink-0 text-text-secondary"/></div>;
-			items.push(<dropdown-menu-item id={"rayde-menu-ext-" + e.command} shortcut={keys} onSelect={() -> runExtensionCommand(e.command, file)}>${label}</dropdown-menu-item>);
+			items.push(<dropdown-menu-item id={"rayde-menu-ext-" + (extension != null && m.id == extension.id ? "" : m.id + "-") + e.command} shortcut={keys} onSelect={() -> runExtensionCommand(m.id, e.command, file)}>${label}</dropdown-menu-item>);
 		}
 		return <div class="flex flex-col">{items}</div>;
 	}
@@ -993,24 +1011,32 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
 		].concat(contributedCommands());
 
-	/** The id a command of the extension has among the workbench's, which its key is bound by. */
-	static function extensionKey(command:String):String
-		return "ext." + command;
+	/** Namespaced bindings let extensions declare the same local command id. */
+	static function extensionKey(id:String, command:String):String return Manager.commandKey(id, command);
 
-	/** The commands the extension contributes, run by the extension on the file the Explorer or the editor has in front. */
-	function contributedCommands():Array<CenterAction>
-		return extension == null ? [] : [
-			for (c in extension.commands)
-				{id: extensionKey(c.id), label: c.title, icon: ViewIcons.named(extension, c.icon) ?? Icons.PUZZLE_LINE, run: () -> runExtensionCommand(c.id, (explorerFocused() ? selectedPath() : null) ?? realFile(active.get()))}
-		];
+	function contributedCommands():Array<CenterAction> {
+		if (extensionManager == null) return [];
+		var out:Array<CenterAction> = [];
+		for (e in extensionManager.enabled()) {
+			var m = e.connection.manifest;
+			for (c in m.commands) out.push({id: extensionKey(m.id, c.id), label: c.title, icon: ViewIcons.named(m, c.icon) ?? Icons.PUZZLE_LINE,
+				run: () -> runExtensionCommand(m.id, c.id, (explorerFocused() ? selectedPath() : null) ?? realFile(active.get()))});
+		}
+		return out;
+	}
 
-	/** Runs a command of the extension with `{path, kind}` of what it applies to; `kind` is file or folder, null with no path. */
-	function runExtensionCommand(command:String, path:Null<String>):Void {
-		var studio = extensionStudio();
-		if (studio == null)
-			return;
+	function runExtensionCommand(id:String, command:String, path:Null<String>):Void {
 		var kind:Null<String> = path == null ? null : sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) ? "folder" : "file";
-		studio.command(command, {path: path, kind: kind});
+		if (!extensionManager.command(id, command, {path: path, kind: kind})) say('Extension $id is not running.');
+	}
+
+	function contributedMenu(location:String, path:String, kind:String):Array<{extension:Manifest, item:rayde.ext.Manifest.MenuEntry}> {
+		var out = [];
+		for (e in extensionManager.enabled()) {
+			var m = e.connection.manifest;
+			for (item in m.menuFor(location, path, kind)) out.push({extension: m, item: item});
+		}
+		return out;
 	}
 
 	/** Writes each command's key beside it, as the center shows them; asked again when a binding changes. */
@@ -1263,6 +1289,81 @@ class Workbench extends Component<WorkbenchProps> {
 		return studio;
 	}
 
+	function startExtensions():Void {
+		extensionManager = new Manager(props.display.cwd, {builtins: Extensions.builtins(), user: haxe.io.Path.join([Extensions.home(), ".rayde", "extensions"]),
+			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
+		extensionManager.onDiscover = entry -> {
+			var m = entry.connection.manifest, dev = entry.installed.scope == "Development";
+			if (dev) { entry.connection.source = () -> buffer(entry.connection.file).get(); entry.connection.useMocks = true; }
+			var studio = new Studio(m.mainPath(), "", () -> entry.connection.source(), tree, m, null, entry.connection);
+			studio.managed = true;
+			studio.development = dev;
+			studio.live.set(dev);
+			studios.set(m.mainPath(), studio);
+			studio.onTabs = list -> syncTabs(studio, list);
+			studio.onProblems = list -> problems.set([for (p in problems.get()) if (p.file != studio.file) p].concat(list));
+			entry.onDisabled = disabled -> {
+				if (disabled) { studio.clearView(); syncTabs(studio, []); }
+			};
+			if (dev) {
+				studio.debug.load(readBreakpoints());
+				studio.debug.onChange = () -> saveBreakpoints(studio.debug);
+				studio.debug.onStop = stop -> showStop(studio, stop);
+			}
+		};
+		extensionManager.discover(services(), Extensions.disabled(props.display.cwd), extension);
+		extensionManager.onChanged = () -> {
+			extensionRevision.set(extensionRevision.get() + 1);
+			if (!supervisionScheduled && Lambda.exists(extensionManager.extensions, e -> !e.disabled && !e.restartBlocked && e.activation != null && e.connection.state == "exited")) {
+				supervisionScheduled = true;
+				ashui.animation.AnimationScheduler.main.after(.016, superviseExtensions);
+			}
+		};
+		extensionManager.onOutput = entry -> refreshExtensionOutput();
+		refreshExtensionBindings();
+		ashui.animation.AnimationScheduler.main.after(.016, () -> { if (!gone) extensionManager.start(); });
+	}
+
+	function superviseExtensions():Void {
+		supervisionScheduled = false;
+		if (gone) return;
+		extensionManager.tick(null, false);
+	}
+
+	function refreshExtensionBindings():Void {
+		var keys = [], owners = new Map<String, Array<String>>();
+		for (e in extensionManager.extensions) {
+			var m = e.connection.manifest;
+			for (command in m.commands) {
+				var old = "ext." + command.id, targets = owners.get(old);
+				if (targets == null) { targets = []; owners.set(old, targets); }
+				targets.push(extensionKey(m.id, command.id));
+			}
+			if (!e.disabled) for (key in m.keybindings) keys.push({command: extensionKey(m.id, key.command), key: key.key});
+		}
+		bindings.setContributions(keys);
+		bindings.migrateExtensions(props.display.cwd, owners);
+	}
+
+	function toggleExtension(id:String, disabled:Bool):Void {
+		Extensions.setDisabled(props.display.cwd, id, disabled);
+		extensionManager.setDisabled(id, disabled);
+		containers = makeContainers();
+		if (!Lambda.exists(containers, c -> c.id == sideView.get())) sideView.set("explorer");
+		open.set([for (f in open.get()) if (!isViewTab(f) || containerOfTab(f) != null) f]);
+		if (open.get().indexOf(active.get()) < 0) active.set(open.get().length == 0 ? "" : open.get()[0]);
+		commandList.splice(0, commandList.length);
+		for (a in commands()) commandList.push(a);
+		refreshExtensionBindings();
+		bindingsChanged();
+		layoutRevision.set(layoutRevision.get() + 1);
+	}
+
+	function refreshExtensionOutput():Void {
+		var entry = extensionManager.find(outputChannel.get().substr(4));
+		extensionOutput.set(entry == null ? "" : entry.output.join("\n"));
+	}
+
 	/** Resolves a path an extension gave against the project, refusing one outside it. */
 	function projectPath(path:String):String {
 		var full = haxe.io.Path.normalize(haxe.io.Path.isAbsolute(path) ? path : haxe.io.Path.join([props.display.cwd, path]));
@@ -1409,6 +1510,7 @@ class Workbench extends Component<WorkbenchProps> {
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
+		startExtensions();
 		containers = makeContainers();
 		commandList = commands();
 		refreshShortcuts();
@@ -1433,6 +1535,7 @@ class Workbench extends Component<WorkbenchProps> {
 			for (s in sessions)
 				s.terminal.close();
 			// An extension's host is a process of its own, which goes with the workbench.
+			extensionManager.dispose();
 			for (studio in studios)
 				studio.dispose();
 			if (themeStudio != null)
@@ -1565,7 +1668,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** An extension's view in the part of the layout it was given, under its own heading. */
 	function extensionBody(c:Container, style:String):Element {
-		var studio = extensionStudio();
+		var studio = studios.get(c.extension.mainPath());
 		if (studio == null)
 			return <div/>;
 		return <div id={"rayde-view-" + c.id} class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
@@ -1630,6 +1733,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** An extension's icon: shows its view where it was put, or folds that away when it is showing. */
 	public function chooseContainer(c:Container):Void {
+		extensionManager.view(c.extension.id, c.view.id);
 		switch c.location {
 			case "sidebar":
 				if (sideView.get() == c.id && explorerShown.get())
@@ -1647,7 +1751,7 @@ class Workbench extends Component<WorkbenchProps> {
 				else
 					showPanel("ext-" + c.id);
 			case _:
-				openFile(viewTabId(c.view.id));
+				openFile(containerTab(c));
 		}
 	}
 
@@ -1657,17 +1761,29 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The form changed the extension's config, which has been read again: the Studio and, if the view moved or looks different, the layout follow. */
 	function extensionChanged(m:Manifest):Void {
-		var before = extension == null ? "" : layoutKey(extension);
+		var before = extension == null ? "" : layoutKey(extension), previousMain = extension == null ? null : extension.mainPath();
+		var studio = previousMain == null ? null : studios.get(previousMain);
+		var moved = previousMain != null && previousMain != m.mainPath();
+		if (moved && studio != null) {
+			syncTabs(studio, []);
+			studio.stop();
+			studios.remove(previousMain);
+			problems.set([for (p in problems.get()) if (p.file != previousMain) p]);
+		}
 		extension = m;
-		var studio = extensionStudio();
-		if (studio != null)
+		var entry = extensionManager.find(m.id);
+		if (entry != null) entry.connection.useManifest(m);
+		if (studio != null) {
 			studio.useManifest(m);
+			if (moved) { studios.set(m.mainPath(), studio); studio.reload(); }
+		}
 		commandList.splice(0, commandList.length);
 		for (a in commands())
 			commandList.push(a);
+		refreshExtensionBindings();
 		refreshShortcuts();
 		bindingsRevision.set(bindingsRevision.get() + 1);
-		if (layoutKey(m) == before)
+		if (layoutKey(m) == before && !moved)
 			return;
 		containers = makeContainers();
 		if (!Lambda.exists(containers, c -> c.id == sideView.get() && c.location == "sidebar")) {
@@ -1678,8 +1794,13 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function makeContainers():Array<Container> {
-		var m = extension;
-		return m == null ? [] : [for (v in m.views) {id: v.id == "main" ? "ext" : "ext-" + v.id, title: v.title, icon: ViewIcons.ofView(m, v), location: v.location, view: v}];
+		var out:Array<Container> = [];
+		for (e in extensionManager.enabled()) {
+			var m = e.connection.manifest;
+			for (v in m.views) out.push({id: extension != null && m.id == extension.id ? (v.id == "main" ? "ext" : "ext-" + v.id) : "ext-" + m.id + "-" + v.id,
+				title: v.title, icon: ViewIcons.ofView(m, v), location: v.location, view: v, extension: m});
+		}
+		return out;
 	}
 
 	/** The Studio of this project's extension: its main script, run with the project's config. */
@@ -1766,8 +1887,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorerItems(path:String):Element {
 		var folder = path != "" && sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path), top = path == props.display.cwd;
 		var items:Array<Element> = [];
-		var contributed = extension == null ? [] : extension.menuFor("explorer/context", path, folder ? "folder" : "file");
-		var icons = [for (c in contributed) extension == null ? null : ViewIcons.named(extension, c.icon)];
+		var contributed = contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
 			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (ThemeFile.isThemeFile(path)) openThemeStudio() else if (Manifest.isManifest(path)) openSettings("extension")));
 		if (folder) {
@@ -1777,8 +1897,10 @@ class Workbench extends Component<WorkbenchProps> {
 		if (contributed.length > 0) {
 			if (items.length > 0)
 				items.push(<context-menu-separator/>);
-			for (i => c in contributed)
-				items.push(menuItem(c.title, extensionKey(c.command), () -> runExtensionCommand(c.command, path), true, icons[i]));
+			for (entry in contributed) {
+				var c = entry.item, m = entry.extension;
+				items.push(menuItem(c.title, extensionKey(m.id, c.command), () -> runExtensionCommand(m.id, c.command, path), true, ViewIcons.named(m, c.icon)));
+			}
 		}
 		if (items.length > 0)
 			items.push(<context-menu-separator/>);
@@ -2073,7 +2195,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == THEME_TAB ? Icons.PALETTE_LINE : isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(extension, viewOfTab(file)) : fileIcon(file);
+		return file == THEME_TAB ? Icons.PALETTE_LINE : isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(containerOfTab(file).extension, viewOfTab(file)) : fileIcon(file);
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
@@ -2143,7 +2265,9 @@ class Workbench extends Component<WorkbenchProps> {
 			</tabs-content>;
 		}
 		if (isViewTab(file)) {
-			var studio = extensionStudio();
+			var c = containerOfTab(file);
+			if (c == null) return <tabs-content value={file} class="flex-1 min-h-0"><div/></tabs-content>;
+			var studio = studios.get(c.extension.mainPath());
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<studio-view studio={studio} framed={true} view={viewOfTab(file)} onMocks={() -> openMocks(studio)} onConsole={() -> showPanel("extension")}/>
 			</tabs-content>;
@@ -2157,6 +2281,7 @@ class Workbench extends Component<WorkbenchProps> {
 						settingsRevision.set(settingsRevision.get() + 1);
 					}} onBindingsChanged={bindingsChanged} bindingChanges={bindingsRevision}
 					extension={extension} onExtensionChanged={extensionChanged} onEditExtensionText={() -> openFile(extension.file)}
+					manager={extensionManager} extensionChanges={extensionRevision} onExtensionToggle={toggleExtension}
 					listening={() -> extension == null ? [] : extensionStudio().listening()}/>
 			</tabs-content>;
 		return pageOfFile(file);
@@ -2334,7 +2459,7 @@ class Workbench extends Component<WorkbenchProps> {
 				</tabs-list>
 				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><for {list in [problems.get()]}>${problemsPane(list)}</for></tabs-content>
 				<tabs-content value="console" class="flex-1 min-h-0 pt-1">
-					<code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>
+					${outputPane()}
 				</tabs-content>
 				<tabs-content value="terminal" class="flex-1 min-h-0 pt-1"><for {g in [terminalGeneration.get()]}>${terminalPane()}</for></tabs-content>
 				<tabs-content value="extension" class="flex-1 min-h-0 pt-1"><studio-panels studio={activeStudio} onOpen={goTo}/></tabs-content>
@@ -2345,6 +2470,17 @@ class Workbench extends Component<WorkbenchProps> {
 				<tooltip label="Close panel" side="top"><button id="rayde-panel-close" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> closePanel()}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
 			</div>
 		</div>;
+
+	function outputPane():Element {
+		var items:Array<Element> = [<select-item value="build">Build</select-item>];
+		for (e in extensionManager.extensions) items.push(<select-item value={"ext:" + e.installed.id}>${e.installed.name}</select-item>);
+		return <div class="flex flex-col flex-1 min-h-0 gap-2">
+			<select id="rayde-output-channel" value={outputChannel.get()} size={Sm} class="rayde-control-wide" onChange={value -> { outputChannel.set(value); refreshExtensionOutput(); }}>{items}</select>
+			<for {channel in [outputChannel.get()]}>
+				{channel == "build" ? <code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/> : <code-view id="rayde-extension-output" value={extensionOutput} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>}
+			</for>
+		</div>;
+	}
 
 	/** The screen of the terminal in front, split with its neighbours when it is, and the list of terminals beside it when there are several; or an offer of one while none is running. */
 	function terminalPane():Element {
