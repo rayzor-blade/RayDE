@@ -6,7 +6,7 @@
 # ASHUI=<dir> builds against that checkout instead, such as ../ashui.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 siblings=$(dirname "$here")
-ashui_rev=2e42d8954a3d3f193d98a0d80c8e8ec6d6672bd3
+ashui_rev=077956f5e6f8a96d1eb3409f10a86cf91c563688
 ashui=${ASHUI:-$here/.deps/ashui-$ashui_rev}
 hlwgpu=${HLWGPU:-$siblings/hlwgpu}
 hlwindow=${HLWINDOW:-$siblings/hlwindow}

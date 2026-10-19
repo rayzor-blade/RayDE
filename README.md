@@ -21,7 +21,7 @@ RAYDE_PANEL=terminal scripts/rayde.sh path/to/build.hxml   # opens with the bott
 RAYDE_SETTINGS=keys scripts/rayde.sh path/to/build.hxml     # opens the Settings page on that section (build, libraries, terminal, appearance, keys or extensions)
 ```
 
-Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P opens the command center, which goes to a file as you type, to a command after `>` (also Cmd+Shift+P) and to a line after `:` (also Cmd+G); clicking the project pill opens it too. Cmd+S saves every edited file, Cmd+W closes the tab, F12 goes to the definition of the name under the cursor, F5 runs and Shift+F5 stops. Cmd+M minimizes the window and Ctrl+Cmd+F (Alt+Shift+Enter elsewhere) toggles full screen. In an extension, F9 puts a breakpoint on the line, and F10, F11 and Shift+F11 step over, into and out of the line it stopped on. A problem in the Problems list opens its file at its line.
+Keys, as in VS Code (Ctrl on Linux and Windows): Cmd+P opens the command center, which goes to a file as you type, to a command after `>` (also Cmd+Shift+P) and to a line after `:` (also Cmd+G); clicking the project pill opens it too. Cmd+S saves every edited file, Cmd+W closes the tab, F12 goes to the definition of the name under the cursor, F5 runs and Shift+F5 stops. Cmd+M minimizes the window and Ctrl+Cmd+F (Alt+Shift+Enter elsewhere) toggles full screen. Resting the pointer on a name in a Haxe file shows its type and documentation, and on an underlined problem its message. In an extension, F9 (or a click in the gutter) puts a breakpoint on the line, and F10, F11 and Shift+F11 step over, into and out of the line it stopped on. A problem in the Problems list opens its file at its line.
 
 ### The window
 

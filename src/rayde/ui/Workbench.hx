@@ -1065,6 +1065,28 @@ class Workbench extends Component<WorkbenchProps> {
 		else if (extension != null && isExtension(file))
 			extensionStudio().edited();
 		emit("file.changed", {path: file}, .3);
+		followBreakpoints(file);
+	}
+
+	/** Files whose breakpoints are about to be read back from the editor. */
+	final following = new Map<String, Bool>();
+
+	/** Whether the workbench has been taken down, so a timer that was waiting changes nothing. */
+	var gone = false;
+
+	/** Breakpoints move with the text; once the editor has moved them, the debugger learns where they are now. */
+	function followBreakpoints(file:String):Void {
+		if (following.exists(file) || debuggerOf(file) == null)
+			return;
+		following.set(file, true);
+		ashui.animation.AnimationScheduler.main.after(.03, () -> {
+			following.remove(file);
+			if (gone)
+				return;
+			var editor = editorOf(file), d = debuggerOf(file);
+			if (editor != null && d != null)
+				d.setLines(file, [for (l in editor.markerLinesOf("breakpoints")) l + 1]);
+		});
 	}
 
 	/** The Studio running the extension whose main file is `file`, if it is open. */
@@ -1322,8 +1344,14 @@ class Workbench extends Component<WorkbenchProps> {
 			0;
 		}, _ -> if (bottom.get() == "terminal" && panelShown.get())
 			ensureTerminal(), (_, _) -> false);
-		Owner.onCleanup(() -> for (s in sessions)
-			s.terminal.close());
+		Owner.onCleanup(() -> {
+			gone = true;
+			for (s in sessions)
+				s.terminal.close();
+			// An extension's host is a process of its own, which goes with the workbench.
+			for (studio in studios)
+				studio.dispose();
+		});
 		new ashui.reactive.Watch(() -> {
 			active.get();
 			settingsCategory.get();
@@ -2041,10 +2069,97 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function codeEditor(file:String):Element {
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
-			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
 			class="flex-1 min-h-0"/>;
 		holdCaretWhileScrolling(editorRef(file).get());
+		annotate(file, editorRef(file).get());
 		return editor;
+	}
+
+	/** The text offset of a position, its line and character counted from zero; the end of the line, or of the text, where there is none. */
+	static function offsetOf(text:String, line:Int, character:Int):Int {
+		var at = 0;
+		for (_ in 0...line) {
+			var next = text.indexOf("\n", at);
+			if (next < 0)
+				return text.length;
+			at = next + 1;
+		}
+		var end = text.indexOf("\n", at);
+		return Std.int(Math.min(at + character, end < 0 ? text.length : end));
+	}
+
+	/** The debugger of the extension `file` is part of, if it is a RayScript file of one. */
+	function debuggerOf(file:String):Null<Debugger> {
+		if (!isExtension(file))
+			return null;
+		var studio = extension != null ? extensionStudio() : studios.get(file);
+		return studio == null ? null : studio.debug;
+	}
+
+	/**
+	 * What the editor shows beside and in the text: the breakpoints in the gutter, which a click puts on a line or takes
+	 * off and which move with the text; the line an extension is stopped on; and the compiler's problems underlined.
+	 */
+	function annotate(file:String, editor:Null<CodeEditor>):Void {
+		if (editor == null)
+			return;
+		var d = debuggerOf(file);
+		if (d != null) {
+			editor.onGutterClick = (line, e) -> if (e.button == null || e.button.match(Left)) d.toggle(file, line + 1);
+			new ashui.reactive.Watch(() -> d.breakpoints.get(), list -> editor.markers("breakpoints", [for (b in list) if (b.file == file) {line: b.line - 1, className: "ui-code-marker-breakpoint", title: "Breakpoint"}], true));
+			new ashui.reactive.Watch(() -> {
+				d.stopped.get();
+				d.frame.get();
+				0;
+			}, _ -> markStop(file, editor, d), (_, _) -> false);
+		}
+		new ashui.reactive.Watch(() -> problems.get(), list -> {
+			var text = buffer(file).get();
+			editor.decorate("problems", [for (p in list) if (p.file == file) squiggle(text, p)]);
+		});
+	}
+
+	/**
+	 * What the pointer resting on a character of a Haxe file shows: the type the compiler gives it, and its documentation.
+	 * Where a problem is underlined the problem's message shows, which the editor does when this gives nothing.
+	 */
+	function hintAt(file:String, offset:Int):Null<ashui.components.code.CodeHints.CodeHint> {
+		if (!StringTools.endsWith(file, ".hx"))
+			return null;
+		var editor = editorOf(file);
+		if (editor != null && editor.decorationsAt(offset).length > 0)
+			return null;
+		var text = buffer(file).get();
+		var found = try props.display.hover(file, offset, text) catch (_:Dynamic) null;
+		if (found == null || found.range == null)
+			return null;
+		return {
+			from: offsetOf(text, found.range.start.line, found.range.start.character),
+			to: offsetOf(text, found.range.end.line, found.range.end.character),
+			signature: found.type,
+			language: "haxe",
+			docs: found.documentation
+		};
+	}
+
+	/** Marks the line of the frame chosen in the stack when it is in `file`, and nothing otherwise. */
+	function markStop(file:String, editor:CodeEditor, d:Debugger):Void {
+		var stop = d.stopped.get(), frame = stop == null ? null : stop.frames[d.frame.get()];
+		if (frame == null || frame.file != file) {
+			editor.decorate("stopped", []);
+			return;
+		}
+		var at = offsetOf(buffer(file).get(), frame.line - 1, 0);
+		editor.decorate("stopped", [{from: at, to: at, className: "ui-code-line-current", wholeLine: true}], true);
+	}
+
+	function squiggle(text:String, p:Diagnostic):ashui.components.code.CodeAnnotations.CodeDecoration {
+		var from = offsetOf(text, p.range.start.line, p.range.start.character), to = offsetOf(text, p.range.end.line, p.range.end.character);
+		if (to <= from)
+			to = Std.int(Math.min(text.length, from + 1));
+		var kind = p.severity == 1 ? "ui-code-squiggle-error" : p.severity == 2 ? "ui-code-squiggle-warning" : "ui-code-squiggle-info";
+		return {from: from, to: to, className: kind, title: p.message};
 	}
 
 	/** How long the caret stays steady after the last scroll step before it blinks again, in seconds. */

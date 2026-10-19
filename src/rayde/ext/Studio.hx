@@ -109,6 +109,9 @@ class Studio {
 	var lastActive = 0.;
 	var scheduled = false;
 
+	/** Whether the Studio has been taken down, and so starts nothing. */
+	var disposed = false;
+
 	/** Set by a reload: the view stays until the new version has started, so a typing mistake does not blank it. */
 	var replacing = false;
 
@@ -178,6 +181,9 @@ class Studio {
 
 	/** Ends the extension and takes its view down, for good. */
 	public function dispose():Void {
+		// A reload that was waiting for typing to stop must not start the extension again.
+		disposed = true;
+		changedAt = -1;
 		stop();
 		for (s in surfaces.copy())
 			release(s);
@@ -200,6 +206,8 @@ class Studio {
 	/** Runs the extension afresh: a new process, the Preview emptied, the mocked modules registered, the source run. */
 	public function reload():Void {
 		changedAt = -1;
+		if (disposed)
+			return;
 		if (binary == null)
 			return;
 		stop();

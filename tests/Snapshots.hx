@@ -128,6 +128,23 @@ class Snapshots {
 				settle();
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
+				// The compiler's problems are underlined in the text where they are.
+				var wavy = ashui.css.Css.query(bench.tree, bench.node.id, ".ui-code-squiggle-error").length;
+				if (wavy < 2)
+					throw 'each problem should be underlined in the editor, not $wavy';
+				// Resting the pointer on a name shows what the compiler knows of it: its type, and its documentation.
+				var text = buffer.get(), at = text.indexOf("greet(greeting") + 2;
+				var hint = @:privateAccess bench.hintAt(file, at);
+				if (hint == null || hint.signature.indexOf("times:Int") < 0 || hint.docs == null || hint.docs.indexOf("Says hello") < 0)
+					throw 'the hint on greet should have its type and documentation: ${hint == null ? "none" : hint.signature + " / " + hint.docs}';
+				if (@:privateAccess bench.hintAt(file, text.indexOf('"hello"') + 2) != null)
+					throw "where a problem is underlined the problem is what shows, so there is no hint of the compiler's";
+				var spot = @:privateAccess bench.editorOf(file).rectAt(at);
+				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 2, spot.y + spot.height / 2);
+				settle(60);
+				shot("hover");
+				ashui.input.Pointer.move(bench.tree, 5, 5);
+				settle(30);
 				bench.showPanel("problems");
 				shot("problems");
 				// Put the edit back; from the call on line 8, go to where it is defined.
@@ -810,6 +827,26 @@ class Snapshots {
 				@:privateAccess bench.toggleBreakpoint();
 				if (d.linesOf(rays).join(",") != "7")
 					throw 'the breakpoint should be on line 7: ${d.linesOf(rays)}';
+				settle(5);
+				var editor = @:privateAccess bench.editorOf(rays);
+				if (editor.markerLinesOf("breakpoints").join(",") != "6" || !has(".ui-code-marker-breakpoint"))
+					throw "the breakpoint should be a dot in the gutter, on the line";
+				shot("debug-gutter");
+				// A press in the gutter puts one on a line and takes it off again.
+				var gutter = ashui.css.Css.query(tree, bench.node.id, ".ui-code-gutter")[0], viewport = ashui.css.Css.query(tree, bench.node.id, ".ui-code-viewport")[0];
+				var g = tree.getScrolledBounds(new ashui.layout.Node(gutter)), v = tree.getScrolledBounds(new ashui.layout.Node(viewport));
+				var pressGutter = (line:Int) -> {
+					ashui.input.Pointer.move(tree, g.x + 9, v.y + 8 + line * editor.metrics.lineHeight + editor.metrics.lineHeight / 2);
+					ashui.input.Pointer.press(tree);
+					ashui.input.Pointer.release(tree);
+					settle(5);
+				};
+				pressGutter(12);
+				if (d.linesOf(rays).join(",") != "7,13")
+					throw 'a press in the gutter on line 13 should add a breakpoint: ${d.linesOf(rays)}';
+				pressGutter(12);
+				if (d.linesOf(rays).join(",") != "7")
+					throw 'a second press should take it off: ${d.linesOf(rays)}';
 				if (sys.io.File.getContent(root + "/.rayde/settings.json").indexOf('"ext/main.rays"') < 0)
 					throw "the breakpoint should be kept in the project's settings";
 				// An action runs the handler, which calls the function with the breakpoint, and the extension stops there.
@@ -818,10 +855,14 @@ class Snapshots {
 				var stop = d.stopped.get();
 				if (stop.frames.length != 2 || stop.frames[0].name != "record" || stop.frames[0].file != rays || stop.reason != "breakpoint")
 					throw 'the stack should be record and its caller: ${stop.frames}';
+				settle(20);
 				until(() -> d.locals.get().length == 3, "the locals of the frame");
 				var locals = [for (v in d.locals.get()) v.name + "=" + v.value].join(",");
 				if (locals != "amount=5,before=0,entry={amount: 5, before: 0}")
 					throw 'the locals of record: $locals';
+				settle(5);
+				if (!has(".ui-code-line-current"))
+					throw "the line the extension is stopped on should be marked";
 				// The editor goes to the line and the panel shows the stop.
 				if (bench.active.get() != rays || bench.caretLine(rays) != 6 || bench.bottom.get() != "extension" || studio.panel.get() != "debug")
 					throw "a stop should show its line in the editor and open the Debug panel";
@@ -856,6 +897,9 @@ class Snapshots {
 				// Going on: the extension runs, the view shows the change, and nothing is stopped.
 				click("#rayde-debug-continue");
 				until(() -> d.stopped.get() == null && says("5"), "the extension to go on and show the total");
+				settle(5);
+				if (has(".ui-code-line-current"))
+					throw "the mark on the line goes when the extension goes on";
 				// A breakpoint comes off with the same command and is not kept.
 				bench.goTo(rays, 6, 0);
 				settle(5);
@@ -866,6 +910,21 @@ class Snapshots {
 				settle(30);
 				if (d.stopped.get() != null)
 					throw "without a breakpoint the action does not stop";
+				// A breakpoint moves with the text: a line put in above it moves it down, in the editor and for the host.
+				bench.goTo(rays, 6, 0);
+				settle(5);
+				@:privateAccess bench.toggleBreakpoint();
+				settle(5);
+				var typing = @:privateAccess bench.editorOf(rays);
+				typing.select(0, 0);
+				typing.editing.replace("// A line above.\n");
+				settle(5);
+				if (d.linesOf(rays).join(",") != "8")
+					throw 'the breakpoint should have moved down to line 8 with the text: ${d.linesOf(rays)}';
+				typing.undo();
+				settle(5);
+				if (d.linesOf(rays).join(",") != "7")
+					throw 'and back up to line 7 when the line goes: ${d.linesOf(rays)}';
 			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}

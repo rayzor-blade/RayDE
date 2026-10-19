@@ -102,6 +102,21 @@ class Debugger {
 		return !had;
 	}
 
+	/** Puts the breakpoints of a file on `lines`, as the editor moved them with the text; the host is told. */
+	public function setLines(file:String, lines:Array<Int>):Void {
+		var sorted = lines.copy();
+		sorted.sort((a, b) -> a - b);
+		if (linesOf(file).join(",") == sorted.join(","))
+			return;
+		var rest = [for (b in breakpoints.get()) if (b.file != file) b];
+		for (l in sorted)
+			rest.push({file: file, line: l});
+		rest.sort((a, b) -> a.file == b.file ? a.line - b.line : Reflect.compare(a.file, b.file));
+		breakpoints.set(rest);
+		tell(file);
+		changed();
+	}
+
 	public function remove(file:String, line:Int):Void
 		if (Lambda.exists(breakpoints.get(), b -> b.file == file && b.line == line))
 			toggle(file, line);

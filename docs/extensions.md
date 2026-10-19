@@ -183,9 +183,9 @@ Opening a `.rayext` runs the extension. Its views are drawn in the Preview, each
 
 ## Debugging
 
-An extension stops where you put a breakpoint, and you can look at what it holds. Put the cursor on a line of a `.rays` file and choose **Toggle Breakpoint** (F9); the breakpoint is kept with the project (`breakpoints` in `.rayde/settings.json`) and is listed in the Debug part of the panel, where a row opens its line and its button takes the breakpoint off. A line with no code moves the breakpoint to the next line that has some.
+An extension stops where you put a breakpoint, and you can look at what it holds. Click in the gutter beside a line of a `.rays` file, or put the cursor on it and choose **Toggle Breakpoint** (F9): a red dot marks the line. Breakpoints are kept with the project (`breakpoints` in `.rayde/settings.json`), move with the text as you edit, and are listed in the Debug part of the panel, where a row opens its line and its button takes the breakpoint off. A line with no code moves the breakpoint to the next line that has some.
 
-When the extension reaches the line, it stops before the line runs, the editor goes to it, and the Extension panel shows **Debug**:
+When the extension reaches the line, it stops before the line runs, the editor goes to it and marks it, and the Extension panel shows **Debug**:
 
 - the toolbar: **Continue** (F5, which is Run while the extension is stopped), **Pause** (F6, for a script that is running), **Step Over** (F10), **Step Into** (F11) and **Step Out** (Shift+F11);
 - the **call stack**, innermost first; choosing a frame opens its line and shows its variables;
@@ -219,6 +219,5 @@ The host, `rayscript-host`, is found beside RayDE (`../rayscript/target/release`
 - Only `workspace.read` and `workspace.write` are backed by a service. The other capabilities in the form (`process.spawn`, `net.fetch`, `terminal`, `clipboard`) are recorded in the config and not yet acted on.
 - The Preview lays text out box by box, so inline emphasis inside a paragraph needs the per-word markup `words()` produces; ashui's inline flow is not attached to extension markup.
 - A menu icon sits inside the item's label, at its right end, until ashui's menu items take an icon of their own.
-- The editor draws no marker in its gutter for a breakpoint and does not highlight the line an extension is stopped on, because the code editor has no such extension points yet; the line is shown by moving the cursor to it, and breakpoints by the list in the Debug panel.
 - A call that a built-in makes back into the script (`array.map(f)`, a computed value, an effect) cannot be stopped in, and the extension does not stop on an error or on a `debugger` statement.
 - Evaluation takes names, members and indexes only, and the variables of an enclosing function that a closure captures are not named.
