@@ -219,7 +219,7 @@
 #rayde .rayde-element { min-height: 20px; }
 
 /* The Explorer's context menu wraps the tree and takes its place in the column. */
-#rayde #rayde-explorer-menu, #rayde #rayde-explorer-trigger { display: flex; flex-direction: column; flex: 1 1 0%; min-height: 0; min-width: 0; }
+#rayde #rayde-explorer-menu, #rayde #rayde-explorer-trigger { display: flex; flex-direction: column; flex: 1 1 0%; align-self: stretch; min-height: 0; min-width: 0; }
 
 /* The window's controls, in the style of each platform. They are buttons with the look taken off. */
 #rayde .rayde-light, #rayde .rayde-caption, #rayde .rayde-round, #rayde .rayde-flat {

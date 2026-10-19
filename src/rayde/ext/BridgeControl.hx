@@ -54,8 +54,6 @@ class BridgeControl {
 	var textRendering = "paths";
 	var scroller:Null<ashui.input.Scroll>;
 	var restoreScroll:Dynamic;
-	var canvasWidth = -1.;
-	var canvasHeight = -1.;
 	var tooltip:Null<String>;
 	var buttonMounted = false;
 
@@ -120,8 +118,7 @@ class BridgeControl {
 			var spacer = new Div({flexShrink:0});
 			tree.addChild(node.id, spacer.node.id);
 			kit.node.set(Prop.Position, Absolute);
-			kit.node.set(Prop.Width, (1:Single));
-			kit.node.set(Prop.Height, (1:Single));
+			fill(kit);
 			new Watch(() -> scene.get().bounds, b -> {
 				spacer.node.set(Prop.Width, (Math.max(1, b.x + b.width):Single));
 				spacer.node.set(Prop.Height, (Math.max(1, b.y + b.height):Single));
@@ -168,8 +165,6 @@ class BridgeControl {
 			var bounds = tree.getBounds(node);
 			if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
 			if (scrolling) {
-				if (bounds.width != canvasWidth) { canvasWidth = bounds.width; kit.node.set(Prop.Width, (canvasWidth:Single)); }
-				if (bounds.height != canvasHeight) { canvasHeight = bounds.height; kit.node.set(Prop.Height, (canvasHeight:Single)); }
 				var extent = scene.get().bounds;
 				var maxX = Math.max(0, extent.x + extent.width - bounds.width), maxY = Math.max(0, extent.y + extent.height - bounds.height);
 				if (scroller.x.get() > maxX || scroller.y.get() > maxY) scroller.scrollTo(Math.min(scroller.x.get(), maxX), Math.min(scroller.y.get(), maxY));

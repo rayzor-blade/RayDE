@@ -360,6 +360,43 @@ class Snapshots {
 				// Every tab closed: the welcome page, now with recent files.
 				bench.closeAll();
 				shot("welcome-recent");
+				// The tree fills the panel, and its scroll viewport stays inside it after a resize.
+				bench.closeAll();
+				for (i in 0...40)
+					sys.io.File.saveContent(folder + '/NumberGaugeSizing${StringTools.lpad(Std.string(i), "0", 2)}.hx', "");
+				bench.refreshExplorer();
+				settle();
+				function explorerViewport() {
+					var panel = bench.boundsOf("#rayde-files"), viewport = bench.boundsOf("#rayde-explorer-scroll");
+					if (viewport.x < panel.x || Math.abs(viewport.x + viewport.width - panel.x - panel.width) > 1)
+						throw "the Explorer scroll viewport should fill its panel without extending beyond it";
+					return viewport;
+				}
+				var wide = explorerViewport();
+				var row = rowOf("src/NumberGaugeSizing00.hx");
+				if (Math.abs(row.x + row.width - (wide.x + wide.width - 8)) > 1)
+					throw "Explorer rows should fill the available width";
+				hover("#rayde-explorer-scroll");
+				shot("explorer-wide");
+				var scrollNode = Css.query(tree, bench.node.id, "#rayde-explorer-scroll")[0];
+				var scroller = ashui.input.Scroll.at(scrollNode, tree);
+				scroller.scrollTo(0, 100);
+				settle();
+				var handle = bench.boundsOf("#rayde-columns > .ui-resizable-handle");
+				ashui.input.Pointer.move(tree, handle.x + handle.width / 2, handle.y + handle.height / 2);
+				ashui.input.Pointer.press(tree);
+				ashui.input.Pointer.move(tree, handle.x + handle.width / 2 - 100, handle.y + handle.height / 2);
+				ashui.input.Pointer.release(tree);
+				settle();
+				var narrow = explorerViewport();
+				if (narrow.width > wide.width - 80)
+					throw "dragging the divider should narrow the Explorer";
+				if (Css.query(tree, bench.node.id, "#rayde-explorer-scroll")[0] != scrollNode || scroller.y.get() != 100)
+					throw "resizing should preserve the Explorer and its scroll position";
+				if (scroller.limits().y <= 0 || !scroller.scrollTo(0, 300))
+					throw "the narrowed Explorer should still scroll";
+				hover("#rayde-explorer-scroll");
+				shot("explorer-narrow-scrolled");
 			});
 			// A build file with a target, libraries, defines and an argument the form does not manage, as the form shows it.
 			scenario(dark, "full", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
@@ -944,6 +981,28 @@ class Snapshots {
 				shot("scm");
 				var sideCanvas:ashui.canvaskit.CanvasKit = @:privateAccess control("git-scm-canvas").kit;
 				var sideControl = control("git-scm-canvas"), sideBounds = tree.getScrolledBounds(sideControl.node);
+				// Every resize frame lays out the canvas at its viewport's current size.
+				var sideDivider = bench.boundsOf("#rayde-columns > .ui-resizable-handle");
+				var dividerX = sideDivider.x + sideDivider.width / 2, dividerY = sideDivider.y + sideDivider.height / 2;
+				ashui.input.Pointer.move(tree, dividerX, dividerY);
+				ashui.input.Pointer.press(tree);
+				for (dx in [-16, -32, -48, -32, -16, 0]) {
+					ashui.input.Pointer.move(tree, dividerX + dx, dividerY);
+					settle(1);
+					if (control("git-scm-canvas") != sideControl || sideControl.node == null)
+						throw "resizing the sidebar remounted the Git view";
+					var viewportBounds = tree.getBounds(sideControl.node), canvasBounds = tree.getBounds(sideCanvas.node);
+					if (Math.abs(canvasBounds.width - viewportBounds.width) > 1 || Math.abs(canvasBounds.height - viewportBounds.height) > 1)
+						throw "the Git canvas lags behind its viewport during resize";
+					if (dx == -48)
+						Snapshot.capture('rayde-${dark ? "dark" : "light"}-git-scm-resize-frame', tree, bench.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
+				}
+				ashui.input.Pointer.release(tree);
+				settle();
+				if (Sys.getEnv("RAYDE_RESIZE_PROBE") == "1") {
+					Sys.println("Git sidebar resize: mounted view and viewport size preserved through every drag frame");
+					return;
+				}
 				var pixels = Snapshot.renderer().renderToRgba8(bench, WIDTH, HEIGHT);
 				var highlight = ThemeState.get().color(Selection);
 				var px = Std.int(sideBounds.x + 200), py = Std.int(sideBounds.y + 21), base = Std.int(sideBounds.x + 1);
@@ -1127,7 +1186,10 @@ class Snapshots {
 				until(() -> (@:privateAccess bench.extensionOutputView.get()) != null && (@:privateAccess bench.extensionOutputView.get()).scroll.y.get() > 0, "notification Output to reveal its latest message");
 				var log = @:privateAccess bench.extensionOutputView.get();
 				var failure = Lambda.find(log.document.lines, line -> line.text.indexOf("No remote configured") >= 0);
-				if (failure == null || failure.tokens[0].kind != "output-error") throw "Git error lost its severity in Output";
+				if (failure == null || failure.tokens[0].kind != "output-error") throw "Git error lost its severity in Output: " + haxe.Json.stringify({
+					lines: [for (line in log.document.lines) if (line.text.indexOf("No remote configured") >= 0) {text:line.text, tokens:line.tokens}],
+					entries: [for (i in 0...git.output.length) if (git.output[i].indexOf("No remote configured") >= 0) {text:git.output[i], kind:git.outputKinds[i]}]
+				});
 				if (Css.query(tree, log.node.id, '[data-token="output-error"]').length == 0) throw "error text was not rendered as an error token";
 				shot("error-output");
 				log.select(failure.start, failure.start + failure.text.length);

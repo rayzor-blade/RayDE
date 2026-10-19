@@ -1760,11 +1760,17 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** The side panel: the activity bar and the Explorer beside it, in one card. */
-	function sideBar():Element
+	function sideBar():Element {
+		// Primitive keys keep the mounted view while a width change leaves it visible.
 		return <div id="rayde-side" class="rayde-card panel flex flex-1 min-h-0">
 			${activityBar()}
-			<for {k in [{shown: explorerShown.get(), build: buildRevision.get(), view: sideView.get()}]}>${sideBody(k.shown, k.view)}</for>
+			<for {shown in [explorerShown.get()]}>
+				<for {build in [buildRevision.get()]}>
+					<for {view in [sideView.get()]}>${sideBody(shown, view)}</for>
+				</for>
+			</for>
 		</div>;
+	}
 
 	/** What fills the side panel beside the activity bar: the Explorer, or the view of an extension that took its place. */
 	function sideBody(shown:Bool, view:String):Element {
@@ -1795,7 +1801,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
 		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={ACTIVITY}>
-			<for {k in [{shown: explorerShown.get(), view: sideView.get()}]}>${containerItems(k.shown, k.view)}</for>
+			<for {shown in [explorerShown.get()]}>
+				<for {view in [sideView.get()]}>${containerItems(shown, view)}</for>
+			</for>
 			<div class="flex-1"/>
 			<for {on in [active.get() == SETTINGS]}>${settingsItem(on)}</for>
 		</div>;
@@ -1923,7 +1931,7 @@ class Workbench extends Component<WorkbenchProps> {
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<context-menu ref={explorerMenu} id="rayde-explorer-menu">
 				<context-menu-trigger id="rayde-explorer-trigger">
-					<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
+					<div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
 						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (ThemeFile.isThemeFile(v)) openThemeStudio() else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
 					</div>
 				</context-menu-trigger>
