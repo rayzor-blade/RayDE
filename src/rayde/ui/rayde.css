@@ -258,9 +258,9 @@
 #rayde .rayde-font-serif { font-family: var(--font-serif); }
 #rayde .rayde-font-mono { font-family: var(--font-mono); }
 #rayde .rayde-token-swatch { border: 1px solid var(--border); border-radius: 6px; corner-shape: squircle; }
-#rayde .rayde-chip { border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-secondary); cursor: pointer; }
-#rayde .rayde-chip:hover { border-color: var(--border-hover); color: var(--text-primary); }
-#rayde .rayde-chip[data-on] { border-color: var(--primary); color: var(--text-primary); background: var(--accent-subtle); }
+#rayde .rayde-role-chip { border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-secondary); cursor: pointer; }
+#rayde .rayde-role-chip:hover { border-color: var(--border-hover); color: var(--text-primary); }
+#rayde .rayde-role-chip[data-on] { border-color: var(--primary); color: var(--text-primary); background: var(--accent-subtle); }
 #rayde .rayde-radius-sample { background: var(--accent-subtle); border: 1px solid var(--border); corner-shape: squircle; }
 #rayde .rayde-number { width: 84px; }
 #rayde .rayde-scheme-toggle > .ui-toggle { width: 64px; }

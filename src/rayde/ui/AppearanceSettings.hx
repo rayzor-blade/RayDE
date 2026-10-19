@@ -124,7 +124,7 @@ class AppearanceSettings extends Component<AppearanceSettingsProps> {
 		out.push(<div class="flex items-center gap-2">
 			<input height={32} id="rayde-theme-path" value={themePath} placeholder="Path to a .raytheme file or a theme folder" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) installTheme()}/>
 			<button id="rayde-theme-install" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> installTheme()}>Install</button>
-			<if {active != null && active.scope == "User"}><button id="rayde-theme-remove" variant={Destructive} size={Sm} onClick={_ -> removeTheme(active.file.id)}>Remove</button></if>
+			<if {active != null && active.scope == "User"}><button id="rayde-theme-remove" variant={Destructive} size={Sm} class="rayde-add" onClick={_ -> removeTheme(active.file.id)}>Remove</button></if>
 		</div>);
 		for (n in notes)
 			out.push(<text class="text-xs text-text-secondary">${n}</text>);

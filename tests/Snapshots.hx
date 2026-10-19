@@ -979,6 +979,7 @@ class Snapshots {
 				if (!has("#rayde-custom-details"))
 					throw "the theme in use has its details under the list";
 				settle(10);
+				sameHeight(bench, ["#rayde-theme-path", "#rayde-theme-install", "#rayde-theme-remove"]);
 				shot("themes-midnight");
 				bench.openFile(file);
 				settle(10);
@@ -1038,6 +1039,9 @@ class Snapshots {
 					throw "the fixture theme should read cleanly: " + studio.problems.get().map(p -> p.message).join("; ");
 				if (rayde.ui.Theming.current.get() != "studio" || primary() != (dark ? 0x4cc2a8 : 0x12806b))
 					throw 'the theme in the file should be on the window: ${rayde.ui.Theming.current.get()} ${StringTools.hex(primary(), 6)}';
+				sameHeight(bench, ["#rayde-theme-light", "#rayde-theme-text", "#rayde-theme-install"]);
+				sameHeight(bench, ["#rayde-font-path", "#rayde-font-add"]);
+				sameHeight(bench, ["#rayde-theme-css-new", "#rayde-theme-css-add"]);
 				shot("page");
 				// A colour typed into its input is written where the file has it, and the window changes with it.
 				click("#rayde-token-input-primary");
@@ -1147,6 +1151,21 @@ class Snapshots {
 				shot("gallery-end");
 			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
+	}
+
+	/** Throws unless the first element each selector finds is as tall as the first selector's: controls on one row share a height. */
+	static function sameHeight(bench:Workbench, selectors:Array<String>):Void {
+		var heights = [
+			for (selector in selectors) {
+				var found = ashui.css.Css.query(bench.tree, bench.node.id, selector);
+				if (found.length == 0)
+					throw 'nothing matches $selector';
+				bench.tree.getBounds(new ashui.layout.Node(found[0])).height;
+			}
+		];
+		for (i in 1...heights.length)
+			if (Math.abs(heights[i] - heights[0]) > .5)
+				throw 'controls on a row should be as tall as each other: ' + [for (i in 0...selectors.length) selectors[i] + " " + heights[i]].join(", ");
 	}
 
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */

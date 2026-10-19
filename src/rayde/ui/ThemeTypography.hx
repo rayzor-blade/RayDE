@@ -129,7 +129,7 @@ class ThemeTypography extends Component<ThemeTypographyProps> {
 	}
 
 	function chip(role:String, family:String, on:Bool):Element {
-		var c = <div id={"rayde-font-use-" + role + "-" + family.replace(" ", "-")} class="rayde-chip flex items-center px-2 shrink-0" height={22} onClick={_ -> setRole(role, family)}>
+		var c = <div id={"rayde-font-use-" + role + "-" + family.replace(" ", "-")} class="rayde-role-chip flex items-center px-2 shrink-0" height={22} onClick={_ -> setRole(role, family)}>
 			<text class="text-xs">${role}</text>
 		</div>;
 		if (on)
