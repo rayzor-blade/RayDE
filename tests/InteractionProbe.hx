@@ -17,6 +17,12 @@ class InteractionProbe {
 		if (Sys.getEnv("RAYDE_PROBE_POLL") == "1") @:privateAccess bench.owner.run(() -> rayde.ui.GpuProgress.attach(renderer.device, tree, () -> frames));
 		function emit(label:String, stages:Array<Dynamic>):Void {
 			var count = 0, gpu = 0, cpu = 0;
+			var watches = 0, editors = 0, disposedHosts = 0;
+			@:privateAccess for (watch in ashui.reactive.Watch.bySlot) if (watch != null) watches++;
+			@:privateAccess for (owner => component in ashui.ui.Component.hosts) {
+				if (Type.getClassName(Type.getClass(component)) == "ashui.components.CodeEditor") editors++;
+				if (owner.disposed) disposedHosts++;
+			}
 			var minimaps = Css.query(tree, bench.node.id, ".ui-code-minimap"), maps:Array<Dynamic> = [];
 			@:privateAccess for (canvas in ashui.ui.Canvas.bySlot) {
 				count++; gpu += canvas.painter.rows * 2048 * 16;
@@ -30,6 +36,7 @@ class InteractionProbe {
 			for (id in paths) pathBytes += ashui.css.Identity.of(tree, id).attribute("data-path").length * 2;
 			Sys.println("interaction-probe:" + haxe.Json.stringify({phase:label, scheme:Std.string(ashui.theme.ThemeState.get().scheme()), stages:stages, haxe:hl.Gc.stats(),
 				nodes:tree.order().length, canvases:count, canvasGpuBytes:gpu, canvasCpuBytes:cpu, primitives:renderer.primitives,
+				watches:watches, editors:editors, disposedComponentHosts:disposedHosts,
 				minimaps:maps, explorer:{entries:paths.length, pathUtf16Bytes:pathBytes, nodes:Css.query(tree, bench.node.id, "#rayde-files *").length}}));
 			Sys.stdout().flush();
 			if (Sys.getEnv("RAYDE_PROBE_ACK") == "1") Sys.stdin().readLine();
@@ -83,6 +90,16 @@ class InteractionProbe {
 			for (path in files.concat([history])) step('switch-$cycle-' + haxe.io.Path.withoutDirectory(path), () -> bench.active.set(path));
 			step('explorer-$cycle', () -> bench.sideView.set("explorer"));
 			step('sidebar-$cycle', () -> bench.sideView.set(scm.id));
+		}
+		step("close-history", () -> bench.closeFile(history));
+		ready(() -> studio.tabViews.length == 0, "interaction history disposal");
+		step("close-editors", () -> {
+			for (path in files) bench.closeFile(path);
+			bench.sideView.set("explorer");
+		});
+		for (cycle in 0...3) {
+			step('reopen-$cycle', () -> bench.openFile(file));
+			step('reclose-$cycle', () -> bench.closeFile(file));
 		}
 		step("idle", () -> Offscreen.advance(3));
 		hl.Gc.major(); emit("collected", []);
