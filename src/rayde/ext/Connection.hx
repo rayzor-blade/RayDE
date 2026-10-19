@@ -53,11 +53,13 @@ class Connection {
 	}
 
 	public function useManifest(m:Manifest):Void {
+		var grantsChanged = manifest != null && haxe.Json.stringify(manifest.natives) != haxe.Json.stringify(m.natives);
 		manifest = m;
 		file = m.mainPath();
-		if (running() && m.natives.length > 0 && (m.problems.length > 0 || !nativeAllowed(m))) {
+		var denied = m.problems.length > 0 || !nativeAllowed(m);
+		if (running() && (grantsChanged || m.natives.length > 0 && denied)) {
 			stop();
-			setState("blocked");
+			setState(denied ? "blocked" : "stopped");
 		}
 	}
 

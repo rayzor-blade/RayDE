@@ -278,6 +278,13 @@ class ExtensionManagerChecks {
 				natives: {example: {path: "natives/library", sha256: hash}, second: {path: "natives/second", sha256: hash}}}));
 			entry.connection.useManifest(Manifest.read(manifest.file));
 			entry.connection.start();
+			var restored = sys.io.File.getContent(manifest.file);
+			write(manifest.file, haxe.Json.stringify({id: manifest.id, main: "main.rays"}));
+			entry.connection.useManifest(Manifest.read(manifest.file));
+			check(!entry.connection.running() && entry.connection.state == "stopped", "removing native declarations stops the host holding obsolete grants");
+			write(manifest.file, restored);
+			entry.connection.useManifest(Manifest.read(manifest.file));
+			entry.connection.start();
 			var cleaned = false;
 			entry.onDisabled = _ -> cleaned = true;
 			manager.setNativeApproved("untrusted", "example", false);
