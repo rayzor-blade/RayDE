@@ -223,7 +223,7 @@
 	padding: 0; border: 0; box-shadow: none; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 /* macOS: three lights, glyphs on the group's hover, grey while the window is behind. */
-#rayde .rayde-light { width: 12px; height: 12px; min-width: 12px; border-radius: 6px; color: transparent; }
+#rayde .rayde-light { width: 14px; height: 14px; min-width: 14px; border-radius: 7px; color: transparent; }
 #rayde .rayde-light .rayde-glyph { width: 8px; height: 8px; opacity: 0; }
 #rayde .rayde-lights:hover .rayde-light .rayde-glyph { opacity: 1; color: rgba(0, 0, 0, 0.85); }
 #rayde .rayde-light-close { background: #ff5f57; }
