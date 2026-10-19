@@ -51,6 +51,7 @@ class BridgeControl {
 	var selectSize = "sm";
 	var panelState:Dynamic;
 	var navigation = "canvas";
+	var textRendering = "paths";
 	var scroller:Null<ashui.input.Scroll>;
 	var restoreScroll:Dynamic;
 	var canvasWidth = -1.;
@@ -104,9 +105,11 @@ class BridgeControl {
 	function buildCanvas():Void {
 		if (kit != null) return;
 		var scrolling = navigation == "scroll";
+		var nativeText = textRendering == "native";
+		if (nativeText && !scrolling) throw "Native canvas labels require scrolling navigation";
 		if (scrolling) viewport.reset();
 		kit = new CanvasKit({viewport:viewport, selection:selection, interactive:!scrolling, background:new Background2D(None),
-			draw:(ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get(), scrolling),
+			draw:(ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get(), scrolling, nativeText),
 			onClick:(id, e) -> clickRegion(id, e),
 			onHover:id -> { hovered.set(id ?? ""); emit("hover", {region:id}); }});
 		kit.momentumDecay = 0;
@@ -147,6 +150,19 @@ class BridgeControl {
 			});
 		} else fill(kit);
 		tree.addChild(node.id, kit.node.id);
+		var labels = nativeText ? new CanvasLabels(node, Owner.current) : null;
+		if (labels != null) {
+			var placeLabels:LayoutTree->Bool = laid -> {
+				if (laid != tree) return false;
+				var bounds = tree.getBounds(node);
+				return bounds != null && bounds.width > 0 && bounds.height > 0
+					&& labels.update(scene.get(), scroller.x.get(), scroller.y.get(), bounds.width, bounds.height);
+			};
+			LayoutTree.layoutHooks.push(placeLabels);
+			Owner.onCleanup(() -> {
+				for (i in 0...LayoutTree.layoutHooks.length) if (Reflect.compareMethods(LayoutTree.layoutHooks[i], placeLabels)) { LayoutTree.layoutHooks.splice(i, 1); break; }
+			});
+		}
 		var settle:LayoutTree->Void = laid -> {
 			if (laid != tree) return;
 			var bounds = tree.getBounds(node);
@@ -197,6 +213,11 @@ class BridgeControl {
 				if (["canvas", "scroll"].indexOf(mode) < 0) throw "Unknown canvas navigation";
 				if (kit != null && mode != navigation) throw "Canvas navigation is fixed while mounted";
 				navigation = mode; return true;
+			case "textRendering" if (kind == "canvas-kit"):
+				var mode = data == null ? "paths" : Std.string(data);
+				if (["paths", "native"].indexOf(mode) < 0) throw "Unknown canvas text rendering";
+				if (kit != null && mode != textRendering) throw "Canvas text rendering is fixed while mounted";
+				textRendering = mode; return true;
 			case "name" if (kind == "ui-icon"):
 				var name = data == null ? null : CanvasScene.text({name:data}, "name");
 				var document = rayde.ui.ViewIcons.named(null, name);

@@ -281,6 +281,8 @@ The wheel zooms at the pointer; dragging empty space or using the middle/right b
 
 For linear lists, set `navigation="scroll"` when mounting the canvas. Ashui Scroll uses a nonpainting spacer for the full scene extent, with native wheel/trackpad scrolling and scrollbars. The canvas stays viewport-sized at fixed scale and renders only visible geometry and hit regions. Hover and region selection remain available; pan/zoom gestures are disabled. Coordinates start at the content's top left. Only `reset` commands apply in this mode, resetting the scroll position; it otherwise survives presentation rebuilds. Both Git graph views use this mode.
 
+For scrolling graphs whose labels sit above the shapes, `textRendering="native"` places visible text commands in pooled Ashui text elements. They use the shared glyph atlas instead of tessellating each string into triangles. Offscreen labels are omitted and pointer input passes through to the canvas. The default `paths` mode preserves drawing order and supports transformed text. Both properties are fixed while mounted.
+
 Set `command` to `{action:'fit'}`, `{action:'reset'}` or `{action:'zoom',factor:1.25}`. A changed `sequence` field repeats an otherwise identical command. Commands run after layout; `fit` uses full scene `bounds`, including offscreen regions. The viewport survives tab presentation rebuilds, and native control owners are disposed when views are hidden or removed. Invalid live properties report an extension error and preserve the last accepted property. Drawing, region and aggregate path-segment lists are limited to 50,000 entries.
 
 `ui-panel-group` composes Ashui `Resizable`, `ResizablePanel`, `Collapsible`, `CollapsibleTrigger` and `CollapsibleContent` into vertical, named panels:

@@ -11,6 +11,7 @@ import ashui.types.Brush;
 private typedef Ink = {color:Dynamic, alpha:Float};
 private typedef Region = {id:String, x:Float, y:Float, width:Float, height:Float};
 private typedef Box = {x:Float, y:Float, width:Float, height:Float};
+typedef CanvasLabel = {text:String, x:Float, y:Float, ink:Ink, size:Float, weight:Int};
 private enum Drawing {
 	Curve(path:Path, ink:Ink, width:Float, fill:Bool, bounds:Box);
 	Circle(x:Float, y:Float, radius:Float, ink:Ink, width:Float);
@@ -21,6 +22,7 @@ private enum Drawing {
 /** A validated, retained drawing batch. No script or protocol work runs while painting. */
 class CanvasScene {
 	public final bounds:{x:Float, y:Float, width:Float, height:Float};
+	public final labels:Array<CanvasLabel> = [];
 	final drawings:Array<Drawing> = [];
 	final regions:Array<Region> = [];
 	final brushes:Map<String, Brush> = [];
@@ -65,8 +67,10 @@ class CanvasScene {
 					var b = box(op);
 					drawings.push(Rect(b.x, b.y, b.width, b.height, number(op, "radius", 0, 0), ink, width));
 				case "text":
-					drawings.push(Text(text(op, "text"), number(op, "x"), number(op, "y"), ink,
-						number(op, "size", 13, 1, 256), Std.int(number(op, "weight", 400, 100, 900))));
+					var label = {text:text(op, "text"), x:number(op, "x"), y:number(op, "y"), ink:ink,
+						size:number(op, "size", 13, 1, 256), weight:Std.int(number(op, "weight", 400, 100, 900))};
+					labels.push(label);
+					drawings.push(Text(label.text, label.x, label.y, ink, label.size, label.weight));
 				case _: throw "Unsupported canvas command";
 			}
 		}
@@ -79,7 +83,7 @@ class CanvasScene {
 		}
 	}
 
-	public function draw(ctx:DrawContext, kit:CanvasKit, ?hovered:String, visibleOnly = false):Void {
+	public function draw(ctx:DrawContext, kit:CanvasKit, ?hovered:String, visibleOnly = false, nativeText = false):Void {
 		var current = ThemeState.get();
 		if (current != theme) { brushes.clear(); theme = current; }
 		var zoom = kit.viewport.zoom.get();
@@ -98,7 +102,7 @@ class CanvasScene {
 					if (!kit.visible(x, y, w, h)) continue;
 					if (width == 0) ctx.fillRect(x, y, w, h, brush(ink), radius); else ctx.strokeRect(x, y, w, h, new Stroke(width / zoom), brush(ink), radius);
 				case Text(text, x, y, ink, size, weight):
-					if (kit.visible(x, y-size, size * text.length, size*1.5)) ctx.text(text, x, y, brush(ink), {size: size, weight: weight});
+					if (!nativeText && kit.visible(x, y-size, size * text.length, size*1.5)) ctx.text(text, x, y, brush(ink), {size: size, weight: weight});
 			}
 		for (r in regions)
 			if (!visibleOnly || kit.visible(r.x, r.y, r.width, r.height)) kit.region(r.id, r.x, r.y, r.width, r.height);

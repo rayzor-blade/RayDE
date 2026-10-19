@@ -36,6 +36,7 @@ import rayde.keys.Keymaps;
 import rayde.lang.Display;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
+import rayde.run.DiagnosticJobs;
 import rayde.settings.Appearance;
 import rayde.settings.Store;
 import rayde.theme.JsonLocator;
@@ -309,6 +310,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** What the build and the program have printed, and where the run is: idle, building, running, finished or failed. */
 	final consoleText = Signal.make("");
+	var diagnosticJobs:DiagnosticJobs;
+	var diagnosticsScheduled = false;
 
 	final runState = Signal.make("idle");
 	public var runner(default, null):Null<Runner>;
@@ -422,6 +425,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
 	public function closeFile(file:String):Void {
+		if (diagnosticJobs != null) diagnosticJobs.cancel(file);
 		var files = open.get(), at = files.indexOf(file);
 		if (at < 0)
 			return;
@@ -1551,8 +1555,22 @@ class Workbench extends Component<WorkbenchProps> {
 	public function check(file:String):Void {
 		if (isVirtual(file) || !StringTools.endsWith(file, ".hx"))
 			return;
-		var found = try props.display.diagnostics(file, buffer(file).get()) catch (_:Dynamic) [];
-		problems.set([for (p in problems.get()) if (p.file != file) p].concat(found));
+		diagnosticJobs.request(file, buffer(file).get());
+		if (!diagnosticsScheduled) {
+			diagnosticsScheduled = true;
+			ashui.animation.AnimationScheduler.main.after(.03, pollDiagnostics);
+		}
+	}
+
+	function pollDiagnostics():Void {
+		if (gone) return;
+		for (result in diagnosticJobs.tick()) {
+			var source = buffers.get(result.file);
+			if (source != null && source.get() == result.text && open.get().indexOf(result.file) >= 0)
+				problems.set([for (p in problems.get()) if (p.file != result.file) p].concat(result.problems));
+		}
+		diagnosticsScheduled = diagnosticJobs.busy();
+		if (diagnosticsScheduled) ashui.animation.AnimationScheduler.main.after(.03, pollDiagnostics);
 	}
 
 	/** Runs the command whose key was pressed: the bindings say which, and the Settings page changes them. */
@@ -1587,6 +1605,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function render():Element {
 		extension = props.extension;
 		runner = new Runner(props.display);
+		diagnosticJobs = new DiagnosticJobs(props.display);
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
 		chrome = props.chrome != null ? props.chrome : new WindowChrome();
@@ -1606,6 +1625,7 @@ class Workbench extends Component<WorkbenchProps> {
 			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
 			emit("active.changed", {path: realFile(file)});
 		});
+		new ashui.reactive.Watch(() -> { active.get(); sideView.get(); 0; }, _ -> ashui.core.Memory.collectSoon(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
 		// The controls go grey while another window is in front.
 		new ashui.reactive.Watch(() -> ashui.input.WindowState.active.get(), on -> chrome.focused.set(on));
@@ -1618,6 +1638,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			diagnosticJobs.dispose();
 			for (s in sessions)
 				s.terminal.close();
 			// An extension's host is a process of its own, which goes with the workbench.
@@ -1774,7 +1795,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
 		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={ACTIVITY}>
-			<for {k in [{shown: explorerShown.get(), view: sideView.get(), secondary: secondaryWidth.get(), panel: panelShown.get() ? bottom.get() : "", file: active.get()}]}>${containerItems(k.shown, k.view, k.secondary, k.panel, k.file)}</for>
+			<for {k in [{shown: explorerShown.get(), view: sideView.get()}]}>${containerItems(k.shown, k.view)}</for>
 			<div class="flex-1"/>
 			<for {on in [active.get() == SETTINGS]}>${settingsItem(on)}</for>
 		</div>;
@@ -1789,7 +1810,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** The Explorer's icon and one for each extension view, which an extension that is in the sidebar swaps with the Explorer. */
-	function containerItems(shown:Bool, view:String, secondary:Float, panel:String, file:String):Element {
+	function containerItems(shown:Bool, view:String):Element {
 		var items:Array<Element> = [activityItem("rayde-activity-explorer", "Explorer", Icons.FOLDERS_LINE, shown && view == "explorer", chooseExplorer)];
 		for (c in containers) {
 			// Only the view the side panel shows is selected; a view in another part of the layout is toggled from here but is not what the activity bar is showing.

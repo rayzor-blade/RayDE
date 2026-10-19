@@ -128,7 +128,7 @@ class Snapshots {
 				var buffer = bench.buffer(file), original = buffer.get();
 				buffer.set(StringTools.replace(original, 'var greeting = "hello";', 'var greeting:Int = "hello";'));
 				bench.edited(file);
-				settle();
+				until(() -> bench.problems.get().length == 2, "background diagnostics for the edited file");
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
 				// The compiler's problems are underlined in the text where they are.
@@ -837,6 +837,12 @@ class Snapshots {
 					return @:privateAccess studio.preview.parts.get(part.id).control;
 				}
 				var icon = "#rayde-activity-ext-git-scm";
+				if (Sys.getEnv("RAYDE_INTERACTION_PROBE") == "1") {
+					var scheme = Sys.getEnv("RAYDE_PROBE_SCHEME");
+					if (scheme != null && scheme != (dark ? "dark" : "light")) return;
+					InteractionProbe.run(bench, file, until);
+					return;
+				}
 				if (Sys.getEnv("RAYDE_MEMORY_PROBE") == "1") {
 					var probeRoot = haxe.io.Path.directory(haxe.io.Path.directory(file));
 					var collected:Dynamic = null, previous = git.connection.onMessage;
@@ -903,6 +909,7 @@ class Snapshots {
 				click("#git-scm-changes .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM filename row to open its full path in the editor");
 				var sourceEditor = @:privateAccess bench.editorRef(bench.active.get()).get();
+				var retainedHeader = Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0];
 				var sourcePath = bench.active.get();
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
 				until(() -> within("git-scm-commit-files", "history.txt"), "the selected sidebar commit's changed files");
@@ -1035,8 +1042,9 @@ class Snapshots {
 				bench.closeFile(tab);
 				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
 				if ((@:privateAccess bench.editorRef(sourcePath).get()) != sourceEditor) throw "opening and closing history rebuilt another tab's editor";
+				if (Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0] != retainedHeader) throw "opening and closing history rebuilt another tab's header";
 				if (LayoutTree.settledHooks.length != hooks - 2) throw "closed canvas retained a layout hook";
-				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
+				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' textRendering='native' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
 				until(() -> studio.tabViews.length == 1, "a large virtual history scene"); settle();
 				var virtualControl = control("virtual-graph"), virtualKit:ashui.canvaskit.CanvasKit = @:privateAccess virtualControl.kit;
 				var virtualBounds = tree.getScrolledBounds(virtualKit.node), virtualScroll = ashui.input.Scroll.at(virtualControl.node.id, tree);
@@ -1051,6 +1059,7 @@ class Snapshots {
 							if (Math.abs(rgba.get(at) - ink.byte(ink.r)) < 8 && Math.abs(rgba.get(at+1) - ink.byte(ink.g)) < 8 && Math.abs(rgba.get(at+2) - ink.byte(ink.b)) < 8) count++;
 						}
 					if (count < 80) throw 'virtual text disappeared after scrolling: $count text pixels';
+					if (Css.query(tree, virtualControl.node.id, ".rayde-canvas-label").length > 80) throw "virtual canvas retained offscreen label nodes";
 				}
 				for (offset in [600., 2400.5, 18000.25, 900., 0., 23800.]) {
 					virtualScroll.scrollTo(0, offset); settle(3); labelsVisible();

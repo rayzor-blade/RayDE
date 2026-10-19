@@ -45,6 +45,8 @@ class Main {
 			theme: Theming.shown(appearance),
 			appearance: Theming.windowTheme(appearance)
 		}, () -> {
+			var app = WindowedApp.current;
+			rayde.ui.GpuProgress.attach(app.device, app.tree, () -> app.frames);
 			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme, chrome: rayde.ui.WindowChrome.ofApp()});
 			bench.openProject();
 			// RAYDE_PANEL=terminal (or problems, console) opens the bottom panel on that tab at launch, for scripted runs.

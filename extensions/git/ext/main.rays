@@ -79,7 +79,7 @@ function History(props) {
     </div>
     <div class="flex flex-1 min-h-0">
       <div class="flex flex-col flex-1 min-w-0">
-        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" scene={scene(commits.value, refs.value, selected.value)}
+        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" textRendering="native" scene={scene(commits.value, refs.value, selected.value)}
           selected={selected.value == '' ? [] : [selected.value]} command={command}
           onClick={e -> choose(e.region)}/>
         <div class="flex items-center gap-3 px-4 py-2 border-t shrink-0">

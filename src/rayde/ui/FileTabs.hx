@@ -10,6 +10,8 @@ import ashui.layout.Element;
 import ashui.layout.LayoutTree;
 import ashui.layout.Node;
 import ashui.reactive.Signal;
+import ashui.reactive.Computed;
+import ashui.reactive.Watch;
 import ashui.theme.ThemeState;
 import ashui.types.Brush;
 import ashui.types.Style;
@@ -49,11 +51,17 @@ class FileTabs extends Component<FileTabsProps> {
 	static inline var STEPS = 12;
 
 	var scroller:Element;
+	var revealHook:Null<LayoutTree->Void>;
 
 	function render():Element {
 		scroller = <div id="rayde-tab-scroll" class="rayde-tab-scroll flex flex-1 min-w-0 items-end overflow-x-auto" height={HEIGHT}>
-			<for {k in [{files: props.files.get(), front: props.active.get(), dirty: props.dirty.get()}]}>${strip(k.files, k.front, k.dirty)}</for>
+			<div class="flex items-end gap-1 shrink-0">
+				<for {file in props.files}>${tab(file)}</for>
+				<div class="shrink-0" width={SWEEP}/>
+			</div>
 		</div>;
+		new Watch(() -> {props.files.get(); props.active.get(); 0;}, _ -> reveal(), (_, _) -> false);
+		ashui.reactive.Owner.onCleanup(() -> { if (revealHook != null) LayoutTree.flushHooks.remove(revealHook); });
 		// A mouse wheel only moves up and down, which scrolls a row of tabs along.
 		Interaction.of(scroller.node).onWheel(e -> {
 			var scroll = ashui.input.Scroll.of(scroller.node);
@@ -68,6 +76,7 @@ class FileTabs extends Component<FileTabsProps> {
 
 	/** Scrolls the row of tabs so the tab in front shows, once layout has placed it. */
 	function reveal():Void {
+		if (revealHook != null) LayoutTree.flushHooks.remove(revealHook);
 		var tries = 0, hook:LayoutTree->Void = null;
 		hook = tree -> {
 			var front = Css.query(scroller.tree, scroller.node.id, ".rayde-tab[data-front]");
@@ -76,10 +85,11 @@ class FileTabs extends Component<FileTabsProps> {
 			// A tab not yet laid out reads as no width at all.
 			if (box == null || box.width <= 0 || view == null || scroll == null) {
 				if (++tries > 20)
-					LayoutTree.flushHooks.remove(hook);
+					{ LayoutTree.flushHooks.remove(hook); revealHook = null; }
 				return;
 			}
 			LayoutTree.flushHooks.remove(hook);
+			revealHook = null;
 			var left = box.x - view.x, right = left + box.width;
 			if (left < 0)
 				scroll.scrollTo(scroll.x.get() + left - 8, 0);
@@ -87,26 +97,18 @@ class FileTabs extends Component<FileTabsProps> {
 				scroll.scrollTo(scroll.x.get() + right - view.width + 8, 0);
 		};
 		LayoutTree.flushHooks.push(hook);
-		// The tabs it looks for go when they are rebuilt or the strip is, and the hook with them.
-		ashui.reactive.Owner.onCleanup(() -> LayoutTree.flushHooks.remove(hook));
+		revealHook = hook;
 	}
 
-	function strip(files:Array<String>, front:String, dirty:Array<String>):Element {
-		reveal();
-		// A trailing space the width of a foot, so the last tab's foot is not cut off at the end of the row.
-		return <div class="flex items-end gap-1 shrink-0">{tabs(files, front, dirty)}<div class="shrink-0" width={SWEEP}/></div>;
-	}
-
-	function tabs(files:Array<String>, front:String, dirty:Array<String>):Array<Element>
-		return [for (i => file in files) tab(file, file == front, dirty.indexOf(file) >= 0, i == 0)];
-
-	function tab(file:String, selected:Bool, edited:Bool, first:Bool):Element {
-		var name = props.label(file), id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name, "-");
+	function tab(file:String):Element {
+		var selected = Computed.make(() -> props.active.get() == file);
+		var name = Computed.make(() -> { props.files.get(); props.label(file); });
+		var id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name.get(), "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
-			<if {selected}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, first)}/></if>
+			<if {selected.get()}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, props.files.get()[0] == file)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">
 				<icon document={props.icon(file)} class="rayde-tab-icon size-4"/>
-				<text class="rayde-tab-name text-sm">${name}</text>
+				<text class="rayde-tab-name text-sm">${name.get()}</text>
 				<tooltip label="Close">
 					<div id={id + "-close"} class="rayde-close flex items-center justify-center rounded-md corner-squircle" width={22} height={22}
 						onClick={e -> { e.stopPropagation(); props.onClose(file); }}>
@@ -118,12 +120,9 @@ class FileTabs extends Component<FileTabsProps> {
 		</div>;
 		// State the stylesheet reads: a class list has to be a literal, an attribute does not.
 		var identity = ashui.css.Identity.of(element.tree, element.node.id);
-		if (selected)
-			identity.setAttribute("data-front", "");
-		if (edited)
-			identity.setAttribute("data-dirty", "");
-		if (first)
-			identity.setAttribute("data-first", "");
+		identity.bindBooleanAttribute("data-front", selected);
+		identity.bindBooleanAttribute("data-dirty", Computed.make(() -> props.dirty.get().indexOf(file) >= 0));
+		identity.bindBooleanAttribute("data-first", Computed.make(() -> props.files.get()[0] == file));
 		return element;
 	}
 
