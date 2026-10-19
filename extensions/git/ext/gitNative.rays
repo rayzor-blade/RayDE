@@ -7,9 +7,33 @@ native "git2" {
   @:free(git_commit_free) handle Commit;
   @:free(git_reference_iterator_free) handle References;
   @:free(git_reference_free) handle Reference;
+  @:free(git_remote_free) handle Remote;
+  @:free(git_index_free) handle Index;
+  @:free(git_signature_free) handle Signature;
+  @:free(git_annotated_commit_free) handle Annotated;
+  @:free(git_rebase_free) handle Rebase;
+  @:failure(-1) callback PushStatus(name:CString, status:CString, data:Ptr):Int32;
   struct Author { name:CString; email:CString; }
   struct Error { message:CString; klass:Int32; }
   struct StrArray { strings:Ptr; count:SizeT; }
+  struct StringPointer { value:CString; }
+  struct Buffer { text:CString; reserved:SizeT; size:SizeT; }
+  struct RemoteCallbacks {
+    version:UInt32; sideband:Ptr; completion:Ptr; credentials:Ptr; certificate:Ptr; transfer:Ptr;
+    updateTips:Ptr; pack:Ptr; pushTransfer:Ptr; pushUpdate:PushStatus; negotiation:Ptr;
+    transport:Ptr; ready:Ptr; payload:Ptr; resolve:Ptr; updateRefs:Ptr;
+  }
+  struct ProxyOptions { version:UInt32; kind:Int32; url:CString; credentials:Ptr; certificate:Ptr; payload:Ptr; }
+  struct PushOptions { version:UInt32; parallelism:UInt32; callbacks:RemoteCallbacks; proxy:ProxyOptions;
+    redirects:Int32; headers:StrArray; pushOptions:StrArray; }
+  struct MergeOptions { version:UInt32; flags:UInt32; renameThreshold:UInt32; targetLimit:UInt32; metric:Ptr;
+    recursionLimit:UInt32; driver:CString; fileFavor:Int32; fileFlags:UInt32; }
+  struct CheckoutOptions { version:UInt32; strategy:UInt32; disableFilters:Int32; dirMode:UInt32; fileMode:UInt32;
+    openFlags:Int32; notifyFlags:UInt32; notify:Ptr; notifyData:Ptr; progress:Ptr; progressData:Ptr; paths:StrArray;
+    baseline:Ptr; baselineIndex:Ptr; directory:CString; ancestor:CString; ours:CString; theirs:CString; performance:Ptr; performanceData:Ptr; }
+  struct RebaseOptions { version:UInt32; quiet:Int32; inMemory:Int32; notes:CString; merge:MergeOptions;
+    checkout:CheckoutOptions; create:Ptr; signing:Ptr; data:Ptr; }
+  struct CommitPointer { value:Commit; }
   // The pinned build uses SHA-1 object IDs, without the experimental SHA-256 ABI.
   struct Oid {
     b0:UInt8; b1:UInt8; b2:UInt8; b3:UInt8; b4:UInt8; b5:UInt8; b6:UInt8; b7:UInt8; b8:UInt8; b9:UInt8;
@@ -38,7 +62,7 @@ native "git2" {
   function git_libgit2_shutdown():Int32;
   function git_libgit2_version(major:Out<Int32>, minor:Out<Int32>, patch:Out<Int32>):Int32;
   function git_libgit2_features():Int32;
-  function git_error_last():Error;
+  @:blocking function git_error_last():Error;
   @:blocking function git_repository_open_ext(out:Out<Repository>, path:CString, flags:UInt32, ceiling:CString):Int32;
   function git_repository_free(repository:Repository):Void;
   function git_repository_path(repository:Repository):CString;
@@ -57,6 +81,7 @@ native "git2" {
   function git_diff_options_init(options:DiffOptions, version:UInt32):Int32;
   @:owner(repository) @:blocking function git_diff_index_to_workdir(out:Out<Diff>, repository:Repository, index:Ptr, options:DiffOptions):Int32;
   @:owner(repository) @:blocking function git_diff_tree_to_index(out:Out<Diff>, repository:Repository, tree:Tree, index:Ptr, options:DiffOptions):Int32;
+  @:owner(repository) @:blocking function git_diff_tree_to_tree(out:Out<Diff>, repository:Repository, oldTree:Tree, newTree:Tree, options:DiffOptions):Int32;
   @:blocking function git_diff_find_similar(diff:Diff, options:Ptr):Int32;
   @:blocking function git_diff_foreach(diff:Diff, file:FileCallback, binary:BinaryCallback, hunk:HunkCallback, line:LineCallback, data:Ptr):Int32;
   function git_diff_free(diff:Diff):Void;
@@ -83,6 +108,42 @@ native "git2" {
   function git_reference_shorthand(reference:Reference):CString;
   @:owner(reference) function git_reference_peel(out:Out<Tree>, reference:Reference, kind:Int32):Int32;
   @:owner(tree) function git_object_id(tree:Tree):Oid;
+  @:blocking function git_revwalk_push(walk:Walk, id:Oid):Int32;
+  @:owner(reference) function git_reference_target(reference:Reference):Oid;
+  @:owner(reference) @:blocking function git_reference_set_target(out:Out<Reference>, reference:Reference, id:Oid, message:CString):Int32;
+  @:owner(branch) @:blocking function git_branch_upstream(out:Out<Reference>, branch:Reference):Int32;
+  @:blocking function git_branch_upstream_remote(out:Buffer, repository:Repository, branch:CString):Int32;
+  @:blocking function git_branch_upstream_merge(out:Buffer, repository:Repository, branch:CString):Int32;
+  @:blocking function git_branch_set_upstream(branch:Reference, upstream:CString):Int32;
+  function git_buf_dispose(buffer:Buffer):Void;
+  @:blocking function git_remote_list(out:StrArray, repository:Repository):Int32;
+  function git_strarray_dispose(array:StrArray):Void;
+  @:owner(repository) @:blocking function git_remote_lookup(out:Out<Remote>, repository:Repository, name:CString):Int32;
+  function git_remote_free(remote:Remote):Void;
+  @:blocking function git_remote_fetch(remote:Remote, specs:Ptr, options:Ptr, message:CString):Int32;
+  function git_push_options_init(options:PushOptions, version:UInt32):Int32;
+  @:blocking function git_remote_push(remote:Remote, specs:StrArray, options:PushOptions):Int32;
+  @:blocking function git_checkout_tree(repository:Repository, tree:Tree, options:Ptr):Int32;
+  @:blocking function git_graph_descendant_of(repository:Repository, commit:Oid, ancestor:Oid):Int32;
+  @:blocking function git_signature_default(out:Out<Signature>, repository:Repository):Int32;
+  function git_signature_free(signature:Signature):Void;
+  @:owner(repository) @:blocking function git_merge_commits(out:Out<Index>, repository:Repository, ours:Commit, theirs:Commit, options:Ptr):Int32;
+  function git_index_free(index:Index):Void;
+  function git_index_has_conflicts(index:Index):Int32;
+  @:blocking function git_index_write_tree_to(out:Oid, index:Index, repository:Repository):Int32;
+  @:owner(repository) @:blocking function git_tree_lookup(out:Out<Tree>, repository:Repository, id:Oid):Int32;
+  @:blocking function git_commit_create(out:Oid, repository:Repository, update:CString, author:Signature, committer:Signature,
+    encoding:CString, message:CString, tree:Tree, count:SizeT, parents:Ptr):Int32;
+  @:owner(repository) @:blocking function git_annotated_commit_from_ref(out:Out<Annotated>, repository:Repository, reference:Reference):Int32;
+  function git_annotated_commit_free(commit:Annotated):Void;
+  function git_rebase_options_init(options:RebaseOptions, version:UInt32):Int32;
+  @:owner(repository) @:blocking function git_rebase_init(out:Out<Rebase>, repository:Repository, branch:Annotated, upstream:Annotated, onto:Annotated, options:RebaseOptions):Int32;
+  function git_rebase_free(rebase:Rebase):Void;
+  @:blocking function git_rebase_next(out:Out<Ptr>, rebase:Rebase):Int32;
+  @:owner(rebase) @:blocking function git_rebase_inmemory_index(out:Out<Index>, rebase:Rebase):Int32;
+  @:blocking function git_rebase_commit(out:Oid, rebase:Rebase, author:Signature, committer:Signature, encoding:CString, message:CString):Int32;
+  @:blocking function git_rebase_finish(rebase:Rebase, signature:Signature):Int32;
+  function git_repository_state(repository:Repository):Int32;
 }
 
 function check(code, operation) {
@@ -201,11 +262,66 @@ function diff(repository, staged) {
   } catch (error) { diff.close(); throw error; }
 }
 
+/** Changes against the first parent; a root commit is compared with an empty tree. */
+function commitChanges(path, id) {
+  return withRepository(path, repository -> {
+    var commit = null, before = null, after = null, changes = null;
+    function close() {
+      for (handle in [changes, before, after, commit]) if (handle != null) handle.close();
+    }
+    try {
+      var object = Out(Tree);
+      check(git_revparse_single(object, repository, id + '^{commit}'), 'resolve commit');
+      commit = object.value;
+      id = git_oid_tostr_s(git_object_id(commit));
+      var out = Out(Commit);
+      check(git_commit_lookup(out, repository, git_object_id(commit)), 'lookup commit');
+      var info = out.value, parentCount = git_commit_parentcount(info);
+      info.close();
+      var tree = Out(Tree);
+      check(git_revparse_single(tree, repository, id + '^{tree}'), 'commit tree');
+      after = tree.value;
+      if (parentCount > 0) {
+        tree = Out(Tree);
+        check(git_revparse_single(tree, repository, id + '^1^{tree}'), 'parent tree');
+        before = tree.value;
+      }
+      var options = alloc(DiffOptions), result = Out(Diff);
+      check(git_diff_options_init(options, 1), 'commit diff options');
+      options.flags = 64;
+      check(git_diff_tree_to_tree(result, repository, before, after, options), 'commit changes');
+      changes = result.value;
+      check(git_diff_find_similar(changes, null), 'commit rename detection');
+      var files = [];
+      check(git_diff_foreach(changes, FileCallback((delta, progress, data) -> {
+        files.push({path:delta.newFile.path == null ? delta.oldFile.path : delta.newFile.path,
+          oldPath:delta.oldFile.path, status:delta.status});
+        return 0;
+      }), null, null, null, null), 'commit files');
+      close();
+      return files;
+    } catch (failure) { close(); throw failure; }
+  });
+}
+
 function inspect(path) {
   return withRepository(path, repository -> {
     return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository),
       status: status(repository), staged: diff(repository, true), changes: diff(repository, false)};
   });
+}
+
+function historyReference(name) {
+  if (name.startsWith('refs/heads/') || name.startsWith('refs/tags/')) return true;
+  if (!name.startsWith('refs/remotes/')) return false;
+  var parts = name.split('/'), tail = parts[parts.length-1], group = parts[parts.length-2];
+  // git-bug keeps remote copies under the remote namespace, outside normal branch history.
+  if ((group == 'bugs' || group == 'identities') && tail.length == 64) {
+    var hexadecimal = true;
+    for (i in 0...tail.length) if ('0123456789abcdef'.indexOf(tail.substr(i,1)) < 0) hexadecimal = false;
+    if (hexadecimal) return false;
+  }
+  return true;
 }
 
 function references(repository) {
@@ -219,11 +335,13 @@ function references(repository) {
       check(code, 'next reference');
       var ref = next.value;
       try {
+        var name = git_reference_name(ref);
+        if (!historyReference(name)) { ref.close(); continue; }
         var object = Out(Tree);
         var code = git_reference_peel(object, ref, 1);
         // References to non-commit objects do not participate in commit history.
         if (code == 0) {
-          var target = object.value, name = git_reference_name(ref);
+          var target = object.value;
           result.push({name: name, label: git_reference_shorthand(ref), target: git_oid_tostr_s(git_object_id(target)),
             kind: name.startsWith('refs/heads/') ? 'branch' : name.startsWith('refs/remotes/') ? 'remote' : 'tag'});
           target.close();
@@ -271,10 +389,16 @@ function openHistory(path, ref = 'all') {
     walk = cursor.value;
     check(git_revwalk_sorting(walk, 3), 'history ordering');
     if (ref == 'all') {
-      check(git_revwalk_push_glob(walk, 'refs/*'), 'history references');
+      for (reference in refs) check(git_revwalk_push_ref(walk, reference.name), 'history reference');
       if (check(git_repository_head_unborn(repository), 'history HEAD state') == 0)
         check(git_revwalk_push_head(walk), 'history HEAD');
-    } else check(git_revwalk_push_ref(walk, ref), 'history branch');
+    } else {
+      var object = Out(Tree);
+      check(git_revparse_single(object, repository, ref + '^{commit}'), 'history focus');
+      var target = object.value;
+      try { check(git_revwalk_push(walk, git_object_id(target)), 'history focus'); target.close(); }
+      catch (error) { target.close(); throw error; }
+    }
     function next(limit = 100) {
       if (closed) throw 'History cursor is closed';
       if (limit < 1 || limit > 500 || limit != Std.int(limit)) throw 'History page size must be an integer from 1 to 500';
@@ -300,4 +424,156 @@ function openHistory(path, ref = 'all') {
     }
     return {next: next, close: close, refs: refs, repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
   } catch (error) { close(); throw error; }
+}
+
+function branchSetting(repository, name, merge = false) {
+  var buffer = alloc(Buffer);
+  try {
+    var code = merge ? git_branch_upstream_merge(buffer, repository, name) : git_branch_upstream_remote(buffer, repository, name);
+    if (code == -3) { git_buf_dispose(buffer); return null; }
+    check(code, 'branch upstream');
+    var text = buffer.text;
+    git_buf_dispose(buffer);
+    return text;
+  } catch (error) { git_buf_dispose(buffer); throw error; }
+}
+
+function defaultRemote(repository) {
+  var array = alloc(StrArray);
+  try {
+    check(git_remote_list(array, repository), 'list remotes');
+    var names = [];
+    if (array.count > 0) {
+      var strings = borrow(StringPointer, array.strings, array.count);
+      for (i in 0...array.count) names.push(strings[i].value);
+    }
+    git_strarray_dispose(array);
+    for (name in names) if (name == 'origin') return name;
+    if (names.length == 1) return names[0];
+    throw names.length == 0 ? 'No remote configured' : 'No upstream configured; select an upstream before using remote actions';
+  } catch (error) { git_strarray_dispose(array); throw error; }
+}
+
+function integratePull(repository, head, upstream, strategy) {
+  var owned = [];
+  function keep(handle) { owned.push(handle); return handle; }
+  function close() { while (owned.length > 0) owned.pop().close(); }
+  try {
+    var signer = Out(Signature);
+    check(git_signature_default(signer, repository), 'Git committer identity');
+    var signature = keep(signer.value), result = '';
+    if (strategy == 'merge') {
+      var slot = Out(Commit);
+      check(git_commit_lookup(slot, repository, git_reference_target(head)), 'local commit'); var ours = keep(slot.value);
+      slot = Out(Commit);
+      check(git_commit_lookup(slot, repository, git_reference_target(upstream)), 'upstream commit'); var theirs = keep(slot.value);
+      var merged = Out(Index);
+      check(git_merge_commits(merged, repository, ours, theirs, null), 'merge commits'); var index = keep(merged.value);
+      if (git_index_has_conflicts(index) != 0) throw 'Pull merge has conflicts; branch unchanged';
+      var treeId = alloc(Oid);
+      check(git_index_write_tree_to(treeId, index, repository), 'merged tree');
+      var treeOut = Out(Tree);
+      check(git_tree_lookup(treeOut, repository, treeId), 'merged tree'); var tree = keep(treeOut.value);
+      var parents = alloc(CommitPointer, 2); parents[0].value = ours; parents[1].value = theirs;
+      var id = alloc(Oid);
+      check(git_commit_create(id, repository, null, signature, signature, null, 'Merge ' + git_reference_shorthand(upstream), tree, 2, parents), 'merge commit');
+      result = git_oid_tostr_s(id);
+    } else {
+      var annotated = Out(Annotated);
+      check(git_annotated_commit_from_ref(annotated, repository, head), 'rebase branch'); var branch = keep(annotated.value);
+      annotated = Out(Annotated);
+      check(git_annotated_commit_from_ref(annotated, repository, upstream), 'rebase upstream'); var base = keep(annotated.value);
+      var options = alloc(RebaseOptions);
+      check(git_rebase_options_init(options, 1), 'rebase options'); options.inMemory = 1;
+      var slot = Out(Rebase);
+      check(git_rebase_init(slot, repository, branch, base, null, options), 'prepare rebase'); var rebase = keep(slot.value);
+      result = git_oid_tostr_s(git_reference_target(upstream));
+      while (true) {
+        var operation = Out(Ptr), code = git_rebase_next(operation, rebase);
+        if (code == -31) break;
+        check(code, 'rebase next');
+        var indexOut = Out(Index);
+        check(git_rebase_inmemory_index(indexOut, rebase), 'rebase index');
+        var index = indexOut.value, conflicted = git_index_has_conflicts(index); index.close();
+        if (conflicted != 0) throw 'Pull rebase has conflicts; branch unchanged';
+        var id = alloc(Oid), code = git_rebase_commit(id, rebase, null, signature, null, null);
+        if (code != -18) { check(code, 'rebase commit'); result = git_oid_tostr_s(id); }
+      }
+      check(git_rebase_finish(rebase, signature), 'finish rebase');
+    }
+    close(); return result;
+  } catch (error) { close(); throw error; }
+}
+
+function remoteOperation(path, operation, strategy = 'ff-only') {
+  if (operation != 'fetch' && operation != 'pull' && operation != 'push') throw 'Unknown Git remote operation';
+  if (strategy != 'ff-only' && strategy != 'merge' && strategy != 'rebase') throw 'Unknown pull strategy';
+  return withRepository(path, repository -> {
+    var head = null, remote = null, upstream = null, target = null;
+    function close() {
+      if (target != null) target.close();
+      if (upstream != null) upstream.close();
+      if (remote != null) remote.close();
+      if (head != null) head.close();
+    }
+    try {
+      var local = null, remoteName = null, destination = null;
+      if (check(git_repository_head_unborn(repository), 'HEAD state') == 0 && check(git_repository_head_detached(repository), 'HEAD state') == 0) {
+        var slot = Out(Reference);
+        check(git_repository_head(slot, repository), 'current branch'); head = slot.value;
+        local = git_reference_name(head);
+        remoteName = branchSetting(repository, local);
+        destination = branchSetting(repository, local, true);
+      }
+      if (operation != 'fetch' && head == null) throw 'Check out a branch with a commit before ' + operation;
+      if (operation == 'pull' && remoteName == null) throw 'No upstream configured for the current branch';
+      if (remoteName == null) remoteName = defaultRemote(repository);
+      if (remoteName == '.') throw 'The upstream is a local branch, not a remote';
+      var slot = Out(Remote);
+      check(git_remote_lookup(slot, repository, remoteName), 'open remote ' + remoteName); remote = slot.value;
+      if (operation == 'push') {
+        if (destination == null) destination = local;
+        var string = alloc(StringPointer); string.value = local + ':' + destination;
+        var specs = alloc(StrArray); specs.strings = string; specs.count = 1;
+        var options = alloc(PushOptions), rejected = '';
+        check(git_push_options_init(options, 1), 'push options');
+        options.callbacks.pushUpdate = PushStatus((name, status, data) -> {
+          if (status != null) rejected = name + ': ' + status;
+          return 0;
+        });
+        check(git_remote_push(remote, specs, options), 'push to ' + remoteName);
+        if (rejected != '') throw 'Push rejected: ' + rejected;
+        if (branchSetting(repository, local) == null) check(git_branch_set_upstream(head, remoteName + '/' + git_reference_shorthand(head)), 'set upstream');
+      } else {
+        if (operation == 'pull') {
+          if (git_repository_state(repository) != 0) throw 'Finish the current Git operation before pulling';
+          if (status(repository).length != 0) throw 'Commit or stash changes before pulling';
+        }
+        check(git_remote_fetch(remote, null, null, 'RayDE: fetch ' + remoteName), 'fetch from ' + remoteName);
+        if (operation == 'pull') {
+          var tracked = Out(Reference);
+          check(git_branch_upstream(tracked, head), 'upstream branch'); upstream = tracked.value;
+          var current = git_reference_target(head), next = git_reference_target(upstream);
+          if (git_oid_tostr_s(current) != git_oid_tostr_s(next)) {
+            var revision = null;
+            if (check(git_graph_descendant_of(repository, next, current), 'pull ancestry') == 1) revision = git_oid_tostr_s(next);
+            else if (check(git_graph_descendant_of(repository, current, next), 'pull ancestry') != 1) {
+              if (strategy == 'ff-only') throw 'Pull requires a merge or rebase; branches have diverged';
+              revision = integratePull(repository, head, upstream, strategy);
+            }
+            if (revision != null) {
+              var object = Out(Tree);
+              check(git_revparse_single(object, repository, revision), 'pull commit'); target = object.value;
+              check(git_checkout_tree(repository, target, null), 'pull checkout');
+              var updated = Out(Reference);
+              check(git_reference_set_target(updated, head, git_object_id(target), 'RayDE: pull ' + strategy), 'update branch');
+              updated.value.close();
+            }
+          }
+        }
+      }
+      var result = {operation:operation, remote:remoteName, branch:local, destination:destination};
+      close(); return result;
+    } catch (error) { close(); throw error; }
+  });
 }

@@ -56,7 +56,7 @@ function compactScene(commits, refs, selected) {
     var commit = row.commit, x = 14 + row.lane * 12, y = 13 + row.index * 23, label = '';
     for (ref in refs) if (ref.target == commit.id && (label == '' || ref.kind == 'branch')) label = ref.label;
     var available = label == '' ? width - textX - 8 : width - textX - Math.min(84, label.length * 6 + 16) - 12;
-    var length = Std.int(available / 6), title = commit.subject == null ? '(no subject)' : commit.subject;
+    var length = Std.int(available / 6), title = commit.subject == null || commit.subject == '' ? '(no subject)' : commit.subject;
     if (title.length > length) title = title.substr(0, Math.max(0, length - 1)) + '\u2026';
     if (commit.id == selected) {
       commands.push({type:'circle', x:x, y:y, radius:5, color:'surface'});
@@ -94,7 +94,7 @@ function scene(commits, refs, selected) {
     commands.push({type: 'circle', x: x, y: y, radius: commit.parents.length > 1 ? 6 : 5,
       color: colors[row.lane % colors.length]});
     commands.push({type: 'text', x: textX, y: y + 5, text: commit.id.substr(0, 7), color: commit.id == selected ? 'selectionText' : 'textSecondary', size: 12});
-    var title = commit.subject == null ? '(no subject)' : commit.subject;
+    var title = commit.subject == null || commit.subject == '' ? '(no subject)' : commit.subject;
     if (title.length > 48) title = title.substr(0, 47) + '\u2026';
     commands.push({type: 'text', x: textX + 72, y: y + 5, text: title, color: commit.id == selected ? 'selectionText' : 'textPrimary', size: 13,
       weight: commit.id == selected ? 600 : 400});

@@ -29,6 +29,8 @@ def create(root):
 
     git("init", "-b", "main")
     git("config", "core.hooksPath", str(root / ".git/no-hooks"))
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.test")
     (root / ".gitignore").write_text(".rayde/\nsnapshot-home/\nmain.hl\n")
     git("add", ".gitignore")
     for filename in ["clean.txt", "src/modified.txt", "staged.txt", "renamed.txt", "conflict.txt"]:
@@ -54,6 +56,11 @@ def create(root):
     commit("Polish extension settings")
     git("merge", "--no-ff", "ffi/trust", "-m", "Merge native library trust")
     commit("Add Git history graph")
+    empty_tree = git("hash-object", "-t", "tree", "-w", "--stdin", data="")
+    metadata = git("hash-object", "-t", "commit", "-w", "--stdin", data=f"tree {empty_tree}\nauthor Metadata <metadata@example.test> 1800000000 +0000\ncommitter Metadata <metadata@example.test> 1800000000 +0000\n\n")
+    for name in ["refs/bugs/" + "a" * 64, "refs/remotes/issue-store/bugs/" + "a" * 64,
+                 "refs/remotes/issue-store/identities/" + "b" * 64]:
+        git("update-ref", name, metadata)
     if "--install" in sys.argv:
         (root / "src/modified.txt").write_text("Modified in the workdir\n")
         (root / "staged.txt").write_text("Staged change\n")

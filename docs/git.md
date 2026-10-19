@@ -4,17 +4,21 @@ The built-in Git extension registers Ashui's git-branch icon in the activity bar
 
 ![Source Control in the sidebar](images/git-scm.png)
 
-The sidebar stacks **Changes** and **Graph** in Ashui's native resizable panels, each with a collapsible header. Drag the divider or use its arrow keys to divide the height. The graph has dense commit rows, colored branch/merge lanes, reference badges, local hover and selection. Selecting a commit shows its author and abbreviated id below the graph. The sidebar loads the latest 60 commits; its maximize icon opens the paged graph in a separate tab.
+The sidebar stacks **Changes**, **Graph** and **Commit files** in Ashui's native resizable panels, each with a collapsible header. Drag a divider or use its arrow keys to divide the height. The graph has dense commit rows, colored branch/merge lanes, reference badges, local hover and selection. Selecting a commit reveals its changed files, with filenames first, directory context, change badges and rename sources. Merge commits compare against their first parent; root commits show all added files. The sidebar loads the latest 60 commits; its maximize icon opens the paged graph in a separate tab, with changed files beside the selected commit's details.
+
+The branch header has **Fetch**, **Pull** and **Push** icon actions with tooltips. Fetch updates remote references. Push publishes the current branch to its configured upstream, or to the default remote and same branch name when no upstream exists. It never forces a push. SSH uses the system OpenSSH client; private HTTPS credential helpers are not connected yet.
+
+**Pull options** offers fast-forward only, merge and rebase for an individual pull. In Settings → Extensions → Git, **Pull strategy** sets the preferred default for the main Pull action. The initial default is fast-forward only. Pull requires a clean working tree and index; conflicting merges and rebases report the conflict without changing the branch, index or working files. Merge and rebase commits use the repository's configured Git identity.
 
 The sidebar's **Refresh** action and **Git: Refresh** command reload status and history; saving a file or changing the active editor also refreshes them. The **History** toolbar action and **Git: History** command also open the expanded graph. Both views discover the repository at or above the project root through libgit2.
 
 ![Git history and selected merge commit](images/git-history.png)
 
-Both graphs use a virtual viewport at a fixed scale, scrolling with the wheel, trackpad or scrollbars. A viewport-sized canvas draws only visible rows and edges; Ashui Scroll owns the full list extent. Dragging does not pan the graph and the wheel does not zoom. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
+Both graphs use a virtual viewport at a fixed scale, scrolling with the wheel, trackpad or scrollbars. A viewport-sized canvas draws only visible rows and edges; Ashui Scroll owns the full list extent. Dragging does not pan the graph and the wheel does not zoom. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags, excluding internal git-bug metadata. Choose **Current branch**, a named reference or **Focus on selected commit** to show only that revision's history. **Show all references** restores the expanded graph's full history. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
 
 The extension owns the graph layout and scene in RayScript. RayDE's generic [Ashui bridge](extensions.md#ashui-controls-and-interactive-drawing) renders retained CanvasKit paths, circles and text, with native Button and Select components. Painting and viewport gestures stay in the editor. Repository scanning and history reads run on libgit2's worker lane.
 
-The sidebar is read only. Stage/unstage actions, editor decorations and diff tabs are subsequent work; status and diff APIs are available in the backend.
+Stage/unstage actions and editor decorations are subsequent work. File diff tabs are waiting for Ashui's CodeDiff component; selected commit file lists are read only meanwhile.
 
 ## Build and check
 
@@ -44,6 +48,8 @@ var snapshot = inspect('/path/to/project');
 
 - `version()` returns `{major, minor, patch, features}`.
 - `repositoryStatus(path)` returns `{repository, workdir, branch, entries}`, including unborn and detached HEAD labels; entries use the same indexed status format below.
+- `commitChanges(path, revision)` returns copied `{path, oldPath, status}` file deltas against the first parent, or an empty tree for a root commit, including rename detection.
+- `remoteOperation(path, operation, strategy='ff-only')` performs `fetch`, `pull` or `push`; pull accepts `ff-only`, `merge` or `rebase`. All native handles close on return or failure.
 - `withRepository(path, action)` initializes libgit2, opens the repository, runs the action and closes it on return or exception. The action must not retain its repository or derived native views.
 - `status(repository)` returns `{path, flags, index, workdir, conflicted, renamedFrom}` records. It includes nested untracked files and detects staged and workdir renames, excluding ignored files.
 - `eachStatus(repository, visit)` calls `visit(path, flags)` through `git_status_foreach`. `statusFlags(repository)` collects these flags, excluding ignored entries. This simpler API uses libgit2's default status options and does not detect renames.

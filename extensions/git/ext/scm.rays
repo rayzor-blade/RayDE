@@ -1,8 +1,12 @@
 import rayde.workspace.root;
 import rayde.workspace.openFile;
+import rayde.settings.get;
 import gitNative.repositoryStatus;
 import gitNative.openHistory;
+import gitNative.remoteOperation;
 import historyGraph.compactScene;
+import commitFiles.selection;
+import commitFiles.Files;
 
 function groups(entries) {
   var conflicts = [], staged = [], changes = [], untracked = [];
@@ -26,13 +30,22 @@ function groups(entries) {
 var state = signal(null), sections = signal(groups([])), busy = signal(false), error = signal('');
 var commits = signal([]), refs = signal([]), selected = signal(''), selectedInfo = signal('');
 var expand = null;
+var operation = signal(''), notice = signal(''), focus = signal('all');
+var focusOptions = signal([{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}]);
+var command = signal(null), sequence = 0;
+var changed = selection(null), selectedSubject = signal('');
 
 function configureHistory(action) { expand = action; }
 
 function choose(id) {
   selected.value = id;
   selectedInfo.value = '';
-  for (commit in commits.value) if (commit.id == id) selectedInfo.value = commit.author + ' \u00b7 ' + commit.id.substr(0,7);
+  selectedSubject.value = '';
+  for (commit in commits.value) if (commit.id == id) {
+    selectedInfo.value = commit.author + ' \u00b7 ' + commit.id.substr(0,7);
+    selectedSubject.value = commit.subject;
+  }
+  changed.choose(id);
 }
 
 function refresh() {
@@ -43,10 +56,14 @@ function refresh() {
     var path = await root(), snapshot = repositoryStatus(path);
     state.value = snapshot;
     sections.value = groups(snapshot.entries);
-    var cursor = openHistory(path);
+    var cursor = openHistory(path, focus.value);
     try {
       var page = cursor.next(60);
       refs.value = cursor.refs;
+      var items = [{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}];
+      for (ref in cursor.refs) items.push({value:ref.name,label:ref.label});
+      if (focus.value != 'all' && focus.value != 'HEAD' && focus.value.substr(0,5) != 'refs/') items.push({value:focus.value,label:'Commit ' + focus.value.substr(0,7)});
+      focusOptions.value = items;
       commits.value = page.commits;
       var id = page.commits.length == 0 ? '' : page.commits[0].id;
       for (commit in page.commits) if (commit.id == selected.value) id = selected.value;
@@ -57,6 +74,29 @@ function refresh() {
   busy.value = false;
 }
 
+function runRemote(action, strategy = null) {
+  if (operation.value != '' || busy.value) return;
+  operation.value = action;
+  error.value = ''; notice.value = '';
+  var failed = '';
+  try {
+    if (action == 'pull' && strategy == null) strategy = await get('git.pullStrategy', 'ff-only');
+    var path = await root(), result = remoteOperation(path, action, strategy == null ? 'ff-only' : strategy);
+    notice.value = (action == 'fetch' ? 'Fetched from ' : action == 'pull' ? 'Pulled from ' : 'Pushed to ') + result.remote;
+    trace(notice.value);
+  } catch (failure) { failed = '' + failure; trace(failed); }
+  operation.value = '';
+  refresh();
+  if (failed != '') error.value = failed;
+}
+
+function focusHistory(ref) {
+  if (busy.value) return;
+  focus.value = ref;
+  refresh();
+  command.value = {action:'reset',sequence:++sequence};
+}
+
 function open(path) {
   var snapshot = state.value;
   if (snapshot != null && snapshot.workdir != null) await openFile(snapshot.workdir + path);
@@ -64,16 +104,27 @@ function open(path) {
 
 function Sidebar(props) {
   return <div id="git-scm" class="flex flex-col flex-1 min-h-0 min-w-0">
-    <div class="flex items-center gap-2 px-4 py-3 border-b shrink-0">
+    <div class="flex items-center gap-1 px-3 py-2 border-b shrink-0">
       <span id="git-scm-branch" class="text-sm font-semibold truncate flex-1">{state.value == null ? 'Repository' : state.value.branch}</span>
-      <span class="text-xs text-text-secondary">{busy.value ? 'Loading…' : state.value == null ? '' : state.value.entries.length + ' files'}</span>
+      <ui-button id="git-fetch" class="w-8" size="icon" variant="ghost" tooltip="Fetch" disabled={busy.value || operation.value != ''} onClick={() -> runRemote('fetch')}><ui-icon name="fetch"/></ui-button>
+      <ui-button id="git-pull" class="w-8" size="icon" variant="ghost" tooltip="Pull" disabled={busy.value || operation.value != ''} onClick={() -> runRemote('pull')}><ui-icon name="pull"/></ui-button>
+      <ui-menu id="git-pull-options" class="w-8" tooltip="Pull options" disabled={busy.value || operation.value != ''}
+        options={[
+          {value:'ff-only',label:'Pull: fast-forward only'},
+          {value:'merge',label:'Pull: merge'},
+          {value:'rebase',label:'Pull: rebase'}
+        ]} onSelect={e -> runRemote('pull',e.value)}/>
+      <ui-button id="git-push" class="w-8" size="icon" variant="ghost" tooltip="Push" disabled={busy.value || operation.value != ''} onClick={() -> runRemote('push')}><ui-icon name="push"/></ui-button>
     </div>
+    <div class="px-4 py-1 text-xs text-text-secondary shrink-0">{operation.value != '' ? operation.value == 'fetch' ? 'Fetching…' : operation.value == 'pull' ? 'Pulling…' : 'Pushing…' : busy.value ? 'Loading…' : state.value == null ? '' : state.value.entries.length + ' files'}</div>
+    <if {notice.value != ''}><span id="git-scm-notice" class="px-4 py-1 text-xs text-text-secondary">{notice}</span></if>
     <if {error.value != ''}><p id="git-scm-error" class="p-4 text-sm text-error">{error}</p></if>
     <ui-panel-group id="git-scm-panels" class="flex-1 min-h-0" panels={[
       {id:'changes', title:'Changes', open:true, minSize:32},
-      {id:'graph', title:'Graph', open:true, size:324, minSize:32}
+      {id:'graph', title:'Graph', open:true, size:260, minSize:32},
+      {id:'commit', title:'Commit files', open:true, size:120, minSize:32}
     ]}>
-    <div slot="changes" class="flex flex-col gap-2 py-1 overflow-auto flex-1 min-h-0">
+    <div slot="changes" id="git-scm-working-files" class="flex flex-col gap-2 py-1 overflow-auto flex-1 min-h-0">
       <for {group in sections}>
         <div id={'git-scm-' + group.id} class="flex flex-col gap-1 min-w-0">
           <div class="flex items-center justify-between px-4 py-1">
@@ -94,13 +145,18 @@ function Sidebar(props) {
       </for>
     </div>
     <div slot="graph" id="git-scm-graph" class="flex flex-col flex-1 min-h-0 min-w-0">
-      <div class="flex items-center gap-2 px-3 h-8 shrink-0">
-        <span class="text-xs text-text-secondary flex-1">{state.value == null ? '' : state.value.branch}</span>
-        <ui-button id="git-scm-expand" class="w-8" size="icon" variant="ghost" aria-label="Maximize graph" onClick={() -> { if (expand != null) expand(); }}><ui-icon name="maximize"/></ui-button>
+      <div class="flex items-center gap-2 px-3 py-2 shrink-0">
+        <ui-select id="git-scm-focus" class="flex-1 min-w-0" options={focusOptions} value={focus} disabled={busy} onChange={e -> focusHistory(e.value)}/>
+        <ui-button id="git-scm-focus-commit" class="w-8" size="icon" variant="ghost" tooltip="Focus on selected commit" disabled={busy.value || selected.value == ''} onClick={() -> focusHistory(selected.value)}><ui-icon name="focus"/></ui-button>
+        <ui-button id="git-scm-expand" class="w-8" size="icon" variant="ghost" tooltip="Maximize graph" onClick={() -> { if (expand != null) expand(focus.value); }}><ui-icon name="maximize"/></ui-button>
       </div>
       <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" navigation="scroll" scene={compactScene(commits.value, refs.value, selected.value)}
-        selected={selected.value == '' ? [] : [selected.value]} onClick={e -> choose(e.region)}/>
+        selected={selected.value == '' ? [] : [selected.value]} command={command} onClick={e -> choose(e.region)}/>
       <span id="git-scm-selection" class="text-xs text-text-tertiary truncate px-3 py-1 shrink-0">{busy.value ? 'Loading history\u2026' : selectedInfo.value}</span>
+    </div>
+    <div slot="commit" class="flex flex-col flex-1 min-h-0 overflow-auto py-1">
+      <span id="git-scm-commit-subject" class="px-3 py-1 text-xs font-semibold truncate">{selectedSubject}</span>
+      <Files state={changed} id="git-scm-commit-files"/>
     </div>
     </ui-panel-group>
   </div>;
@@ -108,6 +164,9 @@ function Sidebar(props) {
 
 mount(() -> <Sidebar/>, 'scm');
 registerCommand('git.refresh', args -> refresh());
+registerCommand('git.fetch', args -> runRemote('fetch'));
+registerCommand('git.pull', args -> runRemote('pull'));
+registerCommand('git.push', args -> runRemote('push'));
 onTool('git-refresh', () -> refresh());
 onHook('file.saved', e -> refresh());
 onHook('active.changed', e -> refresh());

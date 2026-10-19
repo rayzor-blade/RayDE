@@ -15,7 +15,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -286,7 +286,7 @@ class Connection {
 		var group = Reflect.field(mocks, module);
 		if (group == null || !Reflect.hasField(group, fn)) {
 			reply(builtin.exists(module)
-				&& builtin.get(module).indexOf(fn) >= 0 ? service(call, fn) : {t: "reject", id: call.id, message: 'No service for $name'});
+				&& builtin.get(module).indexOf(fn) >= 0 ? service(call, fn, module) : {t: "reject", id: call.id, message: 'No service for $name'});
 			return;
 		}
 		var value:Dynamic = Reflect.field(group, fn), delay = 0;
@@ -303,9 +303,9 @@ class Connection {
 			reply(message);
 	}
 
-	function service(call:Dynamic, fn:String):Dynamic {
+	function service(call:Dynamic, fn:String, module:String):Dynamic {
 		var need = fn == "writeFile" ? "workspace.write" : "workspace.read";
-		if (manifest != null && manifest.capabilities.indexOf(need) < 0)
+		if (module != "rayde.settings" && manifest != null && manifest.capabilities.indexOf(need) < 0)
 			return {
 				t: "reject",
 				id: call.id,
@@ -316,6 +316,18 @@ class Connection {
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "get" if (module == "rayde.settings"):
+					if (manifest == null) throw "Extension settings require a manifest";
+					var key = Std.string(args[0]), section = "extension." + manifest.id;
+					var workspace = rayde.settings.Store.section(services.root(), section);
+					var user = rayde.settings.Store.section(rayde.settings.Extensions.home(), section);
+					var fallback:Dynamic = args.length > 1 ? args[1] : null;
+					var groups:Array<Dynamic> = manifest.configuration == null ? [] : Std.isOfType(manifest.configuration, Array) ? manifest.configuration : [manifest.configuration];
+					for (group in groups) {
+						var definition = group == null || group.properties == null ? null : Reflect.field(group.properties, key);
+						if (definition != null && Reflect.hasField(definition, "default")) fallback = Reflect.field(definition, "default");
+					}
+					Reflect.hasField(workspace, key) ? Reflect.field(workspace, key) : Reflect.hasField(user, key) ? Reflect.field(user, key) : fallback;
 				case "readFile":
 					var text = services.readFile(Std.string(args[0]));
 					if (text == null)

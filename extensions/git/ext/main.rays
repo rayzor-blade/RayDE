@@ -4,6 +4,8 @@ import historyGraph.scene;
 import historyGraph.timestamp;
 import scm.refresh;
 import scm.configureHistory;
+import commitFiles.selection;
+import commitFiles.Files;
 
 var opened = null;
 
@@ -11,11 +13,13 @@ function History(props) {
   var commits = signal([]), refs = signal([]), options = signal([{value: 'all', label: 'All references'}]);
   var branch = signal('all'), selected = signal(''), detail = signal(null), busy = signal(false), done = signal(false);
   var error = signal(''), command = signal(null);
+  var changed = selection(props.path);
   var cursor = null, live = true, sequence = 0;
   function choose(id) {
     selected.value = id;
     detail.value = null;
     for (commit in commits.value) if (commit.id == id) detail.value = commit;
+    changed.choose(id);
   }
   function page() {
     if (busy.value || cursor == null || done.value) return;
@@ -39,8 +43,9 @@ function History(props) {
       if (!live) { next.close(); return; }
       cursor = next;
       refs.value = next.refs;
-      var items = [{value: 'all', label: 'All references'}];
+      var items = [{value: 'all', label: 'All references'}, {value:'HEAD',label:'Current branch'}];
       for (item in next.refs) items.push({value: item.name, label: item.label});
+      if (ref != 'all' && ref != 'HEAD' && ref.substr(0,5) != 'refs/') items.push({value:ref,label:'Commit ' + ref.substr(0,7)});
       options.value = items;
       branch.value = ref;
       var page = next.next(100);
@@ -61,14 +66,16 @@ function History(props) {
     if (cursor != null) { cursor.close(); cursor = null; }
     opened = null;
   });
-  spawn(() -> load('all'));
+  spawn(() -> load(props.focus));
   return <div class="flex flex-col flex-1 min-h-0 min-w-0">
     <div class="flex items-center gap-2 px-4 py-3 border-b shrink-0">
       <h2 class="text-base font-semibold m-0">Git history</h2>
       <ui-select id="git-history-branch" class="w-48" options={options} value={branch} disabled={busy}
         onChange={e -> load(e.value)}/>
       <div class="flex-1"/>
-      <ui-button id="git-history-refresh" variant="outline" class="w-20" disabled={busy} onClick={() -> load(branch.value)}>Refresh</ui-button>
+      <ui-button id="git-history-focus" variant="ghost" size="icon" class="w-8" tooltip="Focus on selected commit" disabled={busy.value || selected.value == ''} onClick={() -> load(selected.value)}><ui-icon name="focus"/></ui-button>
+      <ui-button id="git-history-all" variant="ghost" size="icon" class="w-8" tooltip="Show all references" disabled={busy.value || branch.value == 'all'} onClick={() -> load('all')}><ui-icon name="filter-off"/></ui-button>
+      <ui-button id="git-history-refresh" variant="ghost" size="icon" class="w-8" tooltip="Refresh history" disabled={busy} onClick={() -> load(branch.value)}><ui-icon name="refresh"/></ui-button>
     </div>
     <if {error.value != ''}><p class="px-4 py-2 text-error">{error}</p></if>
     <div class="flex flex-1 min-h-0">
@@ -91,16 +98,19 @@ function History(props) {
           <span class="text-xs text-text-secondary">{timestamp(detail.value.time)}</span>
           <span class="text-xs text-text-secondary uppercase">Parents</span>
           <for {parent in detail.value.parents}><span class="text-xs">{parent.substr(0, 12)}</span></for>
+          <span class="text-xs text-text-secondary uppercase">Changed files</span>
+          <if {detail.value.parents.length > 1}><span class="text-xs text-text-secondary">Compared with first parent</span></if>
+          <Files state={changed} id="git-history-files"/>
           <else><p class="text-sm text-text-secondary">{busy.value ? 'Loading history…' : 'No commits'}</p></if>
       </div>
     </div>
   </div>;
 }
 
-function showHistory() {
+function showHistory(focus = 'all') {
   if (opened != null) return;
   var path = await root();
-  if (opened == null) opened = mount(() -> <History path={path}/>, 'tab:Git history');
+  if (opened == null) opened = mount(() -> <History path={path} focus={focus}/>, 'tab:Git history');
 }
 
 registerCommand('git.history', args -> showHistory());

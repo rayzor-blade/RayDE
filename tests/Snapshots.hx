@@ -822,6 +822,15 @@ class Snapshots {
 				var studio = bench.studioFor(git.connection.file);
 				function says(word:String):Bool
 					return studio != null && studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
+				function within(id:String, word:String):Bool {
+					var depth = -1;
+					for (part in studio.preview.outline()) {
+						if (part.props.indexOf("id=" + id) >= 0) { depth = part.depth; continue; }
+						if (depth >= 0 && part.depth <= depth) return false;
+						if (depth >= 0 && part.text.indexOf(word) >= 0) return true;
+					}
+					return false;
+				}
 				function control(id:String):rayde.ext.BridgeControl {
 					var part = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=" + id) >= 0);
 					if (part == null) throw 'missing bridge $id';
@@ -836,9 +845,23 @@ class Snapshots {
 				for (label in ["Merge conflicts", "Staged", "Changes", "Untracked", "renamed-file.txt", "main"])
 					if (!says(label)) throw 'missing SCM content $label';
 				shot("scm-ready");
+				scroll("#git-scm-working-files", 150);
 				click("#git-scm-changes .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM filename row to open its full path in the editor");
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
+				until(() -> within("git-scm-commit-files", "history.txt"), "the selected sidebar commit's changed files");
+				var previousRight = 0.;
+				for (id in ["git-fetch", "git-pull", "git-pull-options", "git-push"]) {
+					var bounds = tree.getScrolledBounds(control(id).node);
+					if (bounds.width < 30 || bounds.x < previousRight + 3) throw 'Git toolbar spacing collapsed at $id';
+					previousRight = bounds.x + bounds.width;
+				}
+				for (id in ["git-fetch", "git-pull", "git-push"])
+					if (Css.query(tree, control(id).node.id, ".ui-icon").length != 1) throw 'missing toolbar icon $id';
+				hover("#git-fetch .ui-button"); settle(50); shot("fetch-tooltip");
+				click("#git-pull-options .ui-button"); settle(30);
+				if (Css.query(tree, bench.node.id, ".ui-menu-item").length < 3) throw "Pull strategy choices missing";
+				shot("pull-options"); press(Named(Escape)); settle(30);
 				shot("scm");
 				var sideCanvas:ashui.canvaskit.CanvasKit = @:privateAccess control("git-scm-canvas").kit;
 				var sideControl = control("git-scm-canvas"), sideBounds = tree.getScrolledBounds(sideControl.node);
@@ -856,7 +879,14 @@ class Snapshots {
 				until(() -> sideCanvas.selection.ids.get().length == 1, "sidebar graph selection");
 				var selected = sideCanvas.selection.ids.get()[0];
 				until(() -> says(selected.substr(0,7)), "sidebar graph selection to reach RayScript");
+				until(() -> within("git-scm-commit-files", "trust.txt"), "selecting a merge commit to reveal its first-parent changed files");
+				shot("scm-commit-files");
+				click("#git-scm-focus-commit .ui-button");
+				until(() -> (@:privateAccess control("git-scm-focus").value.get()) == selected && !(@:privateAccess control("git-scm-focus").disabled.get()), "sidebar focus on the selected commit");
+				click("#git-scm-focus .ui-select"); press(Named(Home)); press(Named(Enter));
+				until(() -> (@:privateAccess control("git-scm-focus").value.get()) == "all" && !(@:privateAccess control("git-scm-focus").disabled.get()), "restore all sidebar references");
 				var sideScroll = ashui.input.Scroll.at(sideControl.node.id, tree);
+				ashui.input.Pointer.move(tree, sideBounds.x + 90, sideBounds.y + 36);
 				ashui.input.Pointer.wheel(tree, 0, -115); settle();
 				if (sideScroll == null || sideScroll.y.get() <= 0 || sideCanvas.viewport.zoom.get() != 1) throw "sidebar graph must scroll at a fixed scale";
 				var scrolledHit = sideCanvas.index.hitTest(90, sideScroll.y.get() + 36);
@@ -888,6 +918,7 @@ class Snapshots {
 				shot("scm-refreshed");
 				click('#git-scm-expand .ui-button');
 				until(() -> says("100") && says("Add Git history graph"), "the native history page and selected commit details");
+				until(() -> within("git-history-files", "history.txt"), "the expanded graph's selected commit files");
 				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
 				function canvas():ashui.canvaskit.CanvasKit return @:privateAccess control("git-history-canvas").kit;
 				shot("history");
@@ -897,6 +928,7 @@ class Snapshots {
 				if ((@:privateAccess control("git-history-canvas").hovered.get()) == "") throw "canvas hover region missing";
 				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
 				until(() -> says("Merge native library trust"), "canvas click to select a commit through RayScript");
+				until(() -> within("git-history-files", "trust.txt"), "a selected merge commit's changed files in the expanded view");
 				shot("selected");
 				var revision = studio.preview.revision;
 				var scrollGraph = ashui.input.Scroll.at(control("git-history-canvas").node.id, tree);
@@ -938,6 +970,11 @@ class Snapshots {
 				click("#git-history-more .ui-button");
 				until(() -> says("105"), "tag filtering through the native select component");
 				shot("filtered");
+				var focusedCommit = canvas().selection.ids.get()[0];
+				click("#git-history-focus .ui-button");
+				until(() -> (@:privateAccess control("git-history-branch").value.get()) == focusedCommit && !(@:privateAccess control("git-history-branch").disabled.get()), "expanded graph focus on a commit");
+				click("#git-history-all .ui-button");
+				until(() -> (@:privateAccess control("git-history-branch").value.get()) == "all" && !(@:privateAccess control("git-history-branch").disabled.get()) && within("git-history-files", "history.txt"), "restore all references and latest commit files");
 				var tab = bench.active.get();
 				bench.closeFile(tab);
 				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
@@ -948,6 +985,20 @@ class Snapshots {
 				var virtualBounds = tree.getScrolledBounds(virtualKit.node), virtualScroll = ashui.input.Scroll.at(virtualControl.node.id, tree);
 				if (virtualBounds.height > HEIGHT || virtualBounds.width > WIDTH) throw "virtual graph allocated a canvas larger than the viewport";
 				if (virtualKit.index.get("row0") == null || virtualKit.index.get("row999") != null) throw "virtual graph indexed offscreen rows";
+				function labelsVisible():Void {
+					var rgba = Snapshot.renderer().renderToRgba8(bench, WIDTH, HEIGHT), b = tree.getScrolledBounds(virtualKit.node);
+					var ink = ThemeState.get().color(TextPrimary), count = 0;
+					for (y in Std.int(b.y + 20)...Std.int(b.y + b.height - 20))
+						for (x in Std.int(b.x + 50)...Std.int(b.x + 180)) {
+							var at = (y * WIDTH + x) * 4;
+							if (Math.abs(rgba.get(at) - ink.byte(ink.r)) < 8 && Math.abs(rgba.get(at+1) - ink.byte(ink.g)) < 8 && Math.abs(rgba.get(at+2) - ink.byte(ink.b)) < 8) count++;
+						}
+					if (count < 80) throw 'virtual text disappeared after scrolling: $count text pixels';
+				}
+				for (offset in [600., 2400.5, 18000.25, 900., 0., 23800.]) {
+					virtualScroll.scrollTo(0, offset); settle(3); labelsVisible();
+					hl.Gc.major(); Offscreen.advance(2.2); settle(3); labelsVisible();
+				}
 				virtualScroll.scrollTo(0, 24000); settle();
 				var bottomBounds = tree.getScrolledBounds(virtualKit.node);
 				if (bottomBounds.y != virtualBounds.y || bottomBounds.height != virtualBounds.height || virtualScroll.y.get() < 23000)
@@ -981,6 +1032,10 @@ class Snapshots {
 				until(() -> studio.tabViews.length == 0, "fiber test view cleanup");
 				bench.openCenter(">Git: History"); settle(5); press(Named(Enter));
 				until(() -> says("Add Git history graph"), "Git history to reopen after cursor cleanup");
+				bench.openSettings("extensions"); settle(10);
+				click("#rayde-extension-setting-git-git-pullStrategy"); press(Named(End)); press(Named(Enter));
+				if (Reflect.field(Store.section(root, "extension.git"), "git.pullStrategy") != "rebase") throw "Git pull preference was not saved";
+				shot("pull-preference");
 				Sys.println("git snapshots: history pages, references, selection, theme alpha, fixed-scale scrolling, cleanup and fiber exception recovery");
 			});
 		for (dark in [true, false])

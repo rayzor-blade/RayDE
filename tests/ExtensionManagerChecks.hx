@@ -221,6 +221,29 @@ class ExtensionManagerChecks {
 		read.setContributions([{command: "ext.command.describe", key: "mod+alt+d"}]);
 		check(read.of("ext.command.describe") == null, "removing an extension default stays removed after reload");
 		nativeChecks(root + "/native-checks", services);
+		var settingsFile = fixture(root + "/settings-test", "settings", [], "", false);
+		var config:Dynamic = haxe.Json.parse(sys.io.File.getContent(settingsFile));
+		config.contributes.configuration = {properties: {"fixture.strategy": {type:"string", "default":"ff-only"}}};
+		write(settingsFile, haxe.Json.stringify(config));
+		var source = "import rayde.settings.get; registerCommand('read', () -> trace(await get('fixture.strategy', 'fallback')));";
+		var connection = new Connection(settingsFile, () -> source, Manifest.read(settingsFile)), seen:Array<String> = [];
+		connection.services = services;
+		connection.onEntry = (_, entry) -> seen.push(entry.text);
+		function reads(expected:String):Void {
+			connection.command("read", null);
+			var end = haxe.Timer.stamp() + 5;
+			while (seen.indexOf(expected) < 0 && haxe.Timer.stamp() < end) { connection.tick(); Sys.sleep(.01); }
+			check(seen.indexOf(expected) >= 0, 'extension settings read $expected without a workspace capability: ' + seen.join(" | "));
+		}
+		try {
+			connection.start();
+			reads("ff-only");
+			Store.save(root, "extension.other", {"fixture.strategy":"other extension"});
+			seen = []; reads("ff-only");
+			Store.save(root, "extension.settings", {"fixture.strategy":"merge"});
+			reads("merge");
+		} catch (failure:Dynamic) { connection.stop(); throw failure; }
+		connection.stop();
 		Sys.println("extension manager: precedence, activation, services, capabilities, disable, restart limit and key migration");
 	}
 

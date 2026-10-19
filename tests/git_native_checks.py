@@ -103,6 +103,8 @@ import gitNative.eachStatus;
 import gitNative.diff;
 import gitNative.openHistory;
 import gitNative.repositoryStatus;
+import gitNative.remoteOperation;
+import gitNative.commitChanges;
 function emit(value) { trace('@result:' + stringify(value)); }
 function text(snapshot) {
   for (part in [snapshot.staged, snapshot.changes])
@@ -124,6 +126,8 @@ def init(name):
     git(root, "init", "-b", "main")
     git(root, "config", "core.autocrlf", "false")
     git(root, "config", "core.hooksPath", str(FIXTURE / "no-hooks"))
+    git(root, "config", "user.name", "Fixture")
+    git(root, "config", "user.email", "fixture@example.test")
     return root
 
 
@@ -308,11 +312,129 @@ emit({rows: rows, refs: refs, first: layout(first.commits), graph: layout(rows),
         assert [r["id"] for r in result["compact"]["regions"]] == [r["id"] for r in result["scene"]["regions"]]
         assert any(ref["name"] == "refs/tags/release" and ref["target"] == rows[0]["id"] for ref in result["refs"])
         assert result["dates"] == ["1970-01-01 00:00 UTC", "2000-02-29 00:00 UTC", "1969-12-31 23:59 UTC"]
+        assert all(row["author"] != "Metadata" for row in rows), rows
+        assert not any("issue-store/" in ref["name"] or ref["name"].startswith("refs/bugs/") for ref in result["refs"])
+        result = host.run(PREAMBLE + """
+emit({latest:commitChanges(REPO,'HEAD'), merge:commitChanges(REPO,'HEAD~1'),
+  root:commitChanges(REPO,ROOT_COMMIT)});
+""".replace("REPO", json.dumps(str(history))).replace("ROOT_COMMIT", json.dumps(git(history,"rev-list","--max-parents=0","main").stdout.decode().strip())))
+        assert result["latest"] == [{"path":"history.txt", "oldPath":"history.txt", "status":3}], result
+        assert result["merge"] == [{"path":"trust.txt", "oldPath":"trust.txt", "status":1}], result
+        assert result["root"] and all(item["status"] == 1 for item in result["root"]), result
+        changes = init("commit-files")
+        write(changes, "before.txt", "retained content\n" * 10)
+        write(changes, "deleted.txt", "deleted\n")
+        git(changes, "add", ".")
+        git(changes, "commit", "-m", "root")
+        git(changes, "mv", "before.txt", "after.txt")
+        git(changes, "rm", "deleted.txt")
+        write(changes, "nested/added.txt", "added\n")
+        git(changes, "add", ".")
+        git(changes, "commit", "-m", "rename and deletion")
+        result = host.run(PREAMBLE + """
+var error = '';
+try { commitChanges(REPO,'missing-commit'); } catch (failure) { error = '' + failure; }
+gc(); emit({files:commitChanges(REPO,'HEAD'),error:error});
+""".replace("REPO", json.dumps(str(changes))))
+        assert {item["path"]:item["status"] for item in result["files"]} == {"after.txt":4,"deleted.txt":2,"nested/added.txt":1}, result
+        assert next(item["oldPath"] for item in result["files"] if item["status"] == 4) == "before.txt", result
+        assert "resolve commit:" in result["error"], result
+    print("git commit files: root, modification, first-parent merge, rename, deletion, invalid revision recovery and metadata filtering", flush=True)
     git(history, "checkout", "--detach", "HEAD~2")
     with Host() as host:
         result = host.run(PREAMBLE + "var cursor = openHistory(REPO); emit({page:cursor.next(500),branch:repositoryStatus(REPO).branch}); cursor.close();".replace("REPO", json.dumps(str(history))))
         assert len(result["page"]["commits"]) == 114 and result["branch"] == "Detached HEAD", result
     print("git history: merge DAG, stable page lanes, edge routing, annotated tags, detached HEAD and UTC dates", flush=True)
+
+    origin = FIXTURE / "origin.git"
+    origin.mkdir()
+    git(origin, "init", "--bare", "-b", "main")
+    sender = init("sender")
+    write(sender, "tracked.txt", "base\n")
+    git(sender, "add", ".")
+    git(sender, "commit", "-m", "remote base")
+    git(sender, "remote", "add", "origin", str(origin))
+
+    def remote(host, root, action, expected_error=None, strategy="ff-only"):
+        result = host.run(PREAMBLE + """
+try { emit({result:remoteOperation(REPO, ACTION, STRATEGY)}); }
+catch (error) { emit({error:'' + error}); }
+""".replace("REPO", json.dumps(str(root))).replace("ACTION", json.dumps(action)).replace("STRATEGY", json.dumps(strategy)))
+        if expected_error is None:
+            assert result.get("result", {}).get("remote") == "origin", result
+        else:
+            assert expected_error in result.get("error", ""), result
+        return result
+
+    with Host() as host:
+        remote(host, sender, "push")
+        assert git(sender, "config", "branch.main.remote").stdout.strip() == b"origin"
+        assert git(origin, "rev-parse", "main").stdout == git(sender, "rev-parse", "HEAD").stdout
+        receiver = init("receiver")
+        git(receiver, "remote", "add", "origin", str(origin))
+        remote(host, receiver, "fetch")
+        git(receiver, "checkout", "-B", "main", "--track", "origin/main")
+        before = git(receiver, "rev-parse", "HEAD").stdout
+        write(sender, "tracked.txt", "remote update\n")
+        git(sender, "commit", "-am", "remote update")
+        remote(host, sender, "push")
+        remote(host, receiver, "fetch")
+        assert git(receiver, "rev-parse", "HEAD").stdout == before
+        assert git(receiver, "rev-parse", "origin/main").stdout == git(sender, "rev-parse", "HEAD").stdout
+        remote(host, receiver, "pull")
+        assert git(receiver, "rev-parse", "HEAD").stdout == git(sender, "rev-parse", "HEAD").stdout
+        assert (receiver / "tracked.txt").read_text() == "remote update\n"
+        assert not git(receiver, "status", "--porcelain").stdout
+        write(receiver, "tracked.txt", "uncommitted\n")
+        remote(host, receiver, "pull", "Commit or stash")
+        assert (receiver / "tracked.txt").read_text() == "uncommitted\n"
+        git(receiver, "checkout", "--", "tracked.txt")
+        write(receiver, "local.txt", "local\n")
+        git(receiver, "add", ".")
+        git(receiver, "commit", "-m", "local ahead")
+        remote(host, receiver, "pull")
+        local_head = git(receiver, "rev-parse", "HEAD").stdout
+        write(sender, "tracked.txt", "divergent remote\n")
+        git(sender, "commit", "-am", "divergent remote")
+        remote(host, sender, "push")
+        remote_head = git(origin, "rev-parse", "main").stdout
+        remote(host, receiver, "push", "push to origin:")
+        assert git(origin, "rev-parse", "main").stdout == remote_head
+        remote(host, receiver, "pull", "diverged")
+        assert git(receiver, "rev-parse", "HEAD").stdout == local_head
+        assert not git(receiver, "status", "--porcelain").stdout
+        for strategy in ["merge", "rebase"]:
+            git(receiver, "reset", "--hard", local_head.decode().strip())
+            remote(host, receiver, "pull", strategy=strategy)
+            assert git(receiver, "merge-base", "--is-ancestor", remote_head.decode().strip(), "HEAD").returncode == 0
+            assert (receiver / "local.txt").read_text() == "local\n"
+            assert (receiver / "tracked.txt").read_text() == "divergent remote\n"
+            assert not git(receiver, "status", "--porcelain").stdout
+            parent_count = len(git(receiver,"rev-list","--parents","-n","1","HEAD").stdout.split()) - 1
+            assert parent_count == (2 if strategy == "merge" else 1), strategy
+        git(receiver, "reset", "--hard", remote_head.decode().strip())
+        write(receiver, "tracked.txt", "local conflict\n")
+        git(receiver, "commit", "-am", "local conflict")
+        conflict_head = git(receiver,"rev-parse","HEAD").stdout
+        write(sender, "tracked.txt", "remote conflict\n")
+        git(sender, "commit", "-am", "remote conflict")
+        remote(host, sender, "push")
+        for strategy in ["merge", "rebase"]:
+            before_index = (receiver / ".git/index").read_bytes()
+            remote(host, receiver, "pull", "has conflicts; branch unchanged", strategy=strategy)
+            assert git(receiver,"rev-parse","HEAD").stdout == conflict_head
+            assert (receiver / ".git/index").read_bytes() == before_index
+            assert (receiver / "tracked.txt").read_text() == "local conflict\n"
+            assert not git(receiver,"status","--porcelain").stdout
+            assert not any((receiver / ".git" / name).exists() for name in ["MERGE_HEAD","rebase-merge","rebase-apply"])
+        remote(host, empty, "fetch", "No remote configured")
+        git(receiver, "checkout", "--detach")
+        remote(host, receiver, "push", "Check out a branch")
+        source = PREAMBLE + "var cursor=openHistory(REPO, FOCUS); emit(cursor.next(500)); cursor.close();"
+        focus = git(history, "rev-parse", "refs/tags/v0.1.0").stdout.decode().strip()
+        result = host.run(source.replace("REPO", json.dumps(str(history))).replace("FOCUS", json.dumps(focus)))
+        assert result["commits"][0]["id"] == focus and len(result["commits"]) == 105, result
+    print("git remote: publish, upstream, fetch, fast-forward/merge/rebase pull, conflicts unchanged, ahead-only pull, dirty/diverged rejection, non-fast-forward push and commit focus", flush=True)
 
     if "--benchmark" in sys.argv:
         large = init("large")

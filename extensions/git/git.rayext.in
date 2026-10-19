@@ -5,7 +5,7 @@
   "description": "Source control sidebar and interactive repository history",
   "main": "ext/main.rays",
   "sources": ["ext"],
-  "activationEvents": ["workspaceContains:.git", "onView:scm", "onCommand:git.history", "onCommand:git.refresh"],
+  "activationEvents": ["workspaceContains:.git", "onView:scm", "onCommand:git.history", "onCommand:git.refresh", "onCommand:git.fetch", "onCommand:git.pull", "onCommand:git.push"],
   "capabilities": ["workspace.read", "native:git2"],
   "natives": {
     "git2": {"path": "natives/@LIBRARY@", "sha256": "@SHA256@"}
@@ -14,7 +14,13 @@
     "tools": [{"id": "git-refresh", "title": "Refresh", "icon": "refresh"},
       {"id": "git-history", "title": "History", "icon": "history"}]}],
   "contributes": {
+    "configuration": {"title":"Git", "properties": {
+      "git.pullStrategy": {"type":"string", "title":"Pull strategy", "description":"Default for the Pull action. A pull can override this in Pull options. Conflicting merges and rebases stop before changing the branch.", "enum":["ff-only", "merge", "rebase"], "default":"ff-only"}
+    }},
     "commands": [{"id": "git.history", "title": "Git: History", "icon": "history"},
-      {"id": "git.refresh", "title": "Git: Refresh", "icon": "refresh"}]
+      {"id": "git.refresh", "title": "Git: Refresh", "icon": "refresh"},
+      {"id": "git.fetch", "title": "Git: Fetch", "icon": "fetch"},
+      {"id": "git.pull", "title": "Git: Pull", "icon": "pull"},
+      {"id": "git.push", "title": "Git: Push", "icon": "push"}]
   }
 }

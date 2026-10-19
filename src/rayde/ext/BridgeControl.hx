@@ -7,6 +7,8 @@ import ashui.canvaskit.Viewport2D;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
+import ashui.components.Tooltip;
+import ashui.components.DropdownMenu;
 import ashui.css.Identity;
 import ashui.input.Interaction;
 import ashui.layout.Element;
@@ -15,6 +17,7 @@ import ashui.layout.Node;
 import ashui.layout.Prop;
 import ashui.reactive.Owner;
 import ashui.reactive.Signal;
+import ashui.reactive.Computed;
 import ashui.reactive.Watch;
 import ashui.ui.Div;
 import ashui.types.Style;
@@ -52,9 +55,11 @@ class BridgeControl {
 	var restoreScroll:Dynamic;
 	var canvasWidth = -1.;
 	var canvasHeight = -1.;
+	var tooltip:Null<String>;
+	var buttonMounted = false;
 
 	public static function supported(tag:String):Bool
-		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
+		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
 
 	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic) {
 		this.tree = tree;
@@ -71,7 +76,6 @@ class BridgeControl {
 				nativeButton = new Button({size: Sm, variant: Secondary, disabled: disabled, type: "button",
 					onClick: e -> emit("click", {x: e.localX, y: e.localY})}, [slot]);
 				fill(nativeButton);
-				box.appendChild(nativeButton);
 			} else if (kind == "canvas-kit") {
 				viewport = new Viewport2D();
 				selection = new Selection2D();
@@ -182,6 +186,7 @@ class BridgeControl {
 
 	public function handles(event:String):Bool
 		return kind == "ui-button" && event == "click" || kind == "ui-select" && event == "change"
+			|| kind == "ui-menu" && event == "select"
 			|| kind == "ui-panel-group" && event == "panelChange"
 			|| kind == "canvas-kit" && ["click", "hover", "selectionChange"].indexOf(event) >= 0;
 
@@ -208,6 +213,12 @@ class BridgeControl {
 				return true;
 			case "aria-label" if (kind == "ui-button"):
 				Identity.of(tree, nativeButton.node.id).setAttribute(name, data == null ? null : Std.string(data)); return true;
+			case "tooltip" if (kind == "ui-button" || kind == "ui-menu"):
+				var label = data == null ? null : Std.string(data);
+				if (buttonMounted && label != tooltip) throw "Button tooltip is fixed while mounted";
+				tooltip = label;
+				if (label != null && nativeButton != null) Identity.of(tree, nativeButton.node.id).setAttribute("aria-label", label);
+				return true;
 			case "panels" if (panels != null): panels.set(data); return true;
 			case "height" if (kind == "ui-button" || kind == "ui-select"):
 				var height = data == null ? 32. : CanvasScene.finite(data);
@@ -215,8 +226,8 @@ class BridgeControl {
 				node.set(Prop.Height, (height:Single)); return true;
 			case "disabled" if (kind != "canvas-kit"): disabled.set(data == true); return true;
 			case "value" if (kind == "ui-select"): value.set(data == null ? "" : Std.string(data)); return true;
-			case "options" if (kind == "ui-select"):
-				if (data != null && !Std.isOfType(data, Array)) throw "ui-select options must be an array";
+			case "options" if (kind == "ui-select" || kind == "ui-menu"):
+				if (data != null && !Std.isOfType(data, Array)) throw "Control options must be an array";
 				options = data == null ? [] : [for (o in (data:Array<Dynamic>)) {
 					{value: CanvasScene.text(o, "value"), label: CanvasScene.text(o, "label"), disabled: o.disabled == true};
 				}];
@@ -255,15 +266,39 @@ class BridgeControl {
 	}
 
 	public function flush():Void {
+		if (kind == "ui-button" && !buttonMounted) {
+			scope.run(() -> {
+				if (tooltip != null) {
+					var tip = new Tooltip({label:tooltip, side:"bottom"}, [nativeButton]);
+					fill(tip); tree.addChild(node.id, tip.node.id);
+				} else tree.addChild(node.id, nativeButton.node.id);
+			});
+			buttonMounted = true;
+		}
 		if (kind == "canvas-kit") { scope.run(buildCanvas); return; }
 		if (panels != null) { scope.run(() -> panels.build()); return; }
-		if (kind != "ui-select" || !dirty) return;
+		if ((kind != "ui-select" && kind != "ui-menu") || !dirty) return;
 		dirty = false;
 		if (stopSelect != null) stopSelect();
 		scope.run(() -> {
 			var child = new Owner(tree);
 			stopSelect = child.dispose;
 			child.run(() -> {
+				if (kind == "ui-menu") {
+					var trigger = new DropdownMenuTrigger({variant:Ghost, size:Icon}, []);
+					fill(trigger);
+					Interaction.of(trigger.node).setDisabled(disabled);
+					if (tooltip != null) Identity.of(tree, trigger.node.id).setAttribute("aria-label", tooltip);
+					var items:Array<Element> = [for (o in options) new DropdownMenuItem({
+						disabled:Computed.make(() -> disabled.get() || o.disabled), onSelect:() -> emit("select", {value:o.value})
+					}, [new ashui.ui.Text(Std.string(o.label))])];
+					var menu = new DropdownMenu({}, [trigger, new DropdownMenuContent({}, items)]);
+					fill(menu);
+					var element:Element = tooltip == null ? menu : new Tooltip({label:tooltip, side:"bottom"}, [menu]);
+					fill(element); tree.addChild(node.id, element.node.id);
+					buttonMounted = true;
+					return;
+				}
 				var items:Array<Element> = [for (o in options) new SelectItem({value: o.value, label: o.label, disabled: o.disabled})];
 				nativeSelect = new Select({value: value, disabled: disabled, size: cast selectSize, onChange: v -> emit("change", {value: v})}, items);
 				fill(nativeSelect);

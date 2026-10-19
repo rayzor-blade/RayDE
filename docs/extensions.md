@@ -208,6 +208,8 @@ The extension asks the workbench for files through the `rayde.workspace` module:
 
 Paths are resolved against the project folder, and one outside it is refused. Calls return promises, so a script `await`s them. `readFile` answers from the buffer when a file is open, which is why the preview shows an edit as soon as it is saved.
 
+`rayde.settings.get(key, fallback?)` returns a promise for the calling extension's own setting. Workspace values under `extension.<id>` in `.rayde/settings.json` override user values in `~/.rayde/settings.json`, then the manifest's configuration default and finally the supplied fallback. Reading this section needs no workspace capability and cannot access another extension's section.
+
 ## Showing a tab
 
 `mount(view, name)` puts a view where the extension's view goes. A name that starts with `tab:` opens an editor tab titled with the rest of it:
@@ -242,7 +244,9 @@ var branch = signal('all');
 
 `ui-button` accepts text or markup children, `disabled`, `variant` (`primary`, `secondary`, `outline`, `ghost`, `link`, `destructive`) and `size` (`sm`, `md`, `lg`). `ui-select` accepts `value`, `disabled`, `size` and `options`: `{value, label, disabled?}` records. It emits `change` with `{value}`. Both use Ashui's focus and keyboard handling. Their default row height is 32 px; numeric `height` permits 16–256 px for dense lists. CSS sets the wrapper's width, placement and component custom properties.
 
-`ui-icon` renders Ashui's named icon set through its `name` property, at 16 px by default. Icon buttons accept `size="icon"` and `aria-label`, for example `<ui-button size="icon" aria-label="Maximize graph"><ui-icon name="maximize"/></ui-button>`. `maximize` uses the pack's `fullscreen-line` SVG.
+`ui-icon` renders Ashui's named icon set through its `name` property, at 16 px by default. Icon buttons accept `size="icon"`, `aria-label` and a static `tooltip`, for example `<ui-button size="icon" tooltip="Maximize graph"><ui-icon name="maximize"/></ui-button>`. The tooltip also supplies the accessible label. `maximize` uses the pack's `fullscreen-line` SVG; `fetch`, `pull`, `push`, `focus` and `filter-off` are also available.
+
+`ui-menu` is Ashui's native DropdownMenu with an icon-sized chevron trigger. It takes `tooltip`, `disabled` and `options` (`{value, label, disabled?}`), and emits `select` with `{value}`. Its keyboard navigation, focus restoration and dismissal use the native component.
 
 `canvas-kit` retains a serializable drawing scene and runs Ashui CanvasKit in the editor:
 
