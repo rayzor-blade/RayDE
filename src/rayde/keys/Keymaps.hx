@@ -20,7 +20,7 @@ class Keymaps {
 
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
-		"quickopen", "commands", "gotoline", "run", "stop", "save", "close", "definition", "panel", "explorer", "problems", "output", "terminal", "newterminal",
+		"quickopen", "commands", "gotoline", "run", "stop", "save", "close", "definition", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
 		"splitterminal", "settings", "minimize", "fullscreen", "togglebreakpoint", "pause", "stepover", "stepinto", "stepout", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
 	];
 
@@ -47,7 +47,7 @@ class Keymaps {
 			platform: "",
 			keys: [
 				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
-				k("close", "mod+w"), k("definition", "f12"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
+				k("close", "mod+w"), k("definition", "f12"), k("suggest", "ctrl+space"), k("parameterhints", "mod+shift+space"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
 				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,"),
 				k("minimize", "", "cmd+m"), k("fullscreen", "alt+shift+enter", "ctrl+cmd+f"), k("togglebreakpoint", "f9"), k("pause", "f6"), k("stepover", "f10"),
 				k("stepinto", "f11"), k("stepout", "shift+f11")
@@ -60,7 +60,7 @@ class Keymaps {
 			platform: "",
 			keys: [
 				k("quickopen", "ctrl+shift+n", "cmd+shift+o"), k("commands", "ctrl+shift+a", "cmd+shift+a"), k("gotoline", "ctrl+g", "cmd+l"),
-				k("run", "shift+f10", "ctrl+r"), k("stop", "ctrl+f2", "cmd+f2"), k("save", "mod+s"), k("close", "ctrl+f4", "cmd+w"), k("definition", "ctrl+b", "cmd+b"),
+				k("run", "shift+f10", "ctrl+r"), k("stop", "ctrl+f2", "cmd+f2"), k("save", "mod+s"), k("close", "ctrl+f4", "cmd+w"), k("definition", "ctrl+b", "cmd+b"), k("suggest", "ctrl+space"),
 				k("panel", "ctrl+shift+f12", "cmd+shift+f12"), k("explorer", "alt+1", "cmd+1"), k("problems", "alt+6", "cmd+6"), k("output", "alt+4", "cmd+4"),
 				k("terminal", "alt+f12"), k("settings", "ctrl+alt+s", "cmd+,")
 			].concat(files("shift+f6"))
@@ -72,7 +72,7 @@ class Keymaps {
 			platform: "",
 			keys: [
 				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("run", "mod+b"), k("save", "ctrl+shift+s", "cmd+alt+s"),
-				k("close", "mod+w"), k("definition", "f12"), k("settings", "", "cmd+,")
+				k("close", "mod+w"), k("definition", "f12"), k("suggest", "ctrl+space"), k("settings", "", "cmd+,")
 			].concat(files("f2"))
 		},
 		{
@@ -82,7 +82,7 @@ class Keymaps {
 			platform: "",
 			keys: [
 				k("quickopen", "mod+shift+r"), k("commands", "mod+3"), k("gotoline", "mod+l"), k("run", "ctrl+f11", "cmd+shift+f11"), k("stop", "mod+f2"),
-				k("save", "mod+shift+s"), k("close", "mod+w"), k("definition", "f3"), k("settings", "", "cmd+,")
+				k("save", "mod+shift+s"), k("close", "mod+w"), k("definition", "f3"), k("suggest", "ctrl+space"), k("parameterhints", "ctrl+shift+space"), k("settings", "", "cmd+,")
 			].concat(files("f2"))
 		},
 		{
@@ -92,7 +92,7 @@ class Keymaps {
 			platform: "other",
 			keys: [
 				k("quickopen", "ctrl+t"), k("commands", "ctrl+q"), k("gotoline", "ctrl+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "ctrl+shift+s"),
-				k("close", "ctrl+f4"), k("definition", "f12"), k("explorer", "ctrl+alt+l"), k("output", "ctrl+alt+o"), k("terminal", "ctrl+`")
+				k("close", "ctrl+f4"), k("definition", "f12"), k("suggest", "ctrl+space"), k("parameterhints", "ctrl+shift+space"), k("explorer", "ctrl+alt+l"), k("output", "ctrl+alt+o"), k("terminal", "ctrl+`")
 			].concat(files("f2"))
 		},
 		{
@@ -102,7 +102,7 @@ class Keymaps {
 			platform: "mac",
 			keys: [
 				k("quickopen", "cmd+shift+o"), k("commands", "cmd+shift+a"), k("gotoline", "cmd+l"), k("run", "cmd+r"), k("stop", "cmd+."), k("save", "cmd+alt+s"),
-				k("close", "cmd+w"), k("definition", "ctrl+cmd+j"), k("settings", "cmd+,"), k("explorer", "cmd+0"), k("panel", "cmd+shift+y")
+				k("close", "cmd+w"), k("definition", "ctrl+cmd+j"), k("suggest", "ctrl+space"), k("settings", "cmd+,"), k("explorer", "cmd+0"), k("panel", "cmd+shift+y")
 			].concat(files("f2"))
 		}
 	];

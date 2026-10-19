@@ -1208,6 +1208,56 @@ class Snapshots {
 				scroll("#rayde-theme-studio", 5000);
 				shot("gallery-end");
 			});
+		for (dark in [true, false])
+			scenario(dark, "assist", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				bench.openFile(file);
+				settle(20);
+				var tree = bench.tree, text = () -> bench.buffer(file).get();
+				var count = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length;
+				var typed = (s:String) -> {
+					ashui.input.Keyboard.text(tree, s);
+					settle(6);
+				};
+				// A dot after a name opens the list of its members; typing narrows it, and Enter puts the choice in the text.
+				bench.goTo(file, 7, 10);
+				settle(4);
+				typed(".");
+				var editor = bench.editorFor(file);
+				until(() -> editor.completionsOpen(), "the member list to open after the dot");
+				if (count(".ui-code-completion-row") < 5)
+					throw "a String has more members than " + count(".ui-code-completion-row");
+				shot("completion");
+				typed("charA");
+				if (!editor.completionsOpen() || count(".ui-code-completion-row") > 3)
+					throw "typing narrows the list: " + count(".ui-code-completion-row") + " rows";
+				shot("completion-narrowed");
+				press(Named(Enter));
+				if (text().indexOf("\t\tgreeting.charAt\n") < 0 || editor.completionsOpen())
+					throw "Enter puts the chosen member in the text and closes the list: " + text();
+				// A call's parenthesis opens the signature, with the argument the caret is in emphasised.
+				bench.goTo(file, 8, 7);
+				settle(4);
+				typed("(");
+				var emphasised = () -> [for (id in ashui.css.Css.query(tree, bench.node.id, ".ui-code-hint [data-emphasis]")) ashui.ui.Text.at(id).text()].join("");
+				until(() -> count(".ui-code-hint") > 0, "the signature to show after the parenthesis");
+				if (emphasised() != "name:String")
+					throw "the first parameter is emphasised: " + emphasised();
+				shot("signature");
+				typed("greeting, ");
+				if (emphasised() != "times:Int")
+					throw "after the comma the second parameter is emphasised: " + emphasised();
+				shot("signature-second");
+				typed(")");
+				if (count(".ui-code-hint") > 0)
+					throw "the signature goes when the call is closed";
+				// The command opens the list wherever the caret is.
+				bench.goTo(file, 9, 0);
+				settle(4);
+				bench.runCommand("suggest");
+				until(() -> editor.completionsOpen(), "the suggest command to open the list");
+				shot("suggest");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 

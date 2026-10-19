@@ -69,6 +69,10 @@ class Display {
 		return new Display(server, haxe.io.Path.directory(full), Hxml.read(full), full);
 	}
 
+	/** The byte offset in `text` as UTF-8 of the character at `offset`: what a request takes where an editor has a character offset. */
+	public static function byteOffset(text:String, offset:Int):Int
+		return haxe.io.Bytes.ofString(text.substr(0, offset)).length;
+
 	public function completion(file:String, offset:Int, ?contents:String, auto = false):Completion {
 		var r:Dynamic = call("display/completion", place(file, offset, contents, {wasAutoTriggered: auto}));
 		if (r == null)

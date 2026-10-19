@@ -772,6 +772,23 @@ class Checks {
 		Sys.println("themes: files, colours, scoping, installing, fonts and text edits");
 	}
 
+	static function callSiteChecks():Void {
+		var open = (t:String) -> rayde.lang.CallSite.openParen(t, t.length);
+		check(open("greet(a, b") == 5 && open("greet(a)") == -1 && open("f(g(1), ") == 1 && open("f(g(1, ") == 3, "the call the caret is in is found by its unmatched paren");
+		check(open("f(\"(\", ") == 1 && open("x = [1, 2") == -1 && open("{ f(1") == 3 && open("no call") == -1, "strings are skipped, and a bracket or brace is not a call");
+		var index = (t:String, o:Int) -> rayde.lang.CallSite.parameterIndex(t, o, t.length);
+		check(index("greet(a, b", 5) == 1 && index("greet(a", 5) == 0 && index("f(g(1, 2), 3", 1) == 2 - 1 && index("f(\"a,b\", ", 1) == 1 && index("f([1, 2], {a: 1, b: 2}, ", 1) == 2, "the argument is the commas at the call's own level");
+		var part = (label:String, i:Int) -> {
+			var span = rayde.lang.CallSite.emphasis(label, i);
+			span == null ? null : label.substring(span.from, span.to);
+		};
+		check(part("(name:String, times:Int):String", 0) == "name:String" && part("(name:String, times:Int):String", 1) == "times:Int" && part("(name:String, times:Int):String", 2) == null, "the emphasised part of a signature is the parameter");
+		check(part("(m:Map<String, Int>, ?x:Int):Void", 0) == "m:Map<String, Int>" && part("(m:Map<String, Int>, ?x:Int):Void", 1) == "?x:Int", "commas inside generics do not split a parameter");
+		check(part("(f:(a:Int)->Void, b:Int)->Void", 0) == "f:(a:Int)->Void" && part("(f:(a:Int)->Void, b:Int)->Void", 1) == "b:Int" && part("():Void", 0) == null, "nor do function types, and a signature with no parameters has none");
+		check(Display.byteOffset("héllo wörld", 8) == 10 && Display.byteOffset("abc", 2) == 2 && Display.byteOffset("", 0) == 0, "an editor's character offset becomes the compiler's byte offset");
+		Sys.println("call sites: the call a caret is in, its argument, and the part of the signature to emphasise");
+	}
+
 	static function removeTree(path:String):Void {
 		if (sys.FileSystem.isDirectory(path)) {
 			for (entry in sys.FileSystem.readDirectory(path))
@@ -783,6 +800,7 @@ class Checks {
 
 	static function main():Void {
 		themeChecks();
+		callSiteChecks();
 		hxmlChecks();
 		keyChecks();
 		settingsChecks();
@@ -806,6 +824,11 @@ class Checks {
 			check(doc != null && doc.documentation != null && doc.documentation.indexOf("Says hello") >= 0, "hover on greet carries its doc comment");
 			check(doc != null && doc.type == "(name:String, times:Int) -> String", 'hover type of greet: ${doc == null ? "nothing" : doc.type}');
 			var warm = haxe.Timer.stamp() - started;
+
+			// An editor counts characters and the compiler bytes: text with accents before the position still lands on the name.
+			var accented = StringTools.replace(text, '"hello"', '"héllo wörld"');
+			var moved = display.hover(file, at(accented, "greet(greeting", 1), accented);
+			check(moved != null && moved.type == "(name:String, times:Int) -> String", 'hover after accented text: ${moved == null ? "nothing" : moved.type}');
 
 			// Completion on the buffer as edited, the file on disk untouched.
 			var edited = StringTools.replace(text, "trace(greeting);", "greeting.");

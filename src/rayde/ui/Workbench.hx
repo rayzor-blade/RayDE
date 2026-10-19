@@ -241,6 +241,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What the terminal is set to, read from the project's .rayde/terminal.json. */
 	var terminalSettings:Settings;
 
+	/** Completion and signature help for Haxe editors, from the compilation server. */
+	var assist:CodeAssist;
+
 	/** Changes when a terminal setting does, for the views that draw by it. */
 	final settingsRevision = Signal.make(0);
 
@@ -419,6 +422,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var files = open.get(), at = files.indexOf(file);
 		if (at < 0)
 			return;
+		assist.stop(file, null);
 		var rest = files.copy();
 		rest.splice(at, 1);
 		var studio = studios.get(file);
@@ -560,9 +564,52 @@ class Workbench extends Component<WorkbenchProps> {
 		ashui.animation.AnimationScheduler.main.after(.01, apply);
 	}
 
+	/** The code editor of an open file, once it has been made. */
+	public function editorFor(file:String):Null<CodeEditor>
+		return editorOf(file);
+
 	function editorOf(file:String):Null<CodeEditor> {
 		var ref = editorRefs.get(file);
 		return ref == null ? null : ref.get();
+	}
+
+	/** Runs the command `id` as its key or the command center would. */
+	public function runCommand(id:String):Void {
+		var action = Lambda.find(commandList, a -> a.id == id);
+		if (action != null)
+			action.run();
+	}
+
+	/** After an edit of a Haxe file: opens the completion list or signature help when what was typed calls for it. */
+	function assistInput(file:String):Void {
+		var editor = StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		if (editor != null)
+			assist.typed(file, editor, buffer(file).get());
+	}
+
+	/** Keeps signature help showing while the text or the caret of a Haxe file moves inside a call. */
+	function assistWatch(file:String, editor:Null<CodeEditor>):Void {
+		if (editor == null || !StringTools.endsWith(file, ".hx"))
+			return;
+		new ashui.reactive.Watch(() -> {
+			editor.value.get();
+			editor.editing.caret.get();
+			0;
+		}, _ -> assist.moved(file, editor), (_, _) -> false);
+	}
+
+	/** Opens the completion list at the caret of the Haxe file in front. */
+	function triggerSuggest():Void {
+		var file = active.get(), editor = file != "" && !isVirtual(file) && StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		if (editor != null)
+			assist.complete(file, editor, buffer(file).get());
+	}
+
+	/** Shows the signatures of the call the caret of the Haxe file in front is in. */
+	function triggerParameterHints():Void {
+		var file = active.get(), editor = file != "" && !isVirtual(file) && StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		if (editor != null)
+			assist.signature(file, editor, buffer(file).get());
 	}
 
 	/** The text offset of the cursor in `file`'s editor, or -1 while it has none. */
@@ -588,7 +635,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var file = active.get(), offset = caret(file);
 		if (file == "" || offset < 0)
 			return;
-		var found = try props.display.definition(file, offset, buffer(file).get()) catch (_:Dynamic) [];
+		var found = try props.display.definition(file, Display.byteOffset(buffer(file).get(), offset), buffer(file).get()) catch (_:Dynamic) [];
 		if (found.length == 0)
 			say("No definition found");
 		else
@@ -960,6 +1007,8 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: saveAll},
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (active.get() != "") closeFile(active.get())},
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, run: goToDefinition},
+			{id: "suggest", label: "Trigger Suggest", icon: Icons.LIGHTBULB_LINE, run: triggerSuggest},
+			{id: "parameterhints", label: "Trigger Parameter Hints", icon: Icons.BRACES_LINE, run: triggerParameterHints},
 			{id: "settings", label: "Open Settings", icon: Icons.SETTINGS_3_LINE, run: () -> openSettings()},
 			{id: "build", label: "Open Build Settings", icon: Icons.HAMMER_LINE, run: openBuild},
 			{id: "libraries", label: "Manage Libraries", icon: Icons.BOOK_2_LINE, run: () -> openSettings("libraries")},
@@ -1505,6 +1554,7 @@ class Workbench extends Component<WorkbenchProps> {
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
 		chrome = props.chrome != null ? props.chrome : new WindowChrome();
+		assist = new CodeAssist(props.display);
 		if (props.theme != null)
 			themeStudio = makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
@@ -2299,10 +2349,14 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function codeEditor(file:String):Element {
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
-			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> edited(file)}
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
+				edited(file);
+				assistInput(file);
+			}}
 			class="flex-1 min-h-0"/>;
 		holdCaretWhileScrolling(editorRef(file).get());
 		annotate(file, editorRef(file).get());
+		assistWatch(file, editorRef(file).get());
 		return editor;
 	}
 
@@ -2361,7 +2415,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (editor != null && editor.decorationsAt(offset).length > 0)
 			return null;
 		var text = buffer(file).get();
-		var found = try props.display.hover(file, offset, text) catch (_:Dynamic) null;
+		var found = try props.display.hover(file, Display.byteOffset(text, offset), text) catch (_:Dynamic) null;
 		if (found == null || found.range == null)
 			return null;
 		return {
