@@ -10,7 +10,7 @@ The sidebar's **Refresh** action and **Git: Refresh** command reload status and 
 
 ![Git history and selected merge commit](images/git-history.png)
 
-Both graphs scroll at a fixed scale with the wheel, trackpad or scrollbars. Dragging does not pan the graph and the wheel does not zoom. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
+Both graphs use a virtual viewport at a fixed scale, scrolling with the wheel, trackpad or scrollbars. A viewport-sized canvas draws only visible rows and edges; Ashui Scroll owns the full list extent. Dragging does not pan the graph and the wheel does not zoom. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
 
 The extension owns the graph layout and scene in RayScript. RayDE's generic [Ashui bridge](extensions.md#ashui-controls-and-interactive-drawing) renders retained CanvasKit paths, circles and text, with native Button and Select components. Painting and viewport gestures stay in the editor. Repository scanning and history reads run on libgit2's worker lane.
 

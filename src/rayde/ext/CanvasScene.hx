@@ -10,8 +10,9 @@ import ashui.types.Brush;
 
 private typedef Ink = {color:Dynamic, alpha:Float};
 private typedef Region = {id:String, x:Float, y:Float, width:Float, height:Float};
+private typedef Box = {x:Float, y:Float, width:Float, height:Float};
 private enum Drawing {
-	Curve(path:Path, ink:Ink, width:Float, fill:Bool);
+	Curve(path:Path, ink:Ink, width:Float, fill:Bool, bounds:Box);
 	Circle(x:Float, y:Float, radius:Float, ink:Ink, width:Float);
 	Rect(x:Float, y:Float, w:Float, h:Float, radius:Float, ink:Ink, width:Float);
 	Text(text:String, x:Float, y:Float, ink:Ink, size:Float, weight:Int);
@@ -34,6 +35,7 @@ class CanvasScene {
 			switch text(op, "type") {
 				case "path":
 					var path = new Path(), started = false;
+					var minX = Math.POSITIVE_INFINITY, minY = Math.POSITIVE_INFINITY, maxX = Math.NEGATIVE_INFINITY, maxY = Math.NEGATIVE_INFINITY;
 					for (segment in list(op, "path")) {
 						if (++segments > 50000) throw "Canvas path segment limit exceeded";
 						if (!Std.isOfType(segment, Array)) throw "Canvas path segment must be an array";
@@ -50,8 +52,13 @@ class CanvasScene {
 							case "Z" if (started && a.length == 1): path.close();
 							case _: throw "Unsupported canvas path segment";
 						}
+						for (i in 0...Std.int((a.length - 1) / 2)) {
+							var x = n(1 + i*2), y = n(2 + i*2);
+							minX = Math.min(minX, x); minY = Math.min(minY, y);
+							maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+						}
 					}
-					drawings.push(Curve(path, ink, width, width == 0));
+					if (started) drawings.push(Curve(path, ink, width, width == 0, {x:minX, y:minY, width:maxX-minX, height:maxY-minY}));
 				case "circle":
 					drawings.push(Circle(number(op, "x"), number(op, "y"), number(op, "radius", 1, 0), ink, width));
 				case "rect":
@@ -72,15 +79,17 @@ class CanvasScene {
 		}
 	}
 
-	public function draw(ctx:DrawContext, kit:CanvasKit, ?hovered:String):Void {
+	public function draw(ctx:DrawContext, kit:CanvasKit, ?hovered:String, visibleOnly = false):Void {
 		var current = ThemeState.get();
 		if (current != theme) { brushes.clear(); theme = current; }
 		var zoom = kit.viewport.zoom.get();
 		for (r in regions)
-			if (r.id == hovered) ctx.fillRect(r.x, r.y, r.width, r.height, brush({color: "textPrimary", alpha: .05}), 4);
+			if (r.id == hovered && kit.visible(r.x, r.y, r.width, r.height)) ctx.fillRect(r.x, r.y, r.width, r.height, brush({color: "textPrimary", alpha: .05}), 4);
 		for (op in drawings)
 			switch op {
-				case Curve(path, ink, width, fill):
+				case Curve(path, ink, width, fill, b):
+					var margin = width / zoom;
+					if (!kit.visible(b.x-margin, b.y-margin, b.width+2*margin, b.height+2*margin)) continue;
 					if (fill) ctx.fillPath(path, brush(ink)); else ctx.strokePath(path, new Stroke(width / zoom), brush(ink));
 				case Circle(x, y, r, ink, width):
 					if (!kit.visible(x-r, y-r, 2*r, 2*r)) continue;
@@ -91,8 +100,8 @@ class CanvasScene {
 				case Text(text, x, y, ink, size, weight):
 					if (kit.visible(x, y-size, size * text.length, size*1.5)) ctx.text(text, x, y, brush(ink), {size: size, weight: weight});
 			}
-		// Keep all regions for full-scene fit and marquee selection, including offscreen rows.
-		for (r in regions) kit.region(r.id, r.x, r.y, r.width, r.height);
+		for (r in regions)
+			if (!visibleOnly || kit.visible(r.x, r.y, r.width, r.height)) kit.region(r.id, r.x, r.y, r.width, r.height);
 	}
 
 	function brush(ink:Ink):Brush {

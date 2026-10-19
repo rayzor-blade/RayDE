@@ -50,6 +50,8 @@ class BridgeControl {
 	var navigation = "canvas";
 	var scroller:Null<ashui.input.Scroll>;
 	var restoreScroll:Dynamic;
+	var canvasWidth = -1.;
+	var canvasHeight = -1.;
 
 	public static function supported(tag:String):Bool
 		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
@@ -100,38 +102,57 @@ class BridgeControl {
 		var scrolling = navigation == "scroll";
 		if (scrolling) viewport.reset();
 		kit = new CanvasKit({viewport:viewport, selection:selection, interactive:!scrolling, background:new Background2D(None),
-			draw:(ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get()),
+			draw:(ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get(), scrolling),
 			onClick:(id, e) -> clickRegion(id, e),
 			onHover:id -> { hovered.set(id ?? ""); emit("hover", {region:id}); }});
 		kit.momentumDecay = 0;
-		tree.addChild(node.id, kit.node.id);
 		if (scrolling) {
 			node.set(Prop.Overflow, ashui.types.Overflow.Scroll);
 			scroller = ashui.input.Scroll.attach(node, true, true);
-			kit.node.set(Prop.FlexShrink, (0:Single));
+			// Only the spacer has the full scene's extent; the GPU canvas stays viewport-sized.
+			var spacer = new Div({flexShrink:0});
+			tree.addChild(node.id, spacer.node.id);
+			kit.node.set(Prop.Position, Absolute);
+			kit.node.set(Prop.Width, (1:Single));
+			kit.node.set(Prop.Height, (1:Single));
 			new Watch(() -> scene.get().bounds, b -> {
-				kit.node.set(Prop.Width, (Math.max(1, b.x + b.width):Single));
-				kit.node.set(Prop.Height, (Math.max(1, b.y + b.height):Single));
+				spacer.node.set(Prop.Width, (Math.max(1, b.x + b.width):Single));
+				spacer.node.set(Prop.Height, (Math.max(1, b.y + b.height):Single));
+			});
+			new Watch(() -> ({x:scroller.x.get(), y:scroller.y.get()}), offset -> {
+				// Counter the native content offset, then draw the visible slice in content coordinates.
+				kit.node.set(Prop.Left, (offset.x:Single));
+				kit.node.set(Prop.Top, (offset.y:Single));
+				viewport.panX.set(-offset.x); viewport.panY.set(-offset.y);
+				hovered.set("");
 			});
 			var input = Interaction.of(kit.node);
 			input.onPointerMove(e -> {
-				var hit = kit.index.hitTest(e.localX, e.localY), id = hit == null ? "" : hit.id;
+				var point = viewport.screenToContent(e.localX, e.localY);
+				var hit = kit.index.hitTest(point.x, point.y), id = hit == null ? "" : hit.id;
 				if (hovered.get() != id) { hovered.set(id); emit("hover", {region:hit == null ? null : id}); }
 			});
 			input.onPointerLeave(_ -> { hovered.set(""); emit("hover", {region:null}); });
 			input.onClick(e -> {
 				if (e.button != null && e.button != Left) return;
-				var hit = kit.index.hitTest(e.localX, e.localY);
+				var point = viewport.screenToContent(e.localX, e.localY);
+				var hit = kit.index.hitTest(point.x, point.y);
 				if (hit == null) return;
 				if (e.control || e.superKey) selection.toggle(hit.id); else if (e.shift) selection.add(hit.id); else selection.select(hit.id);
 				clickRegion(hit.id, e);
 			});
 		} else fill(kit);
+		tree.addChild(node.id, kit.node.id);
 		var settle:LayoutTree->Void = laid -> {
 			if (laid != tree) return;
 			var bounds = tree.getBounds(node);
 			if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
 			if (scrolling) {
+				if (bounds.width != canvasWidth) { canvasWidth = bounds.width; kit.node.set(Prop.Width, (canvasWidth:Single)); }
+				if (bounds.height != canvasHeight) { canvasHeight = bounds.height; kit.node.set(Prop.Height, (canvasHeight:Single)); }
+				var extent = scene.get().bounds;
+				var maxX = Math.max(0, extent.x + extent.width - bounds.width), maxY = Math.max(0, extent.y + extent.height - bounds.height);
+				if (scroller.x.get() > maxX || scroller.y.get() > maxY) scroller.scrollTo(Math.min(scroller.x.get(), maxX), Math.min(scroller.y.get(), maxY));
 				if (restoreScroll != null) { scroller.scrollTo(restoreScroll.x, restoreScroll.y); restoreScroll = null; }
 				if (pending != null) { scroller.scrollTo(0, 0); pending = null; }
 				return;
@@ -149,8 +170,10 @@ class BridgeControl {
 		Owner.onCleanup(() -> LayoutTree.settledHooks.remove(settle));
 	}
 
-	function clickRegion(id:String, e:ashui.input.Events.PointerEvent):Void
-		emit("click", {region:id, x:e.localX, y:e.localY, shift:e.shift, control:e.control, meta:e.superKey});
+	function clickRegion(id:String, e:ashui.input.Events.PointerEvent):Void {
+		var point = navigation == "scroll" ? viewport.screenToContent(e.localX, e.localY) : {x:e.localX, y:e.localY};
+		emit("click", {region:id, x:point.x, y:point.y, shift:e.shift, control:e.control, meta:e.superKey});
+	}
 
 	static function fill(element:Element):Void {
 		element.node.set(Prop.WidthPercent, (1:Single));

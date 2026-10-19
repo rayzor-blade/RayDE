@@ -897,7 +897,7 @@ class Snapshots {
 				ashui.input.Pointer.press(tree, Middle);
 				ashui.input.Pointer.move(tree, bounds.x + 160, bounds.y + 140); settle();
 				ashui.input.Pointer.release(tree, Middle); settle();
-				if (viewport.zoom.get() != 1 || viewport.panX.get() != 0 || viewport.panY.get() != 0 || scrollGraph.y.get() != scrollY)
+				if (viewport.zoom.get() != 1 || viewport.panX.get() != -scrollGraph.x.get() || viewport.panY.get() != -scrollGraph.y.get() || scrollGraph.y.get() != scrollY)
 					throw "linear history accepted a pan or zoom gesture";
 				if (studio.preview.revision != revision) throw "scrolling sent drawing operations through the host";
 				shot("scrolled");
@@ -932,6 +932,27 @@ class Snapshots {
 				bench.closeFile(tab);
 				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
 				if (LayoutTree.settledHooks.length != hooks - 2) throw "closed canvas retained a layout hook";
+				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
+				until(() -> studio.tabViews.length == 1, "a large virtual history scene"); settle();
+				var virtualControl = control("virtual-graph"), virtualKit:ashui.canvaskit.CanvasKit = @:privateAccess virtualControl.kit;
+				var virtualBounds = tree.getScrolledBounds(virtualKit.node), virtualScroll = ashui.input.Scroll.at(virtualControl.node.id, tree);
+				if (virtualBounds.height > HEIGHT || virtualBounds.width > WIDTH) throw "virtual graph allocated a canvas larger than the viewport";
+				if (virtualKit.index.get("row0") == null || virtualKit.index.get("row999") != null) throw "virtual graph indexed offscreen rows";
+				virtualScroll.scrollTo(0, 24000); settle();
+				var bottomBounds = tree.getScrolledBounds(virtualKit.node);
+				if (bottomBounds.y != virtualBounds.y || bottomBounds.height != virtualBounds.height || virtualScroll.y.get() < 23000)
+					throw "virtual graph did not keep its canvas anchored to the viewport";
+				if (virtualKit.index.get("row999") == null || virtualKit.index.get("row0") != null || virtualKit.index.query(0,0,640,24000).length > 40)
+					throw "virtual graph did not restrict hit regions to visible rows";
+				shot("virtual-long");
+				ashui.input.Pointer.move(tree, bottomBounds.x + 80, bottomBounds.y + 999*24 + 12 - virtualScroll.y.get());
+				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
+				until(() -> git.output.join("\n").indexOf("virtual row row999 y=23988") >= 0, "virtual row hit testing after a deep scroll");
+				git.connection.command("test.virtualShort", null);
+				until(() -> (@:privateAccess virtualControl.scene.get().bounds.height) == 24, "a shorter virtual scene"); settle();
+				if (virtualScroll.y.get() != 0) throw "virtual graph retained an out-of-range scroll offset after filtering";
+				bench.closeFile(bench.active.get());
+				until(() -> studio.tabViews.length == 0, "virtual scene cleanup");
 				git.connection.send({t: "run", name: "fiber-check.rays", source: "var failed = false; mount(() -> <canvas-kit id='fiber-canvas' class='flex-1' scene={{bounds:{x:0,y:0,width:100,height:100},commands:[{type:'circle',x:50,y:50,radius:25,color:'accent'}],regions:[{id:'target',x:0,y:0,width:100,height:100}]}} onClick={e -> { if (!failed) { failed = true; throw 'fiber event aborted'; } trace('fiber event recovered'); }}/>, 'tab:Fiber check');"});
 				until(() -> studio.tabViews.length == 1, "fiber recovery test view");
 				settle(); shot("fiber-check");
