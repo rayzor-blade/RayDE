@@ -22,6 +22,8 @@ Git checks also cover selected commit files in both views, toolbar spacing and i
 
 Run the interaction probe with `ASH_GC_DEBUG_ROOTS=1 ASH_GC_STATS=1` to include collection statistics and retention chains in `bin/interaction-probe/run.log`. The `open-tabs-idle` and `open-tabs-collected` checkpoints keep all ten editors open while idle canvas CPU storage is released; later checkpoints close the tabs. `RAYDE_PROBE_OUTPUT=<name>` saves a separate run under `bin/<name>`.
 
+`RAYDE_PROBE_SOURCE=<file>` copies one file into the isolated fixture and profiles its first open and close instead of the ten-tab sequence. `RAYDE_PROBE_FOLDERS=<count>` adds ten Haxe files in each closed folder to measure Explorer overhead. For native timings, build the snapshot bytecode with `ash --build bin/snapshots-native bin/snapshots.hl`, then run `python3 tests/interaction_probe.py bin/snapshots-native --native` with the same probe variables. Disable GC debug logging for latency comparisons.
+
 Background diagnostic checks cover unsaved buffers, replacement and cancellation of stale requests, and requests larger than the command-line limit. The UI uses one asynchronous compiler job at a time, independently of the interactive display server's module cache.
 
 `native/rayscript` has focused Rust tests for unmount cleanup, idle collection, fiber exception recovery, cancellation before late service replies, and shutdown with waiting scripts. Run `CARGO_TARGET_DIR=../rayscript/target cargo test --manifest-path native/rayscript/Cargo.toml --release`.

@@ -2283,8 +2283,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function folder(dir:String, label:String, expanded:Bool):Element {
-		var children = folderEntries(dir);
-		return tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)}>{children}</tree-item>, dir);
+		return tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)} load={() -> folderEntries(dir)}/>, dir);
 	}
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */

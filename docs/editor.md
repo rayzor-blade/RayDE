@@ -31,6 +31,7 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 ![Signature help with the second argument emphasised](images/editor-signature.png)
 - Problems come from the Haxe compiler's display server and from the last build. A problem in the Problems list opens its file at its line.
 - Each editor has a minimap and code folding.
+- Explorer folders load their file rows on first expansion and keep them for subsequent expansions.
 - The build file (`build.hxml`) opens as a form in **Settings > Build**.
 
 ## Settings

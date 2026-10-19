@@ -11,7 +11,8 @@ output = root / "bin" / (os.environ.get("RAYDE_PROBE_OUTPUT") or "interaction-pr
 output.mkdir(parents=True, exist_ok=True)
 environment = dict(os.environ, SNAPSHOT_ONLY="git", RAYDE_INTERACTION_PROBE="1", RAYDE_PROBE_ACK="1",
                    RAYDE_PROBE_POLL=os.environ.get("RAYDE_PROBE_POLL", "1"))
-process = subprocess.Popen([sys.argv[1], "--preset", "application", "bin/snapshots.hl"], cwd=root,
+command = [sys.argv[1]] if sys.argv[2:] == ["--native"] else [sys.argv[1], "--preset", "application", "bin/snapshots.hl"]
+process = subprocess.Popen(command, cwd=root,
                            env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
 results = []

@@ -113,6 +113,22 @@ class Snapshots {
 				var cutTo = haxe.io.Path.join([folder, "sub", "Renamed copy.hx"]);
 				if (sys.FileSystem.exists(copyOf) || !sys.FileSystem.exists(cutTo) || bench.active.get() != cutTo)
 					throw "Cut and paste should move the file, and its tab with it";
+				bench.folderState(folder + "/sub").set(false);
+				bench.refreshExplorer();
+				settle();
+				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 0)
+					throw "a closed folder built its file rows before expansion";
+				bench.folderState(folder + "/sub").set(true);
+				settle();
+				var loaded = Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]');
+				if (loaded.length != 1 || bench.treeSelected.get() != cutTo)
+					throw "expanding a folder did not load and select its active file";
+				bench.folderState(folder + "/sub").set(false);
+				settle();
+				bench.folderState(folder + "/sub").set(true);
+				settle();
+				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]')[0] != loaded[0])
+					throw "reopening a folder rebuilt its file rows";
 				menuOn("src/Renamed.hx");
 				click("#rayde-explorer-delete");
 				shot("explorer-delete");

@@ -12,6 +12,15 @@ class InteractionProbe {
 		var texture = renderer.createTexture(Math.round(1280 * scale), Math.round(800 * scale));
 		var target = texture.createView(new gpu.GpuTextureViewDescriptor());
 		var tree = bench.tree;
+		var folders = Std.parseInt(Sys.getEnv("RAYDE_PROBE_FOLDERS") ?? "0");
+		if (folders != null && folders > 0) {
+			for (i in 0...folders) {
+				var dir = haxe.io.Path.directory(file) + '/ProbeFolder$i';
+				sys.FileSystem.createDirectory(dir);
+				for (j in 0...10) sys.io.File.saveContent(dir + '/File$j.hx', 'class File$j {}\n');
+			}
+			bench.refreshExplorer();
+		}
 		var frames = 0;
 		var tickedAt = haxe.Timer.stamp();
 		if (Sys.getEnv("RAYDE_PROBE_POLL") == "1") @:privateAccess bench.owner.run(() -> rayde.ui.GpuProgress.attach(renderer.device, tree, () -> frames));
@@ -66,6 +75,17 @@ class InteractionProbe {
 		}
 		step("baseline", () -> {});
 		hl.Gc.major(); emit("baseline-collected", []);
+		var source = Sys.getEnv("RAYDE_PROBE_SOURCE");
+		if (source != null && source != "") {
+			var sample = haxe.io.Path.directory(file) + "/" + haxe.io.Path.withoutDirectory(source);
+			sys.io.File.copy(source, sample);
+			step("sample-open", () -> bench.openFile(sample));
+			step("sample-close", () -> bench.closeFile(sample));
+			step("idle", () -> Offscreen.advance(3));
+			hl.Gc.major(); emit("collected", []);
+			target.destroy(); texture.destroy();
+			return;
+		}
 		var folder = haxe.io.Path.directory(file), files = [file];
 		for (name in ["Names.hx", "Util.hx"]) {
 			sys.io.File.copy("tests/fixtures/basic/src/" + name, folder + "/" + name);

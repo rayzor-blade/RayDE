@@ -5,6 +5,8 @@ scripts/rayde.sh path/to/build.hxml      # open a Haxe project; Run builds it an
 scripts/rayde.sh path/to/name.rayext     # open an extension project
 scripts/rayde.sh path/to/name.raytheme   # open a theme project
 scripts/rayde.sh --build                 # rebuild bin/rayde.hl without opening a window
+scripts/rayde.sh --native --build        # also compile bin/rayde ahead of time
+scripts/rayde.sh --native build.hxml     # rebuild and open with the native executable
 ```
 
 ## Dependencies
