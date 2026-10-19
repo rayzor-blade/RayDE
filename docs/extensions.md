@@ -1,6 +1,6 @@
 # Writing an extension
 
-Say you want Markdown files to have a **Preview** item in the Explorer: right-click `README.md`, choose it, and the file opens rendered in a tab beside your code, redrawn each time you save. RayDE extensions are written in RayScript, run in a process of their own, and describe what they add in a `.rayext` file. This chapter builds that Markdown preview, which lives in [`tests/fixtures/markdown`](../tests/fixtures/markdown), and uses it to show each part of the model.
+RayDE extensions are written in RayScript, run in a process of their own, and describe what they add in a `.rayext` file. The example is a Markdown preview, in [`tests/fixtures/markdown`](../tests/fixtures/markdown): a **Preview** item in the Explorer's menu opens the file rendered in a tab beside the code, redrawn on each save.
 
 ![The Explorer's menu for README.md, with Preview at the right end of its item](images/markdown-menu.png)
 
@@ -17,7 +17,7 @@ markdown/
   docs/README.md         a file to try it on
 ```
 
-Open `markdown.rayext` in RayDE (`scripts/rayde.sh path/to/markdown.rayext`) and the project is an extension: the Explorer lists the source folders, the config opens as a form, and the extension runs in the **Extension Studio**, which reloads it as you type and shows what it draws.
+`scripts/rayde.sh path/to/markdown.rayext` opens the folder as an extension project: the Explorer lists the source folders, the config opens as a form, and the extension runs in the **Extension Studio**, which reloads it while it is edited and shows what it draws.
 
 ### The config
 
@@ -42,11 +42,11 @@ Open `markdown.rayext` in RayDE (`scripts/rayde.sh path/to/markdown.rayext`) and
 - There is no `view`: the extension only handles hooks and commands and presents tabs, so it takes no place in the layout, and the Explorer keeps the sidebar. An extension gets a view only by asking for one, under [Views](#views).
 - `contributes` adds commands and menu items, below.
 
-Every field has a place in the **Extension** page of Settings, which writes the file as you edit and leaves what it does not know as written. *Open as JSON* is there for the rest.
+Every field has a place in the **Extension** page of Settings. The page writes the file on each change and leaves entries it does not know as written. *Open as JSON* opens the text.
 
 ## Views
 
-A view is a part of the extension's own that the layout shows continuously, as opposed to a tab it opens for a file. The Markdown preview has none. An extension that wants one declares it, with `view` for one or `views` for several:
+A view is a part of the layout that shows an extension continuously, as opposed to a tab opened for a file. The Markdown preview declares none. Views are declared with `view` (one) or `views` (several):
 
 ```json
 "views": [
@@ -57,7 +57,7 @@ A view is a part of the extension's own that the layout shows continuously, as o
 ]
 ```
 
-and mounts each under its id:
+and each is mounted under its id:
 
 ```
 mount(() -> <Overview/>, 'main');
@@ -101,7 +101,7 @@ There are two menu locations:
 
 ![The editor's menu, with Preview for the file in front](images/markdown-title-menu.png)
 
-Commands are also in the command center (`>`), where the file in front, or the one selected in the Explorer, is the `path`. Each is bound as `ext.<id>` in the Keyboard Shortcuts page, and a menu shows its key beside the item.
+Commands are also in the command center (`>`), with the file in front, or the one selected in the Explorer, as `path`. Each is bound as `ext.<id>` in **Key bindings**, and a menu shows its key beside the item.
 
 An `icon`, on a command or on one menu item (the item's own wins), is an SVG file relative to the config, or the name of one of RayDE's own icons (`eye`, `refresh`, `star`; the Extension page lists them). A menu shows it at the right end of the item. A file that is missing is reported as a problem on the config.
 
@@ -169,11 +169,11 @@ Markdown is a few hundred lines of RayScript in [`markdown.rays`](../tests/fixtu
 
 ## The Extension Studio
 
-Opening a `.rayext` runs the extension. Its views are drawn in the Preview, each wherever its `location` puts it; an extension with no view shows only what it opens as tabs, and the Studio's console, activity and elements are in the bottom panel's Extension tab.
+Opening a `.rayext` runs the extension. Its views are drawn in the Preview at the `location` each declares; an extension with no view shows only the tabs it opens. The Studio's console, activity and elements are in the Extension tab of the bottom panel.
 
 ![An extension's view in the sidebar, in the Explorer's place](images/studio-sidebar.png)
 
-- **Reload:** saving or typing reloads the extension after a pause of 0.4 s; *Disable live reload* in the view's `…` menu leaves that to Run. A script with a mistake does not replace what was drawn: the last view that ran stays, marked as such, and the mistake is in Problems, on its line.
+- **Reload:** saving or typing reloads the extension after a pause of 0.4 s; *Disable live reload* in the view's `…` menu leaves reloading to Run. A script with an error does not replace what was drawn: the last view that ran stays, marked as such, and the error is in Problems on its line.
 - **Console:** what the script traces, and every error with its place, which opens the file there.
 - **Activity:** the calls, hooks and commands that went to and from the extension, and what answered each.
 - **Elements:** the tree the extension drew, with the events each node listens for.
@@ -183,9 +183,13 @@ Opening a `.rayext` runs the extension. Its views are drawn in the Preview, each
 
 ## Debugging
 
-An extension stops where you put a breakpoint, and you can look at what it holds. Click in the gutter beside a line of a `.rays` file, or put the cursor on it and choose **Toggle Breakpoint** (F9): a red dot marks the line. Breakpoints are kept with the project (`breakpoints` in `.rayde/settings.json`), move with the text as you edit, and are listed in the Debug part of the panel, where a row opens its line and its button takes the breakpoint off. A line with no code moves the breakpoint to the next line that has some.
+An extension stops at a breakpoint and its state can be inspected.
 
-When the extension reaches the line, it stops before the line runs, the editor goes to it and marks it, and the Extension panel shows **Debug**:
+- **Setting:** click in the gutter beside a line of a `.rays` file, or put the cursor on it and choose **Toggle Breakpoint** (F9). A red dot marks the line.
+- **Storage:** breakpoints are kept with the project (`breakpoints` in `.rayde/settings.json`) and move with the text. A line with no code moves the breakpoint to the next line that has some.
+- **List:** the Debug part of the panel lists them; a row opens its line and its button removes the breakpoint.
+
+The extension stops before the marked line runs. The editor goes to the line and marks it, and the Extension panel shows **Debug**:
 
 - the toolbar: **Continue** (F5, which is Run while the extension is stopped), **Pause** (F6, for a script that is running), **Step Over** (F10), **Step Into** (F11) and **Step Out** (Shift+F11);
 - the **call stack**, innermost first; choosing a frame opens its line and shows its variables;
@@ -194,11 +198,11 @@ When the extension reaches the line, it stops before the line runs, the editor g
 
 ![The extension stopped on the line that updates the total, with its call stack and breakpoints](images/debug-stopped.png)
 
-Nothing of the extension runs while it is stopped: the events and hooks that arrive are held and run when it goes on, and what the stopped code changed in the view is drawn then. Breakpoints in a handler stop it when you click in the view, or choose a header action.
+Nothing of the extension runs while it is stopped: events and hooks that arrive are held and run when it continues, and what the stopped code changed in the view is drawn then. A breakpoint in a handler stops the extension when the view is clicked or a header action is chosen.
 
 ![An expression evaluated in the frame, and a variable opened](images/debug-variables.png)
 
-The debugger is in the VM, so a script that is not being debugged pays nothing for it: a breakpoint replaces one instruction, with the original kept, and none is in place when there are no breakpoints.
+The debugger is in the VM and costs nothing without breakpoints: a breakpoint replaces one instruction, with the original kept.
 
 ## Trying it
 

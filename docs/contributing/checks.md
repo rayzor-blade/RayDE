@@ -1,0 +1,26 @@
+# Checks and snapshots
+
+```sh
+scripts/check.sh        # unit and integration checks against the real compiler, run with ash
+scripts/snapshot.sh     # the workbench in both schemes, driven through the UI, into bin/snapshots
+SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
+```
+
+`check.sh` builds `tests/Checks.hx` without ashui: the build file model, terminal and keys, settings, theme bundles (files, colours, scoping, installing, fonts, text edits), haxelib, extensions and their host process, and the compiler server (hover, completion, definition, references, signature help, diagnostics, build and run).
+
+`snapshot.sh` builds `tests/Snapshots.hx`. Each scenario works on a copy of a fixture project under `bin/fixtures`, drives the workbench with pointer and key events, asserts on state, and captures images. Scenarios: `basic`, `full`, `broken`, `extension`, `markdown`, `views`, `chrome`, `debug`, `themes`, `themestudio`. A fixture that contains a `.rayext` or a `.raytheme` opens as that kind of project. Look at the images after any change to how something looks; the docs pictures are copies of them.
+
+## Benchmarks
+
+```sh
+scripts/terminal-bench.sh   # terminal under a program that fills the screen, offscreen: poll, layout, encode
+scripts/scroll-bench.sh     # a long file flicked and left to decelerate, offscreen: layout, encode, finish times
+```
+
+| Variable | Effect on `scroll-bench.sh` |
+| --- | --- |
+| `ROWS=<n>` | Length of the file. |
+| `DRIFT=<frames>`, `STEP=<px>` | Scroll at a steady pace. |
+| `ALONE=<letters>` | The editor on its own, a letter for each feature on (`ALONE=gfib`). |
+
+The terminal's native library has its own `cargo test` in `native/terminal`.
