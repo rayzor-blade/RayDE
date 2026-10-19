@@ -1,6 +1,6 @@
 # Git
 
-The built-in Git extension registers Ashui's git-branch icon in the activity bar. Selecting it opens **Source Control** in the sidebar, with the current branch, file counts and groups for merge conflicts, staged changes, workdir changes and untracked files. Selecting a file opens it in the editor.
+The built-in Git extension registers Ashui's git-branch icon in the activity bar. Selecting it opens **Source Control** in the sidebar, with the current branch, file counts and groups for merge conflicts, staged changes, workdir changes and untracked files. File rows show the filename first, followed by its parent directory in muted text.
 
 ![Source Control in the sidebar](images/git-scm.png)
 
@@ -10,7 +10,7 @@ The sidebar's **Refresh** action and **Git: Refresh** command reload status and 
 
 ![Git history and selected merge commit](images/git-history.png)
 
-The wheel zooms at the pointer; drag empty space or use the middle/right button to pan. **Fit** includes all loaded rows. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
+Both graphs scroll at a fixed scale with the wheel, trackpad or scrollbars. Dragging does not pan the graph and the wheel does not zoom. **Load more** appends 100 commits at a time, preserving earlier lane positions. The reference picker includes local branches, remote references and tags. **Refresh** reopens the history cursor and reloads the first page. Closing the tab releases native resources.
 
 The extension owns the graph layout and scene in RayScript. RayDE's generic [Ashui bridge](extensions.md#ashui-controls-and-interactive-drawing) renders retained CanvasKit paths, circles and text, with native Button and Select components. Painting and viewport gestures stay in the editor. Repository scanning and history reads run on libgit2's worker lane.
 

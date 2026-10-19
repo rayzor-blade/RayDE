@@ -96,10 +96,15 @@ class CanvasScene {
 	}
 
 	function brush(ink:Ink):Brush {
-		var color = Std.isOfType(ink.color, String) ? theme.color(cast ink.color).rgb() : (ink.color : Int);
-		var key = color + ":" + ink.alpha;
+		var color:Int, alpha = ink.alpha;
+		if (Std.isOfType(ink.color, String)) {
+			var resolved = theme.color(cast ink.color);
+			color = resolved.rgb();
+			alpha *= resolved.a;
+		} else color = ink.color;
+		var key = color + ":" + alpha;
 		if (!brushes.exists(key)) {
-			brushes.set(key, Brush.solid(color, ink.alpha));
+			brushes.set(key, Brush.solid(color, alpha));
 		}
 		return brushes.get(key);
 	}

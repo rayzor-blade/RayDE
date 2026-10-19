@@ -31,7 +31,8 @@ def create(root):
     git("config", "core.hooksPath", str(root / ".git/no-hooks"))
     (root / ".gitignore").write_text(".rayde/\nsnapshot-home/\nmain.hl\n")
     git("add", ".gitignore")
-    for filename in ["clean.txt", "modified.txt", "staged.txt", "renamed.txt", "conflict.txt"]:
+    for filename in ["clean.txt", "src/modified.txt", "staged.txt", "renamed.txt", "conflict.txt"]:
+        (root / filename).parent.mkdir(parents=True, exist_ok=True)
         (root / filename).write_text("Before\n")
         git("add", filename)
     for filename in ["build.hxml", "src"]:
@@ -54,7 +55,7 @@ def create(root):
     git("merge", "--no-ff", "ffi/trust", "-m", "Merge native library trust")
     commit("Add Git history graph")
     if "--install" in sys.argv:
-        (root / "modified.txt").write_text("Modified in the workdir\n")
+        (root / "src/modified.txt").write_text("Modified in the workdir\n")
         (root / "staged.txt").write_text("Staged change\n")
         git("add", "staged.txt")
         git("mv", "renamed.txt", "renamed-file.txt")

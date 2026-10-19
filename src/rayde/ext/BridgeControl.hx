@@ -8,6 +8,7 @@ import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
 import ashui.css.Identity;
+import ashui.input.Interaction;
 import ashui.layout.Element;
 import ashui.layout.LayoutTree;
 import ashui.layout.Node;
@@ -46,6 +47,9 @@ class BridgeControl {
 	var reported = "[]";
 	var selectSize = "sm";
 	var panelState:Dynamic;
+	var navigation = "canvas";
+	var scroller:Null<ashui.input.Scroll>;
+	var restoreScroll:Dynamic;
 
 	public static function supported(tag:String):Bool
 		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
@@ -73,32 +77,11 @@ class BridgeControl {
 					viewport.panX.set(state.x); viewport.panY.set(state.y); viewport.zoom.set(state.zoom);
 					lastCommand = state.command;
 				}
-				kit = new CanvasKit({viewport: viewport, selection: selection, background: new Background2D(None),
-					draw: (ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get()),
-					onClick: (id, e) -> emit("click", {region: id, x: e.localX, y: e.localY, shift: e.shift, control: e.control, meta: e.superKey}),
-					onHover: id -> { hovered.set(id ?? ""); emit("hover", {region: id}); }});
-				// A fit command must stop at its target even after a pan gesture.
-				kit.momentumDecay = 0;
-				fill(kit);
-				box.appendChild(kit);
+				if (state != null && state.scrollX != null) restoreScroll = {x:state.scrollX, y:state.scrollY};
 				new Watch(() -> selection.ids.get(), ids -> {
 					var json = haxe.Json.stringify(ids);
 					if (json != reported) { reported = json; emit("selectionChange", {ids: ids}); }
 				});
-				var settle:LayoutTree->Void = laid -> {
-					if (laid != tree || pending == null) return;
-					var bounds = tree.getBounds(kit.node);
-					if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
-					var command = pending; pending = null;
-					var s = scene.get().bounds;
-					switch (command.action : String) {
-						case "fit": viewport.fit(s.x, s.y, s.width, s.height, bounds.width, bounds.height, 0);
-						case "reset": viewport.reset();
-						case "zoom": viewport.zoomAt(bounds.width/2, bounds.height/2, command.factor);
-					}
-				};
-				LayoutTree.settledHooks.push(settle);
-				Owner.onCleanup(() -> LayoutTree.settledHooks.remove(settle));
 			} else if (kind == "ui-panel-group") panelState = state;
 			else dirty = true;
 			return box;
@@ -112,6 +95,63 @@ class BridgeControl {
 		else if (kind != "canvas-kit") node.set(Prop.Height, (32:Single));
 	}
 
+	function buildCanvas():Void {
+		if (kit != null) return;
+		var scrolling = navigation == "scroll";
+		if (scrolling) viewport.reset();
+		kit = new CanvasKit({viewport:viewport, selection:selection, interactive:!scrolling, background:new Background2D(None),
+			draw:(ctx, canvas) -> scene.get().draw(ctx, canvas, hovered.get()),
+			onClick:(id, e) -> clickRegion(id, e),
+			onHover:id -> { hovered.set(id ?? ""); emit("hover", {region:id}); }});
+		kit.momentumDecay = 0;
+		tree.addChild(node.id, kit.node.id);
+		if (scrolling) {
+			node.set(Prop.Overflow, ashui.types.Overflow.Scroll);
+			scroller = ashui.input.Scroll.attach(node, true, true);
+			kit.node.set(Prop.FlexShrink, (0:Single));
+			new Watch(() -> scene.get().bounds, b -> {
+				kit.node.set(Prop.Width, (Math.max(1, b.x + b.width):Single));
+				kit.node.set(Prop.Height, (Math.max(1, b.y + b.height):Single));
+			});
+			var input = Interaction.of(kit.node);
+			input.onPointerMove(e -> {
+				var hit = kit.index.hitTest(e.localX, e.localY), id = hit == null ? "" : hit.id;
+				if (hovered.get() != id) { hovered.set(id); emit("hover", {region:hit == null ? null : id}); }
+			});
+			input.onPointerLeave(_ -> { hovered.set(""); emit("hover", {region:null}); });
+			input.onClick(e -> {
+				if (e.button != null && e.button != Left) return;
+				var hit = kit.index.hitTest(e.localX, e.localY);
+				if (hit == null) return;
+				if (e.control || e.superKey) selection.toggle(hit.id); else if (e.shift) selection.add(hit.id); else selection.select(hit.id);
+				clickRegion(hit.id, e);
+			});
+		} else fill(kit);
+		var settle:LayoutTree->Void = laid -> {
+			if (laid != tree) return;
+			var bounds = tree.getBounds(node);
+			if (bounds == null || bounds.width <= 0 || bounds.height <= 0) return;
+			if (scrolling) {
+				if (restoreScroll != null) { scroller.scrollTo(restoreScroll.x, restoreScroll.y); restoreScroll = null; }
+				if (pending != null) { scroller.scrollTo(0, 0); pending = null; }
+				return;
+			}
+			if (pending == null) return;
+			var command = pending; pending = null;
+			var s = scene.get().bounds;
+			switch (command.action : String) {
+				case "fit": viewport.fit(s.x, s.y, s.width, s.height, bounds.width, bounds.height, 0);
+				case "reset": viewport.reset();
+				case "zoom": viewport.zoomAt(bounds.width/2, bounds.height/2, command.factor);
+			}
+		};
+		LayoutTree.settledHooks.push(settle);
+		Owner.onCleanup(() -> LayoutTree.settledHooks.remove(settle));
+	}
+
+	function clickRegion(id:String, e:ashui.input.Events.PointerEvent):Void
+		emit("click", {region:id, x:e.localX, y:e.localY, shift:e.shift, control:e.control, meta:e.superKey});
+
 	static function fill(element:Element):Void {
 		element.node.set(Prop.WidthPercent, (1:Single));
 		element.node.set(Prop.HeightPercent, (1:Single));
@@ -124,6 +164,11 @@ class BridgeControl {
 
 	public function set(name:String, data:Dynamic):Bool {
 		switch name {
+			case "navigation" if (kind == "canvas-kit"):
+				var mode = data == null ? "canvas" : Std.string(data);
+				if (["canvas", "scroll"].indexOf(mode) < 0) throw "Unknown canvas navigation";
+				if (kit != null && mode != navigation) throw "Canvas navigation is fixed while mounted";
+				navigation = mode; return true;
 			case "name" if (kind == "ui-icon"):
 				var name = data == null ? null : CanvasScene.text({name:data}, "name");
 				var document = rayde.ui.ViewIcons.named(null, name);
@@ -175,9 +220,10 @@ class BridgeControl {
 				if (data != null && haxe.Json.stringify(data) != lastCommand) {
 					var action = CanvasScene.text(data, "action");
 					if (["fit", "reset", "zoom"].indexOf(action) < 0) throw "Unknown canvas command";
+					if (navigation == "scroll" && action != "reset") throw "Scrolling canvases support reset only";
 					var factor = CanvasScene.number(data, "factor", 1, .01, 100);
 					lastCommand = haxe.Json.stringify(data); pending = {action: action, factor: factor};
-					kit.repaint();
+					if (kit != null) kit.repaint();
 				}
 				return true;
 			case _:
@@ -186,6 +232,7 @@ class BridgeControl {
 	}
 
 	public function flush():Void {
+		if (kind == "canvas-kit") { scope.run(buildCanvas); return; }
 		if (panels != null) { scope.run(() -> panels.build()); return; }
 		if (kind != "ui-select" || !dirty) return;
 		dirty = false;
@@ -203,7 +250,7 @@ class BridgeControl {
 	}
 
 	public function state():Dynamic
-		return panels != null ? panels.state() : kind == "canvas-kit" ? {x: viewport.panX.get(), y: viewport.panY.get(), zoom: viewport.zoom.get(), command: lastCommand} : null;
+		return panels != null ? panels.state() : kind == "canvas-kit" ? {x: viewport.panX.get(), y: viewport.panY.get(), zoom: viewport.zoom.get(), command: lastCommand, scrollX:scroller == null ? 0. : scroller.x.get(), scrollY:scroller == null ? 0. : scroller.y.get()} : null;
 
 	public function dispose():Void
 		stop();

@@ -12,7 +12,6 @@ function History(props) {
   var branch = signal('all'), selected = signal(''), detail = signal(null), busy = signal(false), done = signal(false);
   var error = signal(''), command = signal(null);
   var cursor = null, live = true, sequence = 0;
-  function camera(action, factor = 1) { command.value = {action: action, factor: factor, sequence: ++sequence}; }
   function choose(id) {
     selected.value = id;
     detail.value = null;
@@ -49,7 +48,7 @@ function History(props) {
         commits.value = page.commits;
         done.value = page.done;
         choose(page.commits.length > 0 ? page.commits[0].id : '');
-        camera('reset');
+        command.value = {action:'reset', sequence:++sequence};
       }
     } catch (failure) {
       if (cursor != null) { cursor.close(); cursor = null; }
@@ -69,21 +68,17 @@ function History(props) {
       <ui-select id="git-history-branch" class="w-48" options={options} value={branch} disabled={busy}
         onChange={e -> load(e.value)}/>
       <div class="flex-1"/>
-      <ui-button id="git-history-out" variant="outline" class="w-8" onClick={() -> camera('zoom', 0.8)}>−</ui-button>
-      <ui-button id="git-history-in" variant="outline" class="w-8" onClick={() -> camera('zoom', 1.25)}>+</ui-button>
-      <ui-button id="git-history-fit" variant="outline" class="w-12" onClick={() -> camera('fit')}>Fit</ui-button>
       <ui-button id="git-history-refresh" variant="outline" class="w-20" disabled={busy} onClick={() -> load(branch.value)}>Refresh</ui-button>
     </div>
     <if {error.value != ''}><p class="px-4 py-2 text-error">{error}</p></if>
     <div class="flex flex-1 min-h-0">
       <div class="flex flex-col flex-1 min-w-0">
-        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" scene={scene(commits.value, refs.value, selected.value)}
+        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" scene={scene(commits.value, refs.value, selected.value)}
           selected={selected.value == '' ? [] : [selected.value]} command={command}
           onClick={e -> choose(e.region)}/>
         <div class="flex items-center gap-3 px-4 py-2 border-t shrink-0">
           <span id="git-history-count" class="text-xs text-text-secondary">{commits.value.length} commits</span>
           <ui-button id="git-history-more" variant="outline" class="w-24" disabled={busy.value || done.value || cursor == null} onClick={() -> page()}>Load more</ui-button>
-          <span class="text-xs text-text-tertiary">Wheel to zoom · drag to pan</span>
         </div>
       </div>
       <div id="git-history-details" class="flex flex-col gap-3 w-64 p-4 border-l shrink-0 overflow-auto">

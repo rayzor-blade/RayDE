@@ -7,7 +7,8 @@ import historyGraph.compactScene;
 function groups(entries) {
   var conflicts = [], staged = [], changes = [], untracked = [];
   function item(entry, flags) {
-    return {path: entry.path, renamedFrom: entry.renamedFrom,
+    var split = entry.path.lastIndexOf('/');
+    return {path: entry.path, name:split < 0 ? entry.path : entry.path.substr(split + 1), directory:split < 0 ? '' : entry.path.substr(0, split), renamedFrom: entry.renamedFrom,
       badge: entry.conflicted ? '!' : (flags & (1 | 128)) != 0 ? (flags == 128 ? 'U' : 'A') : (flags & (4 | 512)) != 0 ? 'D' : (flags & (8 | 2048)) != 0 ? 'R' : 'M'};
   }
   for (entry in entries) {
@@ -82,7 +83,8 @@ function Sidebar(props) {
           <for {entry in group.items}>
             <ui-button variant="ghost" class="w-full" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> open(entry.path)}>
               <div class="flex items-center gap-2 w-full min-w-0 px-1">
-                <span class="text-sm truncate flex-1">{entry.path}</span>
+                <span class="text-sm truncate min-w-0">{entry.name}</span>
+                <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
                 <span class={entry.badge == '!' ? 'text-xs text-error' : entry.badge == 'U' || entry.badge == 'A' ? 'text-xs text-success' : 'text-xs text-warning'}>{entry.badge}</span>
               </div>
             </ui-button>
@@ -96,7 +98,7 @@ function Sidebar(props) {
         <span class="text-xs text-text-secondary flex-1">{state.value == null ? '' : state.value.branch}</span>
         <ui-button id="git-scm-expand" class="w-8" size="icon" variant="ghost" aria-label="Maximize graph" onClick={() -> { if (expand != null) expand(); }}><ui-icon name="maximize"/></ui-button>
       </div>
-      <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" scene={compactScene(commits.value, refs.value, selected.value)}
+      <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" navigation="scroll" scene={compactScene(commits.value, refs.value, selected.value)}
         selected={selected.value == '' ? [] : [selected.value]} onClick={e -> choose(e.region)}/>
       <span id="git-scm-selection" class="text-xs text-text-tertiary truncate px-3 py-1 shrink-0">{busy.value ? 'Loading history\u2026' : selectedInfo.value}</span>
     </div>

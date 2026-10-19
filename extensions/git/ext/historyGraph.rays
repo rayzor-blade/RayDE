@@ -45,7 +45,7 @@ function compactScene(commits, refs, selected) {
   for (row in graph.rows) {
     var y = 13 + row.index * 23;
     if (row.commit.id == selected)
-      commands.push({type:'rect', x:4, y:y-10, width:width-8, height:22, radius:3, color:'accentSubtle'});
+      commands.push({type:'rect', x:4, y:y-10, width:width-8, height:22, radius:3, color:'selection'});
     regions.push({id:row.commit.id, x:4, y:y-10, width:width-8, height:22});
   }
   for (edge in graph.edges) {
@@ -62,13 +62,13 @@ function compactScene(commits, refs, selected) {
       commands.push({type:'circle', x:x, y:y, radius:5, color:'surface'});
       commands.push({type:'circle', x:x, y:y, radius:5, color:colors[row.lane % colors.length], stroke:1.5});
     } else commands.push({type:'circle', x:x, y:y, radius:commit.parents.length > 1 ? 4 : 3.5, color:colors[row.lane % colors.length]});
-    commands.push({type:'text', x:textX, y:y+4, text:title, color:'textPrimary', size:12, weight:commit.id == selected ? 600 : 400});
+    commands.push({type:'text', x:textX, y:y+4, text:title, color:commit.id == selected ? 'selectionText' : 'textPrimary', size:12, weight:commit.id == selected ? 600 : 400});
     if (label != '') {
       if (label.length > 11) label = label.substr(0,10) + '\u2026';
       var w = label.length * 6 + 12, left = width - w - 6;
       commands.push({type:'rect', x:left, y:y-8, width:w, height:17, radius:8, color:colors[row.lane % colors.length], alpha:0.24});
       commands.push({type:'rect', x:left, y:y-8, width:w, height:17, radius:8, color:colors[row.lane % colors.length], stroke:1});
-      commands.push({type:'text', x:left+6, y:y+4, text:label, color:'textPrimary', size:11});
+      commands.push({type:'text', x:left+6, y:y+4, text:label, color:commit.id == selected ? 'selectionText' : 'textPrimary', size:11});
     }
   }
   return {bounds:{x:0,y:0,width:width,height:Math.max(24,commits.length*23+14)}, commands:commands, regions:regions};
@@ -81,7 +81,7 @@ function scene(commits, refs, selected) {
   for (row in graph.rows) {
     var y = 26 + row.index * 40;
     if (row.commit.id == selected)
-      commands.push({type: 'rect', x: 8, y: y - 18, width: width - 16, height: 36, radius: 6, color: 'accentSubtle'});
+      commands.push({type: 'rect', x: 8, y: y - 18, width: width - 16, height: 36, radius: 6, color: 'selection'});
     regions.push({id: row.commit.id, x: 8, y: y - 18, width: width - 16, height: 36});
   }
   for (edge in graph.edges) {
@@ -93,15 +93,15 @@ function scene(commits, refs, selected) {
     var commit = row.commit, x = 28 + row.lane * 24, y = 26 + row.index * 40;
     commands.push({type: 'circle', x: x, y: y, radius: commit.parents.length > 1 ? 6 : 5,
       color: colors[row.lane % colors.length]});
-    commands.push({type: 'text', x: textX, y: y + 5, text: commit.id.substr(0, 7), color: 'textSecondary', size: 12});
+    commands.push({type: 'text', x: textX, y: y + 5, text: commit.id.substr(0, 7), color: commit.id == selected ? 'selectionText' : 'textSecondary', size: 12});
     var title = commit.subject == null ? '(no subject)' : commit.subject;
     if (title.length > 48) title = title.substr(0, 47) + '\u2026';
-    commands.push({type: 'text', x: textX + 72, y: y + 5, text: title, color: 'textPrimary', size: 13,
+    commands.push({type: 'text', x: textX + 72, y: y + 5, text: title, color: commit.id == selected ? 'selectionText' : 'textPrimary', size: 13,
       weight: commit.id == selected ? 600 : 400});
     var labels = [];
     for (ref in refs) if (ref.target == commit.id) labels.push(ref.label);
     if (labels.length > 0)
-      commands.push({type: 'text', x: textX + 440, y: y + 5, text: labels.join(' \u00b7 '), color: 'textLink', size: 12});
+      commands.push({type: 'text', x: textX + 440, y: y + 5, text: labels.join(' \u00b7 '), color: commit.id == selected ? 'selectionText' : 'textLink', size: 12});
   }
   return {bounds: {x: 0, y: 0, width: width, height: Math.max(80, commits.length * 40 + 24)}, commands: commands, regions: regions};
 }
