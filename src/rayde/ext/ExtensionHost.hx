@@ -2,7 +2,7 @@ package rayde.ext;
 
 /**
  * One extension, running in its own rayscript-host process. The host speaks JSON lines: `send` writes a
- * message to its input, and `poll` reads what it has written since the last call. Nothing here waits.
+ * message to its input, and `poll` reads what it has written since the last call without waiting.
  *
  * The program's output goes to a file that is read as it grows, as `Job` does, because reading a pipe
  * would stop the frame loop until the host wrote something. Its input is a pipe, which a message much
@@ -97,7 +97,12 @@ class ExtensionHost {
 			return;
 		if (state == "running") {
 			send({t: "shutdown"});
-			process.kill();
+			// Allow normal teardown to release native resources and private library copies.
+			var end = haxe.Timer.stamp() + .1;
+			while (process.exitCode(false) == null && haxe.Timer.stamp() < end)
+				Sys.sleep(.005);
+			if (process.exitCode(false) == null)
+				process.kill();
 			process.exitCode(true);
 		}
 		process.close();

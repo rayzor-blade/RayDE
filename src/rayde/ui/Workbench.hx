@@ -458,7 +458,8 @@ class Workbench extends Component<WorkbenchProps> {
 		var before = open.get();
 		var kept = [for (f in before) if (!StringTools.startsWith(f, mine) || ids.indexOf(f) >= 0) f];
 		var added = [for (i in ids) if (before.indexOf(i) < 0) i];
-		open.set(kept.concat(added));
+		if (added.length > 0 || kept.length != before.length)
+			open.set(kept.concat(added));
 		if (added.length > 0)
 			active.set(added[added.length - 1]);
 		else if (before.indexOf(active.get()) >= 0 && kept.indexOf(active.get()) < 0)

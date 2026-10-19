@@ -78,6 +78,9 @@ class Extensions {
 				continue;
 			configs.sort(Reflect.compare);
 			var m = Manifest.read(haxe.io.Path.join([folder, configs[0]]));
+			if (scope == "Built-in" && (!StringTools.startsWith(sys.FileSystem.fullPath(folder) + "/", sys.FileSystem.fullPath(dir) + "/")
+				|| !StringTools.startsWith(m.file, sys.FileSystem.fullPath(folder) + "/")))
+				m.problems.push("Built-in extension escapes its install directory.");
 			out.push({
 				id: m.id,
 				manifest: m,

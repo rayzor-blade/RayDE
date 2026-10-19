@@ -20,6 +20,9 @@ typedef MenuEntry = {command:String, title:String, icon:Null<String>};
 /** A button in the header of an extension's view. `icon` is an SVG file or the name of an icon of RayDE's, null when it has none. */
 typedef ViewTool = {id:String, title:String, icon:Null<String>};
 
+/** A library named by a native block; its path is relative to the manifest. */
+typedef NativeLibrary = {name:String, path:String, sha256:String};
+
 /**
  * An extension's config file, `<name>.rayext`: JSON that names the extension and says where its code is.
  * It is to an extension what a `.hxml` is to a Haxe project: RayDE opens it, and the folder it is in is the
@@ -87,6 +90,7 @@ class Manifest {
 	public final sources:Array<String>;
 	public final mocks:String;
 	public final capabilities:Array<String>;
+	public final natives:Array<NativeLibrary> = [];
 
 	/**
 	 * The views the extension declares, each in a part of the layout; none for an extension that only handles hooks and
@@ -152,6 +156,7 @@ class Manifest {
 		sources = listed.length > 0 ? listed : [folder == "" ? "." : folder];
 		mocks = text(json, "mocks", haxe.io.Path.join([folder, "studio.mocks.json"]));
 		capabilities = strings(json, "capabilities");
+		readNatives(json);
 		var view:Dynamic = Reflect.field(json, "view");
 		if (view != null && (Std.isOfType(view, String) || Std.isOfType(view, Array) || !Reflect.isObject(view)))
 			problems.push('"view" must be an object.');
@@ -191,6 +196,39 @@ class Manifest {
 		contributions(Reflect.field(json, "contributes"));
 		if (!sys.FileSystem.exists(mainPath()))
 			problems.push('Main script ${main} not found.');
+	}
+
+	function readNatives(json:Dynamic):Void {
+		var value:Dynamic = Reflect.field(json, "natives");
+		if (value != null) {
+			if (!Reflect.isObject(value) || Std.isOfType(value, Array) || Std.isOfType(value, String)) {
+				problems.push('"natives" must be an object.');
+				return;
+			}
+			var names = Reflect.fields(value);
+			names.sort(Reflect.compare);
+			for (name in names) {
+				var entry = Reflect.field(value, name);
+				if (!~/^[A-Za-z_][A-Za-z0-9_-]*$/.match(name))
+					problems.push('Invalid native library name "$name".');
+				if (entry == null || !Reflect.isObject(entry) || Std.isOfType(entry, Array) || Std.isOfType(entry, String)) {
+					problems.push('Native library "$name" must have a path and SHA-256 hash.');
+					continue;
+				}
+				var path = text(entry, "path", ""), hash = text(entry, "sha256", "").toLowerCase();
+				if (path == "" || haxe.io.Path.isAbsolute(path) || path.indexOf("\\") >= 0 || path.indexOf(":") >= 0
+					|| Lambda.exists(path.split("/"), part -> part == "" || part == "." || part == ".."))
+					problems.push('Native library "$name" requires a relative path without traversal.');
+				if (!~/^[0-9a-f]{64}$/.match(hash))
+					problems.push('Native library "$name" requires a SHA-256 hash.');
+				if (capabilities.indexOf('native:$name') < 0)
+					problems.push('Native library "$name" requires capability native:$name.');
+				natives.push({name: name, path: path, sha256: hash});
+			}
+		}
+		for (capability in capabilities)
+			if (StringTools.startsWith(capability, "native:") && !Lambda.exists(natives, n -> n.name == capability.substr(7)))
+				problems.push('Capability "$capability" has no native declaration.');
 	}
 
 	/** One view's declaration, with its tools; what is wrong with it goes to `problems`. */

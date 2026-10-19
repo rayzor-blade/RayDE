@@ -6,9 +6,11 @@ scripts/snapshot.sh     # the workbench in both schemes, driven through the UI, 
 SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
 ```
 
-`check.sh` builds `tests/Checks.hx` without ashui: the build file model, terminal and keys, settings, theme bundles (files, colours, scoping, installing, fonts, text edits), haxelib, extensions, discovery precedence, activation, restart limits, key migration and their host processes, and the compiler server (hover, completion, definition, references, signature help, diagnostics, build and run).
+`check.sh` builds `tests/Checks.hx` without ashui: the build file model, terminal and keys, settings, theme bundles (files, colours, scoping, installing, fonts, text edits), haxelib, extensions, discovery precedence, activation, native approvals and hash enforcement, restart limits, key migration and their host processes, and the compiler server (hover, completion, definition, references, signature help, diagnostics, build and run).
 
 `snapshot.sh` builds `tests/Snapshots.hx`. Each scenario works on a copy of a fixture project under `bin/fixtures`, drives the workbench with pointer and key events, asserts on state, and captures images. Scenarios: `basic`, `full`, `broken`, `extension`, `markdown`, `views`, `extensions`, `chrome`, `debug`, `themes`, `themestudio`, `assist`. A fixture that contains a `.rayext` or a `.raytheme` opens as that kind of project. Look at the images after any change to how something looks; the docs pictures are copies of them.
+
+The `extensions` scenario includes native approval, startup and revocation in both schemes. Its approvals use an isolated home under the fixture; it does not change your user settings.
 
 ## Benchmarks
 

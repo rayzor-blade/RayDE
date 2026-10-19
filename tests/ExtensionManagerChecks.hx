@@ -2,6 +2,7 @@ import rayde.ext.Connection;
 import rayde.ext.HostBinary;
 import rayde.ext.Manager;
 import rayde.ext.Manifest;
+import rayde.ext.NativeTrust;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.settings.Extensions;
@@ -227,6 +228,93 @@ class ExtensionManagerChecks {
 		var read = KeyBindings.read(root, true);
 		read.setContributions([{command: "ext.command.describe", key: "mod+alt+d"}]);
 		check(read.of("ext.command.describe") == null, "removing an extension default stays removed after reload");
+		nativeChecks(root + "/native-checks", binary, services);
 		Sys.println("extension manager: precedence, activation, services, capabilities, disable, restart limit and key migration");
+	}
+
+	static function nativeChecks(root:String, binary:String, services:rayde.ext.Connection.WorkspaceServices):Void {
+		var home = root + "/home", app = root + "/app", workspace = root + "/.rayde/extensions";
+		function nativeFixture(dir:String, id:String, hash:String, two = false):Manifest {
+			var file = fixture(dir, id);
+			var config:Dynamic = haxe.Json.parse(sys.io.File.getContent(file));
+			config.capabilities = two ? ["native:example", "native:second"] : ["native:example"];
+			config.natives = {example: {path: "natives/library", sha256: hash}};
+			if (two) Reflect.setField(config.natives, "second", {path: "natives/second", sha256: hash});
+			write(file, haxe.Json.stringify(config));
+			write(dir + "/" + id + "/main.rays", "trace('native ready');");
+			write(dir + "/" + id + "/natives/library", "native fixture");
+			write(dir + "/" + id + "/natives/second", "native fixture");
+			return Manifest.read(file);
+		}
+		var hash = haxe.crypto.Sha256.encode("native fixture");
+		var manifest = nativeFixture(workspace, "untrusted", hash, true);
+		var builtin = nativeFixture(app, "builtin", hash);
+		var mismatch = nativeFixture(app, "mismatch", haxe.crypto.Sha256.encode("different bytes"));
+		check(manifest.problems.length == 0 && manifest.natives.length == 2, "native declarations parse");
+		Store.save(root, "extensions", {nativeApprovals: [{id: manifest.id, extension: manifest.file, library: "example", path: "natives/library", sha256: hash}]});
+		check(!NativeTrust.approved(manifest, manifest.natives[0], home), "workspace settings cannot grant native execution");
+		var manager = new Manager(root, {builtins: app, user: root + "/empty", trustHome: home, binary: binary,
+			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
+		manager.discover(services, []);
+		try {
+			manager.start();
+			var entry = manager.find("untrusted");
+			check(entry.state == "blocked" && !entry.connection.running(), "native extension waits for approval");
+			manager.setNativeApproved("untrusted", "example", true);
+			check(!entry.connection.running(), "every declared library needs approval");
+			manager.setNativeApproved("untrusted", "second", true);
+			wait(manager, () -> entry.output.indexOf("native ready") >= 0, "approval starts extension and host accepts hashes");
+			check(NativeTrust.allApproved(manifest, home), "approval persists in user settings");
+			wait(manager, () -> manager.find("builtin").output.indexOf("native ready") >= 0, "built-ins are pre-approved");
+			wait(manager, () -> manager.find("mismatch").connection.state == "blocked", "built-ins still enforce hashes");
+			check(manager.find("mismatch").restarts.length == 0 && manager.find("mismatch").output.join("\n").indexOf("SHA-256 mismatch") >= 0,
+				"invalid native grants report the reason without a crash restart loop");
+			var modified:Dynamic = haxe.Json.parse(sys.io.File.getContent(manifest.file));
+			modified.natives.example.sha256 = haxe.crypto.Sha256.encode("edited manifest");
+			write(manifest.file, haxe.Json.stringify(modified));
+			entry.connection.useManifest(Manifest.read(manifest.file));
+			check(!entry.connection.running() && entry.state == "blocked", "manifest edits stop a host whose approval no longer matches");
+			write(manifest.file, haxe.Json.stringify({id: manifest.id, main: "main.rays", capabilities: manifest.capabilities,
+				natives: {example: {path: "natives/library", sha256: hash}, second: {path: "natives/second", sha256: hash}}}));
+			entry.connection.useManifest(Manifest.read(manifest.file));
+			entry.connection.start();
+			var cleaned = false;
+			entry.onDisabled = _ -> cleaned = true;
+			manager.setNativeApproved("untrusted", "example", false);
+			check(!entry.connection.running() && entry.state == "blocked" && cleaned, "revocation stops host and clears contributions");
+			check(!NativeTrust.approved(manifest, manifest.natives[0], home), "revocation persists");
+			NativeTrust.set(manifest, manifest.natives[0], true, home);
+			var config:Dynamic = haxe.Json.parse(sys.io.File.getContent(manifest.file));
+			config.natives.example.sha256 = haxe.crypto.Sha256.encode("changed");
+			write(manifest.file, haxe.Json.stringify(config));
+			var changed = Manifest.read(manifest.file);
+			check(!NativeTrust.approved(changed, changed.natives[0], home), "hash changes require approval again");
+			config.natives.example.sha256 = hash;
+			config.natives.example.path = "natives/renamed";
+			write(manifest.file, haxe.Json.stringify(config));
+			changed = Manifest.read(manifest.file);
+			check(!NativeTrust.approved(changed, changed.natives[0], home), "path changes require approval again");
+			check(NativeTrust.set(changed, changed.natives[0], true, home) && !NativeTrust.approved(manifest, manifest.natives[0], home),
+				"a new approval replaces the previous path and hash for that library");
+			NativeTrust.set(changed, changed.natives[0], false, home);
+			write(workspace + "/moved/main.rays", "");
+			write(workspace + "/moved/untrusted.rayext", sys.io.File.getContent(manifest.file));
+			changed = Manifest.read(workspace + "/moved/untrusted.rayext");
+			check(!NativeTrust.approved(changed, changed.natives[0], home), "another extension location cannot inherit approval");
+			for (bad in ["../escape", "/absolute", "a\\b", "C:/library", "a/./library"]) {
+				config.natives.example.path = bad;
+				write(manifest.file, haxe.Json.stringify(config));
+				check(Manifest.read(manifest.file).problems.length > 0, "native paths must be confined relative paths");
+			}
+			config.natives.example.path = "natives/library";
+			config.capabilities = [];
+			write(manifest.file, haxe.Json.stringify(config));
+			check(Manifest.read(manifest.file).problems.join(" ").indexOf("requires capability") >= 0, "native capability is required");
+		} catch (error:Dynamic) {
+			manager.dispose();
+			throw error;
+		}
+		manager.dispose();
+		Sys.println("native trust: user approvals, path/hash identity, per-library grants, revocation, built-in validation");
 	}
 }

@@ -11,7 +11,8 @@ typedef ManagerOptions = {
 	defaultEvents:Array<String>,
 	restartLimit:Int,
 	restartWindow:Float,
-	?binary:String
+	?binary:String,
+	?trustHome:String
 };
 
 /** An installed extension and its host, activation and restart state. */
@@ -78,10 +79,13 @@ class Manager {
 			var c = new Connection(m.mainPath(), haxe.io.Path.join([root, ".rayde", "extensions-run", e.id]), () -> sys.io.File.getContent(m.mainPath()), m,
 				options.binary);
 			c.services = services;
+			c.nativeAllowed = manifest -> e.scope == "Built-in" || NativeTrust.allApproved(manifest, options.trustHome);
 			var entry = new ManagedExtension(e, c);
 			entry.disabled = disabled.indexOf(e.id) >= 0;
 			if (entry.disabled || e.problem != null)
 				entry.state = "stopped";
+			else if (!c.nativeAllowed(m))
+				entry.state = "blocked";
 			extensions.push(entry);
 			if (onDiscover != null)
 				onDiscover(entry);
@@ -101,7 +105,10 @@ class Manager {
 					previousState(state);
 				if (state == "running")
 					entry.state = "running";
-				else if (entry.activation != null || entry.disabled)
+				else if (state == "blocked") {
+					entry.state = "blocked";
+					if (entry.onDisabled != null) entry.onDisabled(true);
+				} else if (entry.activation != null || entry.disabled)
 					entry.state = "stopped";
 				changed();
 			};
@@ -140,6 +147,10 @@ class Manager {
 	function activate(e:ManagedExtension, event:String):Bool {
 		if (disposed || e.disabled || e.installed.problem != null)
 			return false;
+		if (!e.connection.nativeAllowed(e.connection.manifest)) {
+			e.state = "blocked";
+			return false;
+		}
 		if (e.connection.running())
 			return true;
 		if (e.activation != null)
@@ -188,12 +199,41 @@ class Manager {
 		e.connection.stop();
 		if (e.onDisabled != null)
 			e.onDisabled(disabled);
-		e.state = disabled ? "stopped" : "inactive";
+		e.state = disabled ? "stopped" : e.connection.nativeAllowed(e.connection.manifest) ? "inactive" : "blocked";
 		e.log(disabled ? "Disabled" : "Enabled");
 		if (!disabled && started)
 			activateWorkspace(e);
 		if (onOutput != null)
 			onOutput(e);
+		changed();
+	}
+
+	public function nativeApproved(e:ManagedExtension, name:String):Bool {
+		var m = e.connection.manifest, library = Lambda.find(m.natives, n -> n.name == name);
+		return library != null && (e.installed.scope == "Built-in" || NativeTrust.approved(m, library, options.trustHome));
+	}
+
+	public function setNativeApproved(id:String, name:String, allow:Bool):Void {
+		var e = find(id);
+		if (e == null || e.installed.scope == "Built-in") return;
+		var m = e.connection.manifest, library = Lambda.find(m.natives, n -> n.name == name);
+		if (library == null || !NativeTrust.set(m, library, allow, options.trustHome)) {
+			e.log("Cannot save native approval.");
+			changed();
+			return;
+		}
+		var previous = e.activation;
+		e.connection.stop();
+		e.activation = null;
+		if (!allow && e.onDisabled != null) e.onDisabled(true);
+		e.restarts = [];
+		e.restartBlocked = false;
+		e.state = !e.disabled && !e.connection.nativeAllowed(m) ? "blocked" : "inactive";
+		e.log((allow ? "Approved native library " : "Revoked native library ") + name);
+		if (!e.disabled && started) {
+			if (previous != null && e.connection.nativeAllowed(m)) activate(e, previous); else activateWorkspace(e);
+		}
+		if (onOutput != null) onOutput(e);
 		changed();
 	}
 

@@ -861,6 +861,16 @@ class Snapshots {
 				shot("disabled");
 				click("#rayde-extension-toggle-dashboard");
 				until(() -> !dashboard.disabled && dashboard.connection.running() && has("#rayde-activity-ext-dashboard-main"), "enabling to restore the host and its contributions");
+				var native = manager.find("native-example");
+				if (native == null || native.state != "blocked" || native.connection.running()) throw "native extension should wait for approval";
+				scroll("#rayde-extensions", 10000);
+				shot("native-unapproved");
+				click("#rayde-native-approve-native-example-example");
+				until(() -> native.output.indexOf("native example ready") >= 0, "native approval to start the extension");
+				shot("native-approved");
+				click("#rayde-native-approve-native-example-example");
+				until(() -> native.state == "blocked" && !native.connection.running(), "native revocation to stop the extension");
+				shot("native-revoked");
 			});
 
 		for (dark in [true, false])
@@ -1336,6 +1346,14 @@ class Snapshots {
 		sys.io.File.saveContent(config, haxe.Json.stringify(json));
 		script = dir + "/dashboard/ext/main.rays";
 		sys.io.File.saveContent(script, sys.io.File.getContent(script) + "\nregisterCommand('describe', args -> trace('dashboard ready'));\nregisterCommand('fail', args -> { throw 'dashboard failure'; });\n");
+		var native = dir + "/native-example";
+		sys.FileSystem.createDirectory(native + "/natives");
+		var library = sys.io.File.getBytes(Sys.getCwd() + "bin/cterm.hdll");
+		sys.io.File.saveBytes(native + "/natives/libexample.dylib", library);
+		sys.io.File.saveContent(native + "/main.rays", "trace('native example ready');");
+		sys.io.File.saveContent(native + "/native-example.rayext", haxe.Json.stringify({id: "native-example", name: "Native Example", version: "0.1.0",
+			description: "An extension that declares a native library.", capabilities: ["native:example"],
+			natives: {example: {path: "natives/libexample.dylib", sha256: haxe.crypto.Sha256.make(library).toHex()}}}));
 		sys.io.File.saveContent(root + "/README.md", "# Workspace extensions\n\nA Haxe project with a Markdown preview and dashboard running in separate hosts.\n");
 	}
 
@@ -1373,6 +1391,12 @@ class Snapshots {
 			stop = s;
 			return bench = new Workbench({display: display, name: extension != null ? extension.name : theme != null ? theme.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme});
 		});
+		if (name == "extensions") {
+			var home = root + "/snapshot-home";
+			sys.FileSystem.createDirectory(home);
+			Store.save(home, "extensions", {});
+			@:privateAccess bench.extensionManager.options.trustHome = home;
+		}
 		function settle(?frames:Int):Void
 			for (_ in 0...(frames == null ? 20 : frames)) {
 				Offscreen.advance(1 / 60);

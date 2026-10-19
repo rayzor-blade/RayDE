@@ -26,6 +26,7 @@ class Connection {
 	public var onEntry:Null<(String, HostEntry) -> Void>;
 	public var onWake:Null<Void->Void>;
 	public var onStart:Null<Void->Void>;
+	public var nativeAllowed:Manifest->Bool = m -> NativeTrust.allApproved(m);
 	public var useMocks = false;
 	public final binary:Null<String>;
 
@@ -54,6 +55,10 @@ class Connection {
 	public function useManifest(m:Manifest):Void {
 		manifest = m;
 		file = m.mainPath();
+		if (running() && m.natives.length > 0 && (m.problems.length > 0 || !nativeAllowed(m))) {
+			stop();
+			setState("blocked");
+		}
 	}
 
 	public function mocksPath():String
@@ -86,6 +91,11 @@ class Connection {
 			setState("unavailable");
 			return;
 		}
+		if (manifest != null && manifest.natives.length > 0 && (manifest.problems.length > 0 || !nativeAllowed(manifest))) {
+			note("console", "error", manifest.problems.length > 0 ? manifest.problems[0] : "Native approval required in Settings > Extensions.");
+			setState("blocked");
+			return;
+		}
 		mocks = {};
 		if (useMocks && sys.FileSystem.exists(mocksPath()))
 			try
@@ -96,6 +106,8 @@ class Connection {
 			host = new ExtensionHost(binary, dir, manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot());
 			host.start();
 			setState("running");
+			if (manifest != null && manifest.natives.length > 0)
+				send({t: "natives", root: manifest.root, capabilities: manifest.capabilities, libraries: manifest.natives});
 			var modules = new Map<String, Array<String>>();
 			for (module => names in builtin)
 				modules.set(module, names.copy());
@@ -178,6 +190,10 @@ class Connection {
 						}
 				case "error":
 					failed(m);
+					if (m.kind == "native") {
+						stop();
+						setState("blocked");
+					}
 				case "subscribe":
 					var name = Std.string(m.hook);
 					if (!Hooks.knownEvent(name))

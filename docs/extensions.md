@@ -80,7 +80,29 @@ markdown/
 - There is no `view`: the extension only handles hooks and commands and presents tabs, so it takes no place in the layout, and the Explorer keeps the sidebar. An extension gets a view only by asking for one, under [Views](#views).
 - `contributes` adds commands and menu items, below.
 
-Every field has a place in the **Extension** page of Settings. The page writes the file on each change and leaves entries it does not know as written. *Open as JSON* opens the text.
+The **Extension** page of Settings edits these fields and preserves entries it does not expose. *Open as JSON* opens the text, including native declarations.
+
+### Native libraries
+
+Declare each library under `natives`, with a matching `native:<name>` capability:
+
+```json
+{
+  "capabilities": ["native:git2"],
+  "natives": {
+    "git2": {
+      "path": "natives/libgit2.dylib",
+      "sha256": "<64 hexadecimal digits>"
+    }
+  }
+}
+```
+
+The name is the logical library in a RayScript `native "git2"` block. Paths are relative to the `.rayext` file. Absolute paths, traversal and symlinks outside the extension folder are rejected. The host verifies SHA-256 against a private copy before making any declared library available; replacing the installed file afterwards cannot change those bytes. The copied directory layout is preserved for dependencies between declared libraries.
+
+**Settings > Extensions** shows each library's path, hash and approval state. User, workspace and development extensions wait for every library to be approved. **Approve** grants native execution; **Revoke** stops the host and clears its views. Approvals are stored under `extensions.nativeApprovals` in `~/.rayde/settings.json`, bound to the extension id and location, library name, path and hash. Workspace settings cannot grant approval. A changed path, hash or extension location requires approval again. Built-ins are pre-approved and still undergo the same host validation. Validation failures appear in the extension's Output channel and block execution until it is restarted.
+
+Approval trusts the extension's scripts to call native code with your account permissions. It does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. Native faults remain confined to the extension's host process. The current native ABI target is macOS arm64.
 
 ## Views
 
