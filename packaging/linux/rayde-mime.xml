@@ -11,4 +11,10 @@
 		<icon name="rayde"/>
 		<glob pattern="*.rayext"/>
 	</mime-type>
+	<mime-type type="application/x-raytheme">
+		<comment>RayDE theme</comment>
+		<sub-class-of type="application/json"/>
+		<icon name="rayde"/>
+		<glob pattern="*.raytheme"/>
+	</mime-type>
 </mime-info>

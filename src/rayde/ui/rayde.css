@@ -252,3 +252,17 @@
 /* The window's own shape: rounded corners clip what is in it, and an outline stands where the system draws no frame. */
 #rayde #rayde-window[data-round] { border-radius: var(--radius-xl); corner-shape: squircle; overflow: hidden; }
 #rayde #rayde-window[data-outline] { border: 1px solid var(--border); }
+
+/* Theme Studio */
+#rayde .rayde-font-sans { font-family: var(--font-sans); }
+#rayde .rayde-font-serif { font-family: var(--font-serif); }
+#rayde .rayde-font-mono { font-family: var(--font-mono); }
+#rayde .rayde-token-swatch { border: 1px solid var(--border); border-radius: 6px; corner-shape: squircle; }
+#rayde .rayde-chip { border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-secondary); cursor: pointer; }
+#rayde .rayde-chip:hover { border-color: var(--border-hover); color: var(--text-primary); }
+#rayde .rayde-chip[data-on] { border-color: var(--primary); color: var(--text-primary); background: var(--accent-subtle); }
+#rayde .rayde-radius-sample { background: var(--accent-subtle); border: 1px solid var(--border); corner-shape: squircle; }
+#rayde .rayde-number { width: 84px; }
+#rayde .rayde-scheme-toggle > .ui-toggle { width: 64px; }
+#rayde .rayde-scheme-toggle > .ui-toggle[data-state="on"] { background: var(--accent-subtle); border-color: var(--primary); color: var(--text-primary); }
+#rayde[data-sans] { font-family: var(--font-sans); }

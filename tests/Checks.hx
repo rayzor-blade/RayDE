@@ -711,7 +711,65 @@ class Checks {
 		check(Themes.scan(dir).map(t -> t.file.id).join(",") == "loose,pack" && Themes.remove("loose") && !sys.FileSystem.exists(home + "/loose.raytheme"), "a loose file in the themes folder is a theme too");
 		Sys.putEnv("RAYDE_THEMES", "");
 		Themes.scan(dir);
-		Sys.println("themes: files, colours, scoping and installing");
+
+		// Fonts: the family a file carries, the entries that name them, and installing them with the theme.
+		var lora = Sys.getCwd() + "tests/fixtures/themestudio/fonts/Lora-Regular.ttf";
+		var names = rayde.theme.FontName.of(sys.io.File.getBytes(lora));
+		check(names != null && names.join(",") == "Lora", 'a TrueType file gives the family it carries: $names');
+		check(rayde.theme.FontName.of(haxe.io.Bytes.ofString("not a font at all")) == null && rayde.theme.FontName.of(haxe.io.Bytes.ofString("wOF2....................")) == null, "text and WOFF2 give no name");
+		check(rayde.theme.FontName.isFontFile("a/B.TTF") && rayde.theme.FontName.isFontFile("x.woff2") && !rayde.theme.FontName.isFontFile("x.woff") && !rayde.theme.FontName.isFontFile("x.css"), "a font file is .ttf, .otf, .ttc or .woff2");
+		sys.FileSystem.createDirectory(dir + "/fonted");
+		sys.FileSystem.createDirectory(dir + "/fonted/fonts");
+		sys.io.File.copy(lora, dir + "/fonted/fonts/Lora-Regular.ttf");
+		var fonted = ThemeFile.read(write("fonted/fonted.raytheme", '{"fonts": [{"family": "Lora", "files": ["fonts/Lora-Regular.ttf"]}], "typography": {"sans": "Lora"}}'));
+		check(fonted.problems.length == 0 && fonted.fonts.length == 1 && fonted.fonts[0].family == "Lora" && fonted.fontPaths().length == 1 && fonted.light.fonts.get("sans") == "Lora", 'fonts are read: ${fonted.problems}');
+		var badFonts = ThemeFile.read(write("fonted/bad.raytheme", '{"fonts": [{"family": "Inter", "files": ["fonts/Lora-Regular.ttf", "fonts/none.ttf", "fonts/x.woff", "../up.ttf", 4]}, {"family": "Inter", "files": []}, {"family": 3}, "x"]}'));
+		var badSaid = badFonts.problems.join("\n");
+		for (needle in ['is "Lora", not "Inter"', 'Font file "fonts/none.ttf" not found', "must be .ttf, .otf, .ttc or .woff2", "beside the theme file", "must be a file name", 'listed twice', 'Each "fonts" entry'])
+			check(badSaid.indexOf(needle) >= 0, 'the font problem is named: $needle in\n$badSaid');
+		check(ThemeFile.read(write("fonted/list.raytheme", '{"fonts": {}}')).problems[0].indexOf('"fonts" must be a list') == 0, "fonts that are not a list are said");
+		var located = ThemeFile.read(write("fonted/at.raytheme", '{"dark": {"colors": {"primary": "puce"}}, "fonts": [{"family": "X", "files": ["fonts/nope.ttf"]}], "css": [5]}'));
+		var ats = [for (i in located.issues) i.at].join(",");
+		check(ats == "dark.colors.primary,fonts[0].files[0],css[0]", 'problems say where they are: $ats');
+		check(located.placed.get("primary").join(",") == "dark.colors.primary" && ThemeFile.parse(dir + "/x.raytheme", '{"colors": {"surface-elevated": "#111"}, "light": {"colors": {"surfaceElevated": "#222"}}}').placed.get("surfaceElevated").join(",") == "colors.surface-elevated,light.colors.surfaceElevated", "where each colour is set in the file is kept, as spelled");
+		var unreadable = ThemeFile.parse(dir + "/u.raytheme", "{nope");
+		check(unreadable.unreadable && unreadable.problems[0].indexOf("Invalid JSON") == 0 && !ThemeFile.parse(dir + "/u.raytheme", '{"name": "A"}').unreadable && ThemeFile.parse(dir + "/u.raytheme", '{"name": "A"}').name == "A", "text that is not a JSON object is unreadable, and what is read from text is the theme");
+		check(ThemeFile.toHex(ThemeFile.parseColor("#7c5cff")) == "#7c5cff" && ThemeFile.toHex(ThemeFile.parseColor("rgba(255, 0, 0, 0.5)")) == "#ff000080" && ThemeFile.toHex(ThemeFile.parseColor("transparent")) == "#00000000", "a colour is written as #rrggbb, with the alpha only when it is not 1");
+		var home2 = haxe.io.Path.join([dir, "home2"]);
+		Sys.putEnv("RAYDE_THEMES", home2);
+		var fontProblems:Array<String> = [];
+		var withFont = Themes.install(dir + "/fonted/fonted.raytheme", fontProblems);
+		check(withFont != null && sys.FileSystem.exists(home2 + "/fonted/fonts/Lora-Regular.ttf"), 'a loose file is installed with its fonts: $fontProblems');
+		Sys.putEnv("RAYDE_THEMES", "");
+		Themes.scan(dir);
+
+		// Locating entries in the text, and editing it.
+		var doc = '{\n  "name": "A",\n  "dark": {"colors": {"primary": "#111111"}},\n  "fonts": [{"family": "F", "files": ["a.ttf", "b.ttf"]}]\n}';
+		var span = rayde.theme.JsonLocator.find(doc, "dark.colors.primary");
+		check(span != null && doc.substring(span.valueStart, span.valueEnd) == '"#111111"' && doc.substring(span.keyStart, span.keyEnd) == '"primary"', "an entry is found by its path");
+		var item = rayde.theme.JsonLocator.find(doc, "fonts[0].files[1]");
+		check(item != null && doc.substring(item.valueStart, item.valueEnd) == '"b.ttf"' && rayde.theme.JsonLocator.find(doc, "dark.colors.none") == null && rayde.theme.JsonLocator.find(doc, "fonts[2]") == null && rayde.theme.JsonLocator.find("{bad", "a") == null, "an array item is found by its index, and what is not there, or text that is not JSON, is null");
+		var where = rayde.theme.JsonLocator.position(doc, rayde.theme.JsonLocator.find(doc, "dark").keyStart);
+		check(where.line == 2 && where.character == 2, 'a position is a line and a character from zero: ${where.line}:${where.character}');
+		var replaced = rayde.theme.ThemeEdit.setText(doc, "dark.colors.primary", "#222222");
+		check(replaced == StringTools.replace(doc, "#111111", "#222222"), "a value in the file is replaced where it stands: " + replaced);
+		var added = rayde.theme.ThemeEdit.setText(doc, "light.colors.primary", "#ffffff");
+		check(ThemeFile.parse(dir + "/e.raytheme", added).light.colors.exists("primary") && added.indexOf('"fonts"') > added.indexOf('"dark"') && added.indexOf('"light"') > added.indexOf('"fonts"'), "a new entry is added at the end, with the objects on the way: " + added);
+		var removed = rayde.theme.ThemeEdit.remove(doc, "dark.colors.primary");
+		check(removed.indexOf('"dark"') < 0 && removed.indexOf('"name"') > 0 && rayde.theme.ThemeEdit.remove(doc, "dark.colors.none") == doc, "removing the last entry removes the objects it leaves empty, and removing what is not there changes nothing");
+		var fontAdded = rayde.theme.ThemeEdit.addFont(doc, "F", "c.ttf");
+		check(ThemeFile.parse(dir + "/f.raytheme", fontAdded).fonts[0].files.join(",") == "a.ttf,b.ttf,c.ttf" && ThemeFile.parse(dir + "/f.raytheme", rayde.theme.ThemeEdit.addFont(fontAdded, "G", "g.ttf")).fonts.length == 2, "a font file joins its family, and a new family is a new entry");
+		var fontGone = rayde.theme.ThemeEdit.removeFont(rayde.theme.ThemeEdit.addFont(doc, "G", "g.ttf"), "g.ttf");
+		check(ThemeFile.parse(dir + "/g.raytheme", fontGone).fonts.length == 1 && ThemeFile.parse(dir + "/g.raytheme", rayde.theme.ThemeEdit.removeFont(rayde.theme.ThemeEdit.removeFont(fontGone, "a.ttf"), "b.ttf")).fonts.length == 0 && rayde.theme.ThemeEdit.removeFont(rayde.theme.ThemeEdit.removeFont(rayde.theme.ThemeEdit.removeFont(fontGone, "a.ttf"), "b.ttf"), "none").indexOf('"fonts"') < 0, "a family goes with its last file, and the fonts entry with its last family");
+		var sheet = rayde.theme.ThemeEdit.addCss('{"css": ".a {}"}', "x.css");
+		check(ThemeFile.parse(dir + "/c.raytheme", sheet).css.length == 2 && ThemeFile.parse(dir + "/c.raytheme", rayde.theme.ThemeEdit.addCss(sheet, "x.css")).css.length == 2 && ThemeFile.parse(dir + "/c.raytheme", rayde.theme.ThemeEdit.addCss("{}", "y.css")).css[0].file == "y.css", "a stylesheet is added to the list the text or the entry becomes, once");
+		var threw = false;
+		try
+			rayde.theme.ThemeEdit.setText("[1]", "name", "x")
+		catch (_:Dynamic)
+			threw = true;
+		check(threw, "an edit of text that is not a JSON object says so");
+		Sys.println("themes: files, colours, scoping, installing, fonts and text edits");
 	}
 
 	static function removeTree(path:String):Void {

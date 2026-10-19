@@ -6,7 +6,8 @@
   "description": "Warm paper in the light scheme and ink in the dark, with a rust accent",
   "extends": "hybrid",
   "colors": {"primary": "#b4532a", "accent": "#b4532a"},
-  "typography": {"mono": "Menlo"},
+  "typography": {"sans": "Lora", "serif": "Lora", "mono": "Menlo"},
+  "fonts": [{"family": "Lora", "files": ["fonts/Lora-Regular.ttf", "fonts/Lora-Bold.ttf"]}],
   "light": {
     "colors": {
       "background": "#f4eee1",

@@ -6,6 +6,12 @@ typedef Color = {r:Float, g:Float, b:Float, a:Float};
 /** A stylesheet a theme brings: its text, or a file beside the theme file. */
 typedef CssSource = {text:Null<String>, file:Null<String>};
 
+/** A font family a theme brings: the name its faces carry, and their files beside the theme file. */
+typedef FontDecl = {family:String, files:Array<String>};
+
+/** Something wrong in a theme file, and where: `at` is the path to the entry, such as `dark.colors.primary` or `fonts[0].files[1]`, or null for the file as a whole. */
+typedef Problem = {message:String, at:Null<String>};
+
 /** What a theme file changes in one scheme, light or dark, over the theme it extends. */
 typedef SchemeSpec = {
 	colors:Map<String, Color>,
@@ -35,6 +41,7 @@ typedef SchemeSpec = {
  *       "radii": {"xl": 16},
  *       "shape": {"smoothing": 0.8},
  *       "typography": {"mono": "JetBrains Mono", "sizes": {"sm": 13}},
+ *       "fonts": [{"family": "JetBrains Mono", "files": ["fonts/JetBrainsMono-Regular.ttf", "fonts/JetBrainsMono-Bold.ttf"]}],
  *       "light": {"colors": {"background": "#f7f6ff"}},
  *       "dark": {"colors": {"background": "#0d0b1f"}},
  *       "css": [".rayde-pill { border-color: var(--accent); }", {"file": "midnight.css"}]
@@ -45,6 +52,11 @@ typedef SchemeSpec = {
  * `rgba(r, g, b, a)` or `transparent`; a token is named as in ashui (`surfaceElevated`) or with dashes (`surface-elevated`).
  * A scheme that sets `primary` and not `primaryHover` or `primaryActive` gets them from it, as `secondary`, and sets
  * `borderFocus` and `selection` from `primary` and `accentSubtle` from `accent` the same way; naming a token stops that.
+ *
+ * `fonts` brings font files with the theme: each entry names a family and its files, `.ttf`, `.otf`, `.ttc` or `.woff2`, beside
+ * the theme file. They are registered when the theme is in use, and faces are found by the family name they carry, so
+ * `typography` (and the theme's CSS) use the family by that name. A TrueType or OpenType file that carries another name
+ * is reported.
  *
  * `css` is a text, a list, or `{"file": "x.css"}` for a file beside the theme file. Its rules apply only while the
  * theme is in use: each selector is placed under it, so write `.rayde-card { ... }`, not `#rayde .rayde-card`.
@@ -67,6 +79,9 @@ class ThemeFile {
 	public static final SHAPE = ["smoothing", "exponent", "threshold"];
 	public static inline var EXTENSION = ".raytheme";
 
+	/** The fields a theme file has at its top. */
+	public static final FIELDS = ["id", "name", "version", "author", "description", "extends", "colors", "radii", "shape", "typography", "spacing", "light", "dark", "fonts", "css"];
+
 	public final file:String;
 	public final id:String;
 	public final name:String;
@@ -77,9 +92,25 @@ class ThemeFile {
 	public final light:SchemeSpec;
 	public final dark:SchemeSpec;
 	public final css:Array<CssSource> = [];
+	public final fonts:Array<FontDecl> = [];
 
-	/** What is wrong with the file, as sentences; what could be read is used. */
-	public final problems:Array<String> = [];
+	/** The paths in the file where each colour is set, by token, as the file spells them: `dark.colors.surface-elevated`. */
+	public final placed = new Map<String, Array<String>>();
+
+	/** Whether the text is not a JSON object at all: nothing of it was read. */
+	public var unreadable(default, null) = false;
+
+	/** What is wrong with the file, and where; what could be read is used. */
+	public final issues:Array<Problem> = [];
+
+	/** What is wrong with the file, as sentences. */
+	public var problems(get, never):Array<String>;
+
+	function get_problems():Array<String>
+		return [for (i in issues) i.message];
+
+	function problem(message:String, ?at:String):Void
+		issues.push({message: message, at: at});
 
 	public static function isThemeFile(path:String):Bool
 		return StringTools.endsWith(path, EXTENSION);
@@ -90,31 +121,32 @@ class ThemeFile {
 		var given = text(json, "id", "");
 		id = given == "" ? fallback : given;
 		if (!~/^[A-Za-z0-9][A-Za-z0-9._-]*$/.match(id))
-			problems.push('Id "$id" must start with a letter or digit and use only letters, digits, dots, dashes and underscores.');
+			problem('Id "$id" must start with a letter or digit and use only letters, digits, dots, dashes and underscores.', "id");
 		name = text(json, "name", id);
 		version = text(json, "version", "");
 		author = text(json, "author", "");
 		description = text(json, "description", "");
 		var extended = text(json, "extends", "restrained");
 		if (BASES.indexOf(extended) < 0) {
-			problems.push('Unknown base theme "$extended"; expected ${BASES.join(", ")}.');
+			problem('Unknown base theme "$extended"; expected ${BASES.join(", ")}.', "extends");
 			extended = "restrained";
 		}
 		base = extended;
 		if (BASES.indexOf(id) >= 0)
-			problems.push('Id "$id" is one of the built-in themes; choose another.');
+			problem('Id "$id" is one of the built-in themes; choose another.', "id");
 		light = scheme(json, "light");
 		dark = scheme(json, "dark");
+		fontDecls(Reflect.field(json, "fonts"));
 		sheets(Reflect.field(json, "css"));
 		for (field in Reflect.fields(json))
-			if (field.charAt(0) != "$" && ["id", "name", "version", "author", "description", "extends", "colors", "radii", "shape", "typography", "spacing", "light", "dark", "css"].indexOf(field) < 0)
-				problems.push('Unknown field "$field".');
+			if (field.charAt(0) != "$" && FIELDS.indexOf(field) < 0)
+				problem('Unknown field "$field".', field);
 	}
 
 	function text(object:Dynamic, field:String, fallback:String):String {
 		var v:Dynamic = Reflect.field(object, field);
 		return v == null ? fallback : Std.isOfType(v, String) ? v : {
-			problems.push('"$field" must be text.');
+			problem('"$field" must be text.', field);
 			fallback;
 		}
 	}
@@ -124,7 +156,7 @@ class ThemeFile {
 		if (v == null)
 			return null;
 		if (Std.isOfType(v, String) || Std.isOfType(v, Array) || !Reflect.isObject(v)) {
-			problems.push('"$where$field" must be an object.');
+			problem('"$where$field" must be an object.', where + field);
 			return null;
 		}
 		return v;
@@ -147,12 +179,17 @@ class ThemeFile {
 				for (token in Reflect.fields(colors)) {
 					var canonical = Lambda.find(COLORS, c -> key(c) == key(token));
 					if (canonical == null) {
-						problems.push('Unknown colour "$token" in ${where}colors.');
+						problem('Unknown colour "$token" in ${where}colors.', '${where}colors.$token');
 						continue;
 					}
 					var c = parseColor(Reflect.field(colors, token));
+					var spot = '${where}colors.$token';
+					if (!placed.exists(canonical))
+						placed.set(canonical, []);
+					if (placed.get(canonical).indexOf(spot) < 0)
+						placed.get(canonical).push(spot);
 					if (c == null)
-						problems.push('${where}colors.$token: expected a colour such as #7c5cff or rgba(124, 92, 255, 0.5), not ${Std.string(Reflect.field(colors, token))}.');
+						problem('${where}colors.$token: expected a colour such as #7c5cff or rgba(124, 92, 255, 0.5), not ${Std.string(Reflect.field(colors, token))}.', '${where}colors.$token');
 					else
 						spec.colors.set(canonical, c);
 				}
@@ -163,12 +200,12 @@ class ThemeFile {
 				for (role in FONTS) {
 					var v:Dynamic = Reflect.field(typography, role);
 					if (v != null)
-						Std.isOfType(v, String) && v != "" ? spec.fonts.set(role, v) : problems.push('${where}typography.$role must be a font family name.');
+						Std.isOfType(v, String) && v != "" ? spec.fonts.set(role, v) : problem('${where}typography.$role must be a font family name.', '${where}typography.$role');
 				}
 				numbers(objectOf(typography, "sizes", where + "typography."), SIZES, where + "typography.sizes", spec.sizes);
 				for (field in Reflect.fields(typography))
 					if (FONTS.indexOf(field) < 0 && field != "sizes")
-						problems.push('Unknown field "$field" in ${where}typography.');
+						problem('Unknown field "$field" in ${where}typography.', '${where}typography.$field');
 			}
 			var spacing = objectOf(from, "spacing", where);
 			if (spacing != null) {
@@ -176,10 +213,10 @@ class ThemeFile {
 				if (Std.isOfType(base, Float) && base > 0)
 					spec.spacing = base;
 				else
-					problems.push('${where}spacing.base must be a number above 0.');
+					problem('${where}spacing.base must be a number above 0.', '${where}spacing.base');
 				for (field in Reflect.fields(spacing))
 					if (field != "base")
-						problems.push('Unknown field "$field" in ${where}spacing.');
+						problem('Unknown field "$field" in ${where}spacing.', '${where}spacing.$field');
 			}
 		}
 		return spec;
@@ -192,33 +229,99 @@ class ThemeFile {
 			var v:Dynamic = Reflect.field(from, n);
 			var canonical = Lambda.find(names, c -> key(c) == key(n));
 			if (canonical == null)
-				problems.push('Unknown name "$n" in $where; expected ${names.join(", ")}.');
+				problem('Unknown name "$n" in $where; expected ${names.join(", ")}.', '$where.$n');
 			else if (!Std.isOfType(v, Float))
-				problems.push('$where.$n must be a number.');
+				problem('$where.$n must be a number.', '$where.$n');
 			else
 				into.set(canonical, v);
 		}
 	}
 
+	/** Whether `path` is a path beside the theme file: relative, without `..` or a drive. */
+	static function beside(path:String):Bool
+		return !haxe.io.Path.isAbsolute(path) && path.split("/").indexOf("..") < 0 && path.indexOf("\\") < 0 && path != "";
+
 	function sheets(v:Dynamic):Void {
 		if (v == null)
 			return;
 		var list:Array<Dynamic> = Std.isOfType(v, Array) ? v : [v];
-		for (item in list) {
+		for (i => item in list) {
+			var at = Std.isOfType(v, Array) ? 'css[$i]' : "css";
 			if (Std.isOfType(item, String))
 				css.push({text: item, file: null});
 			else if (item != null && Reflect.isObject(item) && Std.isOfType(Reflect.field(item, "file"), String)) {
 				var path:String = Reflect.field(item, "file");
-				if (haxe.io.Path.isAbsolute(path) || path.split("/").indexOf("..") >= 0 || path.indexOf("\\") >= 0)
-					problems.push('css file "$path" must be a path beside the theme file, without ".." or a drive.');
+				if (!beside(path))
+					problem('css file "$path" must be a path beside the theme file, without ".." or a drive.', at);
 				else {
 					css.push({text: null, file: path});
 					if (!sys.FileSystem.exists(haxe.io.Path.join([haxe.io.Path.directory(file), path])))
-						problems.push('css file "$path" not found.');
+						problem('css file "$path" not found.', at);
 				}
 			} else
-				problems.push('Each "css" entry is text or {"file": "x.css"}.');
+				problem('Each "css" entry is text or {"file": "x.css"}.', at);
 		}
+	}
+
+	function fontDecls(v:Dynamic):Void {
+		if (v == null)
+			return;
+		if (!Std.isOfType(v, Array)) {
+			problem('"fonts" must be a list of {"family": "...", "files": ["..."]}.', "fonts");
+			return;
+		}
+		var list:Array<Dynamic> = v;
+		for (i => item in list) {
+			var at = 'fonts[$i]';
+			var family:Dynamic = item == null || !Reflect.isObject(item) ? null : Reflect.field(item, "family");
+			var files:Dynamic = item == null || !Reflect.isObject(item) ? null : Reflect.field(item, "files");
+			if (!Std.isOfType(family, String) || family == "" || !Std.isOfType(files, Array)) {
+				problem('Each "fonts" entry is {"family": "Name", "files": ["fonts/Name.ttf"]}.', at);
+				continue;
+			}
+			var decl:FontDecl = {family: family, files: []};
+			var names:Array<Dynamic> = files;
+			for (j => name in names) {
+				var where = '$at.files[$j]';
+				if (!Std.isOfType(name, String)) {
+					problem('$where must be a file name.', where);
+					continue;
+				}
+				// Every name stays in the list, so a form can show it and take it away; `fontPaths` leaves out the unusable.
+				var path:String = name;
+				decl.files.push(path);
+				if (!beside(path)) {
+					problem('Font file "$path" must be a path beside the theme file, without ".." or a drive.', where);
+					continue;
+				}
+				if (!FontName.isFontFile(path)) {
+					problem('Font file "$path" must be .ttf, .otf, .ttc or .woff2.', where);
+					continue;
+				}
+				var full = haxe.io.Path.join([haxe.io.Path.directory(file), path]);
+				if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) {
+					problem('Font file "$path" not found.', where);
+					continue;
+				}
+				var carried = try FontName.of(sys.io.File.getBytes(full)) catch (_:Dynamic) null;
+				if (carried != null && carried.indexOf(family) < 0)
+					problem('Font file "$path" is "${carried[0]}", not "$family"; text set in "$family" will not find it.', where);
+			}
+			if (Lambda.exists(fonts, f -> f.family == family))
+				problem('Font family "$family" is listed twice; put its files in one entry.', at);
+			fonts.push(decl);
+		}
+	}
+
+	/** The font files the theme brings that can be used, as paths: beside the theme file, of a kind that is registered, and there. */
+	public function fontPaths():Array<String> {
+		var dir = haxe.io.Path.directory(file);
+		return [
+			for (f in fonts)
+				for (name in f.files)
+					if (beside(name) && FontName.isFontFile(name) && sys.FileSystem.exists(haxe.io.Path.join([dir, name])))
+						haxe.io.Path.join([dir, name])
+		];
 	}
 
 	/** A CSS-style colour, or null when it is none. */
@@ -247,6 +350,12 @@ class ThemeFile {
 			return {r: channel(1), g: channel(2), b: channel(3), a: Math.max(0, Math.min(1, alpha))};
 		}
 		return null;
+	}
+
+	/** A colour as `#rrggbb`, or `#rrggbbaa` when it is not opaque. */
+	public static function toHex(c:Color):String {
+		var byte = (v:Float) -> StringTools.hex(Math.round(Math.max(0, Math.min(1, v)) * 255), 2).toLowerCase();
+		return "#" + byte(c.r) + byte(c.g) + byte(c.b) + (c.a < 0.999 ? byte(c.a) : "");
 	}
 
 	/** `from` toward `to` by `t`, channel by channel, with `from`'s alpha. */
@@ -299,10 +408,22 @@ class ThemeFile {
 
 	/** Reads a theme file; one that cannot be read gives a theme that changes nothing, with the reason in `problems`. */
 	public static function read(file:String):ThemeFile {
+		var text = try sys.io.File.getContent(file) catch (e:Dynamic) null;
+		if (text == null) {
+			var t = new ThemeFile(file, {});
+			t.unreadable = true;
+			t.issues.insert(0, {message: 'Cannot read $file.', at: null});
+			return t;
+		}
+		return parse(file, text);
+	}
+
+	/** A theme from the text of `file`, as it is in an editor; what the text says that is not JSON is a problem and the theme changes nothing. */
+	public static function parse(file:String, text:String):ThemeFile {
 		var json:Dynamic = {};
 		var why:Null<String> = null;
 		try
-			json = haxe.Json.parse(sys.io.File.getContent(file))
+			json = haxe.Json.parse(text)
 		catch (e:Dynamic)
 			why = 'Invalid JSON: $e';
 		if (why == null && (json == null || Std.isOfType(json, Array) || !Reflect.isObject(json))) {
@@ -310,8 +431,10 @@ class ThemeFile {
 			json = {};
 		}
 		var t = new ThemeFile(file, json);
-		if (why != null)
-			t.problems.insert(0, why);
+		if (why != null) {
+			t.unreadable = true;
+			t.issues.insert(0, {message: why, at: null});
+		}
 		return t;
 	}
 }

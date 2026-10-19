@@ -39,7 +39,7 @@ class AppearanceSettings extends Component<AppearanceSettingsProps> {
 		return <div class="flex flex-col gap-6">
 			${SettingsParts.card("rayde-appearance-scheme", "Appearance", "Light, dark, or whichever your system is in.", [<div class="flex items-center gap-3">{schemeTiles()}</div>])}
 			${SettingsParts.card("rayde-appearance-theme", "Theme", "Each theme has a light and a dark scheme. The pictures show the one in use.", [<div class="flex gap-4">{themeCards()}</div>])}
-			${SettingsParts.card("rayde-appearance-custom", "Custom themes", "Theme bundles (.raytheme) installed in the user's .rayde/themes or the workspace's. One chosen here is used in place of the built-in themes above.", customThemes())}
+			${SettingsParts.card("rayde-appearance-custom", "Custom themes", "A chosen theme replaces the built-in themes.", customThemes())}
 			${SettingsParts.card("rayde-appearance-controls", "Window controls", "Close, minimize and maximize, drawn in the title bar. Platform default follows the operating system and, on Linux, the desktop.", [controlChoice()])}
 		</div>;
 
@@ -117,7 +117,7 @@ class AppearanceSettings extends Component<AppearanceSettingsProps> {
 			var items:Array<Element> = [<select-item value="">Built-in themes</select-item>];
 			for (t in list)
 				items.push(<select-item value={t.file.id}>${t.file.name + (t.file.version == "" ? "" : "  " + t.file.version)}</select-item>);
-			out.push(SettingsParts.field("Installed", "Choosing one replaces the built-in theme in use", <select id="rayde-custom-theme" value={active == null ? "" : active.file.id} size={Sm} class="rayde-control-wide" onChange={v -> chooseCustom(v)}>{items}</select>));
+			out.push(SettingsParts.field("Installed", "Replaces the built-in theme", <select id="rayde-custom-theme" value={active == null ? "" : active.file.id} size={Sm} class="rayde-control-wide" onChange={v -> chooseCustom(v)}>{items}</select>));
 		}
 		if (active != null)
 			out.push(customDetails(active));

@@ -66,7 +66,7 @@ class Themes {
 
 	/**
 	 * Installs a theme into the user's folder from a `.raytheme` file, or from a folder that holds one (the folder is
-	 * copied whole, its stylesheets with it). The theme replaces one installed with the same id. A theme that has
+	 * copied whole, its stylesheets and fonts with it). The theme replaces one installed with the same id. A theme that has
 	 * problems is not installed; the sentences say why. The theme as installed, or null.
 	 */
 	public static function install(source:String, problems:Array<String>):Null<InstalledTheme> {
@@ -125,14 +125,17 @@ class Themes {
 	static function copyTree(from:String, to:String, only:Null<String>, theme:ThemeFile):Void {
 		ensure(to);
 		if (only != null) {
-			// A loose file brings only itself and the stylesheets it names.
+			// A loose file brings only itself, the stylesheets it names and its fonts.
 			sys.io.File.copy(only, haxe.io.Path.join([to, haxe.io.Path.withoutDirectory(only)]));
-			for (s in theme.css)
-				if (s.file != null) {
-					var target = haxe.io.Path.join([to, s.file]);
-					ensure(haxe.io.Path.directory(target));
-					sys.io.File.copy(haxe.io.Path.join([from, s.file]), target);
-				}
+			var named = [for (s in theme.css) if (s.file != null) s.file];
+			for (f in theme.fonts)
+				for (name in f.files)
+					named.push(name);
+			for (name in named) {
+				var target = haxe.io.Path.join([to, name]);
+				ensure(haxe.io.Path.directory(target));
+				sys.io.File.copy(haxe.io.Path.join([from, name]), target);
+			}
 			return;
 		}
 		for (name in sys.FileSystem.readDirectory(from)) {
@@ -146,7 +149,8 @@ class Themes {
 		}
 	}
 
-	static function ensure(dir:String):Void {
+	/** Makes `dir` and the folders above it that are missing. */
+	public static function ensure(dir:String):Void {
 		if (dir == "" || sys.FileSystem.exists(dir))
 			return;
 		ensure(haxe.io.Path.directory(dir));

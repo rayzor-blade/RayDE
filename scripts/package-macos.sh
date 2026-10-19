@@ -33,7 +33,7 @@ if [ -z "$ash" ]; then
   exit 1
 fi
 if [ $# -eq 0 ]; then
-  project=$(osascript -e 'POSIX path of (choose file with prompt "Open a project: a .hxml build file or a .rayext extension" of type {"hxml", "rayext"})' 2>/dev/null) || exit 0
+  project=$(osascript -e 'POSIX path of (choose file with prompt "Open a project: a .hxml build file, a .rayext extension or a .raytheme theme" of type {"hxml", "rayext", "raytheme"})' 2>/dev/null) || exit 0
   set -- "$project"
 fi
 [ -x "$res/rayscript-host" ] && export RAYSCRIPT_HOST="$res/rayscript-host"

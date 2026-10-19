@@ -7,6 +7,6 @@ Exec=rayde %F
 Icon=rayde
 Terminal=false
 Categories=Development;IDE;
-MimeType=text/x-hxml;application/x-rayext;
+MimeType=text/x-hxml;application/x-rayext;application/x-raytheme;
 StartupWMClass=RayDE
 Keywords=Haxe;Ash;Ashui;RayScript;

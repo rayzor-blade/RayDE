@@ -14,19 +14,10 @@ import rayde.theme.ThemeFile.SchemeSpec;
 
 /** Turns a theme file into the bundle ashui installs: the theme it extends, with what the file sets over it in each scheme. */
 class ThemeBuilder {
-	/**
-	 * `builtin` gives a built-in theme's bundle by id. The theme's stylesheets are put under the theme (see `ThemeCss`)
-	 * and go with the bundle when `withCss`, which is for the bundle that is installed and not one made to look at.
-	 */
-	public static function build(t:ThemeFile, builtin:String->ThemeBundle, withCss = false):ThemeBundle {
+	/** `builtin` gives a built-in theme's bundle by id. The theme's stylesheets and fonts are not part of the bundle; `Theming` puts them in force. */
+	public static function build(t:ThemeFile, builtin:String->ThemeBundle):ThemeBundle {
 		var base = builtin(t.base);
-		var bundle = new ThemeBundle(t.name, scheme(t, base.light, t.light, false), scheme(t, base.dark, t.dark, true));
-		if (withCss) {
-			var scope = '#rayde[data-theme="${t.id}"]';
-			for (text in t.sheetTexts())
-				bundle.withCss(ThemeCss.scope(text, scope));
-		}
-		return bundle;
+		return new ThemeBundle(t.name, scheme(t, base.light, t.light, false), scheme(t, base.dark, t.dark, true));
 	}
 
 	static function cap(name:String):String

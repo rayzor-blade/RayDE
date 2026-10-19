@@ -1,0 +1,14 @@
+{
+  "id": "studio",
+  "name": "Studio",
+  "version": "0.1.0",
+  "author": "RayDE",
+  "description": "Fixture for the Theme Studio",
+  "extends": "restrained",
+  "radii": {"xl": 14},
+  "light": {"colors": {"background": "#f4f7f6", "primary": "#12806b", "accent": "#12806b"}},
+  "dark": {"colors": {"background": "#10131c", "primary": "#4cc2a8", "accent": "#4cc2a8"}},
+  "fonts": [{"family": "Lora", "files": ["fonts/Lora-Regular.ttf"]}],
+  "typography": {"serif": "Lora"},
+  "css": [{"file": "studio.css"}]
+}

@@ -1018,6 +1018,134 @@ class Snapshots {
 					throw "choosing Built-in themes goes back to a built-in theme";
 				Sys.putEnv("RAYDE_THEMES", "");
 			});
+		for (dark in [true, false])
+			scenario(dark, "themestudio", (bench, theme, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle(10);
+				var studio = bench.themeModel();
+				if (studio == null)
+					throw "opening a .raytheme should start the Theme Studio";
+				var root = haxe.io.Path.directory(theme), read = () -> sys.io.File.getContent(theme);
+				var primary = () -> ashui.theme.ThemeState.get().color(ashui.theme.ColorToken.Primary).rgb();
+				var has = (selector:String) -> ashui.css.Css.query(bench.tree, bench.node.id, selector).length > 0;
+				// Scrolls the page until the element `selector` finds is near the top.
+				var reveal = (selector:String) -> {
+					var card = ashui.css.Css.query(bench.tree, bench.node.id, selector)[0], area = ashui.css.Css.query(bench.tree, bench.node.id, "#rayde-theme-studio")[0];
+					var scroller = ashui.input.Scroll.at(area, bench.tree);
+					scroller.scrollTo(0, scroller.y.get() + bench.tree.getScrolledBounds(new ashui.layout.Node(card)).y - 140);
+					settle(4);
+				};
+				if (studio.problems.get().length > 0)
+					throw "the fixture theme should read cleanly: " + studio.problems.get().map(p -> p.message).join("; ");
+				if (rayde.ui.Theming.current.get() != "studio" || primary() != (dark ? 0x4cc2a8 : 0x12806b))
+					throw 'the theme in the file should be on the window: ${rayde.ui.Theming.current.get()} ${StringTools.hex(primary(), 6)}';
+				shot("page");
+				// A colour typed into its input is written where the file has it, and the window changes with it.
+				click("#rayde-token-input-primary");
+				type("#rayde-token-input-primary", "#ff5533");
+				press(Named(Enter));
+				until(() -> read().indexOf("#ff5533") > 0, "the colour to be written to the theme file");
+				if (primary() != 0xff5533 || read().indexOf('"extends": "restrained"') < 0 || read().indexOf('"fonts": [{"family"') < 0)
+					throw "the colour should be in use and the rest of the file left as written: " + read();
+				if (bench.buffer(theme).get() != read())
+					throw "the editor should hold what was written";
+				shot("palette-edited");
+				click("#rayde-token-reset-primary");
+				until(() -> read().indexOf("#ff5533") < 0, "the colour to be taken out of the theme file");
+				var base = primary();
+				if (base == 0xff5533 || base == (dark ? 0x4cc2a8 : 0x12806b))
+					throw "a reset colour goes back to the base theme's";
+				// A font file from outside is copied beside the theme and listed under its family.
+				var extra = Sys.getCwd() + "tests/fixtures/themestudio-extra/Lora-Italic.ttf";
+				click("#rayde-font-path");
+				type("#rayde-font-path", extra);
+				click("#rayde-font-add");
+				until(() -> read().indexOf("fonts/Lora-Italic.ttf") > 0, "the font file to be listed in the theme, under the family the file carries");
+				if (!sys.FileSystem.exists(root + "/fonts/Lora-Italic.ttf") || studio.problems.get().length > 0)
+					throw "the file should be copied beside the theme without problems: " + studio.problems.get().map(p -> p.message).join("; ");
+				reveal("#rayde-theme-typography");
+				shot("fonts-added");
+				click("#rayde-font-remove-Lora-Italic-ttf");
+				until(() -> read().indexOf("fonts/Lora-Italic.ttf") < 0, "the font file to be taken out of the theme");
+				// A family chosen for a role is set in that face on the window.
+				click("#rayde-font-use-sans-Lora");
+				until(() -> read().indexOf('"sans": "Lora"') > 0, "the family to be set for sans");
+				settle(20);
+				// The sans role is the interface's font: a label that was there before the change resolves to it.
+				var label = ashui.css.Css.query(bench.tree, bench.node.id, "#rayde-files .ui-tree-row")[0];
+				var family = ashui.css.Css.resolved(ashui.css.Identity.of(bench.tree, label), "font-family");
+				if (family == null || family.indexOf("Lora") != 0)
+					throw "the window's text should be set in the sans family: " + family;
+				// The type card at the top of the view, to see the specimens and the window in the new face.
+				reveal("#rayde-theme-typography");
+				shot("fonts-sans");
+				click("#rayde-font-sans");
+				type("#rayde-font-sans", "");
+				press(Named(Enter));
+				until(() -> read().indexOf('"sans"') < 0, "the sans family to be taken out");
+				// The scheme changes within the theme.
+				scroll("#rayde-theme-studio", 0);
+				click(dark ? "#rayde-theme-light" : "#rayde-theme-dark");
+				until(() -> primary() == (dark ? 0x12806b : 0x4cc2a8), "the other scheme of the theme to be in use");
+				shot("other-scheme");
+				click(dark ? "#rayde-theme-dark" : "#rayde-theme-light");
+				until(() -> primary() == base, "the scheme to come back");
+				// A stylesheet added beside the theme, and what the style system says of its rules.
+				click("#rayde-theme-css-new");
+				type("#rayde-theme-css-new", "extra.css");
+				click("#rayde-theme-css-add");
+				until(() -> read().indexOf('"file": "extra.css"') > 0 && sys.FileSystem.exists(root + "/extra.css"), "the stylesheet to be created and listed");
+				sys.io.File.saveContent(root + "/extra.css", ".rayde-card { not-a-property: 1; }");
+				studio.refresh();
+				if (!Lambda.exists(studio.problems.get(), p -> p.message.indexOf("not-a-property") >= 0))
+					throw "the style system's warning should be among the problems: " + studio.problems.get().map(p -> p.message).join("; ");
+				shot("css-warning");
+				// Installing the theme puts it, with its stylesheets and fonts, in the user's themes.
+				var home = Sys.getCwd() + "bin/fixtures/themestudio-home";
+				if (sys.FileSystem.exists(home))
+					deleteTree(home);
+				Sys.putEnv("RAYDE_THEMES", home);
+				scroll("#rayde-theme-studio", 0);
+				click("#rayde-theme-install");
+				for (installed in ["studio/studio.raytheme", "studio/studio.css", "studio/extra.css", "studio/fonts/Lora-Regular.ttf"])
+					if (!sys.FileSystem.exists(home + "/" + installed))
+						throw 'installing the theme should bring $installed';
+				if (!has("#rayde-theme-install-note"))
+					throw "installing says where the theme went";
+				shot("installed");
+				Sys.putEnv("RAYDE_THEMES", "");
+				// Typing in the editor: broken text keeps the last theme in force, and a mistake in the content is a problem on its line.
+				bench.openFile(theme);
+				var buffer = bench.buffer(theme), good = buffer.get();
+				buffer.set("{nope");
+				bench.edited(theme);
+				until(() -> studio.stale.get(), "the broken text to be seen");
+				if (primary() != base)
+					throw "the last readable theme should stay on the window";
+				if (!Lambda.exists(bench.problems.get(), p -> p.file == theme && p.severity == 1 && p.message.indexOf("Invalid JSON") == 0))
+					throw "text that is not JSON is an error of the theme file";
+				shot("text-broken");
+				buffer.set(StringTools.replace(good, '"extends": "restrained"', '"extends": "gothic", "tint": 1'));
+				bench.edited(theme);
+				until(() -> !studio.stale.get() && studio.problems.get().length >= 2, "the mistakes in the content to be found");
+				if (!Lambda.exists(bench.problems.get(), p -> p.file == theme && p.message.indexOf("gothic") >= 0 && p.range.start.line == 6))
+					throw "a problem is on the line of the entry it names: " + bench.problems.get().map(p -> p.message + "@" + p.range.start.line).join("; ");
+				shot("problems-text");
+				bench.openThemeStudio();
+				settle(10);
+				shot("problems");
+				click("#rayde-theme-problems .rayde-entry");
+				if (bench.active.get() != theme)
+					throw "a problem opens the theme as text";
+				buffer.set(good);
+				bench.edited(theme);
+				until(() -> studio.problems.get().length == 0 || Lambda.foreach(studio.problems.get(), p -> p.message.indexOf("not-a-property") >= 0), "the fixed text to read again");
+				bench.openThemeStudio();
+				settle(20);
+				reveal("#rayde-theme-gallery");
+				shot("gallery");
+				scroll("#rayde-theme-studio", 5000);
+				shot("gallery-end");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 
@@ -1041,7 +1169,7 @@ class Snapshots {
 				if (sys.FileSystem.isDirectory(source))
 					copy(source, target)
 				else
-					sys.io.File.saveContent(target, sys.io.File.getContent(source));
+					sys.io.File.copy(source, target);
 			}
 		}
 		if (sys.FileSystem.exists(to))
@@ -1076,10 +1204,18 @@ class Snapshots {
 		// A fixture with a .rayext is an extension project, opened from that file with no build.
 		var config = Lambda.find(sys.FileSystem.readDirectory(root), f -> StringTools.endsWith(f, ".rayext"));
 		var extension = config == null ? null : Manifest.read(root + "/" + config);
-		var display = extension != null ? new Display(server, root, []) : Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
+		// A fixture with a .raytheme is a theme project, in the scheme this run is for.
+		var themeName = Lambda.find(sys.FileSystem.readDirectory(root), f -> StringTools.endsWith(f, ".raytheme"));
+		var theme = themeName == null ? null : rayde.theme.ThemeFile.read(root + "/" + themeName);
+		if (theme != null) {
+			var chosen = new rayde.settings.Appearance();
+			chosen.scheme = dark ? "dark" : "light";
+			chosen.save(root);
+		}
+		var display = extension != null || theme != null ? new Display(server, root, []) : Display.ofHxml(server, root + "/build.hxml"), tree = new LayoutTree(), bench:Workbench = null, stop:Void->Void = null;
 		var view = Owner.root(tree, s -> {
 			stop = s;
-			return bench = new Workbench({display: display, name: extension != null ? extension.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension});
+			return bench = new Workbench({display: display, name: extension != null ? extension.name : theme != null ? theme.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme});
 		});
 		function settle(?frames:Int):Void
 			for (_ in 0...(frames == null ? 20 : frames)) {
@@ -1110,7 +1246,7 @@ class Snapshots {
 		}
 		// A press and release on the first element `selector` finds, as the pointer makes them, once the form it is in has been scrolled to show it.
 		function click(selector:String):Void {
-			var found = ashui.css.Css.query(tree, view.node.id, selector), area = ashui.css.Css.query(tree, view.node.id, "#rayde-build, #rayde-extension-config");
+			var found = ashui.css.Css.query(tree, view.node.id, selector), area = ashui.css.Css.query(tree, view.node.id, "#rayde-build, #rayde-extension-config, #rayde-theme-studio");
 			if (found.length == 0)
 				throw 'nothing matches $selector';
 			var scroller = area.length == 0 ? null : ashui.input.Scroll.at(area[0], tree);
@@ -1163,9 +1299,9 @@ class Snapshots {
 			if (!done())
 				throw 'timed out waiting for $what';
 		}
-		if (extension != null)
+		if (extension != null || theme != null)
 			bench.openProject();
-		steps(bench, extension != null ? extension.mainPath() : root + "/src/Main.hx", shot, settle, scroll, click, type, hover, press, until);
+		steps(bench, extension != null ? extension.mainPath() : theme != null ? theme.file : root + "/src/Main.hx", shot, settle, scroll, click, type, hover, press, until);
 		stop();
 		tree.dispose();
 		server.stop();

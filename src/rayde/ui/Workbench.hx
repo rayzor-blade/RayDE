@@ -33,6 +33,9 @@ import rayde.run.LibraryManager;
 import rayde.run.Runner;
 import rayde.settings.Appearance;
 import rayde.settings.Store;
+import rayde.theme.JsonLocator;
+import rayde.theme.ThemeFile;
+import rayde.theme.ThemeStudio;
 import rayde.ext.Debugger;
 import rayde.term.Profiles;
 import rayde.term.Profiles.Profile;
@@ -46,6 +49,7 @@ import rayde.ui.SettingsPage;
 import rayde.ui.StudioPanels;
 import rayde.ui.StudioTab;
 import rayde.ui.StudioView;
+import rayde.ui.ThemeStudioView;
 import rayde.ui.TerminalView;
 import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
@@ -60,6 +64,8 @@ typedef WorkbenchProps = {
 	?runtime:String,
 	/** The extension this project is, when it was opened from a `.rayext` and not a build file. */
 	?extension:Manifest,
+	/** The theme this project is, when it was opened from a `.raytheme`. */
+	?theme:ThemeFile,
 	/** The window's controls: the app's window; without one the controls act on nothing and keep their own state, as in a test. */
 	?chrome:WindowChrome
 };
@@ -92,6 +98,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The tab of an extension's view that is shown among the files. */
 	public static inline var EXTENSION_TAB = "rayde:extension";
 
+	/** The tab of the Theme Studio page, in a project opened from a `.raytheme`. */
+	public static inline var THEME_TAB = "rayde:theme";
+
 	/** Prefix of the id of a tab an extension presented: the id is `rayde:tab:<main file>#<root>`. */
 	public static inline var TAB = "rayde:tab:";
 
@@ -117,7 +126,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -261,6 +270,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The extension this project is, as its config says now: the form changes the file, and it is read again. */
 	var extension:Null<Manifest>;
 
+	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
+	var themeStudio:Null<ThemeStudio>;
+
 	/** The extensions open in the Studio, by their main file, and the one of the file in front, if it is one. */
 	final studios = new Map<String, Studio>();
 
@@ -289,6 +301,10 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens what a project opens with: for an extension, its main script, with its view shown where the config puts it. */
 	public function openProject():Void {
+		if (themeStudio != null) {
+			openFile(THEME_TAB);
+			return;
+		}
 		var m = extension;
 		if (m == null)
 			return;
@@ -470,6 +486,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function isSource(path:String):Bool {
 		if (path.endsWith(".hx") || path.endsWith(".rays"))
 			return true;
+		if (themeStudio != null)
+			return path.endsWith(".css") || path.endsWith(".json") || path.endsWith(".md");
 		return extension != null && (path.endsWith(".json") || path.endsWith(".svg") || path.endsWith(".css") || path.endsWith(".md"));
 	}
 
@@ -1060,6 +1078,8 @@ class Workbench extends Component<WorkbenchProps> {
 			dirty.set(dirty.get().concat([file]));
 		check(file);
 		var studio = studios.get(file);
+		if (themeStudio != null && file == themeStudio.file)
+			themeStudio.edited();
 		if (studio != null)
 			studio.edited();
 		else if (extension != null && isExtension(file))
@@ -1155,6 +1175,68 @@ class Workbench extends Component<WorkbenchProps> {
 			say("The extension is not stopped");
 		else
 			d.resume(how);
+	}
+
+	/** The Theme Studio of the theme file `file`: it reads the editor's text, and what it writes goes to the editor and the file. */
+	function makeThemeStudio(file:String):ThemeStudio {
+		var studio = new ThemeStudio(file, () -> buffer(file).get(), text -> {
+			buffer(file).set(text);
+			sys.io.File.saveContent(file, text);
+			dirty.set([for (d in dirty.get()) if (d != file) d]);
+		}, () -> appearance);
+		// What is wrong with the theme is a problem of its file: underlined in the editor and listed with the others.
+		new ashui.reactive.Watch(() -> studio.problems.get(), list -> {
+			var text = buffer(file).get();
+			problems.set([for (p in problems.get()) if (p.file != file) p].concat([for (p in list) themeProblem(file, text, p)]));
+		});
+		return studio;
+	}
+
+	/** A problem of a theme file as a diagnostic: on the entry it names, or, for text that is not JSON, where the parser stopped. */
+	static function themeProblem(file:String, text:String, p:rayde.theme.ThemeFile.Problem):Diagnostic {
+		var span = p.at == null ? null : JsonLocator.find(text, p.at);
+		var start = span != null ? span.keyStart : 0, end = span != null ? span.keyEnd : 0;
+		if (span == null) {
+			var stopped = ~/at position (\d+)/;
+			if (stopped.match(p.message)) {
+				start = Std.parseInt(stopped.matched(1));
+				end = start + 1;
+			}
+		}
+		var from = JsonLocator.position(text, start), to = JsonLocator.position(text, end);
+		return {file: file, range: {start: {line: from.line, character: from.character}, end: {line: to.line, character: to.character}}, severity: StringTools.startsWith(p.message, "Invalid JSON") ? 1 : 2, message: p.message};
+	}
+
+	/** The theme being written, when this project is one. */
+	public function themeModel():Null<ThemeStudio>
+		return themeStudio;
+
+	/** Brings the Theme Studio page forward. */
+	public function openThemeStudio():Void
+		if (themeStudio != null)
+			openFile(THEME_TAB);
+
+	/** Opens the theme file as text, with the cursor on the entry at `at` (`dark.colors.primary`) when the text has it. */
+	function openThemeText(at:Null<String>):Void {
+		if (themeStudio == null)
+			return;
+		var file = themeStudio.file, span = at == null ? null : JsonLocator.find(buffer(file).get(), at);
+		if (span == null)
+			openFile(file);
+		else {
+			var where = JsonLocator.position(buffer(file).get(), span.keyStart);
+			goTo(file, where.line, where.character);
+		}
+	}
+
+	/** Switches the window to the light or dark scheme and keeps the choice. */
+	function pickScheme(scheme:String):Void {
+		if (appearance.scheme == scheme)
+			return;
+		appearance.scheme = scheme;
+		appearance.save(props.display.cwd);
+		Theming.apply(appearance);
+		settingsRevision.set(settingsRevision.get() + 1);
 	}
 
 	/** The Studio for an extension's main file, started the first time it is asked for. */
@@ -1322,6 +1404,8 @@ class Workbench extends Component<WorkbenchProps> {
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
 		chrome = props.chrome != null ? props.chrome : new WindowChrome();
+		if (props.theme != null)
+			themeStudio = makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
@@ -1351,6 +1435,8 @@ class Workbench extends Component<WorkbenchProps> {
 			// An extension's host is a process of its own, which goes with the workbench.
 			for (studio in studios)
 				studio.dispose();
+			if (themeStudio != null)
+				themeStudio.dispose();
 		});
 		new ashui.reactive.Watch(() -> {
 			active.get();
@@ -1378,6 +1464,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var identity = ashui.css.Identity.of(window.tree, window.node.id);
 		// A theme's own stylesheet is written under this, so it applies only while the theme is in use.
 		ashui.css.Identity.of(root.tree, root.node.id).bindAttribute("data-theme", Computed.make(() -> Theming.current.get()));
+		ashui.css.Identity.of(root.tree, root.node.id).bindBooleanAttribute("data-sans", Computed.make(() -> Theming.ownSans.get()));
 		identity.bindBooleanAttribute("data-round", Computed.make(() -> chrome.resizable() && windowStyle.get() != "windows"));
 		identity.bindBooleanAttribute("data-outline", Computed.make(() -> chrome.resizable() && windowStyle.get() != "macos"));
 		return root;
@@ -1608,7 +1695,7 @@ class Workbench extends Component<WorkbenchProps> {
 			<context-menu ref={explorerMenu} id="rayde-explorer-menu">
 				<context-menu-trigger id="rayde-explorer-trigger">
 					<div class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
-						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
+						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (ThemeFile.isThemeFile(v)) openThemeStudio() else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
 					</div>
 				</context-menu-trigger>
 				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
@@ -1682,7 +1769,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var contributed = extension == null ? [] : extension.menuFor("explorer/context", path, folder ? "folder" : "file");
 		var icons = [for (c in contributed) extension == null ? null : ViewIcons.named(extension, c.icon)];
 		if (!folder && path != "")
-			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (Manifest.isManifest(path)) openSettings("extension")));
+			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (ThemeFile.isThemeFile(path)) openThemeStudio() else if (Manifest.isManifest(path)) openSettings("extension")));
 		if (folder) {
 			items.push(menuItem("New File…", "newfile", () -> askCreate(path, false)));
 			items.push(menuItem("New Folder…", "newfolder", () -> askCreate(path, true)));
@@ -1893,6 +1980,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The project's source folders as the build names them: the label as written, and the folder in full. */
 	function classpaths():Array<{label:String, dir:String}> {
+		if (themeStudio != null)
+			return [{label: haxe.io.Path.withoutDirectory(props.display.cwd), dir: props.display.cwd}];
 		if (extension != null)
 			return extension.sourceDirs();
 		var args = props.display.args, out = [];
@@ -1907,6 +1996,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The build file in the tree, which opens the form and not the text; for an extension, its config file, which opens its form. */
 	function buildRow():Element {
+		if (themeStudio != null)
+			return tagged(<tree-item value={themeStudio.file} label={haxe.io.Path.withoutDirectory(themeStudio.file)} icon={Icons.PALETTE_LINE}/>, themeStudio.file);
 		if (extension != null)
 			return tagged(<tree-item value={extension.file} label={haxe.io.Path.withoutDirectory(extension.file)} icon={Icons.SETTINGS_3_LINE}/>, extension.file);
 		if (props.display.hxml == null)
@@ -1915,7 +2006,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function folders():Array<Element>
-		return [for (cp in classpaths()) folder(cp.dir, cp.label, true)];
+		return themeStudio != null ? folderEntries(props.display.cwd) : [for (cp in classpaths()) folder(cp.dir, cp.label, true)];
 
 	/** The project's files with the open ones first, in the order of their tabs. */
 	function recentFiles():Array<String> {
@@ -1944,7 +2035,8 @@ class Workbench extends Component<WorkbenchProps> {
 		return out;
 	}
 
-	function folder(dir:String, label:String, expanded:Bool):Element {
+	/** The tree items for what is in `dir`: its folders and the source files. */
+	function folderEntries(dir:String):Array<Element> {
 		var names = sys.FileSystem.readDirectory(dir);
 		names.sort(Reflect.compare);
 		var children:Array<Element> = [];
@@ -1957,6 +2049,11 @@ class Workbench extends Component<WorkbenchProps> {
 			else if (isSource(path))
 				children.push(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path));
 		}
+		return children;
+	}
+
+	function folder(dir:String, label:String, expanded:Bool):Element {
+		var children = folderEntries(dir);
 		return tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)}>{children}</tree-item>, dir);
 	}
 
@@ -1968,7 +2065,7 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function tabLabel(file:String):String
-		return isTab(file) ? tabTitle(file) : file == SETTINGS ? "Settings" : isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
+		return file == THEME_TAB ? (themeStudio == null ? "Theme" : themeStudio.theme.get().name) : isTab(file) ? tabTitle(file) : file == SETTINGS ? "Settings" : isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
 
 	function viewTabTitle(file:String):String {
 		var v = viewOfTab(file);
@@ -1976,7 +2073,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function tabIcon(file:String):ashui.svg.SvgDocument
-		return isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(extension, viewOfTab(file)) : fileIcon(file);
+		return file == THEME_TAB ? Icons.PALETTE_LINE : isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(extension, viewOfTab(file)) : fileIcon(file);
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
@@ -2010,6 +2107,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function breadcrumb(file:String):Element {
 		if (file == SETTINGS)
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(["Settings", SettingsPage.labelOf(SettingsPage.category(settingsCategory.get()), extension)])}</breadcrumb>;
+		if (file == THEME_TAB)
+			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([themeStudio == null ? "Theme" : themeStudio.theme.get().name, "Theme Studio"])}</breadcrumb>;
 		if (isViewTab(file))
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([viewTabTitle(file)])}</breadcrumb>;
 		if (isTab(file))
@@ -2033,6 +2132,10 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String):Element {
+		if (file == THEME_TAB && themeStudio != null)
+			return <tabs-content value={file} class="flex-1 min-h-0">
+				<theme-studio-view studio={themeStudio} appearance={appearance} revision={settingsRevision} onScheme={pickScheme} onText={openThemeText} onOpen={name -> openFile(haxe.io.Path.join([props.display.cwd, name]))}/>
+			</tabs-content>;
 		if (isTab(file)) {
 			var owner = studios.get(tabStudio(file));
 			return <tabs-content value={file} class="flex-1 min-h-0">
@@ -2061,7 +2164,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The grammar the editor highlights `file` by. */
 	static function languageOf(file:String):String
-		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") ? "json" : "plain";
+		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") || StringTools.endsWith(file, ".rayext") || StringTools.endsWith(file, ".raytheme") ? "json" : "plain";
 
 	function pageOfFile(file:String):Element {
 		if (isExtension(file) && extension == null)
