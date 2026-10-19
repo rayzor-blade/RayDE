@@ -28,5 +28,6 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 | `RAYDE_THEMES=<folder>` | User theme folder instead of `~/.rayde/themes`. |
 | `RAYDE_OPAQUE=1` | Opaque window instead of a transparent one. |
 | `RAYDE_ASH=<path>` | ash for the packaged launchers. |
+| `ASHUI_FRAME_STATS=1` | Log frame timings and compositing layers, plus loop wake-ups, busy time and pointer hooks. |
 
 One editor window at a time while testing: check `pgrep -fl rayde.hl` before launching another.

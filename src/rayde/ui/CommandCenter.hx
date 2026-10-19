@@ -94,8 +94,16 @@ class CommandCenter extends Component<CommandCenterProps> {
 			&& !Interaction.of(panel.node).hovered.get()
 			&& !Interaction.of(props.anchor.node).hovered.get())
 			props.opened.set(false);
-		Pointer.hooks.push(outside);
-		Owner.onCleanup(() -> Pointer.hooks.remove(outside));
+		// Only while it is open: a hook makes every pointer move in the window work, where none lets a still region sleep.
+		var hooked = false;
+		new Watch(() -> props.opened.get(), open -> {
+			if (open && !hooked)
+				Pointer.hooks.push(outside);
+			else if (!open && hooked)
+				Pointer.hooks.remove(outside);
+			hooked = open;
+		});
+		Owner.onCleanup(() -> if (hooked) Pointer.hooks.remove(outside));
 		return root;
 	}
 

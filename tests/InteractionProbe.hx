@@ -45,6 +45,7 @@ class InteractionProbe {
 			for (id in paths) pathBytes += ashui.css.Identity.of(tree, id).attribute("data-path").length * 2;
 			Sys.println("interaction-probe:" + haxe.Json.stringify({phase:label, scheme:Std.string(ashui.theme.ThemeState.get().scheme()), stages:stages, haxe:hl.Gc.stats(),
 				nodes:tree.order().length, canvases:count, canvasGpuBytes:gpu, canvasCpuBytes:cpu, primitives:renderer.primitives,
+				layers:renderer.layerRecords, pointerHooks:ashui.input.Pointer.hooks.length,
 				watches:watches, editors:editors, disposedComponentHosts:disposedHosts,
 				minimaps:maps, explorer:{entries:paths.length, pathUtf16Bytes:pathBytes, nodes:Css.query(tree, bench.node.id, "#rayde-files *").length}}));
 			Sys.stdout().flush();

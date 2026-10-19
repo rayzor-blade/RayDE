@@ -160,8 +160,8 @@
 #rayde .rayde-term-item { border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-secondary); }
 #rayde .rayde-term-item:hover { background: var(--accent-subtle); color: var(--text-primary); }
 #rayde .rayde-term-item[data-on] { background: var(--accent-subtle); color: var(--text-primary); }
-#rayde .rayde-term-kill { --ui-button-height: 20px; --ui-button-width: 20px; opacity: 0; }
-#rayde .rayde-term-item:hover .rayde-term-kill, #rayde .rayde-term-item[data-on] .rayde-term-kill { opacity: 1; }
+#rayde .rayde-term-kill { --ui-button-height: 20px; --ui-button-width: 20px; visibility: hidden; }
+#rayde .rayde-term-item:hover .rayde-term-kill, #rayde .rayde-term-item[data-on] .rayde-term-kill { visibility: visible; }
 #rayde .rayde-split { --ui-button-width: 18px; margin-left: -4px; }
 
 /* Split terminals: a thin line between the screens, and their rows in the list set in under the first. */
@@ -194,8 +194,8 @@
 #rayde .rayde-swatch-line { border-radius: 3px; }
 #rayde .rayde-key-list { max-height: 440px; border: 1px solid var(--border); border-radius: var(--radius-xl); corner-shape: squircle; background: color-mix(in srgb, var(--surface) 60%, transparent); }
 #rayde .rayde-key-row:hover { background: var(--accent-subtle); }
-#rayde .rayde-key-tools { opacity: 0; }
-#rayde .rayde-key-row:hover .rayde-key-tools { opacity: 1; }
+#rayde .rayde-key-tools { visibility: hidden; }
+#rayde .rayde-key-row:hover .rayde-key-tools { visibility: visible; }
 #rayde .rayde-keycap { min-width: 64px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }
 #rayde .rayde-keycap:hover { border-color: var(--border-hover); }
 #rayde .rayde-recorder { border: 1px solid var(--primary); border-radius: var(--radius-md); corner-shape: squircle; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--text-primary); }
@@ -227,9 +227,9 @@
 }
 /* macOS: three lights, glyphs on the group's hover, grey while the window is behind. */
 #rayde .rayde-light { width: 14px; height: 14px; min-width: 14px; border-radius: 7px; color: transparent; }
-#rayde .rayde-light .rayde-glyph { width: 8px; height: 8px; opacity: 0; }
+#rayde .rayde-light .rayde-glyph { width: 8px; height: 8px; visibility: hidden; }
 #rayde .rayde-light-close .rayde-glyph, #rayde .rayde-light-minimize .rayde-glyph { width: 12px; height: 12px; }
-#rayde .rayde-lights:hover .rayde-light .rayde-glyph { opacity: 1; color: rgba(0, 0, 0, 0.85); }
+#rayde .rayde-lights:hover .rayde-light .rayde-glyph { visibility: visible; color: rgba(0, 0, 0, 0.85); }
 #rayde .rayde-light-close { background: #ff5f57; }
 #rayde .rayde-light-minimize { background: #febc2e; }
 #rayde .rayde-light-zoom { background: #28c840; }

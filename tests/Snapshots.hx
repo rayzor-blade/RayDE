@@ -526,6 +526,8 @@ class Snapshots {
 				shot("settings-keys-filtered");
 				type("#rayde-keys-filter", "toggle explorer");
 				scroll("#rayde-keys", 5000);
+				hover("#rayde-key-explorer");
+				shot("settings-keys-hover");
 				click("#rayde-key-edit-explorer");
 				shot("settings-keys-recording");
 				if (bench.boundsOf("#rayde-key-recorder") == null)
@@ -551,6 +553,7 @@ class Snapshots {
 				bench.quickOpen.set(false);
 				type("#rayde-keys-filter", "run");
 				scroll("#rayde-keys", 5000);
+				hover("#rayde-key-run");
 				click("#rayde-key-edit-run");
 				press(Character("p"), false, false, false, true);
 				shot("settings-keys-conflict");
@@ -1814,6 +1817,8 @@ class Snapshots {
 						Sys.println('$what $sel ' + (b == null ? "null" : b.x + "," + b.y + " " + b.width + "x" + b.height));
 					}
 			Snapshot.capture('rayde-${dark ? "dark" : "light"}-$name-$what', tree, view.node, WIDTH, HEIGHT, ThemeState.get().color(Background).rgb());
+			if (Sys.getEnv("ASHUI_FRAME_STATS") == "1")
+				Sys.println('[snapshot-frame] ${dark ? "dark" : "light"}/$name/$what: ${Snapshot.renderer().layerRecords} layers; ${ashui.input.Pointer.hooks.length} pointer hooks');
 		}
 		settle();
 		// Scrolls the scroll view that `selector` finds, as far as `y`.
