@@ -7,6 +7,7 @@ set -euo pipefail
 source "$(dirname "$0")/deps.sh"
 prefix=${1:-$here/bin/install}
 cd "$here"
+"$here/scripts/build-libgit2.sh"
 lib="$prefix/lib/rayde"
 mkdir -p "$prefix/bin" "$lib" "$prefix/share/applications" "$prefix/share/mime/packages"
 stage_natives "$lib"

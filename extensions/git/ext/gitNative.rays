@@ -1,0 +1,178 @@
+native "git2" {
+  @:free(git_repository_free) handle Repository;
+  @:free(git_diff_free) handle Diff;
+  @:free(git_object_free) handle Tree;
+  @:free(git_status_list_free) handle StatusList;
+  struct Error { message:CString; klass:Int32; }
+  struct StrArray { strings:Ptr; count:SizeT; }
+  // The pinned build uses SHA-1 object IDs, without the experimental SHA-256 ABI.
+  struct Oid {
+    b0:UInt8; b1:UInt8; b2:UInt8; b3:UInt8; b4:UInt8; b5:UInt8; b6:UInt8; b7:UInt8; b8:UInt8; b9:UInt8;
+    b10:UInt8; b11:UInt8; b12:UInt8; b13:UInt8; b14:UInt8; b15:UInt8; b16:UInt8; b17:UInt8; b18:UInt8; b19:UInt8;
+  }
+  struct DiffFile { id:Oid; path:CString; size:UInt64; flags:UInt32; mode:UInt16; idAbbrev:UInt16; }
+  struct Delta { status:Int32; flags:UInt32; similarity:UInt16; files:UInt16; oldFile:DiffFile; newFile:DiffFile; }
+  struct BinaryFile { kind:Int32; data:Ptr; length:SizeT; inflatedLength:SizeT; }
+  struct Binary { containsData:UInt32; oldFile:BinaryFile; newFile:BinaryFile; }
+  // Only this borrowed prefix is read; hunk storage is never allocated by script.
+  struct Hunk { oldStart:Int32; oldLines:Int32; newStart:Int32; newLines:Int32; headerLength:SizeT; }
+  struct Line { origin:UInt8; oldLine:Int32; newLine:Int32; lines:Int32; length:SizeT; offset:Int64; content:Ptr; }
+  struct StatusEntry { flags:UInt32; headToIndex:Ptr<Delta>; indexToWorkdir:Ptr<Delta>; }
+  struct StatusOptions { version:UInt32; show:Int32; flags:UInt32; pathspec:StrArray; baseline:Ptr; renameThreshold:UInt16; }
+  struct DiffOptions {
+    version:UInt32; flags:UInt32; ignoreSubmodules:Int32; pathspec:StrArray;
+    notify:Ptr; progress:Ptr; payload:Ptr; contextLines:UInt32; interhunkLines:UInt32;
+    oidType:Int32; idAbbrev:UInt16; maxSize:Int64; oldPrefix:CString; newPrefix:CString;
+  }
+  @:failure(-1) callback StatusCallback(path:CString, flags:UInt32, data:Ptr):Int32;
+  @:failure(-1) callback FileCallback(delta:Delta, progress:Float, data:Ptr):Int32;
+  @:failure(-1) callback BinaryCallback(delta:Delta, binary:Binary, data:Ptr):Int32;
+  @:failure(-1) callback HunkCallback(delta:Delta, hunk:Hunk, data:Ptr):Int32;
+  @:failure(-1) callback LineCallback(delta:Delta, hunk:Hunk, line:Line, data:Ptr):Int32;
+  function git_libgit2_init():Int32;
+  function git_libgit2_shutdown():Int32;
+  function git_libgit2_version(major:Out<Int32>, minor:Out<Int32>, patch:Out<Int32>):Int32;
+  function git_libgit2_features():Int32;
+  function git_error_last():Error;
+  @:blocking function git_repository_open_ext(out:Out<Repository>, path:CString, flags:UInt32, ceiling:CString):Int32;
+  function git_repository_free(repository:Repository):Void;
+  function git_repository_path(repository:Repository):CString;
+  function git_repository_workdir(repository:Repository):CString;
+  @:blocking function git_status_foreach(repository:Repository, callback:StatusCallback, data:Ptr):Int32;
+  function git_status_options_init(options:StatusOptions, version:UInt32):Int32;
+  @:owner(repository) @:blocking function git_status_list_new(out:Out<StatusList>, repository:Repository, options:StatusOptions):Int32;
+  function git_status_list_entrycount(status:StatusList):SizeT;
+  @:owner(status) function git_status_byindex(status:StatusList, index:SizeT):StatusEntry;
+  function git_status_list_free(status:StatusList):Void;
+  @:owner(repository) @:blocking function git_revparse_single(out:Out<Tree>, repository:Repository, spec:CString):Int32;
+  function git_object_free(tree:Tree):Void;
+  function git_diff_options_init(options:DiffOptions, version:UInt32):Int32;
+  @:owner(repository) @:blocking function git_diff_index_to_workdir(out:Out<Diff>, repository:Repository, index:Ptr, options:DiffOptions):Int32;
+  @:owner(repository) @:blocking function git_diff_tree_to_index(out:Out<Diff>, repository:Repository, tree:Tree, index:Ptr, options:DiffOptions):Int32;
+  @:blocking function git_diff_find_similar(diff:Diff, options:Ptr):Int32;
+  @:blocking function git_diff_foreach(diff:Diff, file:FileCallback, binary:BinaryCallback, hunk:HunkCallback, line:LineCallback, data:Ptr):Int32;
+  function git_diff_free(diff:Diff):Void;
+}
+
+function check(code, operation) {
+  if (code < 0) {
+    var error = git_error_last();
+    throw operation + ': ' + (error == null ? 'libgit2 error ' + code : error.message);
+  }
+  return code;
+}
+
+function version() {
+  var major = Out(Int32), minor = Out(Int32), patch = Out(Int32);
+  check(git_libgit2_version(major, minor, patch), 'version');
+  return {major: major.value, minor: minor.value, patch: patch.value, features: git_libgit2_features()};
+}
+
+function withRepository(path, action) {
+  check(git_libgit2_init(), 'initialize');
+  var repository = null;
+  try {
+    var out = Out(Repository);
+    check(git_repository_open_ext(out, path, 0, null), 'open repository');
+    repository = out.value;
+    var result = action(repository);
+    repository.close();
+    git_libgit2_shutdown();
+    return result;
+  } catch (error) {
+    if (repository != null) repository.close();
+    git_libgit2_shutdown();
+    throw error;
+  }
+}
+
+function eachStatus(repository, visit) {
+  check(git_status_foreach(repository, StatusCallback((path, flags, data) -> {
+    visit(path, flags);
+    return 0;
+  }), null), 'status callbacks');
+}
+
+function statusFlags(repository) {
+  var entries = [];
+  eachStatus(repository, (path, flags) -> {
+    if ((flags & 16384) == 0) entries.push({path: path, flags: flags});
+  });
+  return entries;
+}
+
+function status(repository) {
+  var options = alloc(StatusOptions);
+  check(git_status_options_init(options, 1), 'status options');
+  // Include nested untracked files and detect renames on both sides of the index.
+  options.flags = 1 | 16 | 128 | 256;
+  var out = Out(StatusList);
+  check(git_status_list_new(out, repository, options), 'status');
+  var list = out.value;
+  try {
+    var entries = [];
+    for (index in 0...git_status_list_entrycount(list)) {
+      var entry = git_status_byindex(list, index);
+      var staged = entry.headToIndex, workdir = entry.indexToWorkdir;
+      var delta = workdir == null ? staged : workdir;
+      var flags = entry.flags;
+      entries.push({path: delta.newFile.path == null ? delta.oldFile.path : delta.newFile.path,
+        flags: flags, index: flags & 31, workdir: flags & 8064, conflicted: (flags & 32768) != 0,
+        renamedFrom: (flags & 8) != 0 && staged != null ? staged.oldFile.path : (flags & 2048) != 0 && workdir != null ? workdir.oldFile.path : null});
+    }
+    list.close();
+    return entries;
+  } catch (error) { list.close(); throw error; }
+}
+
+function diff(repository, staged) {
+  var options = alloc(DiffOptions);
+  check(git_diff_options_init(options, 1), 'diff options');
+  // Preserve type changes and request binary payload metadata.
+  options.flags = 64 | 1073741824;
+  var tree = null, out = Out(Diff);
+  if (staged) {
+    var base = Out(Tree);
+    var code = git_revparse_single(base, repository, 'HEAD^{tree}');
+    if (code != -3 && code != -9) check(code, 'HEAD tree');
+    tree = base.value;
+    var code = git_diff_tree_to_index(out, repository, tree, null, options);
+    if (tree != null) tree.close();
+    check(code, 'staged diff');
+  } else check(git_diff_index_to_workdir(out, repository, null, options), 'workdir diff');
+  var diff = out.value;
+  try {
+    check(git_diff_find_similar(diff, null), 'rename detection');
+    var files = [], hunks = [], lines = [], binaries = [];
+    check(git_diff_foreach(diff,
+      FileCallback((delta, progress, data) -> {
+        files.push({path: delta.newFile.path, oldPath: delta.oldFile.path, status: delta.status,
+          oldSize: delta.oldFile.size, newSize: delta.newFile.size});
+        return 0;
+      }),
+      BinaryCallback((delta, binary, data) -> {
+        binaries.push({path: delta.newFile.path, containsData: binary.containsData,
+          oldSize: binary.oldFile.inflatedLength, newSize: binary.newFile.inflatedLength});
+        return 0;
+      }),
+      HunkCallback((delta, hunk, data) -> {
+        hunks.push({path: delta.newFile.path, oldStart: hunk.oldStart, oldLines: hunk.oldLines,
+          newStart: hunk.newStart, newLines: hunk.newLines});
+        return 0;
+      }),
+      LineCallback((delta, hunk, line, data) -> {
+        lines.push({path: delta.newFile.path, origin: line.origin, oldLine: line.oldLine, newLine: line.newLine,
+          bytes: Bytes(line.content, line.length)});
+        return 0;
+      }), null), 'diff callbacks');
+    diff.close();
+    return {files: files, binaries: binaries, hunks: hunks, lines: lines};
+  } catch (error) { diff.close(); throw error; }
+}
+
+function inspect(path) {
+  return withRepository(path, repository -> {
+    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository),
+      status: status(repository), staged: diff(repository, true), changes: diff(repository, false)};
+  });
+}

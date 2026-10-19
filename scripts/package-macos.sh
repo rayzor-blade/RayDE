@@ -10,6 +10,7 @@ version=${RAYDE_VERSION:-0.1.0}
 app="$out/RayDE.app"
 res="$app/Contents/Resources"
 cd "$here"
+"$here/scripts/build-libgit2.sh"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$res"
 stage_natives "$res"

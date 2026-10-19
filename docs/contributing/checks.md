@@ -12,6 +12,8 @@ SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
 
 The `extensions` scenario includes native approval, startup and revocation in both schemes. Its approvals use an isolated home under the fixture; it does not change your user settings.
 
+`scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.
+
 ## Benchmarks
 
 ```sh

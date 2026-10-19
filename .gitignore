@@ -3,3 +3,5 @@
 .DS_Store
 .rayde/
 /native/terminal/target/
+/extensions/git/natives/
+__pycache__/
