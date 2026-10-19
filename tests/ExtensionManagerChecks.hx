@@ -138,6 +138,8 @@ class ExtensionManagerChecks {
 			manager.command("denied", "describe", {});
 			wait(manager, () -> manager.find("denied").output.join("\n").indexOf("Capability workspace.read") >= 0,
 				"installed extensions enforce workspace capabilities");
+			var denied = manager.find("denied"), deniedIndex = denied.output.indexOf(Lambda.find(denied.output, text -> text.indexOf("Capability workspace.read") >= 0));
+			check(denied.outputKinds[deniedIndex] == "error", "extension errors retain their Output severity");
 			manager.setDisabled("command", true);
 			check(!manager.find("command").connection.running() && !manager.command("command", "describe", {}),
 				"disabling stops the host and blocks activation");

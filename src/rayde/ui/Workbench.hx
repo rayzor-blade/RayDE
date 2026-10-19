@@ -290,6 +290,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final outputChannel = Signal.make("build");
 	var supervisionScheduled = false;
 	final extensionOutput = Signal.make("");
+	final extensionOutputKinds = Signal.make(new Array<String>());
 	final extensionOutputView = new Ref<CodeView>();
 
 	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
@@ -1370,7 +1371,9 @@ class Workbench extends Component<WorkbenchProps> {
 				ashui.animation.AnimationScheduler.main.after(.016, superviseExtensions);
 			}
 		};
-		extensionManager.onOutput = entry -> refreshExtensionOutput();
+		extensionManager.onOutput = entry -> {
+			if (outputChannel.get() == "ext:" + entry.installed.id) refreshExtensionOutput();
+		};
 		refreshExtensionBindings();
 		ashui.animation.AnimationScheduler.main.after(.016, () -> { if (!gone) extensionManager.start(); });
 	}
@@ -1412,7 +1415,16 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function refreshExtensionOutput():Void {
 		var entry = extensionManager.find(outputChannel.get().substr(4));
-		extensionOutput.set(entry == null ? "" : entry.output.join("\n"));
+		var lines:Array<String> = [], kinds:Array<String> = [];
+		if (entry != null) for (i in 0...entry.output.length) {
+			var text = ~/\r\n|\r/g.replace(entry.output[i], "\n");
+			for (line in text.split("\n")) {
+				lines.push(line);
+				kinds.push(entry.outputKinds[i]);
+			}
+		}
+		extensionOutputKinds.set(kinds);
+		extensionOutput.set(lines.join("\n"));
 	}
 
 	function revealExtensionOutput(tries = 0):Void {
@@ -2561,9 +2573,21 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div class="flex flex-col flex-1 min-h-0 gap-2">
 			<select id="rayde-output-channel" value={outputChannel.get()} size={Sm} class="rayde-control-wide" onChange={value -> { outputChannel.set(value); refreshExtensionOutput(); }}>{items}</select>
 			<for {channel in [outputChannel.get()]}>
-				{channel == "build" ? <code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/> : <code-view ref={extensionOutputView} id="rayde-extension-output" value={extensionOutput} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>}
+				{channel == "build" ? <code-view id="rayde-console" value={consoleText} highlighter={new OutputHighlighter()} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/> : extensionLog()}
 			</for>
 		</div>;
+	}
+
+	function extensionLog():Element {
+		var syntax = new OutputHighlighter(extensionOutputKinds.get());
+		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" value={extensionOutput} highlighter={syntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		new ashui.reactive.Watch(() -> extensionOutputKinds.get(), kinds -> {
+			syntax.kinds = kinds;
+			// A new grammar invalidates cached lines even when only their severity changed.
+			view.metrics.syntax = new OutputHighlighter(kinds);
+			view.expandAll();
+		});
+		return view;
 	}
 
 	/** The screen of the terminal in front, split with its neighbours when it is, and the list of terminals beside it when there are several; or an offer of one while none is running. */

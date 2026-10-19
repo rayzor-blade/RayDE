@@ -1100,7 +1100,32 @@ class Snapshots {
 				click(".ui-toast .ui-button");
 				if ((@:privateAccess bench.outputChannel.get()) != "ext:git" || !bench.panelOpen()) throw "notification action did not open Git Output";
 				until(() -> (@:privateAccess bench.extensionOutputView.get()) != null && (@:privateAccess bench.extensionOutputView.get()).scroll.y.get() > 0, "notification Output to reveal its latest message");
+				var log = @:privateAccess bench.extensionOutputView.get();
+				var failure = Lambda.find(log.document.lines, line -> line.text.indexOf("No remote configured") >= 0);
+				if (failure == null || failure.tokens[0].kind != "output-error") throw "Git error lost its severity in Output";
+				if (Css.query(tree, log.node.id, '[data-token="output-error"]').length == 0) throw "error text was not rendered as an error token";
 				shot("error-output");
+				log.select(failure.start, failure.start + failure.text.length);
+				git.log("Fetch completed.", "success");
+				git.log("Upstream changed.\r\nFetch again before pushing.", "warning");
+				@:privateAccess bench.refreshExtensionOutput();
+				settle();
+				if ((@:privateAccess bench.extensionOutputView.get()) != log || log.editing.anchor.get() != failure.start) throw "appending Output replaced its view or selection";
+				for (expected in [{text:"Fetch completed.", kind:"output-success"}, {text:"Upstream changed.", kind:"output-warning"}, {text:"Fetch again before pushing.", kind:"output-warning"}]) {
+					var line = Lambda.find(log.document.lines, line -> line.text == expected.text);
+					if (line == null || line.tokens[0].kind != expected.kind) throw "multiline Output severity: " + expected.text + ": " + haxe.Json.stringify([for (line in log.document.lines.slice(-8)) {text:line.text, tokens:line.tokens}]);
+				}
+				@:privateAccess bench.revealExtensionOutput(); settle();
+				shot("output-severities");
+				// The bounded log can replace text with identical text of another severity.
+				for (_ in 0...1000) git.log("Repeated message", "error");
+				@:privateAccess bench.refreshExtensionOutput(); settle();
+				for (_ in 0...1000) git.log("Repeated message", "warning");
+				@:privateAccess bench.refreshExtensionOutput(); settle();
+				if (git.output.length != 1000 || git.outputKinds.length != 1000 || log.document.lines[0].tokens[0].kind != "output-warning") throw "retained Output severities were stale after eviction";
+				var build = new ashui.components.code.CodeDocument("Main.hx:2: characters 1-4 : Unknown identifier\n  additional detail\nMain.hx:3: characters 1-4 : Warning : Deprecated\nBuilding…\nExited with 1.\nExited with 0.", new rayde.ui.OutputHighlighter());
+				var expected = ["output-error", "output-error", "output-warning", "plain", "output-error", "output-success"];
+				for (i in 0...expected.length) if (build.lines[i].tokens[0].kind != expected[i]) throw 'wrong build Output severity on line $i';
 				Sys.println("git snapshots: history pages, references, selection, theme alpha, fixed-scale scrolling, cleanup and fiber exception recovery");
 			});
 		for (dark in [true, false])

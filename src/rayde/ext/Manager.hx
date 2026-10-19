@@ -22,6 +22,7 @@ class ManagedExtension {
 	public var activation:Null<String>;
 	public var state = "inactive";
 	public final output:Array<String> = [];
+	public final outputKinds:Array<String> = [];
 	public var restarts:Array<Float> = [];
 	public var restartBlocked = false;
 	public var onDisabled:Null<Bool->Void>;
@@ -31,10 +32,13 @@ class ManagedExtension {
 		this.connection = connection;
 	}
 
-	public function log(text:String):Void {
+	public function log(text:String, kind = "info"):Void {
 		output.push(text);
-		if (output.length > 1000)
+		outputKinds.push(kind);
+		if (output.length > 1000) {
 			output.shift();
+			outputKinds.shift();
+		}
 	}
 }
 
@@ -92,7 +96,7 @@ class Manager {
 				if (previousLog != null)
 					previousLog(list, entryLog);
 				if (list == "console") {
-					entry.log(entryLog.text);
+					entry.log(entryLog.text, entryLog.kind);
 					if (onOutput != null)
 						onOutput(entry);
 				}
@@ -216,7 +220,7 @@ class Manager {
 		if (e == null || e.installed.scope == "Built-in") return;
 		var m = e.connection.manifest, library = Lambda.find(m.natives, n -> n.name == name);
 		if (library == null || !NativeTrust.set(m, library, allow, options.trustHome)) {
-			e.log("Cannot save native approval.");
+			e.log("Cannot save native approval.", "error");
 			changed();
 			return;
 		}
@@ -246,10 +250,10 @@ class Manager {
 				e.restarts = [for (t in e.restarts) if (time - t < options.restartWindow) t];
 				if (e.restarts.length >= options.restartLimit) {
 					e.restartBlocked = true;
-					e.log('Restart limit reached (${options.restartLimit} in ${options.restartWindow} seconds); extension stopped.');
+					e.log('Restart limit reached (${options.restartLimit} in ${options.restartWindow} seconds); extension stopped.', "error");
 				} else {
 					e.restarts.push(time);
-					e.log('Restarting extension (${e.restarts.length}/${options.restartLimit})');
+					e.log('Restarting extension (${e.restarts.length}/${options.restartLimit})', "warning");
 					e.connection.start();
 				}
 				if (onOutput != null)
