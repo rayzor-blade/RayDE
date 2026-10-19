@@ -750,6 +750,11 @@ class Snapshots {
 					@:privateAccess bench.windowStyle.set(style);
 					settle(10);
 					shot("bar-" + style);
+					if (style == "macos") {
+						hover("#rayde-win-close");
+						settle(5);
+						shot("bar-macos-hover");
+					}
 					// Over a bright colour, to see what the window leaves transparent at its corners.
 					Snapshot.capture('rayde-${dark ? "dark" : "light"}-chrome-corners-$style', bench.tree, bench.node, WIDTH, HEIGHT, 0xff00ff);
 					var middle = style == "macos" ? "#rayde-win-fullscreen" : "#rayde-win-maximize";
@@ -762,6 +767,11 @@ class Snapshots {
 						throw 'the $style controls should ask for $expected, not $got';
 					// With no window the chrome keeps the state itself: the window now fills the screen, so it has no resize edges until it is restored.
 					settle(5);
+					if (style == "macos") {
+						hover("#rayde-win-fullscreen");
+						settle(5);
+						shot("bar-macos-fullscreen-hover");
+					}
 					if (!(style == "macos" ? chrome.fullscreen.get() : chrome.maximized.get()) || has(".rayde-edge-w"))
 						throw "a window that fills the screen has no resize edges";
 					chrome.fullscreen.set(false);

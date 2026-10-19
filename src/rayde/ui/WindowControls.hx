@@ -14,6 +14,21 @@ typedef WindowControlsProps = {style:String, chrome:WindowChrome};
  * Each is a button, so it takes the keyboard and answers Enter and Space.
  */
 class WindowControls extends Component<WindowControlsProps> {
+	// The pack's filled line icons become hairlines at eight pixels. Outline the
+	// same shapes so the lights retain readable symbols at their native size.
+	static function lightGlyph(document:ashui.svg.SvgDocument):ashui.svg.SvgDocument {
+		var svg = Xml.parse(document.markup).firstElement();
+		svg.set("stroke", "currentColor");
+		svg.set("stroke-width", "2");
+		svg.set("stroke-linejoin", "round");
+		return ashui.svg.SvgDocument.parse(svg.toString());
+	}
+
+	static final lightClose = lightGlyph(Icons.CLOSE_LINE);
+	static final lightMinimize = lightGlyph(Icons.SUBTRACT_LINE);
+	static final lightExpand = lightGlyph(Icons.EXPAND_DIAGONAL_LINE);
+	static final lightCollapse = lightGlyph(Icons.COLLAPSE_DIAGONAL_LINE);
+
 	public static final styles = [
 		{id: "auto", label: "Platform default"},
 		{id: "macos", label: "macOS: lights on the left"},
@@ -61,9 +76,9 @@ class WindowControls extends Component<WindowControlsProps> {
 		return switch style {
 			case "macos":
 				var lights = <div class="rayde-lights flex items-center gap-2 pl-4">
-					<tooltip label="Close" side="bottom"><button id="rayde-win-close" class="rayde-light rayde-light-close" onClick={_ -> c.close()}><icon document={Icons.CLOSE_LINE} class="rayde-glyph"/></button></tooltip>
-					<tooltip label="Minimize" side="bottom"><button id="rayde-win-minimize" class="rayde-light rayde-light-minimize" onClick={_ -> c.minimize()}><icon document={Icons.SUBTRACT_LINE} class="rayde-glyph"/></button></tooltip>
-					<tooltip label={fullLabel} side="bottom"><button id="rayde-win-fullscreen" class="rayde-light rayde-light-zoom" onClick={_ -> c.toggleFullscreen()}><icon document={fullscreen ? Icons.COLLAPSE_DIAGONAL_LINE : Icons.EXPAND_DIAGONAL_LINE} class="rayde-glyph"/></button></tooltip>
+					<tooltip label="Close" side="bottom"><button id="rayde-win-close" class="rayde-light rayde-light-close" onClick={_ -> c.close()}><icon document={lightClose} class="rayde-glyph"/></button></tooltip>
+					<tooltip label="Minimize" side="bottom"><button id="rayde-win-minimize" class="rayde-light rayde-light-minimize" onClick={_ -> c.minimize()}><icon document={lightMinimize} class="rayde-glyph"/></button></tooltip>
+					<tooltip label={fullLabel} side="bottom"><button id="rayde-win-fullscreen" class="rayde-light rayde-light-zoom" onClick={_ -> c.toggleFullscreen()}><icon document={fullscreen ? lightCollapse : lightExpand} class="rayde-glyph"/></button></tooltip>
 				</div>;
 				ashui.css.Identity.of(lights.tree, lights.node.id).setAttribute("data-focused", focused ? "true" : "false");
 				lights;

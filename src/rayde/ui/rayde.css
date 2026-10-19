@@ -222,7 +222,7 @@
 /* macOS: three lights, glyphs on the group's hover, grey while the window is behind. */
 #rayde .rayde-light { width: 12px; height: 12px; min-width: 12px; border-radius: 6px; color: transparent; }
 #rayde .rayde-light .rayde-glyph { width: 8px; height: 8px; opacity: 0; }
-#rayde .rayde-lights:hover .rayde-light .rayde-glyph { opacity: 1; color: rgba(0, 0, 0, 0.55); }
+#rayde .rayde-lights:hover .rayde-light .rayde-glyph { opacity: 1; color: rgba(0, 0, 0, 0.85); }
 #rayde .rayde-light-close { background: #ff5f57; }
 #rayde .rayde-light-minimize { background: #febc2e; }
 #rayde .rayde-light-zoom { background: #28c840; }
