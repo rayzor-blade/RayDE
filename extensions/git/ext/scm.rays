@@ -1,0 +1,112 @@
+import rayde.workspace.root;
+import rayde.workspace.openFile;
+import gitNative.repositoryStatus;
+import gitNative.openHistory;
+import historyGraph.compactScene;
+
+function groups(entries) {
+  var conflicts = [], staged = [], changes = [], untracked = [];
+  function item(entry, flags) {
+    return {path: entry.path, renamedFrom: entry.renamedFrom,
+      badge: entry.conflicted ? '!' : (flags & (1 | 128)) != 0 ? (flags == 128 ? 'U' : 'A') : (flags & (4 | 512)) != 0 ? 'D' : (flags & (8 | 2048)) != 0 ? 'R' : 'M'};
+  }
+  for (entry in entries) {
+    if (entry.conflicted) conflicts.push(item(entry, entry.flags));
+    else {
+      if (entry.index != 0) staged.push(item(entry, entry.index));
+      if ((entry.workdir & 128) != 0) untracked.push(item(entry, 128));
+      else if (entry.workdir != 0) changes.push(item(entry, entry.workdir));
+    }
+  }
+  return [{id:'conflicts', title:'Merge conflicts', items:conflicts}, {id:'staged', title:'Staged', items:staged},
+    {id:'changes', title:'Changes', items:changes}, {id:'untracked', title:'Untracked', items:untracked}];
+}
+
+var state = signal(null), sections = signal(groups([])), busy = signal(false), error = signal('');
+var commits = signal([]), refs = signal([]), selected = signal(''), selectedInfo = signal('');
+var expand = null;
+
+function configureHistory(action) { expand = action; }
+
+function choose(id) {
+  selected.value = id;
+  selectedInfo.value = '';
+  for (commit in commits.value) if (commit.id == id) selectedInfo.value = commit.author + ' \u00b7 ' + commit.id.substr(0,7);
+}
+
+function refresh() {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    var path = await root(), snapshot = repositoryStatus(path);
+    state.value = snapshot;
+    sections.value = groups(snapshot.entries);
+    var cursor = openHistory(path);
+    try {
+      var page = cursor.next(60);
+      refs.value = cursor.refs;
+      commits.value = page.commits;
+      var id = page.commits.length == 0 ? '' : page.commits[0].id;
+      for (commit in page.commits) if (commit.id == selected.value) id = selected.value;
+      choose(id);
+      cursor.close();
+    } catch (failure) { cursor.close(); throw failure; }
+  } catch (failure) { error.value = '' + failure; }
+  busy.value = false;
+}
+
+function open(path) {
+  var snapshot = state.value;
+  if (snapshot != null && snapshot.workdir != null) await openFile(snapshot.workdir + path);
+}
+
+function Sidebar(props) {
+  return <div id="git-scm" class="flex flex-col flex-1 min-h-0 min-w-0">
+    <div class="flex items-center gap-2 px-4 py-3 border-b shrink-0">
+      <span id="git-scm-branch" class="text-sm font-semibold truncate flex-1">{state.value == null ? 'Repository' : state.value.branch}</span>
+      <span class="text-xs text-text-secondary">{busy.value ? 'Loading…' : state.value == null ? '' : state.value.entries.length + ' files'}</span>
+    </div>
+    <if {error.value != ''}><p id="git-scm-error" class="p-4 text-sm text-error">{error}</p></if>
+    <ui-panel-group id="git-scm-panels" class="flex-1 min-h-0" panels={[
+      {id:'changes', title:'Changes', open:true, minSize:32},
+      {id:'graph', title:'Graph', open:true, size:324, minSize:32}
+    ]}>
+    <div slot="changes" class="flex flex-col gap-2 py-1 overflow-auto flex-1 min-h-0">
+      <for {group in sections}>
+        <div id={'git-scm-' + group.id} class="flex flex-col gap-1 min-w-0">
+          <div class="flex items-center justify-between px-4 py-1">
+            <span class="text-xs font-semibold text-text-secondary">{group.title}</span>
+            <span class="text-xs text-text-secondary">{group.items.length}</span>
+          </div>
+          <for {entry in group.items}>
+            <ui-button variant="ghost" class="w-full" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> open(entry.path)}>
+              <div class="flex items-center gap-2 w-full min-w-0 px-1">
+                <span class="text-sm truncate flex-1">{entry.path}</span>
+                <span class={entry.badge == '!' ? 'text-xs text-error' : entry.badge == 'U' || entry.badge == 'A' ? 'text-xs text-success' : 'text-xs text-warning'}>{entry.badge}</span>
+              </div>
+            </ui-button>
+          </for>
+          <if {group.items.length == 0}><span class="px-4 text-xs text-text-tertiary">No files</span></if>
+        </div>
+      </for>
+    </div>
+    <div slot="graph" id="git-scm-graph" class="flex flex-col flex-1 min-h-0 min-w-0">
+      <div class="flex items-center gap-2 px-3 h-8 shrink-0">
+        <span class="text-xs text-text-secondary flex-1">{state.value == null ? '' : state.value.branch}</span>
+        <ui-button id="git-scm-expand" class="w-16" variant="ghost" onClick={() -> { if (expand != null) expand(); }}>Expand</ui-button>
+      </div>
+      <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" scene={compactScene(commits.value, refs.value, selected.value)}
+        selected={selected.value == '' ? [] : [selected.value]} onClick={e -> choose(e.region)}/>
+      <span id="git-scm-selection" class="text-xs text-text-tertiary truncate px-3 py-1 shrink-0">{busy.value ? 'Loading history\u2026' : selectedInfo.value}</span>
+    </div>
+    </ui-panel-group>
+  </div>;
+}
+
+mount(() -> <Sidebar/>, 'scm');
+registerCommand('git.refresh', args -> refresh());
+onTool('git-refresh', () -> refresh());
+onHook('file.saved', e -> refresh());
+onHook('active.changed', e -> refresh());
+spawn(() -> refresh());

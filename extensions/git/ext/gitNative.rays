@@ -3,6 +3,11 @@ native "git2" {
   @:free(git_diff_free) handle Diff;
   @:free(git_object_free) handle Tree;
   @:free(git_status_list_free) handle StatusList;
+  @:free(git_revwalk_free) handle Walk;
+  @:free(git_commit_free) handle Commit;
+  @:free(git_reference_iterator_free) handle References;
+  @:free(git_reference_free) handle Reference;
+  struct Author { name:CString; email:CString; }
   struct Error { message:CString; klass:Int32; }
   struct StrArray { strings:Ptr; count:SizeT; }
   // The pinned build uses SHA-1 object IDs, without the experimental SHA-256 ABI.
@@ -38,6 +43,9 @@ native "git2" {
   function git_repository_free(repository:Repository):Void;
   function git_repository_path(repository:Repository):CString;
   function git_repository_workdir(repository:Repository):CString;
+  function git_repository_head_unborn(repository:Repository):Int32;
+  function git_repository_head_detached(repository:Repository):Int32;
+  @:owner(repository) @:blocking function git_repository_head(out:Out<Reference>, repository:Repository):Int32;
   @:blocking function git_status_foreach(repository:Repository, callback:StatusCallback, data:Ptr):Int32;
   function git_status_options_init(options:StatusOptions, version:UInt32):Int32;
   @:owner(repository) @:blocking function git_status_list_new(out:Out<StatusList>, repository:Repository, options:StatusOptions):Int32;
@@ -52,6 +60,29 @@ native "git2" {
   @:blocking function git_diff_find_similar(diff:Diff, options:Ptr):Int32;
   @:blocking function git_diff_foreach(diff:Diff, file:FileCallback, binary:BinaryCallback, hunk:HunkCallback, line:LineCallback, data:Ptr):Int32;
   function git_diff_free(diff:Diff):Void;
+  @:owner(repository) @:blocking function git_revwalk_new(out:Out<Walk>, repository:Repository):Int32;
+  function git_revwalk_free(walk:Walk):Void;
+  function git_revwalk_sorting(walk:Walk, mode:UInt32):Int32;
+  @:blocking function git_revwalk_push_glob(walk:Walk, glob:CString):Int32;
+  @:blocking function git_revwalk_push_head(walk:Walk):Int32;
+  @:blocking function git_revwalk_push_ref(walk:Walk, ref:CString):Int32;
+  @:blocking function git_revwalk_next(out:Oid, walk:Walk):Int32;
+  @:owner(repository) @:blocking function git_commit_lookup(out:Out<Commit>, repository:Repository, id:Oid):Int32;
+  function git_commit_free(commit:Commit):Void;
+  function git_commit_summary(commit:Commit):CString;
+  function git_commit_time(commit:Commit):Int64;
+  @:owner(commit) function git_commit_author(commit:Commit):Author;
+  function git_commit_parentcount(commit:Commit):UInt32;
+  @:owner(commit) function git_commit_parent_id(commit:Commit, index:UInt32):Oid;
+  function git_oid_tostr_s(id:Oid):CString;
+  @:owner(repository) @:blocking function git_reference_iterator_new(out:Out<References>, repository:Repository):Int32;
+  function git_reference_iterator_free(references:References):Void;
+  @:owner(references) function git_reference_next(out:Out<Reference>, references:References):Int32;
+  function git_reference_free(reference:Reference):Void;
+  function git_reference_name(reference:Reference):CString;
+  function git_reference_shorthand(reference:Reference):CString;
+  @:owner(reference) function git_reference_peel(out:Out<Tree>, reference:Reference, kind:Int32):Int32;
+  @:owner(tree) function git_object_id(tree:Tree):Oid;
 }
 
 function check(code, operation) {
@@ -175,4 +206,98 @@ function inspect(path) {
     return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository),
       status: status(repository), staged: diff(repository, true), changes: diff(repository, false)};
   });
+}
+
+function references(repository) {
+  var out = Out(References);
+  check(git_reference_iterator_new(out, repository), 'references');
+  var iterator = out.value, result = [];
+  try {
+    while (true) {
+      var next = Out(Reference), code = git_reference_next(next, iterator);
+      if (code == -31) break;
+      check(code, 'next reference');
+      var ref = next.value;
+      try {
+        var object = Out(Tree);
+        var code = git_reference_peel(object, ref, 1);
+        // References to non-commit objects do not participate in commit history.
+        if (code == 0) {
+          var target = object.value, name = git_reference_name(ref);
+          result.push({name: name, label: git_reference_shorthand(ref), target: git_oid_tostr_s(git_object_id(target)),
+            kind: name.startsWith('refs/heads/') ? 'branch' : name.startsWith('refs/remotes/') ? 'remote' : 'tag'});
+          target.close();
+        } else if (code != -3 && code != -12 && code != -19) check(code, 'peel reference');
+        ref.close();
+      } catch (error) { ref.close(); throw error; }
+    }
+    iterator.close();
+    return result;
+  } catch (error) { iterator.close(); throw error; }
+}
+
+function repositoryStatus(path) {
+  return withRepository(path, repository -> {
+    var branch = 'No commits', head = Out(Reference);
+    var unborn = check(git_repository_head_unborn(repository), 'repository HEAD state');
+    if (unborn == 0) {
+      check(git_repository_head(head, repository), 'repository HEAD');
+      var ref = head.value;
+      try {
+        branch = check(git_repository_head_detached(repository), 'detached HEAD state') == 1 ? 'Detached HEAD' : git_reference_shorthand(ref);
+        ref.close();
+      } catch (error) { ref.close(); throw error; }
+    }
+    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository), branch: branch, entries: status(repository)};
+  });
+}
+
+function openHistory(path, ref = 'all') {
+  check(git_libgit2_init(), 'initialize history');
+  var repository = null, walk = null, closed = false, done = false;
+  function close() {
+    if (closed) return;
+    closed = true;
+    if (walk != null) walk.close();
+    if (repository != null) repository.close();
+    git_libgit2_shutdown();
+  }
+  try {
+    var out = Out(Repository);
+    check(git_repository_open_ext(out, path, 0, null), 'open history repository');
+    repository = out.value;
+    var refs = references(repository), cursor = Out(Walk);
+    check(git_revwalk_new(cursor, repository), 'history cursor');
+    walk = cursor.value;
+    check(git_revwalk_sorting(walk, 3), 'history ordering');
+    if (ref == 'all') {
+      check(git_revwalk_push_glob(walk, 'refs/*'), 'history references');
+      if (check(git_repository_head_unborn(repository), 'history HEAD state') == 0)
+        check(git_revwalk_push_head(walk), 'history HEAD');
+    } else check(git_revwalk_push_ref(walk, ref), 'history branch');
+    function next(limit = 100) {
+      if (closed) throw 'History cursor is closed';
+      if (limit < 1 || limit > 500 || limit != Std.int(limit)) throw 'History page size must be an integer from 1 to 500';
+      var rows = [], id = alloc(Oid);
+      try {
+        while (rows.length < limit && !done) {
+          var code = git_revwalk_next(id, walk);
+          if (code == -31) { done = true; break; }
+          check(code, 'next commit');
+          var slot = Out(Commit);
+          check(git_commit_lookup(slot, repository, id), 'lookup commit');
+          var commit = slot.value;
+          try {
+            var parents = [], author = git_commit_author(commit);
+            for (index in 0...git_commit_parentcount(commit)) parents.push(git_oid_tostr_s(git_commit_parent_id(commit, index)));
+            rows.push({id: git_oid_tostr_s(id), subject: git_commit_summary(commit), parents: parents,
+              author: author.name, email: author.email, time: git_commit_time(commit)});
+            commit.close();
+          } catch (error) { commit.close(); throw error; }
+        }
+        return {commits: rows, done: done};
+      } catch (error) { close(); throw error; }
+    }
+    return {next: next, close: close, refs: refs, repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
+  } catch (error) { close(); throw error; }
 }

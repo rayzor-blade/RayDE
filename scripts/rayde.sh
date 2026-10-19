@@ -7,6 +7,7 @@ build_only=0
 if [ "${1:-}" = --build ]; then build_only=1; shift; fi
 [ "$build_only" = 1 ] || [ $# -ge 1 ] || fail "usage: rayde.sh [--build] <build.hxml | name.rayext | name.raytheme>"
 cd "$here"
+"$here/scripts/build-libgit2.sh"
 stage_natives bin
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl bin/rayde.hl
 [ "$build_only" = 1 ] && exit 0

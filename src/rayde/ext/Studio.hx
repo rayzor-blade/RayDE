@@ -113,6 +113,7 @@ class Studio {
 		Utilities.install();
 		preview = new Preview(tree, send);
 		this.connection = connection == null ? new Connection(file, dir, source, manifest, binary) : connection;
+		preview.onProblem = message -> this.connection.note("console", "error", message);
 		if (connection == null) this.connection.useMocks = true;
 		this.connection.onMessage = handle;
 		this.connection.onEntry = (list, entry) -> note(list == "console" ? console : activity, entry.kind, entry.text,

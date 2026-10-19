@@ -4,4 +4,5 @@
 .rayde/
 /native/terminal/target/
 /extensions/git/natives/
+/extensions/git/git.rayext
 __pycache__/

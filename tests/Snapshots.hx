@@ -37,6 +37,9 @@ class Snapshots {
 		Sys.command("chmod", ["+x", stub]);
 		Sys.putEnv("RAYDE_HAXELIB", stub);
 		Sys.putEnv("HOME", home);
+		var builtins = scratch + "/empty-extensions";
+		sys.FileSystem.createDirectory(builtins);
+		Sys.putEnv("RAYDE_EXTENSIONS", builtins);
 		for (dark in [true, false]) {
 			sys.io.File.saveContent(haxe.io.Path.join([scratch, "libs.txt"]), "ash-simd: [0.1.0]\nformat: [3.7.0]\nhashlink: [1.14.0]\ntink_core: [2.1.1]\ntink_hxx: [0.25.1]\n");
 			Haxelib.refresh();
@@ -814,6 +817,137 @@ class Snapshots {
 				shot("bar-after");
 			});
 		for (dark in [true, false])
+			scenario(dark, "git", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var manager = bench.extensionManager, git = manager.find("git"), tree = bench.tree;
+				if (git == null) throw "Git fixture extension missing";
+				manager.setNativeApproved("git", "git2", true);
+				var studio = bench.studioFor(git.connection.file);
+				function says(word:String):Bool
+					return studio != null && studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
+				function control(id:String):rayde.ext.BridgeControl {
+					var part = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=" + id) >= 0);
+					if (part == null) throw 'missing bridge $id';
+					return @:privateAccess studio.preview.parts.get(part.id).control;
+				}
+				var icon = "#rayde-activity-ext-git-scm";
+				if (Css.query(tree, bench.node.id, icon).length == 0) throw "Git SCM activity icon missing";
+				if (git.connection.manifest.views[0].icon != "branch") throw "Git SCM must use Ashui's git-branch icon";
+				click(icon);
+				until(() -> says("modified.txt") && says("staged.txt") && says("conflict.txt") && says("untracked.txt") && says("5 files"), "the SCM sidebar's native status groups");
+				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
+				for (label in ["Merge conflicts", "Staged", "Changes", "Untracked", "renamed-file.txt", "main"])
+					if (!says(label)) throw 'missing SCM content $label';
+				shot("scm-ready");
+				click("#git-scm-changes .ui-button");
+				until(() -> StringTools.endsWith(bench.active.get(), "/modified.txt"), "an SCM file row to open in the editor");
+				shot("scm");
+				var sideCanvas:ashui.canvaskit.CanvasKit = @:privateAccess control("git-scm-canvas").kit;
+				var sideBounds = tree.getScrolledBounds(sideCanvas.node);
+				ashui.input.Pointer.move(tree, sideBounds.x + 90, sideBounds.y + 36);
+				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
+				until(() -> sideCanvas.selection.ids.get().length == 1, "sidebar graph selection");
+				var selected = sideCanvas.selection.ids.get()[0];
+				until(() -> says(selected.substr(0,7)), "sidebar graph selection to reach RayScript");
+				var splitter = Css.query(tree, bench.node.id, "#git-scm-panels .ui-resizable-handle")[0];
+				var splitBounds = tree.getScrolledBounds(new ashui.layout.Node(splitter));
+				ashui.input.Pointer.move(tree, splitBounds.x + splitBounds.width/2, splitBounds.y + splitBounds.height/2);
+				ashui.input.Pointer.press(tree);
+				ashui.input.Pointer.move(tree, splitBounds.x + splitBounds.width/2, splitBounds.y - 65); settle();
+				ashui.input.Pointer.release(tree); settle();
+				if (tree.getScrolledBounds(sideCanvas.node).height <= sideBounds.height + 40) throw "native resizable panels did not resize the graph";
+				var resizedHeight = tree.getScrolledBounds(sideCanvas.node).height;
+				press(Named(ArrowUp));
+				if (tree.getScrolledBounds(sideCanvas.node).height <= resizedHeight) throw "native resize keyboard handling failed";
+				shot("scm-resized");
+				click("#rayde-panel-toggle-graph"); settle(40);
+				if (tree.getScrolledBounds(sideCanvas.node).height > 1) throw "native collapsible did not close the graph";
+				shot("scm-collapsed");
+				press(Named(Enter)); settle(40);
+				if (tree.getScrolledBounds(sideCanvas.node).height <= sideBounds.height + 40) throw "native collapsible lost the expanded size";
+				var root = haxe.io.Path.directory(haxe.io.Path.directory(file));
+				sys.io.File.saveContent(root + "/clean.txt", "Changed after initial status\n");
+				click('#rayde-tool-git-refresh');
+				until(() -> says("clean.txt") && says("6 files"), "the sidebar toolbar to refresh native status");
+				shot("scm-refreshed");
+				click('#git-scm-expand .ui-button');
+				until(() -> says("100") && says("Add Git history graph"), "the native history page and selected commit details");
+				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
+				function canvas():ashui.canvaskit.CanvasKit return @:privateAccess control("git-history-canvas").kit;
+				shot("history");
+				var kit = canvas(), viewport = kit.viewport, bounds = tree.getScrolledBounds(kit.node);
+				var point = viewport.contentToScreen(130, 66);
+				ashui.input.Pointer.move(tree, bounds.x + point.x, bounds.y + point.y); settle();
+				if (kit.hovered == null) throw "canvas hover region missing";
+				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
+				until(() -> says("Merge native library trust"), "canvas click to select a commit through RayScript");
+				shot("selected");
+				var zoom = viewport.zoom.get(); click("#git-history-in .ui-button");
+				until(() -> viewport.zoom.get() > zoom, "native zoom button roundtrip");
+				var revision = studio.preview.revision;
+				var pan = viewport.panX.get();
+				ashui.input.Pointer.move(tree, bounds.x + 120, bounds.y + 120);
+				ashui.input.Pointer.press(tree, Middle);
+				ashui.input.Pointer.move(tree, bounds.x + 160, bounds.y + 140); settle();
+				ashui.input.Pointer.release(tree, Middle); settle();
+				if (viewport.panX.get() == pan) throw "native canvas pan failed";
+				zoom = viewport.zoom.get();
+				ashui.input.Pointer.wheel(tree, 0, -60); settle();
+				if (viewport.zoom.get() <= zoom) throw "native wheel zoom failed";
+				if (studio.preview.revision != revision) throw "viewport gestures sent rendering operations through the host";
+				var drawing = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=git-history-canvas") >= 0);
+				var accepted = @:privateAccess control("git-history-canvas").scene.get();
+				studio.preview.apply([["set", drawing.id, "scene", {commands: [{type: "circle", radius: -1}]}]]);
+				if ((@:privateAccess control("git-history-canvas").scene.get()) != accepted) throw "invalid scene replaced the last accepted drawing";
+				if (git.output.join("\n").indexOf("Canvas radius is out of range") < 0) throw "invalid scene was not reported in the extension Output";
+				var saved = control("git-history-canvas").state(), hooks = LayoutTree.settledHooks.length;
+				var panelSizes = haxe.Json.stringify(control("git-scm-panels").state());
+				studio.preview.hide();
+				if (LayoutTree.settledHooks.length != hooks - 4) throw "hidden canvases retained their layout hooks";
+				studio.preview.show(); settle();
+				var restored = control("git-history-canvas").state();
+				if (haxe.Json.stringify(control("git-scm-panels").state()) != panelSizes) throw "panel sizes did not survive presentation rebuild";
+				if (restored.x != saved.x || restored.y != saved.y || restored.zoom != saved.zoom) throw "hidden canvas lost its viewport";
+				// Reattach the remounted roots to the workbench's tab surface.
+				@:privateAccess for (surface in studio.surfaces) surface.attached = [];
+				@:privateAccess studio.adopt();
+				settle();
+				click("#git-history-fit .ui-button");
+				until(() -> canvas().viewport.zoom.get() < .2, "fit to include offscreen history rows");
+				click("#git-history-more .ui-button");
+				until(() -> says("114"), "the next native history page");
+				revision = studio.preview.revision;
+				click("#git-history-more .ui-button");
+				if (studio.preview.revision != revision) throw "disabled load-more button dispatched an event";
+				click("#git-history-branch .ui-select"); press(Named(End)); press(Named(Enter));
+				until(() -> says("Prepare extension runtime 105"), "the tag's first history page");
+				click("#git-history-more .ui-button");
+				until(() -> says("105"), "tag filtering through the native select component");
+				shot("filtered");
+				var tab = bench.active.get();
+				bench.closeFile(tab);
+				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
+				if (LayoutTree.settledHooks.length != hooks - 2) throw "closed canvas retained a layout hook";
+				git.connection.send({t: "run", name: "fiber-check.rays", source: "var failed = false; mount(() -> <canvas-kit id='fiber-canvas' class='flex-1' scene={{bounds:{x:0,y:0,width:100,height:100},commands:[{type:'circle',x:50,y:50,radius:25,color:'accent'}],regions:[{id:'target',x:0,y:0,width:100,height:100}]}} onClick={e -> { if (!failed) { failed = true; throw 'fiber event aborted'; } trace('fiber event recovered'); }}/>, 'tab:Fiber check');"});
+				until(() -> studio.tabViews.length == 1, "fiber recovery test view");
+				settle(); shot("fiber-check");
+				var c = control("fiber-canvas"), native:ashui.canvaskit.CanvasKit = @:privateAccess c.kit;
+				var b = tree.getScrolledBounds(native.node);
+				function hit():Void {
+					ashui.input.Pointer.move(tree, b.x + 50, b.y + 50);
+					ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
+				}
+				hit();
+				until(() -> git.output.join("\n").indexOf("fiber event aborted") >= 0, "the handler exception to be reported");
+				if (!git.connection.running() || git.restarts.length != 0) throw "handler failure restarted the extension host";
+				hit();
+				until(() -> git.output.join("\n").indexOf("fiber event recovered") >= 0, "another canvas event in the same host after the exception");
+				bench.closeFile(bench.active.get());
+				until(() -> studio.tabViews.length == 0, "fiber test view cleanup");
+				bench.openCenter(">Git: History"); settle(5); press(Named(Enter));
+				until(() -> says("Add Git history graph"), "Git history to reopen after cursor cleanup");
+				Sys.println("git snapshots: history pages, references, selection, hover, pan, zoom, fit, cleanup and fiber exception recovery");
+			});
+		for (dark in [true, false])
 			scenario(dark, "extensions", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var manager = bench.extensionManager, markdown = manager.find("markdown"), dashboard = manager.find("dashboard");
 				if (markdown == null || dashboard == null) throw "both workspace extensions should be discovered";
@@ -1372,6 +1506,8 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		var root = copyOf(name), server = new CompilerServer();
+		if (name == "git" && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
+			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
@@ -1391,7 +1527,7 @@ class Snapshots {
 			stop = s;
 			return bench = new Workbench({display: display, name: extension != null ? extension.name : theme != null ? theme.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme});
 		});
-		if (name == "extensions") {
+		if (name == "extensions" || name == "git") {
 			var home = root + "/snapshot-home";
 			sys.FileSystem.createDirectory(home);
 			Store.save(home, "extensions", {});

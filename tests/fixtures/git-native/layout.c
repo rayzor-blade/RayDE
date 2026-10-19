@@ -6,6 +6,8 @@
 #define OFFSET(type, field, bytes) _Static_assert(offsetof(type, field) == bytes, #type "." #field)
 
 SIZE(git_oid, 20);
+OFFSET(git_signature, name, 0);
+OFFSET(git_signature, email, 8);
 SIZE(git_diff_file, 48);
 OFFSET(git_diff_file, path, 24);
 OFFSET(git_diff_file, size, 32);

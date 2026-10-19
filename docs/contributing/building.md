@@ -12,7 +12,7 @@ scripts/rayde.sh --build                 # rebuild bin/rayde.hl without opening 
 - `haxe` and `ash` on `PATH` (`ASH=<path>` names another ash).
 - ashui is pinned to a commit (`ashui_rev` in `scripts/deps.sh`), checked out under `.deps` and built once. `ASHUI=<dir>` builds against another checkout.
 - hlwgpu and hlwindow are read from beside RayDE (`HLWGPU`, `HLWINDOW`).
-- Packaging and `scripts/check-git.sh` build pinned libgit2 with CMake and a C compiler. The source archive is fetched with curl and verified with shasum; Git checks use Python 3.
+- `scripts/rayde.sh`, packaging and Git checks/snapshots build pinned libgit2 with CMake and a C compiler, generating the built-in Git manifest with its library hash. The source archive is fetched with curl and verified with shasum; Git fixtures/checks use Python 3.
 - Source `scripts/deps.sh` from bash only.
 
 ## Environment

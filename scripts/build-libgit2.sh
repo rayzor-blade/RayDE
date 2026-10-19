@@ -35,4 +35,7 @@ if [ ! -f "$out/$library" ] || ! cmp -s "$build_dir/$library" "$out/$library"; t
   mv "$out/$library.new" "$out/$library"
 fi
 cp "$source_dir/COPYING" "$out/libgit2.COPYING"
+digest=$(shasum -a 256 "$out/$library" | cut -d ' ' -f 1)
+sed -e "s/@LIBRARY@/$library/g" -e "s/@SHA256@/$digest/g" \
+  "$here/extensions/git/git.rayext.in" > "$here/extensions/git/git.rayext"
 echo "libgit2 $version: $out/$library"

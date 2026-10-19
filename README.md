@@ -36,6 +36,6 @@ Requirements: `haxe`, `ash` on `PATH` (or `ASH=<path>`), and a Rust toolchain fo
 | [Editor and keys](docs/editor.md) | Command center, shortcuts, hover, debugging keys. |
 | [Window](docs/window.md) | Title bar, controls, rounded corners. |
 | [Writing an extension](docs/extensions.md) | Config, commands, menus, hooks, tabs, Extension Studio, debugger. |
-| [Git native backend](docs/git.md) | Pinned libgit2 build, RayScript bindings and integration checks. |
+| [Git](docs/git.md) | Interactive commit history, pinned libgit2 build and RayScript bindings. |
 | [Theme bundles](docs/themes.md) | File format, fonts, CSS, installing, Theme Studio. |
 | [Contributing](docs/contributing/README.md) | Building, checks and snapshots, packaging, issue tracking. |

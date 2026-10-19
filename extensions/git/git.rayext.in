@@ -1,0 +1,20 @@
+{
+  "id": "git",
+  "name": "Git",
+  "version": "0.1.0",
+  "description": "Source control sidebar and interactive repository history",
+  "main": "ext/main.rays",
+  "sources": ["ext"],
+  "activationEvents": ["workspaceContains:.git", "onView:scm", "onCommand:git.history", "onCommand:git.refresh"],
+  "capabilities": ["workspace.read", "native:git2"],
+  "natives": {
+    "git2": {"path": "natives/@LIBRARY@", "sha256": "@SHA256@"}
+  },
+  "views": [{"id": "scm", "title": "Source Control", "icon": "branch", "location": "sidebar",
+    "tools": [{"id": "git-refresh", "title": "Refresh", "icon": "refresh"},
+      {"id": "git-history", "title": "History", "icon": "history"}]}],
+  "contributes": {
+    "commands": [{"id": "git.history", "title": "Git: History", "icon": "history"},
+      {"id": "git.refresh", "title": "Git: Refresh", "icon": "refresh"}]
+  }
+}

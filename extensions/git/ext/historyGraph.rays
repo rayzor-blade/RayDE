@@ -1,0 +1,107 @@
+// Pending parent slots are kept across rows; extending a page never moves earlier nodes.
+function layout(commits) {
+  var lanes = [], rows = [], edges = [], maximum = 1;
+  function slot(id) {
+    var found = lanes.indexOf(id);
+    if (found >= 0) return found;
+    var free = lanes.indexOf(null);
+    if (free < 0) { free = lanes.length; lanes.push(id); }
+    else lanes[free] = id;
+    maximum = Math.max(maximum, free + 1);
+    return free;
+  }
+  for (index in 0...commits.length) {
+    var commit = commits[index], lane = slot(commit.id), before = lanes.copy();
+    rows.push({commit: commit, lane: lane, index: index});
+    lanes[lane] = null;
+    for (parent in commit.parents) {
+      var target = lanes.indexOf(parent);
+      if (target < 0 && lanes[lane] == null) { lanes[lane] = parent; target = lane; }
+      if (target < 0) target = slot(parent);
+      edges.push({row: index, from: lane, to: target, target: parent});
+    }
+    for (i in 0...before.length)
+      if (i != lane && before[i] != null) edges.push({row: index, from: i, to: i, target: before[i]});
+  }
+  return {rows: rows, edges: edges, lanes: maximum};
+}
+
+function timestamp(seconds) {
+  var days = Math.floor(seconds / 86400), rest = seconds - days * 86400;
+  var z = days + 719468, era = Math.floor(z / 146097), doe = z - era * 146097;
+  var yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  var year = yoe + era * 400, doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  var mp = Math.floor((5 * doy + 2) / 153), day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  var month = mp + (mp < 10 ? 3 : -9);
+  if (month <= 2) year++;
+  function pad(value) { return value < 10 ? '0' + Std.int(value) : '' + Std.int(value); }
+  return Std.int(year) + '-' + pad(month) + '-' + pad(day) + ' ' + pad(Math.floor(rest / 3600)) + ':' + pad(Math.floor(rest / 60) % 60) + ' UTC';
+}
+
+function compactScene(commits, refs, selected) {
+  var graph = layout(commits), commands = [], regions = [], width = 256;
+  var colors = [0x528ed7, 0xb187de, 0x209b8b, 0xd49232, 0xc46da6, 0x73a345];
+  var textX = 22 + graph.lanes * 12;
+  for (row in graph.rows) {
+    var y = 13 + row.index * 23;
+    if (row.commit.id == selected)
+      commands.push({type:'rect', x:4, y:y-10, width:width-8, height:22, radius:3, color:'accentSubtle'});
+    regions.push({id:row.commit.id, x:4, y:y-10, width:width-8, height:22});
+  }
+  for (edge in graph.edges) {
+    var x = 14 + edge.from * 12, endX = 14 + edge.to * 12, y = 13 + edge.row * 23;
+    commands.push({type:'path', path:[['M',x,y],['C',x,y+12,endX,y+12,endX,y+23]], color:colors[edge.to % colors.length], stroke:1.5});
+  }
+  for (row in graph.rows) {
+    var commit = row.commit, x = 14 + row.lane * 12, y = 13 + row.index * 23, label = '';
+    for (ref in refs) if (ref.target == commit.id && (label == '' || ref.kind == 'branch')) label = ref.label;
+    var available = label == '' ? width - textX - 8 : width - textX - Math.min(84, label.length * 6 + 16) - 12;
+    var length = Std.int(available / 6), title = commit.subject == null ? '(no subject)' : commit.subject;
+    if (title.length > length) title = title.substr(0, Math.max(0, length - 1)) + '\u2026';
+    if (commit.id == selected) {
+      commands.push({type:'circle', x:x, y:y, radius:5, color:'surface'});
+      commands.push({type:'circle', x:x, y:y, radius:5, color:colors[row.lane % colors.length], stroke:1.5});
+    } else commands.push({type:'circle', x:x, y:y, radius:commit.parents.length > 1 ? 4 : 3.5, color:colors[row.lane % colors.length]});
+    commands.push({type:'text', x:textX, y:y+4, text:title, color:'textPrimary', size:12, weight:commit.id == selected ? 600 : 400});
+    if (label != '') {
+      if (label.length > 11) label = label.substr(0,10) + '\u2026';
+      var w = label.length * 6 + 12, left = width - w - 6;
+      commands.push({type:'rect', x:left, y:y-8, width:w, height:17, radius:8, color:colors[row.lane % colors.length], alpha:0.24});
+      commands.push({type:'rect', x:left, y:y-8, width:w, height:17, radius:8, color:colors[row.lane % colors.length], stroke:1});
+      commands.push({type:'text', x:left+6, y:y+4, text:label, color:'textPrimary', size:11});
+    }
+  }
+  return {bounds:{x:0,y:0,width:width,height:Math.max(24,commits.length*23+14)}, commands:commands, regions:regions};
+}
+
+function scene(commits, refs, selected) {
+  var graph = layout(commits), commands = [], regions = [];
+  var colors = [0x209b8b, 0x9473ed, 0xd49232, 0x528ed7, 0xc46da6, 0x73a345];
+  var textX = 48 + graph.lanes * 24, width = Math.max(800, textX + 620);
+  for (row in graph.rows) {
+    var y = 26 + row.index * 40;
+    if (row.commit.id == selected)
+      commands.push({type: 'rect', x: 8, y: y - 18, width: width - 16, height: 36, radius: 6, color: 'accentSubtle'});
+    regions.push({id: row.commit.id, x: 8, y: y - 18, width: width - 16, height: 36});
+  }
+  for (edge in graph.edges) {
+    var x = 28 + edge.from * 24, endX = 28 + edge.to * 24, y = 26 + edge.row * 40;
+    commands.push({type: 'path', path: [['M', x, y], ['C', x, y + 20, endX, y + 20, endX, y + 40]],
+      color: colors[edge.to % colors.length], stroke: 2});
+  }
+  for (row in graph.rows) {
+    var commit = row.commit, x = 28 + row.lane * 24, y = 26 + row.index * 40;
+    commands.push({type: 'circle', x: x, y: y, radius: commit.parents.length > 1 ? 6 : 5,
+      color: colors[row.lane % colors.length]});
+    commands.push({type: 'text', x: textX, y: y + 5, text: commit.id.substr(0, 7), color: 'textSecondary', size: 12});
+    var title = commit.subject == null ? '(no subject)' : commit.subject;
+    if (title.length > 48) title = title.substr(0, 47) + '\u2026';
+    commands.push({type: 'text', x: textX + 72, y: y + 5, text: title, color: 'textPrimary', size: 13,
+      weight: commit.id == selected ? 600 : 400});
+    var labels = [];
+    for (ref in refs) if (ref.target == commit.id) labels.push(ref.label);
+    if (labels.length > 0)
+      commands.push({type: 'text', x: textX + 440, y: y + 5, text: labels.join(' \u00b7 '), color: 'textLink', size: 12});
+  }
+  return {bounds: {x: 0, y: 0, width: width, height: Math.max(80, commits.length * 40 + 24)}, commands: commands, regions: regions};
+}

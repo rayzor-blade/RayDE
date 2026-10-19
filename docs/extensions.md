@@ -8,6 +8,8 @@ RayDE extensions are written in RayScript, run in a process of their own, and de
 
 RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own `rayscript-host` process; opening the Extension Studio is not required.
 
+Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. This runtime behavior also applies to embedding callers. The process boundary separately contains native faults and permits host restart.
+
 | Scope | Folder |
 | --- | --- |
 | Built-in | Packaged with RayDE, under `extensions/`. |
@@ -226,6 +228,66 @@ function Document(props) {
 ```
 
 Markdown is a few hundred lines of RayScript in [`markdown.rays`](../tests/fixtures/markdown/ext/markdown.rays): `blocks(source)` splits a document into headings, paragraphs, lists, quotes, fenced code and rules, and `words(line)` breaks a line into words tagged with the emphasis, code or link they came from. The view is ordinary markup, `<div>`, `<span>` and utility classes, which the Preview draws with the same classes as ashui (`flex`, `gap-2`, `text-sm`, `bg-surface-elevated`).
+
+## Ashui controls and interactive drawing
+
+Extension markup can use native Ashui components through the same view bridge:
+
+```haxe
+var branch = signal('all');
+<ui-select value={branch} options={[{value:'all', label:'All references'}]}
+  onChange={e -> branch.value = e.value}/>;
+<ui-button variant="outline" disabled={busy} onClick={() -> refresh()}>Refresh</ui-button>;
+```
+
+`ui-button` accepts text or markup children, `disabled`, `variant` (`primary`, `secondary`, `outline`, `ghost`, `link`, `destructive`) and `size` (`sm`, `md`, `lg`). `ui-select` accepts `value`, `disabled`, `size` and `options`: `{value, label, disabled?}` records. It emits `change` with `{value}`. Both use Ashui's focus and keyboard handling. Their default row height is 32 px; numeric `height` permits 16–256 px for dense lists. CSS sets the wrapper's width, placement and component custom properties.
+
+`canvas-kit` retains a serializable drawing scene and runs Ashui CanvasKit in the editor:
+
+```haxe
+var drawing = signal({
+  bounds: {x:0, y:0, width:300, height:160},
+  commands: [
+    {type:'path', path:[['M',40,80],['C',100,80,160,40,220,40]], color:'textLink', stroke:2},
+    {type:'circle', x:40, y:80, radius:6, color:'accent'},
+    {type:'text', x:60, y:85, text:'Commit', color:'textPrimary', size:13}
+  ],
+  regions: [{id:'commit', x:20, y:60, width:260, height:40}]
+});
+<canvas-kit class="flex-1 min-h-0" scene={drawing}
+  onClick={e -> select(e.region)}/>;
+```
+
+Scene commands are painted in order. Coordinates and sizes are content units. Colors are RGB integers or camelCase Ashui theme tokens; `alpha` defaults to 1. `stroke` is a constant screen-pixel width; zero fills a shape.
+
+| Command | Fields |
+| --- | --- |
+| `path` | `path`: arrays `['M',x,y]`, `['L',x,y]`, `['C',x1,y1,x2,y2,x,y]`, `['Z']`. |
+| `circle` | `x`, `y`, `radius`. |
+| `rect` | `x`, `y`, `width`, `height`, optional corner `radius`. |
+| `text` | `text`, `x`, baseline `y`, optional `size` and `weight`. |
+
+`regions` are unique string ids with rectangular bounds, used for local hover and selection. `selected` accepts an array of ids. Optional handlers receive `click` `{region,x,y,shift,control,meta}`, `hover` `{region}` (null on leave) and `selectionChange` `{ids}`. Event coordinates are local screen coordinates.
+
+The wheel zooms at the pointer; dragging empty space or using the middle/right button pans. Shift-drag selects a rectangle. Commit positions remain script data; gestures do not move the drawing's objects. Painting, hover highlighting, pan and zoom run locally without script calls per frame. Scene updates decode paths once and cull offscreen shapes and text; paths remain in paint order.
+
+Set `command` to `{action:'fit'}`, `{action:'reset'}` or `{action:'zoom',factor:1.25}`. A changed `sequence` field repeats an otherwise identical command. Commands run after layout; `fit` uses full scene `bounds`, including offscreen regions. The viewport survives tab presentation rebuilds, and native control owners are disposed when views are hidden or removed. Invalid live properties report an extension error and preserve the last accepted property. Drawing, region and aggregate path-segment lists are limited to 50,000 entries.
+
+`ui-panel-group` composes Ashui `Resizable`, `ResizablePanel`, `Collapsible`, `CollapsibleTrigger` and `CollapsibleContent` into vertical, named panels:
+
+```haxe
+<ui-panel-group class="flex-1 min-h-0" panels={[
+  {id:'changes', title:'Changes', open:true, minSize:32},
+  {id:'graph', title:'Graph', open:true, size:324, minSize:32}
+]}>
+  <div slot="changes" class="flex-1 min-h-0 overflow-auto">Changes</div>
+  <div slot="graph" class="flex-1 min-h-0">Graph</div>
+</ui-panel-group>;
+```
+
+`size` and `minSize` are layout pixels; an unsized panel shares the remaining space. Native divider dragging, arrow-key resizing and double-click reset apply. Headers toggle with pointer, Enter or Space. Closing a panel reduces it to its header; reopening restores its expanded size. Panel sizes and open states survive presentation rebuilds. `onPanelChange` receives `{id,open}`. The panel list is fixed for a mounted group (at most 16, with unique ids); children route through their `slot` property. Panel content owns its own scrolling.
+
+The [Git history graph](git.md) combines these controls with a RayScript DAG layout and native libgit2 history pages.
 
 ## The Extension Studio
 

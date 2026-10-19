@@ -11,6 +11,7 @@ import threading
 import statistics
 import time
 import sys
+from git_fixture import create as history_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "bin" / "git-native-checks"
@@ -100,6 +101,8 @@ import gitNative.status;
 import gitNative.statusFlags;
 import gitNative.eachStatus;
 import gitNative.diff;
+import gitNative.openHistory;
+import gitNative.repositoryStatus;
 function emit(value) { trace('@result:' + stringify(value)); }
 function text(snapshot) {
   for (part in [snapshot.staged, snapshot.changes])
@@ -243,6 +246,73 @@ emit({first: text(await first), second: text(await second)});
 """.replace("FIRST", json.dumps(str(root))).replace("SECOND", json.dumps(str(empty))))
         assert result["first"]["status"] and result["second"]["status"], result
     print("git native: concurrent Krio script fibers", flush=True)
+
+    git(root, "tag", "base-tag", "HEAD~1")
+    with Host() as host:
+        result = host.run(PREAMBLE + """
+var cursor = openHistory(REPO), rows = [], done = false;
+while (!done) { var page = cursor.next(1); rows = rows.concat(page.commits); done = page.done; }
+var refs = cursor.refs;
+cursor.close(); cursor.close(); gc();
+var closed = false;
+try { cursor.next(1); } catch (error) { closed = error == 'History cursor is closed'; }
+var branch = openHistory(REPO, 'refs/heads/other');
+var other = branch.next(500); branch.close();
+var unborn = openHistory(EMPTY); var first = unborn.next(100); unborn.close();
+emit({rows: rows, refs: refs, closed: closed, other: other, unborn: first});
+""".replace("REPO", json.dumps(str(root))).replace("EMPTY", json.dumps(str(empty))))
+        ids = [row["id"] for row in result["rows"]]
+        expected = git(root, "rev-list", "--all").stdout.decode().splitlines()
+        assert set(ids) == set(expected) and len(ids) == len(set(ids)), result
+        positions = {oid: index for index, oid in enumerate(ids)}
+        assert all(positions[parent] > positions[row["id"]] for row in result["rows"] for parent in row["parents"]), result
+        assert all(row["author"] == "Fixture" for row in result["rows"]), result
+        assert result["closed"] and result["unborn"] == {"commits": [], "done": True}, result
+        other = git(root, "rev-list", "other").stdout.decode().splitlines()
+        assert set(row["id"] for row in result["other"]["commits"]) == set(other), result
+        assert any(ref["name"] == "refs/tags/base-tag" for ref in result["refs"]), result
+    print("git native: paged topological history, references, branch filtering and cursor lifetime", flush=True)
+    with Host() as host:
+        result = host.run(PREAMBLE + "emit({normal:repositoryStatus(REPO),unborn:repositoryStatus(EMPTY)});".replace("REPO", json.dumps(str(root))).replace("EMPTY", json.dumps(str(empty))))
+        assert result["normal"]["branch"] == "main" and len(result["normal"]["entries"]) == len(entries)
+        assert result["unborn"]["branch"] == "No commits"
+
+    history = FIXTURE / "history"
+    history.mkdir()
+    history_fixture(history)
+    git(history, "tag", "-a", "release", "-m", "Annotated release")
+    with Host() as host:
+        result = host.run(PREAMBLE + """
+import historyGraph.layout;
+import historyGraph.scene;
+import historyGraph.compactScene;
+import historyGraph.timestamp;
+var cursor = openHistory(REPO), first = cursor.next(6), second = cursor.next(500);
+var rows = first.commits.concat(second.commits), refs = cursor.refs;
+cursor.close(); gc();
+emit({rows: rows, refs: refs, first: layout(first.commits), graph: layout(rows),
+  scene: scene(rows, refs, rows[0].id), compact:compactScene(rows, refs, rows[0].id), dates: [timestamp(0), timestamp(951782400), timestamp(-1)]});
+""".replace("REPO", json.dumps(str(history))))
+        rows, graph = result["rows"], result["graph"]
+        assert len(rows) == 114 and sum(len(row["parents"]) == 2 for row in rows) == 2, rows
+        assert len({row["id"] for row in rows}) == 114
+        assert result["first"]["rows"] == graph["rows"][:6], "page extension moved earlier nodes"
+        assert result["first"]["edges"] == [edge for edge in graph["edges"] if edge["row"] < 6]
+        positions = {row["id"]: index for index, row in enumerate(rows)}
+        lanes = {row["commit"]["id"]: row["lane"] for row in graph["rows"]}
+        for edge in graph["edges"]:
+            assert positions[edge["target"]] > edge["row"], edge
+            if positions[edge["target"]] == edge["row"] + 1:
+                assert edge["to"] == lanes[edge["target"]], edge
+        assert len(result["scene"]["regions"]) == len(rows)
+        assert [r["id"] for r in result["compact"]["regions"]] == [r["id"] for r in result["scene"]["regions"]]
+        assert any(ref["name"] == "refs/tags/release" and ref["target"] == rows[0]["id"] for ref in result["refs"])
+        assert result["dates"] == ["1970-01-01 00:00 UTC", "2000-02-29 00:00 UTC", "1969-12-31 23:59 UTC"]
+    git(history, "checkout", "--detach", "HEAD~2")
+    with Host() as host:
+        result = host.run(PREAMBLE + "var cursor = openHistory(REPO); emit({page:cursor.next(500),branch:repositoryStatus(REPO).branch}); cursor.close();".replace("REPO", json.dumps(str(history))))
+        assert len(result["page"]["commits"]) == 114 and result["branch"] == "Detached HEAD", result
+    print("git history: merge DAG, stable page lanes, edge routing, annotated tags, detached HEAD and UTC dates", flush=True)
 
     if "--benchmark" in sys.argv:
         large = init("large")

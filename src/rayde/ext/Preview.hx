@@ -27,6 +27,8 @@ private class Part {
 
 	/** The ashui node, null while the Preview is not in a page. */
 	public var node:Null<Node>;
+	public var control:Null<BridgeControl>;
+	public var localState:Dynamic;
 
 	/** The CSS properties the `style` property set, so a new `style` can take away what it no longer has. */
 	public var styled:Array<String> = [];
@@ -66,6 +68,7 @@ class Preview {
 
 	/** Counts every change, for whatever shows the tree. */
 	public var revision(default, null) = 0;
+	public var onProblem:Null<String->Void>;
 
 	public function new(tree:LayoutTree, emit:PreviewEvent) {
 		this.tree = tree;
@@ -74,10 +77,13 @@ class Preview {
 
 	/** Takes everything down, the model and the nodes. */
 	public function clear():Void {
+		for (p in parts) if (p.parent == 0) release(p);
 		if (shown)
 			for (p in parts)
-				if (p.parent == 0 && p.node != null)
+				if (p.parent == 0 && p.node != null) {
+					Identity.forgetSubtree(tree, p.node.id);
 					tree.removeSubtree(p.node.id);
+				}
 		parts.clear();
 		roots.resize(0);
 		revision++;
@@ -100,7 +106,7 @@ class Preview {
 		for (p in parts)
 			if (p.tag != null) {
 				for (name in p.order)
-					style(p, name, p.props.get(name));
+					try style(p, name, p.props.get(name)) catch (e:Dynamic) problem(p, e);
 				for (event in p.listens.keys())
 					hook(p, event);
 			}
@@ -109,6 +115,7 @@ class Preview {
 				refresh(p);
 		for (r in roots)
 			r.node = parts.get(r.id).node;
+		flushControls();
 		revision++;
 	}
 
@@ -116,9 +123,12 @@ class Preview {
 	public function hide():Void {
 		if (!shown)
 			return;
+		for (p in parts) if (p.parent == 0) release(p);
 		for (p in parts) {
-			if (p.parent == 0 && p.node != null)
+			if (p.parent == 0 && p.node != null) {
+				Identity.forgetSubtree(tree, p.node.id);
 				tree.removeSubtree(p.node.id);
+			}
 		}
 		for (p in parts) {
 			p.node = null;
@@ -157,7 +167,29 @@ class Preview {
 				case _:
 			}
 		}
+		flushControls();
 		revision++;
+	}
+
+	function flushControls():Void {
+		for (p in parts)
+			if (p.control != null)
+				try p.control.flush() catch (e:Dynamic) problem(p, e);
+		for (p in parts) if (p.control != null && p.control.panels != null) refresh(p);
+	}
+
+	function problem(p:Part, error:Dynamic):Void {
+		if (onProblem != null) onProblem('<${p.tag}>: ' + Std.string(error));
+	}
+
+	function release(p:Part):Void {
+		for (id in p.children) { var child = parts.get(id); if (child != null) release(child); }
+		if (p.control != null) {
+			p.localState = p.control.state();
+			p.control.dispose();
+			p.control = null;
+			p.node = null;
+		}
 	}
 
 	/** The ashui node of a part, made now. */
@@ -169,7 +201,13 @@ class Preview {
 			p.shown = p.text;
 			return;
 		}
-		var node = tree.createNode();
+		var node:Node;
+		if (BridgeControl.supported(p.tag)) {
+			p.control = new BridgeControl(tree, p.tag, (event, payload) -> {
+				if (p.listens.exists(event)) emit(p.host, event, payload);
+			}, p.localState);
+			node = p.control.node;
+		} else node = tree.createNode();
 		var root = p.tag == "#root";
 		var identity = Identity.register(tree, node, root || !Tags.known(p.tag) ? "div" : p.tag);
 		if (root)
@@ -208,6 +246,8 @@ class Preview {
 		var part = parts.get(id);
 		if (part == null || part.tag == null)
 			return;
+		if (shown)
+			try style(part, name, value) catch (e:Dynamic) { problem(part, e); return; }
 		if (value == null) {
 			part.props.remove(name);
 			part.order.remove(name);
@@ -216,12 +256,11 @@ class Preview {
 				part.order.push(name);
 			part.props.set(name, value);
 		}
-		if (shown)
-			style(part, name, value);
 	}
 
 	/** Applies one property of an element to its node. */
 	function style(part:Part, name:String, value:Dynamic):Void {
+		if (part.control != null && part.control.set(name, value)) return;
 		var identity = Identity.of(tree, part.node.id);
 		if (identity == null)
 			return;
@@ -303,6 +342,7 @@ class Preview {
 
 	/** Gives the node a handler for `event`, once; it answers only while the extension still wants the event. */
 	function hook(part:Part, event:String):Void {
+		if (part.control != null && part.control.handles(event)) return;
 		if (part.hooked.exists(event))
 			return;
 		part.hooked.set(event, true);
@@ -354,6 +394,14 @@ class Preview {
 	 * one line of text and not three boxes that each drop their edge spaces.
 	 */
 	function refresh(p:Part):Void {
+		if (p.control != null && p.control.panels != null) {
+			p.control.panels.place([for (id in p.children) {
+				var child = parts.get(id);
+				{slot:Std.string(child.props.get("slot")), node:child.node};
+			}]);
+			return;
+		}
+		if (p.control != null && p.control.content == null) return;
 		var ids:Array<haxe.Int64> = [];
 		var run:Array<Part> = [];
 		function end():Void {
@@ -387,7 +435,7 @@ class Preview {
 		if (same)
 			return;
 		p.placed = ids;
-		tree.replaceChildren(p.node.id, ids);
+		tree.replaceChildren(p.control == null ? p.node.id : p.control.content.id, ids);
 	}
 
 	function remove(id:Int):Void {
@@ -400,8 +448,11 @@ class Preview {
 		if (shown) {
 			if (up != null)
 				refresh(up);
-			tree.removeSubtree(part.node.id);
-			Identity.forgetSubtree(tree, part.node.id);
+			release(part);
+			if (part.node != null) {
+				Identity.forgetSubtree(tree, part.node.id);
+				tree.removeSubtree(part.node.id);
+			}
 		}
 		forget(id);
 		for (i in 0...roots.length)

@@ -1,0 +1,113 @@
+import rayde.workspace.root;
+import gitNative.openHistory;
+import historyGraph.scene;
+import historyGraph.timestamp;
+import scm.refresh;
+import scm.configureHistory;
+
+var opened = null;
+
+function History(props) {
+  var commits = signal([]), refs = signal([]), options = signal([{value: 'all', label: 'All references'}]);
+  var branch = signal('all'), selected = signal(''), detail = signal(null), busy = signal(false), done = signal(false);
+  var error = signal(''), command = signal(null);
+  var cursor = null, live = true, sequence = 0;
+  function camera(action, factor = 1) { command.value = {action: action, factor: factor, sequence: ++sequence}; }
+  function choose(id) {
+    selected.value = id;
+    detail.value = null;
+    for (commit in commits.value) if (commit.id == id) detail.value = commit;
+  }
+  function page() {
+    if (busy.value || cursor == null || done.value) return;
+    busy.value = true;
+    try {
+      var page = cursor.next(100);
+      if (live) { commits.value = commits.value.concat(page.commits); done.value = page.done; }
+    } catch (failure) {
+      if (cursor != null) { cursor.close(); cursor = null; }
+      if (live) error.value = '' + failure;
+    }
+    busy.value = false;
+  }
+  function load(ref) {
+    if (busy.value) return;
+    busy.value = true;
+    error.value = '';
+    if (cursor != null) { cursor.close(); cursor = null; }
+    try {
+      var next = openHistory(props.path, ref);
+      if (!live) { next.close(); return; }
+      cursor = next;
+      refs.value = next.refs;
+      var items = [{value: 'all', label: 'All references'}];
+      for (item in next.refs) items.push({value: item.name, label: item.label});
+      options.value = items;
+      branch.value = ref;
+      var page = next.next(100);
+      if (live) {
+        commits.value = page.commits;
+        done.value = page.done;
+        choose(page.commits.length > 0 ? page.commits[0].id : '');
+        camera('reset');
+      }
+    } catch (failure) {
+      if (cursor != null) { cursor.close(); cursor = null; }
+      if (live) { commits.value = []; choose(''); error.value = '' + failure; }
+    }
+    busy.value = false;
+  }
+  onCleanup(() -> {
+    live = false;
+    if (cursor != null) { cursor.close(); cursor = null; }
+    opened = null;
+  });
+  spawn(() -> load('all'));
+  return <div class="flex flex-col flex-1 min-h-0 min-w-0">
+    <div class="flex items-center gap-2 px-4 py-3 border-b shrink-0">
+      <h2 class="text-base font-semibold m-0">Git history</h2>
+      <ui-select id="git-history-branch" class="w-48" options={options} value={branch} disabled={busy}
+        onChange={e -> load(e.value)}/>
+      <div class="flex-1"/>
+      <ui-button id="git-history-out" variant="outline" class="w-8" onClick={() -> camera('zoom', 0.8)}>−</ui-button>
+      <ui-button id="git-history-in" variant="outline" class="w-8" onClick={() -> camera('zoom', 1.25)}>+</ui-button>
+      <ui-button id="git-history-fit" variant="outline" class="w-12" onClick={() -> camera('fit')}>Fit</ui-button>
+      <ui-button id="git-history-refresh" variant="outline" class="w-20" disabled={busy} onClick={() -> load(branch.value)}>Refresh</ui-button>
+    </div>
+    <if {error.value != ''}><p class="px-4 py-2 text-error">{error}</p></if>
+    <div class="flex flex-1 min-h-0">
+      <div class="flex flex-col flex-1 min-w-0">
+        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" scene={scene(commits.value, refs.value, selected.value)}
+          selected={selected.value == '' ? [] : [selected.value]} command={command}
+          onClick={e -> choose(e.region)}/>
+        <div class="flex items-center gap-3 px-4 py-2 border-t shrink-0">
+          <span id="git-history-count" class="text-xs text-text-secondary">{commits.value.length} commits</span>
+          <ui-button id="git-history-more" variant="outline" class="w-24" disabled={busy.value || done.value || cursor == null} onClick={() -> page()}>Load more</ui-button>
+          <span class="text-xs text-text-tertiary">Wheel to zoom · drag to pan</span>
+        </div>
+      </div>
+      <div id="git-history-details" class="flex flex-col gap-3 w-64 p-4 border-l shrink-0 overflow-auto">
+        <span class="text-xs text-text-secondary uppercase">Commit</span>
+        <if {detail.value != null}>
+          <h3 class="text-base font-semibold m-0">{detail.value.subject}</h3>
+          <span class="text-xs text-text-secondary">{selected.value.substr(0, 12)}</span>
+          <span class="text-sm">{detail.value.author}</span>
+          <span class="text-xs text-text-secondary">{detail.value.email}</span>
+          <span class="text-xs text-text-secondary">{timestamp(detail.value.time)}</span>
+          <span class="text-xs text-text-secondary uppercase">Parents</span>
+          <for {parent in detail.value.parents}><span class="text-xs">{parent.substr(0, 12)}</span></for>
+          <else><p class="text-sm text-text-secondary">{busy.value ? 'Loading history…' : 'No commits'}</p></if>
+      </div>
+    </div>
+  </div>;
+}
+
+function showHistory() {
+  if (opened != null) return;
+  var path = await root();
+  if (opened == null) opened = mount(() -> <History path={path}/>, 'tab:Git history');
+}
+
+registerCommand('git.history', args -> showHistory());
+onTool('git-history', () -> showHistory());
+configureHistory(showHistory);
