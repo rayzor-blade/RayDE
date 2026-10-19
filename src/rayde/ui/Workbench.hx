@@ -12,6 +12,7 @@ import ashui.components.Resizable;
 import ashui.components.Select;
 import ashui.components.Tabs;
 import ashui.components.Tooltip;
+import ashui.components.Toast;
 import ashui.components.TreeView;
 import ashui.layout.Element;
 import ashui.reactive.Owner;
@@ -289,6 +290,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final outputChannel = Signal.make("build");
 	var supervisionScheduled = false;
 	final extensionOutput = Signal.make("");
+	final extensionOutputView = new Ref<CodeView>();
 
 	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
 	var themeStudio:Null<ThemeStudio>;
@@ -1413,6 +1415,19 @@ class Workbench extends Component<WorkbenchProps> {
 		extensionOutput.set(entry == null ? "" : entry.output.join("\n"));
 	}
 
+	function revealExtensionOutput(tries = 0):Void {
+		if (gone || bottom.get() != "console" || outputChannel.get() == "build") return;
+		var view = extensionOutputView.get();
+		var bounds = view == null ? null : view.tree.getBounds(view.node);
+		if (view == null || view.scroll == null || bounds == null || bounds.height <= 0) {
+			if (tries < 20) ashui.animation.AnimationScheduler.main.after(.01, () -> revealExtensionOutput(tries + 1));
+			return;
+		}
+		var end = view.value.get().length;
+		view.select(end, end);
+		view.scroll.scrollTo(0, 1e12);
+	}
+
 	/** Resolves a path an extension gave against the project, refusing one outside it. */
 	function projectPath(path:String):String {
 		var full = haxe.io.Path.normalize(haxe.io.Path.isAbsolute(path) ? path : haxe.io.Path.join([props.display.cwd, path]));
@@ -1440,6 +1455,15 @@ class Workbench extends Component<WorkbenchProps> {
 				dirty.set([for (d in dirty.get()) if (d != full) d]);
 				refreshExplorer();
 			},
+			notify: (id, title, message, kind) -> Toaster.show({title:title, description:message,
+				variant:kind == "error" ? Destructive : kind == "warning" ? Warning : kind == "success" ? Success : Default,
+				duration:kind == "error" ? 10 : 5,
+				action:{label:"Show Output", run:() -> {
+					outputChannel.set("ext:" + id);
+					refreshExtensionOutput();
+					showPanel("console");
+					ashui.animation.AnimationScheduler.main.after(.01, () -> revealExtensionOutput());
+				}}}),
 			replay: replayOf
 		};
 
@@ -1610,6 +1634,7 @@ class Workbench extends Component<WorkbenchProps> {
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
+			<toaster id="rayde-toaster"/>
 		</div>;
 		// A window of its own, not filling the screen, has rounded corners (but Windows's) and, where the system draws no frame, an outline.
 		// They are on a card inside the root, which is the whole of what the window draws and cannot be clipped.
@@ -2233,7 +2258,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function editorCard():Element
 		return <div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0">
 			<for {has in [open.get().length > 0]}>${tabStrip(has)}</for>
-			<for {files in [open.get()]}>${editors(files)}</for>
+			<for {has in [open.get().length > 0]}>${has ? editors() : welcome()}</for>
 		</div>;
 
 	function tabLabel(file:String):String
@@ -2257,16 +2282,21 @@ class Workbench extends Component<WorkbenchProps> {
 		return <file-tabs files={open} active={active} dirty={dirty} onClose={closeFile} label={tabLabel} icon={tabIcon} trailing={editorMenu()}/>;
 	}
 
-	function editors(files:Array<String>):Element {
-		if (files.length == 0)
-			return welcome();
+	function editors():Element {
 		return <div class="flex flex-col flex-1 min-h-0">
 			<for {file in [active.get() == SETTINGS ? SETTINGS + ":" + settingsCategory.get() : active.get()]}>${breadcrumb(active.get())}</for>
 			<tabs id="rayde-tabs" value={active} class="flex-1 min-h-0">
 				<tabs-list indicator={false} class="rayde-nolist"/>
-				{[for (f in files) page(f)]}
+				<for {file in open}>${retainedPage(file)}</for>
 			</tabs>
 		</div>;
+	}
+
+	/** A keyed page keeps its editor, history and native controls while other tabs open or close. */
+	function retainedPage(file:String):Element {
+		var content:TabsContent = cast page(file);
+		content.tabs.set(active);
+		return content;
 	}
 
 	function welcome():Element
@@ -2531,7 +2561,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div class="flex flex-col flex-1 min-h-0 gap-2">
 			<select id="rayde-output-channel" value={outputChannel.get()} size={Sm} class="rayde-control-wide" onChange={value -> { outputChannel.set(value); refreshExtensionOutput(); }}>{items}</select>
 			<for {channel in [outputChannel.get()]}>
-				{channel == "build" ? <code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/> : <code-view id="rayde-extension-output" value={extensionOutput} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>}
+				{channel == "build" ? <code-view id="rayde-console" value={consoleText} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/> : <code-view ref={extensionOutputView} id="rayde-extension-output" value={extensionOutput} language="plain" lineNumbers={false} folding={false} class="flex-1 min-h-0"/>}
 			</for>
 		</div>;
 	}

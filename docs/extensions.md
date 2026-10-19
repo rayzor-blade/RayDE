@@ -210,6 +210,8 @@ Paths are resolved against the project folder, and one outside it is refused. Ca
 
 `rayde.settings.get(key, fallback?)` returns a promise for the calling extension's own setting. Workspace values under `extension.<id>` in `.rayde/settings.json` override user values in `~/.rayde/settings.json`, then the manifest's configuration default and finally the supplied fallback. Reading this section needs no workspace capability and cannot access another extension's section.
 
+`rayde.window.notify(message, kind='info')` shows an Ashui toast and records the message in the extension's Output channel. Kinds are `info`, `success`, `warning` and `error`. The toast's **Show Output** action opens that channel. The extension's manifest supplies the toast title; no workspace capability is required.
+
 ## Showing a tab
 
 `mount(view, name)` puts a view where the extension's view goes. A name that starts with `tab:` opens an editor tab titled with the rest of it:

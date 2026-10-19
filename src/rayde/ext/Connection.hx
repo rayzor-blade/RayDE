@@ -7,6 +7,7 @@ typedef WorkspaceServices = {
 	root:Void->String,
 	openFile:String->Void,
 	writeFile:(String, String) -> Void,
+	?notify:(String, String, String, String)->Void,
 	replay:String->Dynamic
 };
 
@@ -15,7 +16,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -305,7 +306,7 @@ class Connection {
 
 	function service(call:Dynamic, fn:String, module:String):Dynamic {
 		var need = fn == "writeFile" ? "workspace.write" : "workspace.read";
-		if (module != "rayde.settings" && manifest != null && manifest.capabilities.indexOf(need) < 0)
+		if (module == "rayde.workspace" && manifest != null && manifest.capabilities.indexOf(need) < 0)
 			return {
 				t: "reject",
 				id: call.id,
@@ -316,6 +317,12 @@ class Connection {
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "notify" if (module == "rayde.window"):
+					var message = Std.string(args[0]), kind = args.length > 1 ? Std.string(args[1]) : "info";
+					if (["info", "success", "warning", "error"].indexOf(kind) < 0) throw "Unknown notification kind";
+					note("console", kind, message);
+					if (services.notify != null) services.notify(manifest == null ? "" : manifest.id, manifest == null ? "Extension" : manifest.name, message, kind);
+					null;
 				case "get" if (module == "rayde.settings"):
 					if (manifest == null) throw "Extension settings require a manifest";
 					var key = Std.string(args[0]), section = "extension." + manifest.id;

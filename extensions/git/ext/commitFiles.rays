@@ -1,5 +1,6 @@
 import gitNative.commitChanges;
 import rayde.workspace.root;
+import report.report;
 
 /** A view-owned selection; late reads cannot replace a newer commit's files. */
 function selection(path) {
@@ -18,7 +19,9 @@ function selection(path) {
           badge:entry.status == 1 ? 'A' : entry.status == 2 ? 'D' : entry.status == 4 ? 'R' : entry.status == 5 ? 'C' : entry.status == 8 ? 'T' : 'M'});
       }
       if (request == sequence) files.value = rows;
-    } catch (failure) { if (request == sequence) error.value = '' + failure; }
+    } catch (failure) {
+      if (request == sequence) { error.value = '' + failure; report(failure); }
+    }
     if (request == sequence) busy.value = false;
   }
   return {files:files, busy:busy, error:error, choose:choose};
@@ -28,7 +31,7 @@ function Files(props) {
   var state = props.state;
   return <div id={props.id} class="flex flex-col gap-1 min-w-0">
     <if {state.busy.value}><span class="px-3 py-1 text-xs text-text-secondary">Loading changed files…</span>
-    <else><if {state.error.value != ''}><span class="px-3 py-1 text-xs text-error">{state.error}</span>
+    <else><if {state.error.value != ''}><span class="px-3 py-1 text-xs text-text-secondary">Changed files unavailable</span>
     <else><if {state.files.value.length == 0}><span class="px-3 py-1 text-xs text-text-secondary">No changed files</span>
     <else>
       <for {entry in state.files}>

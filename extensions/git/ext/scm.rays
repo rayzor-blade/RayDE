@@ -7,6 +7,7 @@ import gitNative.remoteOperation;
 import historyGraph.compactScene;
 import commitFiles.selection;
 import commitFiles.Files;
+import report.report;
 
 function groups(entries) {
   var conflicts = [], staged = [], changes = [], untracked = [];
@@ -27,10 +28,10 @@ function groups(entries) {
     {id:'changes', title:'Changes', items:changes}, {id:'untracked', title:'Untracked', items:untracked}];
 }
 
-var state = signal(null), sections = signal(groups([])), busy = signal(false), error = signal('');
+var state = signal(null), sections = signal(groups([])), busy = signal(false);
 var commits = signal([]), refs = signal([]), selected = signal(''), selectedInfo = signal('');
 var expand = null;
-var operation = signal(''), notice = signal(''), focus = signal('all');
+var operation = signal(''), focus = signal('all');
 var focusOptions = signal([{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}]);
 var command = signal(null), sequence = 0;
 var changed = selection(null), selectedSubject = signal('');
@@ -51,7 +52,6 @@ function choose(id) {
 function refresh() {
   if (busy.value) return;
   busy.value = true;
-  error.value = '';
   try {
     var path = await root(), snapshot = repositoryStatus(path);
     state.value = snapshot;
@@ -70,24 +70,22 @@ function refresh() {
       choose(id);
       cursor.close();
     } catch (failure) { cursor.close(); throw failure; }
-  } catch (failure) { error.value = '' + failure; }
+  } catch (failure) { report(failure); }
   busy.value = false;
 }
 
 function runRemote(action, strategy = null) {
   if (operation.value != '' || busy.value) return;
   operation.value = action;
-  error.value = ''; notice.value = '';
-  var failed = '';
+  var failed = '', notice = '';
   try {
     if (action == 'pull' && strategy == null) strategy = await get('git.pullStrategy', 'ff-only');
     var path = await root(), result = remoteOperation(path, action, strategy == null ? 'ff-only' : strategy);
-    notice.value = (action == 'fetch' ? 'Fetched from ' : action == 'pull' ? 'Pulled from ' : 'Pushed to ') + result.remote;
-    trace(notice.value);
-  } catch (failure) { failed = '' + failure; trace(failed); }
+    notice = (action == 'fetch' ? 'Fetched from ' : action == 'pull' ? 'Pulled from ' : 'Pushed to ') + result.remote;
+  } catch (failure) { failed = '' + failure; }
   operation.value = '';
   refresh();
-  if (failed != '') error.value = failed;
+  report(failed != '' ? failed : notice, failed != '' ? 'error' : 'success');
 }
 
 function focusHistory(ref) {
@@ -117,8 +115,6 @@ function Sidebar(props) {
       <ui-button id="git-push" class="w-8" size="icon" variant="ghost" tooltip="Push" disabled={busy.value || operation.value != ''} onClick={() -> runRemote('push')}><ui-icon name="push"/></ui-button>
     </div>
     <div class="px-4 py-1 text-xs text-text-secondary shrink-0">{operation.value != '' ? operation.value == 'fetch' ? 'Fetching…' : operation.value == 'pull' ? 'Pulling…' : 'Pushing…' : busy.value ? 'Loading…' : state.value == null ? '' : state.value.entries.length + ' files'}</div>
-    <if {notice.value != ''}><span id="git-scm-notice" class="px-4 py-1 text-xs text-text-secondary">{notice}</span></if>
-    <if {error.value != ''}><p id="git-scm-error" class="p-4 text-sm text-error">{error}</p></if>
     <ui-panel-group id="git-scm-panels" class="flex-1 min-h-0" panels={[
       {id:'changes', title:'Changes', open:true, minSize:32},
       {id:'graph', title:'Graph', open:true, size:260, minSize:32},

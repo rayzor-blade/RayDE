@@ -16,6 +16,8 @@ The `git` scenario builds pinned libgit2, generates a repository with branches, 
 
 Git checks also cover selected commit files in both views, toolbar spacing and icons, and the native Pull options menu. The backend suite exercises local-remote fetch/push, upstream setup, all three pull strategies, conflicts that preserve the branch and worktree, and commit-file deltas including roots, merges, renames and deletions. The `chrome` snapshots include hovered macOS controls in both fullscreen states and both schemes.
 
+`RAYDE_MEMORY_PROBE=1 SNAPSHOT_ONLY=git scripts/snapshot.sh` profiles repeated Git history open/close cycles alongside three editor tabs. Each `memory-probe:` JSON line reports the live VM heap/fibers, layout nodes, canvas CPU/GPU table storage, shared renderer textures and Ash heap statistics. `RAYDE_MEMORY_CYCLES` controls the repeats (default 5). Captures are offscreen; use process RSS and physical-footprint measurements alongside these counters.
+
 `native/rayscript` has focused Rust tests for unmount cleanup, idle collection, fiber exception recovery, cancellation before late service replies, and shutdown with waiting scripts. Run `CARGO_TARGET_DIR=../rayscript/target cargo test --manifest-path native/rayscript/Cargo.toml --release`.
 
 `scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.

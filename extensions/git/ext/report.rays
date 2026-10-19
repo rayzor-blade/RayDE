@@ -1,0 +1,5 @@
+import rayde.window.notify;
+
+function report(message, kind = 'error') {
+  await notify('' + message, kind);
+}

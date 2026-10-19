@@ -1,10 +1,10 @@
 native "git2" {
   @:free(git_repository_free) handle Repository;
   @:free(git_diff_free) handle Diff;
-  @:free(git_object_free) handle Tree;
+  @:refcounted @:free(git_object_free) handle Tree;
   @:free(git_status_list_free) handle StatusList;
   @:free(git_revwalk_free) handle Walk;
-  @:free(git_commit_free) handle Commit;
+  @:refcounted @:free(git_commit_free) handle Commit;
   @:free(git_reference_iterator_free) handle References;
   @:free(git_reference_free) handle Reference;
   @:free(git_remote_free) handle Remote;

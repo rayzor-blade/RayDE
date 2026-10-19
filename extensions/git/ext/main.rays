@@ -6,13 +6,14 @@ import scm.refresh;
 import scm.configureHistory;
 import commitFiles.selection;
 import commitFiles.Files;
+import report.report;
 
 var opened = null;
 
 function History(props) {
   var commits = signal([]), refs = signal([]), options = signal([{value: 'all', label: 'All references'}]);
   var branch = signal('all'), selected = signal(''), detail = signal(null), busy = signal(false), done = signal(false);
-  var error = signal(''), command = signal(null);
+  var command = signal(null);
   var changed = selection(props.path);
   var cursor = null, live = true, sequence = 0;
   function choose(id) {
@@ -29,14 +30,13 @@ function History(props) {
       if (live) { commits.value = commits.value.concat(page.commits); done.value = page.done; }
     } catch (failure) {
       if (cursor != null) { cursor.close(); cursor = null; }
-      if (live) error.value = '' + failure;
+      if (live) report(failure);
     }
     busy.value = false;
   }
   function load(ref) {
     if (busy.value) return;
     busy.value = true;
-    error.value = '';
     if (cursor != null) { cursor.close(); cursor = null; }
     try {
       var next = openHistory(props.path, ref);
@@ -57,7 +57,7 @@ function History(props) {
       }
     } catch (failure) {
       if (cursor != null) { cursor.close(); cursor = null; }
-      if (live) { commits.value = []; choose(''); error.value = '' + failure; }
+      if (live) { commits.value = []; choose(''); report(failure); }
     }
     busy.value = false;
   }
@@ -77,7 +77,6 @@ function History(props) {
       <ui-button id="git-history-all" variant="ghost" size="icon" class="w-8" tooltip="Show all references" disabled={busy.value || branch.value == 'all'} onClick={() -> load('all')}><ui-icon name="filter-off"/></ui-button>
       <ui-button id="git-history-refresh" variant="ghost" size="icon" class="w-8" tooltip="Refresh history" disabled={busy} onClick={() -> load(branch.value)}><ui-icon name="refresh"/></ui-button>
     </div>
-    <if {error.value != ''}><p class="px-4 py-2 text-error">{error}</p></if>
     <div class="flex flex-1 min-h-0">
       <div class="flex flex-col flex-1 min-w-0">
         <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" scene={scene(commits.value, refs.value, selected.value)}

@@ -10,6 +10,8 @@ The branch header has **Fetch**, **Pull** and **Push** icon actions with tooltip
 
 **Pull options** offers fast-forward only, merge and rebase for an individual pull. In Settings → Extensions → Git, **Pull strategy** sets the preferred default for the main Pull action. The initial default is fast-forward only. Pull requires a clean working tree and index; conflicting merges and rebases report the conflict without changing the branch, index or working files. Merge and rebase commits use the repository's configured Git identity.
 
+Errors and completed remote operations appear as toasts and in the **Git** Output channel. **Show Output** on a toast opens the full message without occupying space in the SCM sidebar.
+
 The sidebar's **Refresh** action and **Git: Refresh** command reload status and history; saving a file or changing the active editor also refreshes them. The **History** toolbar action and **Git: History** command also open the expanded graph. Both views discover the repository at or above the project root through libgit2.
 
 ![Git history and selected merge commit](images/git-history.png)

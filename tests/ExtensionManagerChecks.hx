@@ -225,7 +225,7 @@ class ExtensionManagerChecks {
 		var config:Dynamic = haxe.Json.parse(sys.io.File.getContent(settingsFile));
 		config.contributes.configuration = {properties: {"fixture.strategy": {type:"string", "default":"ff-only"}}};
 		write(settingsFile, haxe.Json.stringify(config));
-		var source = "import rayde.settings.get; registerCommand('read', () -> trace(await get('fixture.strategy', 'fallback')));";
+		var source = "import rayde.settings.get; import rayde.window.notify; registerCommand('read', () -> trace(await get('fixture.strategy', 'fallback'))); registerCommand('alert', () -> await notify('fixture notification', 'error'));";
 		var connection = new Connection(settingsFile, () -> source, Manifest.read(settingsFile)), seen:Array<String> = [];
 		connection.services = services;
 		connection.onEntry = (_, entry) -> seen.push(entry.text);
@@ -242,6 +242,13 @@ class ExtensionManagerChecks {
 			seen = []; reads("ff-only");
 			Store.save(root, "extension.settings", {"fixture.strategy":"merge"});
 			reads("merge");
+			var notices:Array<String> = [];
+			services.notify = (id, title, message, kind) -> notices.push(id + ":" + kind + ":" + message);
+			connection.command("alert", null);
+			var end = haxe.Timer.stamp() + 5;
+			while (notices.length == 0 && haxe.Timer.stamp() < end) { connection.tick(); Sys.sleep(.01); }
+			check(notices.join("") == "settings:error:fixture notification" && seen.indexOf("fixture notification") >= 0,
+				"notifications route to the UI and extension Output without a workspace capability");
 		} catch (failure:Dynamic) { connection.stop(); throw failure; }
 		connection.stop();
 		Sys.println("extension manager: precedence, activation, services, capabilities, disable, restart limit and key migration");

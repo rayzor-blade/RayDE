@@ -837,6 +837,60 @@ class Snapshots {
 					return @:privateAccess studio.preview.parts.get(part.id).control;
 				}
 				var icon = "#rayde-activity-ext-git-scm";
+				if (Sys.getEnv("RAYDE_MEMORY_PROBE") == "1") {
+					var probeRoot = haxe.io.Path.directory(haxe.io.Path.directory(file));
+					var collected:Dynamic = null, previous = git.connection.onMessage;
+					git.connection.onMessage = message -> {
+						if (previous != null) previous(message);
+						if (message.t == "collected") collected = message;
+					};
+					function sample(label:String):Void {
+						settle(); shot("memory-" + label);
+						hl.Gc.major(); Offscreen.advance(2.2); settle(5);
+						collected = null; git.connection.collect();
+						until(() -> collected != null, "memory probe collection");
+						var count = 0, gpu = 0, cpu = 0;
+						@:privateAccess for (canvas in ashui.ui.Canvas.bySlot) {
+							count++;
+							gpu += canvas.painter.rows * 2048 * 16;
+							if (canvas.painter.bytes != null) cpu += canvas.painter.bytes.length;
+						}
+						var layers = 0, glyphs = 0, records = 0;
+						@:privateAccess {
+							var renderer = Snapshot.renderer().renderer;
+							for (layer in renderer.layers) if (layer != null) layers += layer.width * layer.height * 4;
+							for (target in [renderer.frameLayer, renderer.rows, renderer.shadow]) if (target != null) layers += target.width * target.height * 4;
+							if (renderer.atlas != null) glyphs += renderer.atlas.textureWidth * renderer.atlas.textureHeight;
+							if (renderer.colorAtlas != null) glyphs += renderer.colorAtlas.textureWidth * renderer.colorAtlas.textureHeight * 4;
+							records = renderer.recordRows * 2048 * 16;
+						}
+						Sys.println("memory-probe:" + haxe.Json.stringify({phase:(dark ? "dark-" : "light-") + label,
+							canvases:count, canvasGpuBytes:gpu, canvasCpuBytes:cpu, nodes:tree.order().length, vm:collected,
+							haxe:hl.Gc.stats(), rendererLayers:layers, rendererGlyphs:glyphs, rendererRecords:records}));
+						Sys.stdout().flush(); Sys.sleep(1);
+					}
+					sample("baseline");
+					for (name in ["Main.hx", "Names.hx", "Util.hx"]) {
+						if (name != "Main.hx") sys.io.File.copy("tests/fixtures/basic/src/" + name, probeRoot + "/src/" + name);
+						bench.openFile(probeRoot + "/src/" + name); settle();
+					}
+					sample("three-editors");
+					click(icon); until(() -> says("Add Git history graph"), "memory probe sidebar");
+					sample("sidebar");
+					var cycles = Std.parseInt(Sys.getEnv("RAYDE_MEMORY_CYCLES") ?? "5");
+					for (iteration in 0...cycles) {
+						git.connection.command("git.history", null);
+						until(() -> studio.tabViews.length == 1 && says("100"), "memory probe history");
+						var tab = bench.active.get();
+						sample('history-$iteration');
+						bench.openFile(file); settle();
+						bench.closeFile(tab);
+						until(() -> studio.tabViews.length == 0, "memory probe history close");
+						sample('closed-$iteration');
+					}
+					click("#rayde-activity-explorer"); bench.closeAll(); sample("closed-all");
+					return;
+				}
 				if (Css.query(tree, bench.node.id, icon).length == 0) throw "Git SCM activity icon missing";
 				if (git.connection.manifest.views[0].icon != "branch") throw "Git SCM must use Ashui's git-branch icon";
 				click(icon);
@@ -848,6 +902,8 @@ class Snapshots {
 				scroll("#git-scm-working-files", 150);
 				click("#git-scm-changes .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM filename row to open its full path in the editor");
+				var sourceEditor = @:privateAccess bench.editorRef(bench.active.get()).get();
+				var sourcePath = bench.active.get();
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
 				until(() -> within("git-scm-commit-files", "history.txt"), "the selected sidebar commit's changed files");
 				var previousRight = 0.;
@@ -978,6 +1034,7 @@ class Snapshots {
 				var tab = bench.active.get();
 				bench.closeFile(tab);
 				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
+				if ((@:privateAccess bench.editorRef(sourcePath).get()) != sourceEditor) throw "opening and closing history rebuilt another tab's editor";
 				if (LayoutTree.settledHooks.length != hooks - 2) throw "closed canvas retained a layout hook";
 				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
 				until(() -> studio.tabViews.length == 1, "a large virtual history scene"); settle();
@@ -1036,6 +1093,14 @@ class Snapshots {
 				click("#rayde-extension-setting-git-git-pullStrategy"); press(Named(End)); press(Named(Enter));
 				if (Reflect.field(Store.section(root, "extension.git"), "git.pullStrategy") != "rebase") throw "Git pull preference was not saved";
 				shot("pull-preference");
+				click("#git-fetch .ui-button");
+				until(() -> git.output.join("\n").indexOf("No remote configured") >= 0 && Css.query(tree, bench.node.id, ".ui-toast").length > 0, "Git failure toast and Git Output entry");
+				if (Css.query(tree, bench.node.id, "#git-scm-error").length != 0) throw "Git error was embedded in the sidebar";
+				shot("error-toast");
+				click(".ui-toast .ui-button");
+				if ((@:privateAccess bench.outputChannel.get()) != "ext:git" || !bench.panelOpen()) throw "notification action did not open Git Output";
+				until(() -> (@:privateAccess bench.extensionOutputView.get()) != null && (@:privateAccess bench.extensionOutputView.get()).scroll.y.get() > 0, "notification Output to reveal its latest message");
+				shot("error-output");
 				Sys.println("git snapshots: history pages, references, selection, theme alpha, fixed-scale scrolling, cleanup and fiber exception recovery");
 			});
 		for (dark in [true, false])

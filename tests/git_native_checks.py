@@ -345,6 +345,17 @@ gc(); emit({files:commitChanges(REPO,'HEAD'),error:error});
         result = host.run(PREAMBLE + "var cursor = openHistory(REPO); emit({page:cursor.next(500),branch:repositoryStatus(REPO).branch}); cursor.close();".replace("REPO", json.dumps(str(history))))
         assert len(result["page"]["commits"]) == 114 and result["branch"] == "Detached HEAD", result
     print("git history: merge DAG, stable page lanes, edge routing, annotated tags, detached HEAD and UTC dates", flush=True)
+    with Host() as host:
+        result = host.run(PREAMBLE + """
+var tasks=[];
+for (i in 0...8) tasks.push(spawn(() -> {
+  var cursor=openHistory(REPO); var page=cursor.next(100); cursor.close(); gc();
+  return page.commits.length;
+}));
+var counts=[]; for (task in tasks) counts.push(await task); emit(counts);
+""".replace("REPO", json.dumps(str(history))))
+        assert result == [100] * 8, result
+    print("git history: concurrent cached-object references retain independent ownership", flush=True)
 
     origin = FIXTURE / "origin.git"
     origin.mkdir()
