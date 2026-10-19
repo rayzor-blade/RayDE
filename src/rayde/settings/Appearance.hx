@@ -28,7 +28,8 @@ class Appearance {
 
 	public static function read(root:String):Appearance {
 		var a = new Appearance(), json = Store.section(root, "appearance");
-		if (json.theme != null && Lambda.exists(themes, t -> t.id == Std.string(json.theme)))
+		// A built-in theme's id, or an installed one's: the theme is looked up when it is used.
+		if (json.theme != null && ~/^[A-Za-z0-9][A-Za-z0-9._-]*$/.match(Std.string(json.theme)))
 			a.theme = Std.string(json.theme);
 		if (json.scheme != null && ["system", "light", "dark"].indexOf(Std.string(json.scheme)) >= 0)
 			a.scheme = Std.string(json.scheme);

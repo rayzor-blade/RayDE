@@ -926,6 +926,98 @@ class Snapshots {
 				if (d.linesOf(rays).join(",") != "7")
 					throw 'and back up to line 7 when the line goes: ${d.linesOf(rays)}';
 			});
+		for (dark in [true, false])
+			scenario(dark, "themes", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				settle();
+				var tree = bench.tree, home = Sys.getCwd() + "bin/fixtures/themes-home";
+				if (sys.FileSystem.exists(home))
+					for (f in sys.FileSystem.readDirectory(home))
+						deleteTree(haxe.io.Path.join([home, f]));
+				else
+					sys.FileSystem.createDirectory(home);
+				Sys.putEnv("RAYDE_THEMES", home);
+				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
+				var primary = () -> ashui.theme.ThemeState.get().color(ashui.theme.ColorToken.Primary).rgb();
+				var clickNth = (selector:String, n:Int) -> {
+					var found = ashui.css.Css.query(tree, bench.node.id, selector);
+					if (found.length <= n)
+						throw 'there is no $n-th element for $selector';
+					var at = tree.getScrolledBounds(new ashui.layout.Node(found[n]));
+					ashui.input.Pointer.move(tree, at.x + at.width / 2, at.y + at.height / 2);
+					ashui.input.Pointer.press(tree);
+					ashui.input.Pointer.release(tree);
+					settle(6);
+				};
+				// The scheme is the one this run is for, so what a theme gives is known.
+				bench.openSettings("appearance");
+				settle(10);
+				click(dark ? "#rayde-scheme-dark" : "#rayde-scheme-light");
+				if (!has("#rayde-custom-theme-empty") || has("#rayde-custom-theme"))
+					throw "with no custom theme installed the card says so and has no list";
+				shot("themes-none");
+				// Installing a theme from its folder, then choosing it from the list under the built-in ones.
+				var root = Sys.getCwd();
+				// The card is below the schemes and the built-in themes: the page is scrolled to it.
+				scroll("#rayde-appearance", 900);
+				click("#rayde-theme-path");
+				type("#rayde-theme-path", root + "themes/midnight");
+				click("#rayde-theme-install");
+				if (!sys.FileSystem.exists(home + "/midnight/midnight.raytheme") || !sys.FileSystem.exists(home + "/midnight/midnight.css"))
+					throw "the theme and its stylesheet should be in the themes folder";
+				if (!has("#rayde-custom-theme") || has("#rayde-custom-theme-empty"))
+					throw "once a theme is installed the card has a list of them";
+				shot("themes-installed");
+				var before = primary();
+				click("#rayde-custom-theme");
+				clickNth(".ui-select-item", 1);
+				if (rayde.ui.Theming.current.get() != "midnight")
+					throw 'Midnight should be in use, not ${rayde.ui.Theming.current.get()}';
+				if (primary() != (dark ? 0x8b6cff : 0x6a4cf0) || primary() == before)
+					throw 'Midnight\'s primary colour should be in use: ${StringTools.hex(primary(), 6)}';
+				if (sys.io.File.getContent(bench.display().cwd + "/.rayde/settings.json").indexOf('"theme": "midnight"') < 0)
+					throw "the choice should be kept in the settings";
+				if (!has("#rayde-custom-details"))
+					throw "the theme in use has its details under the list";
+				settle(10);
+				shot("themes-midnight");
+				bench.openFile(file);
+				settle(10);
+				shot("themes-midnight-editor");
+				// A second theme, from a single file: it takes the place of the first, and the first's rules stop applying with it.
+				bench.openSettings("appearance");
+				settle(10);
+				scroll("#rayde-appearance", 900);
+				click("#rayde-theme-path");
+				type("#rayde-theme-path", root + "themes/paper/paper.raytheme");
+				click("#rayde-theme-install");
+				click("#rayde-custom-theme");
+				clickNth(".ui-select-item", 2);
+				if (rayde.ui.Theming.current.get() != "paper" || primary() != (dark ? 0xe08a5c : 0xb4532a))
+					throw 'Paper should be in use with its own primary colour: ${rayde.ui.Theming.current.get()} ${StringTools.hex(primary(), 6)}';
+				var shown = ashui.css.Identity.of(tree, bench.node.id).attribute("data-theme");
+				if (shown != "paper")
+					throw 'the window should carry the theme it is in: $shown';
+				shot("themes-paper");
+				// The scheme changes within a theme.
+				scroll("#rayde-appearance", 0);
+				click(dark ? "#rayde-scheme-light" : "#rayde-scheme-dark");
+				if (primary() != (dark ? 0xb4532a : 0xe08a5c))
+					throw "the other scheme of Paper should be in use";
+				click(dark ? "#rayde-scheme-dark" : "#rayde-scheme-light");
+				scroll("#rayde-appearance", 900);
+				// A theme is taken away, and the window goes back to a built-in one.
+				click("#rayde-theme-remove");
+				if (sys.FileSystem.exists(home + "/paper") || sys.FileSystem.exists(home + "/paper.raytheme") || rayde.ui.Theming.current.get() != "restrained")
+					throw "removing the theme in use removes its files and returns to a built-in theme";
+				shot("themes-removed");
+				click("#rayde-custom-theme");
+				clickNth(".ui-select-item", 1);
+				click("#rayde-custom-theme");
+				clickNth(".ui-select-item", 0);
+				if (rayde.ui.Theming.current.get() != "restrained")
+					throw "choosing Built-in themes goes back to a built-in theme";
+				Sys.putEnv("RAYDE_THEMES", "");
+			});
 		Sys.println("rayde snapshots: the workbench empty, with problems, after a run, in the command center, with each kind of tab in front, with tabs that overflow, welcome with recent files and after a failed build, in both themes");
 	}
 

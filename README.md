@@ -12,6 +12,10 @@
 
 RayDE extensions are written in RayScript and described by a `.rayext` file. [Writing an extension](docs/extensions.md) covers the config, commands and menus, hooks, reading files, tabs and the Extension Studio, with a Markdown preview as the example.
 
+## Themes
+
+A theme bundle is a JSON `.raytheme` file that extends one of the built-in themes with colours, radii, fonts and a stylesheet. Install one in Settings > Color scheme and choose it from the list under the built-in themes. [Theme bundles](docs/themes.md) writes one, with Midnight and Paper from [`themes/`](themes) as examples.
+
 ## Contributor notes
 
 ```sh

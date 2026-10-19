@@ -1376,6 +1376,8 @@ class Workbench extends Component<WorkbenchProps> {
 		// They are on a card inside the root, which is the whole of what the window draws and cannot be clipped.
 		var root = <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col text-text-primary" onKeyDown={key}>{window}</div>;
 		var identity = ashui.css.Identity.of(window.tree, window.node.id);
+		// A theme's own stylesheet is written under this, so it applies only while the theme is in use.
+		ashui.css.Identity.of(root.tree, root.node.id).bindAttribute("data-theme", Computed.make(() -> Theming.current.get()));
 		identity.bindBooleanAttribute("data-round", Computed.make(() -> chrome.resizable() && windowStyle.get() != "windows"));
 		identity.bindBooleanAttribute("data-outline", Computed.make(() -> chrome.resizable() && windowStyle.get() != "macos"));
 		return root;

@@ -16,6 +16,9 @@ import rayde.run.Runner;
 import rayde.settings.Appearance;
 import rayde.settings.Extensions;
 import rayde.settings.Store;
+import rayde.theme.ThemeCss;
+import rayde.theme.ThemeFile;
+import rayde.theme.Themes;
 import rayde.term.KeyMap;
 import rayde.term.Terminal;
 import window.Key;
@@ -193,7 +196,9 @@ class Checks {
 		check(Appearance.read(root).windowControls == "auto", "a style that does not exist falls back to the platform's");
 		a.windowControls = "auto";
 		Store.save(root, "appearance", {theme: "nonesuch", scheme: "purple"});
-		check(Appearance.read(root).theme == "restrained" && Appearance.read(root).scheme == "dark", "an unknown theme or scheme falls back to the default");
+		check(Appearance.read(root).theme == "nonesuch" && Appearance.read(root).scheme == "dark", "a theme the file names is kept, to be looked up when it is used, and an unknown scheme falls back to the default");
+		Store.save(root, "appearance", {theme: "no such!", scheme: "dark"});
+		check(Appearance.read(root).theme == "restrained", "a theme id that cannot be one falls back to the default");
 		check(Store.section(root + "/nowhere", "terminal").cursor == null, "a missing file is an empty section");
 
 		var libs = Haxelib.parse("3 libraries found:\nhashlink: [dev:/src/hashlink]\ntink_hxx: 0.4.0 [0.5.0]\nformat: 3.7.0\n");
@@ -629,7 +634,97 @@ class Checks {
 		host.stop();
 	}
 
+	/** Theme bundles: the file model, its colours, the stylesheet scoping, and installing. */
+	static function themeChecks():Void {
+		var dir = Sys.getCwd() + "bin/check-themes";
+		if (sys.FileSystem.exists(dir))
+			for (f in sys.FileSystem.readDirectory(dir))
+				removeTree(haxe.io.Path.join([dir, f]));
+		else
+			sys.FileSystem.createDirectory(dir);
+		var write = (name:String, text:String) -> {
+			var path = haxe.io.Path.join([dir, name]);
+			var folder = haxe.io.Path.directory(path);
+			if (!sys.FileSystem.exists(folder))
+				sys.FileSystem.createDirectory(folder);
+			sys.io.File.saveContent(path, text);
+			return path;
+		};
+		var hex = (c:rayde.theme.ThemeFile.Color) -> [for (v in [c.r, c.g, c.b]) StringTools.hex(Math.round(v * 255), 2).toLowerCase()].join("");
+		check(hex(ThemeFile.parseColor("#7c5cff")) == "7c5cff" && hex(ThemeFile.parseColor("#abc")) == "aabbcc" && ThemeFile.parseColor("#11223344").a > .26 && ThemeFile.parseColor("#11223344").a < .27, "colours are read as #rgb, #rrggbb and #rrggbbaa");
+		check(hex(ThemeFile.parseColor("rgb(255, 0, 128)")) == "ff0080" && ThemeFile.parseColor("rgba(0, 0, 0, 0.5)").a == .5 && ThemeFile.parseColor("rgba(0 0 0 / 50%)").a == .5 && ThemeFile.parseColor("transparent").a == 0, "and as rgb(), rgba() and transparent");
+		check(ThemeFile.parseColor("purple") == null && ThemeFile.parseColor("#12") == null && ThemeFile.parseColor("#ggg") == null && ThemeFile.parseColor(5) == null, "anything else is no colour");
+
+		var good = ThemeFile.read(write("good.raytheme", '{"id": "good", "name": "Good", "version": "1.2.0", "author": "A", "extends": "hybrid", "colors": {"primary": "#336699", "surface-elevated": "#101010"}, "radii": {"xl": 20}, "shape": {"smoothing": 0.5}, "typography": {"mono": "Menlo", "sizes": {"sm": 13}}, "spacing": {"base": 5}, "dark": {"colors": {"primary": "#99ccff", "background": "#000"}}, "css": [".a { color: red; }", {"file": "good.css"}]}'));
+		write("good.css", ".b { color: blue; }");
+		check(good.problems.length == 0 || good.problems.join(";") == 'css file "good.css" not found.', 'a good theme reads cleanly: ${good.problems}');
+		var good2 = ThemeFile.read(haxe.io.Path.join([dir, "good.raytheme"]));
+		check(good2.problems.length == 0 && good2.id == "good" && good2.name == "Good" && good2.version == "1.2.0" && good2.base == "hybrid", 'the identity and the base are read: ${good2.problems}');
+		check(hex(good2.light.colors.get("primary")) == "336699" && hex(good2.dark.colors.get("primary")) == "99ccff", "a scheme's own colour wins over the shared one");
+		check(hex(good2.light.colors.get("surfaceElevated")) == "101010" && hex(good2.dark.colors.get("surfaceElevated")) == "101010", "a token is named with dashes or as ashui names it, and shared colours go to both schemes");
+		check(good2.dark.colors.exists("background") && !good2.light.colors.exists("background"), "a colour set in one scheme is not in the other");
+		check(good2.light.radii.get("xl") == 20 && good2.dark.shape.get("smoothing") == .5 && good2.light.fonts.get("mono") == "Menlo" && good2.dark.sizes.get("sm") == 13 && good2.light.spacing == 5, "radii, shape, fonts, sizes and spacing are read");
+		check(good2.sheetTexts().join("|") == ".a { color: red; }|.b { color: blue; }", "the stylesheets are the texts and the files beside the theme");
+
+		var derived = ThemeFile.derive(["primary" => ThemeFile.parseColor("#3366cc"), "accent" => ThemeFile.parseColor("#ff8800")], true);
+		check(derived.exists("primaryHover") && derived.exists("primaryActive") && derived.exists("borderFocus") && derived.exists("selection") && derived.exists("accentSubtle") && !derived.exists("secondaryHover"), "what follows from primary and accent is filled in");
+		check(derived.get("primaryHover").b > derived.get("primary").b && derived.get("selection").a < 1, "hover is lighter in the dark scheme, and the selection is see-through");
+		var kept = ThemeFile.derive(["primary" => ThemeFile.parseColor("#3366cc"), "primaryHover" => ThemeFile.parseColor("#000000")], false);
+		check(hex(kept.get("primaryHover")) == "000000" && kept.get("primaryActive").r < kept.get("primary").r, "a token that is named is not derived");
+
+		var bad = ThemeFile.read(write("bad.raytheme", '{"id": "restrained", "extends": "gothic", "colors": {"primry": "#fff", "primary": "puce"}, "radii": {"huge": 4, "xl": "big"}, "shape": {"smoothing": "x"}, "typography": {"sans": 3, "sizes": {"xl": true}, "weight": 1}, "spacing": {"base": 0}, "css": [{"file": "../x.css"}, 5], "light": [], "flavour": "mint"}'));
+		var said = bad.problems.join("\n");
+		for (needle in ["built-in themes", 'Unknown base theme "gothic"', 'Unknown colour "primry"', "colors.primary: expected a colour", 'Unknown name "huge"', "radii.xl must be a number", "shape.smoothing must be a number", "typography.sans must be a font family name", "typography.sizes.xl must be a number", 'Unknown field "weight" in typography', "spacing.base must be a number above 0", "beside the theme file", 'Each "css" entry', '"light" must be an object', 'Unknown field "flavour"'])
+			check(said.indexOf(needle) >= 0, 'the problem is named: $needle in\n$said');
+		check(ThemeFile.read(write("broken.raytheme", "{nope")).problems[0].indexOf("Invalid JSON") == 0 && ThemeFile.read(write("array.raytheme", "[1]")).problems[0] == "The theme must be a JSON object.", "a file that is not a JSON object says so");
+		check(ThemeFile.read(write("Bad Name.raytheme", "{}")).problems.length == 1 && ThemeFile.read(write("fine-name.raytheme", "{}")).problems.length == 0, "an id comes from the file name when there is none, and must be usable");
+
+		var scope = '#rayde[data-theme="x"]';
+		var out = ThemeCss.scope("/* c */ .a, .b > .c:hover { color: red; }\n:root { --p: 1; }\n#rayde .d { top: 0; }\n@media (min-width: 10px) { .e { top: 1px; } }\n@keyframes k { from { top: 0; } to { top: 1px; } }\n.f { content: \"}{\"; }\n@import url(x.css);", scope);
+		check(out.indexOf(scope + " .a,\n" + scope + " .b > .c:hover {") >= 0, 'selectors are put under the theme, each of a list: $out');
+		check(out.indexOf(scope + " {\n") < 0 && out.indexOf(scope + " { --p: 1; }") >= 0, ':root is the theme itself');
+		check(out.indexOf(scope + " .d {") >= 0 && out.indexOf("@media (min-width: 10px) {" + " " + scope + " .e") < 0 && out.indexOf(scope + " .e {") > 0, "#rayde stands for the theme, and a rule inside @media is scoped");
+		check(out.indexOf("@keyframes k { from { top: 0; } to { top: 1px; } }") >= 0 && out.indexOf(scope + " .f { content: \"}{\"; }") >= 0 && out.indexOf("@import url(x.css);") >= 0, "keyframes, strings with braces and an @import are kept as written");
+		check(out.indexOf("/* c */") < 0, "comments are dropped");
+
+		// Installing: from a loose file with its stylesheet, from a folder, over another of the same id, and the reasons it refuses.
+		var home = haxe.io.Path.join([dir, "home"]);
+		Sys.putEnv("RAYDE_THEMES", home);
+		var problems:Array<String> = [];
+		var one = Themes.install(haxe.io.Path.join([dir, "good.raytheme"]), problems);
+		check(one != null && one.file.id == "good" && one.scope == "User" && sys.FileSystem.exists(home + "/good/good.raytheme") && sys.FileSystem.exists(home + "/good/good.css"), 'a file is installed with the stylesheet it names: $problems');
+		var folder = write("pack/pack.raytheme", '{"name": "Pack", "css": [{"file": "css/pack.css"}]}');
+		write("pack/css/pack.css", ".p { top: 0; }");
+		write("pack/readme.txt", "hello");
+		var two = Themes.install(haxe.io.Path.join([dir, "pack"]), problems);
+		check(two != null && two.file.id == "pack" && sys.FileSystem.exists(home + "/pack/css/pack.css") && sys.FileSystem.exists(home + "/pack/readme.txt"), "a folder is installed whole");
+		var all = Themes.scan(dir + "/nowhere");
+		check(all.map(t -> t.file.id).join(",") == "good,pack" && Themes.find("pack") != null && Themes.find("missing") == null, 'the themes installed are found: ${all.map(t -> t.file.id)}');
+		write("good.raytheme", '{"id": "good", "name": "Good, again"}');
+		check(Themes.install(haxe.io.Path.join([dir, "good.raytheme"]), problems) != null && ThemeFile.read(home + "/good/good.raytheme").name == "Good, again" && !sys.FileSystem.exists(home + "/good/good.css"), "an installed theme is replaced by one with its id");
+		var refused:Array<String> = [];
+		check(Themes.install(haxe.io.Path.join([dir, "bad.raytheme"]), refused) == null && refused.length > 5, "a theme with problems is not installed, and each is said");
+		var nothing:Array<String> = [];
+		check(Themes.install(dir + "/none.raytheme", nothing) == null && nothing[0].indexOf("Nothing at") == 0 && Themes.install(dir + "/good.css", nothing) == null && Themes.install(dir + "/home", nothing) == null, "a path with nothing, something else, or no theme in it is refused");
+		check(Themes.remove("good") && !sys.FileSystem.exists(home + "/good") && Themes.find("good") == null && !Themes.remove("good") && Themes.scan(dir).length == 1, "a theme is taken away with its folder, once");
+		write("home/loose.raytheme", '{"name": "Loose"}');
+		check(Themes.scan(dir).map(t -> t.file.id).join(",") == "loose,pack" && Themes.remove("loose") && !sys.FileSystem.exists(home + "/loose.raytheme"), "a loose file in the themes folder is a theme too");
+		Sys.putEnv("RAYDE_THEMES", "");
+		Themes.scan(dir);
+		Sys.println("themes: files, colours, scoping and installing");
+	}
+
+	static function removeTree(path:String):Void {
+		if (sys.FileSystem.isDirectory(path)) {
+			for (entry in sys.FileSystem.readDirectory(path))
+				removeTree(haxe.io.Path.join([path, entry]));
+			sys.FileSystem.deleteDirectory(path);
+		} else
+			sys.FileSystem.deleteFile(path);
+	}
+
 	static function main():Void {
+		themeChecks();
 		hxmlChecks();
 		keyChecks();
 		settingsChecks();
@@ -713,6 +808,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, haxelib, extensions, compilation server, an extension in its own process, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, theme bundles, haxelib, extensions, compilation server, an extension in its own process, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }

@@ -1,0 +1,39 @@
+{
+  "id": "paper",
+  "name": "Paper",
+  "version": "1.0.0",
+  "author": "RayDE",
+  "description": "Warm paper in the light scheme and ink in the dark, with a rust accent",
+  "extends": "hybrid",
+  "colors": {"primary": "#b4532a", "accent": "#b4532a"},
+  "typography": {"mono": "Menlo"},
+  "light": {
+    "colors": {
+      "background": "#f4eee1",
+      "surface": "#fbf7ee",
+      "surfaceElevated": "#fffdf7",
+      "surfaceOverlay": "#efe8d8",
+      "textPrimary": "#2b2118",
+      "textSecondary": "#5b4d3e",
+      "textTertiary": "#8c7c68",
+      "border": "#ddd2bd",
+      "borderSecondary": "#e8dfcb"
+    }
+  },
+  "dark": {
+    "colors": {
+      "primary": "#e08a5c",
+      "accent": "#e08a5c",
+      "background": "#16120e",
+      "surface": "#1e1913",
+      "surfaceElevated": "#27211a",
+      "surfaceOverlay": "#211b15",
+      "textPrimary": "#f1e8d8",
+      "textSecondary": "#c4b8a2",
+      "textTertiary": "#8d8068",
+      "border": "#372f25",
+      "borderSecondary": "#2d261e"
+    }
+  },
+  "css": ".rayde-pill { border-style: dashed; }"
+}

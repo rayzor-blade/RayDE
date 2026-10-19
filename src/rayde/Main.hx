@@ -18,6 +18,7 @@ class Main {
 		}
 		var root = haxe.io.Path.directory(sys.FileSystem.fullPath(args[0]));
 		var extension = Manifest.isManifest(args[0]) ? Manifest.read(args[0]) : null;
+		rayde.theme.Themes.scan(root);
 		var appearance = Appearance.read(root);
 		Theming.apply(appearance);
 		rayde.ui.Style.use();

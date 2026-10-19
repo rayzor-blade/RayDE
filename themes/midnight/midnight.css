@@ -1,0 +1,4 @@
+/* Rules here apply only while Midnight is in use: each selector is placed under the theme. */
+.rayde-card { box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent); }
+.rayde-pill:hover { border-color: var(--primary); }
+.rayde-activity-item[data-on] { background: color-mix(in srgb, var(--primary) 28%, transparent); }

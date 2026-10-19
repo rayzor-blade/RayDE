@@ -1,0 +1,43 @@
+{
+  "id": "midnight",
+  "name": "Midnight",
+  "version": "1.0.0",
+  "author": "RayDE",
+  "description": "Deep indigo surfaces and a violet accent, with a soft outline on the cards",
+  "extends": "restrained",
+  "shape": {"smoothing": 0.8, "threshold": 10},
+  "radii": {"xl": 16},
+  "light": {
+    "colors": {
+      "background": "#f3f1ff",
+      "surface": "#ffffff",
+      "surfaceElevated": "#ffffff",
+      "surfaceOverlay": "#ece9ff",
+      "textPrimary": "#1b1740",
+      "textSecondary": "#4a4580",
+      "textTertiary": "#7a76a8",
+      "border": "#d9d5f2",
+      "borderSecondary": "#e6e3f8",
+      "primary": "#6a4cf0",
+      "accent": "#6a4cf0",
+      "textLink": "#5a3be0"
+    }
+  },
+  "dark": {
+    "colors": {
+      "background": "#0b0a1a",
+      "surface": "#12102a",
+      "surfaceElevated": "#1a1740",
+      "surfaceOverlay": "#161338",
+      "textPrimary": "#ece9ff",
+      "textSecondary": "#b3adde",
+      "textTertiary": "#7d77ad",
+      "border": "#2a2759",
+      "borderSecondary": "#211e4a",
+      "primary": "#8b6cff",
+      "accent": "#8b6cff",
+      "textLink": "#a99bff"
+    }
+  },
+  "css": [{"file": "midnight.css"}]
+}
