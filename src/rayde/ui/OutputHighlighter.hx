@@ -11,13 +11,14 @@ class OutputHighlighter implements CodeHighlighter {
 	public function highlight(line:String, state:String):CodeHighlight {
 		var parts = state.split("|"), index = state == "" ? 0 : Std.parseInt(parts[0]);
 		var kind = kinds == null ? buildKind(line, parts.length > 1 ? parts[1] : "") : kinds[index];
-		var token = switch kind {
-			case "error": "output-error";
-			case "warning", "warn": "output-warning";
-			case "success": "output-success";
-			case _: "plain";
+		// The code viewer stores its declared token kinds; Output scopes their severity colors.
+		var token:CodeTokenKind = switch kind {
+			case "error": Keyword;
+			case "warning", "warn": Number;
+			case "success": StringLiteral;
+			case _: Plain;
 		};
-		return {tokens: line == "" ? [] : [{from: 0, to: line.length, kind: cast token}], state: (index + 1) + "|" + kind};
+		return {tokens: line == "" ? [] : [{from: 0, to: line.length, kind: token}], state: (index + 1) + "|" + kind};
 	}
 
 	static function buildKind(line:String, previous:String):String {
