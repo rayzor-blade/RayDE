@@ -32,6 +32,15 @@ class InteractionProbe {
 				if (Type.getClassName(Type.getClass(component)) == "ashui.components.CodeEditor") editors++;
 				if (owner.disposed) disposedHosts++;
 			}
+			if (editors > 1) throw 'inactive tabs retained editor views at $label: $editors';
+			var documents = 0, mountedDocuments = 0, documentCharacters = 0, documentLines = 0;
+			@:privateAccess for (state in bench.documents) {
+				documents++;
+				if (state.mounted) mountedDocuments++;
+				documentCharacters += state.value.get().length;
+				if (state.document != null) documentLines += state.document.lines.length;
+			}
+			if (mountedDocuments != editors) throw 'document/view ownership differs at $label';
 			var minimaps = Css.query(tree, bench.node.id, ".ui-code-minimap"), maps:Array<Dynamic> = [];
 			@:privateAccess for (canvas in ashui.ui.Canvas.bySlot) {
 				count++; gpu += canvas.painter.rows * 2048 * 16;
@@ -47,6 +56,7 @@ class InteractionProbe {
 				nodes:tree.order().length, canvases:count, canvasGpuBytes:gpu, canvasCpuBytes:cpu, primitives:renderer.primitives,
 				layers:renderer.layerRecords, pointerHooks:ashui.input.Pointer.hooks.length,
 				watches:watches, editors:editors, disposedComponentHosts:disposedHosts,
+				documents:{cached:documents, mounted:mountedDocuments, characters:documentCharacters, lines:documentLines},
 				minimaps:maps, explorer:{entries:paths.length, pathUtf16Bytes:pathBytes, nodes:Css.query(tree, bench.node.id, "#rayde-files *").length}}));
 			Sys.stdout().flush();
 			if (Sys.getEnv("RAYDE_PROBE_ACK") == "1") Sys.stdin().readLine();
@@ -55,7 +65,10 @@ class InteractionProbe {
 			var stages:Array<Dynamic> = [];
 			function stage(name:String, work:Void->Void):Void {
 				var before = hl.Gc.stats(), start = haxe.Timer.stamp();
-				work();
+				try work() catch (error:Dynamic) {
+					Sys.println('interaction-probe failed at $label/$name: ' + Std.string(error));
+					throw error;
+				}
 				var elapsed = haxe.Timer.stamp() - start, after = hl.Gc.stats();
 				stages.push({name:name, ms:elapsed * 1000, allocated:after.totalAllocated - before.totalAllocated, memory:after.currentMemory});
 			}

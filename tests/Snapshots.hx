@@ -964,7 +964,7 @@ class Snapshots {
 				scroll("#git-scm-working-files", 150);
 				click("#git-scm-changes .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM filename row to open its full path in the editor");
-				var sourceEditor = @:privateAccess bench.editorRef(bench.active.get()).get();
+				var sourceDocument = bench.editorFor(bench.active.get()).document;
 				var retainedHeader = Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0];
 				var sourcePath = bench.active.get();
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
@@ -1119,9 +1119,11 @@ class Snapshots {
 				var tab = bench.active.get();
 				bench.closeFile(tab);
 				until(() -> studio.tabViews.length == 0, "Git view and native cursor cleanup");
-				if ((@:privateAccess bench.editorRef(sourcePath).get()) != sourceEditor) throw "opening and closing history rebuilt another tab's editor";
+				settle();
+				if (bench.editorFor(sourcePath) == null || bench.editorFor(sourcePath).document != sourceDocument) throw "opening and closing history discarded another tab's document";
 				if (Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0] != retainedHeader) throw "opening and closing history rebuilt another tab's header";
-				if (LayoutTree.settledHooks.length != hooks - 2) throw "closed canvas retained a layout hook";
+				// The graph's sketch loses two hooks; the remounted minimap adds its one size hook.
+				if (LayoutTree.settledHooks.length != hooks - 1) throw 'closing history leaked canvas layout hooks: $hooks -> ${LayoutTree.settledHooks.length}';
 				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' textRendering='native' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
 				until(() -> studio.tabViews.length == 1, "a large virtual history scene"); settle();
 				var virtualControl = control("virtual-graph"), virtualKit:ashui.canvaskit.CanvasKit = @:privateAccess virtualControl.kit;
@@ -1620,6 +1622,54 @@ class Snapshots {
 				shot("gallery-end");
 			});
 		for (dark in [true, false])
+			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var folder = haxe.io.Path.directory(file), a = folder + "/DocumentA.hx", b = folder + "/DocumentB.hx";
+				var source = 'class DocumentA {\n\tfunction test() {\n\t\treturn 1;\n\t}\n}\n' + [for (i in 0...100) '// line $i\n'].join("");
+				sys.io.File.saveContent(a, source);
+				sys.io.File.saveContent(b, "class DocumentB {}\n");
+				bench.openFile(a); settle();
+				var editor = bench.editorFor(a), document = editor.document;
+				editor.applyEdits([{from: source.length, to: source.length, text: "// edit\n"}]);
+				editor.select(1, 7); editor.toggleFold(1); settle();
+				editor.scroll.jumpTo(0, 360); settle();
+				var y = editor.scroll.y.get();
+				bench.openFile(b); settle();
+				var state = @:privateAccess bench.documents.get(a);
+				if (bench.editorFor(a) != null || state.mounted || state.document != document || state.caret != 7 || state.anchor != 1 || state.scrollY != y)
+					throw "inactive tabs must retain document/navigation data without an editor view";
+				if (Css.query(bench.tree, bench.node.id, '.ui-code[data-mode="editor"]').length != 1)
+					throw "only the active code editor may be mounted";
+				shot("inactive-data-only");
+				bench.active.set(a); settle();
+				editor = bench.editorFor(a);
+				if (editor.document != document || editor.editing.anchor.get() != 1 || editor.editing.caret.get() != 7 || editor.scroll.y.get() != y || !document.lines[1].folded)
+					throw "switching back must restore the document, selection, scroll and folds";
+				shot("restored");
+				editor.undo(); settle();
+				if (bench.buffer(a).get() != source) throw "undo must survive editor disposal";
+				editor.redo(); settle();
+				if (bench.buffer(a).get() != source + "// edit\n") throw "redo must survive editor disposal";
+				bench.closeAll(); settle();
+				var buffers = @:privateAccess bench.buffers, documents = @:privateAccess bench.documents, refs = @:privateAccess bench.editorRefs;
+				if (!buffers.exists(a) || !documents.exists(a)) throw "closing must preserve unsaved document data";
+				if (buffers.exists(b) || documents.exists(b) || refs.exists(b)) throw "closing a saved file must release its caches";
+				if (state.mounted || bench.editorFor(a) != null) throw "closing all tabs must release every editor";
+				bench.openFile(a); settle();
+				bench.editorFor(a).undo(); settle();
+				if (bench.buffer(a).get() != source) throw "reopening unsaved text must retain undo";
+				bench.editorFor(a).redo(); settle();
+				bench.closeFile(a); settle();
+				bench.saveAll(); settle();
+				if (sys.io.File.getContent(a) != source + "// edit\n" || buffers.exists(a) || documents.exists(a))
+					throw "saving closed unsaved text must write it and release the cache";
+				shot("closed-released");
+				bench.problems.set([{file: null, range: null, severity: 1, message: "Invalid commandline class"}]);
+				bench.showPanel("problems"); settle();
+				click(".rayde-problem");
+				if (bench.active.get() != "") throw "a workspace diagnostic must not navigate to a nonexistent file";
+				shot("workspace-diagnostic");
+			});
+		for (dark in [true, false])
 			scenario(dark, "assist", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
 				bench.openFile(file);
@@ -1772,7 +1822,7 @@ class Snapshots {
 		var only = Sys.getEnv("SNAPSHOT_ONLY");
 		if (only != null && only != "" && only != name)
 			return;
-		var root = copyOf(name), server = new CompilerServer();
+		var root = copyOf(name == "documents" ? "basic" : name), server = new CompilerServer();
 		if (name == "git" && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);

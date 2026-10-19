@@ -6,6 +6,7 @@ import ashui.components.ContextMenu.ContextMenuTrigger;
 import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
+import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
 import ashui.components.Resizable;
@@ -183,6 +184,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final notice = Signal.make("");
 
 	final buffers = new Map<String, Signal<String>>();
+	final documents = new Map<String, CodeEditorState>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
 
@@ -572,7 +574,7 @@ class Workbench extends Component<WorkbenchProps> {
 		ashui.animation.AnimationScheduler.main.after(.01, apply);
 	}
 
-	/** The code editor of an open file, once it has been made. */
+	/** The mounted editor of the active file; inactive tabs keep document data only. */
 	public function editorFor(file:String):Null<CodeEditor>
 		return editorOf(file);
 
@@ -1155,6 +1157,30 @@ class Workbench extends Component<WorkbenchProps> {
 		return b;
 	}
 
+	function documentState(file:String):CodeEditorState {
+		var state = documents.get(file);
+		if (state == null) {
+			state = new CodeEditorState(buffer(file));
+			documents.set(file, state);
+		}
+		return state;
+	}
+
+	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
+	function releaseClosedDocuments():Void {
+		var opened = open.get(), changed = dirty.get();
+		for (file in documents.keys())
+			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0)
+				documents.remove(file);
+		for (file in editorRefs.keys())
+			if (opened.indexOf(file) < 0)
+				editorRefs.remove(file);
+		for (file in buffers.keys())
+			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0 && !studios.exists(file)
+				&& (themeStudio == null || themeStudio.file != file))
+				buffers.remove(file);
+	}
+
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
 	public function edited(file:String):Void {
 		if (dirty.get().indexOf(file) < 0)
@@ -1186,9 +1212,9 @@ class Workbench extends Component<WorkbenchProps> {
 			following.remove(file);
 			if (gone)
 				return;
-			var editor = editorOf(file), d = debuggerOf(file);
-			if (editor != null && d != null)
-				d.setLines(file, [for (l in editor.markerLinesOf("breakpoints")) l + 1]);
+			var state = documents.get(file), d = debuggerOf(file);
+			if (state != null && state.annotations != null && d != null)
+				d.setLines(file, [for (l in state.annotations.markerLinesOf("breakpoints")) l + 1]);
 		});
 	}
 
@@ -1620,6 +1646,7 @@ class Workbench extends Component<WorkbenchProps> {
 		commandList = commands();
 		refreshShortcuts();
 		loadRecent();
+		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> releaseClosedDocuments(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
 		new ashui.reactive.Watch(() -> active.get(), file -> {
 			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
@@ -2163,6 +2190,10 @@ class Workbench extends Component<WorkbenchProps> {
 			buffers.set(now, buffers.get(old));
 			buffers.remove(old);
 		}
+		for (old => now in FileOps.moved([for (k in documents.keys()) k], from, to)) {
+			documents.set(now, documents.get(old));
+			documents.remove(old);
+		}
 		for (old => now in moved) {
 			editorRefs.remove(old);
 			var studio = studios.get(old);
@@ -2332,7 +2363,7 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 	}
 
-	/** A keyed page keeps its editor, history and native controls while other tabs open or close. */
+	/** A keyed page keeps its tab shell and extension controls; code views mount only while active. */
 	function retainedPage(file:String):Element {
 		var content:TabsContent = cast page(file);
 		content.tabs.set(active);
@@ -2414,11 +2445,14 @@ class Workbench extends Component<WorkbenchProps> {
 	function pageOfFile(file:String):Element {
 		if (isExtension(file) && extension == null)
 			return studioPage(file);
-		return <tabs-content value={file} class="flex-1 min-h-0">${codeEditor(file)}</tabs-content>;
+		return <tabs-content value={file} class="flex-1 min-h-0">${activeCodeEditor(file)}</tabs-content>;
 	}
 
+	function activeCodeEditor(file:String):Element
+		return <if {active.get() == file}>${codeEditor(file)}</if>;
+
 	function codeEditor(file:String):Element {
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} value={buffer(file)} language={languageOf(file)}
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);
@@ -2427,6 +2461,8 @@ class Workbench extends Component<WorkbenchProps> {
 		holdCaretWhileScrolling(editorRef(file).get());
 		annotate(file, editorRef(file).get());
 		assistWatch(file, editorRef(file).get());
+		var mounted = editorRef(file).get();
+		Owner.onCleanup(() -> assist.stop(file, mounted));
 		return editor;
 	}
 
@@ -2527,10 +2563,16 @@ class Workbench extends Component<WorkbenchProps> {
 		if (editor == null || editor.scroll == null)
 			return;
 		var last = 0., holding = false, check:Void->Void = null;
+		var timer:Null<ashui.animation.AnimationScheduler.Timer> = null;
+		Owner.onCleanup(() -> {
+			if (timer != null) timer.cancel();
+			editor = null;
+		});
 		check = () -> {
+			if (editor == null) return;
 			var left = CARET_REST - (haxe.Timer.stamp() - last);
 			if (left > 0)
-				ashui.animation.AnimationScheduler.main.after(left, check);
+				timer = ashui.animation.AnimationScheduler.main.after(left, check);
 			else {
 				holding = false;
 				if (editor.editing.showsCaret())
@@ -2543,7 +2585,7 @@ class Workbench extends Component<WorkbenchProps> {
 				return;
 			holding = true;
 			editor.editing.stopBlink();
-			ashui.animation.AnimationScheduler.main.after(CARET_REST, check);
+			timer = ashui.animation.AnimationScheduler.main.after(CARET_REST, check);
 		});
 	}
 
@@ -2552,7 +2594,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var studio = studioOf(file);
 		return <tabs-content value={file} class="flex-1 min-h-0">
 			<resizable id="rayde-studio-columns" class="flex-1 min-h-0">
-				<resizable-panel minSize={200}>${codeEditor(file)}</resizable-panel>
+				<resizable-panel minSize={200}>${activeCodeEditor(file)}</resizable-panel>
 				<resizable-panel size={previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)} onConsole={() -> showPanel("extension")}/></resizable-panel>
 			</resizable>
 		</tabs-content>;
@@ -2730,13 +2772,18 @@ class Workbench extends Component<WorkbenchProps> {
 			{[for (p in list) problemRow(p)]}
 		</div>;
 
-	function problemRow(p:Diagnostic):Element
-		return <div class="rayde-problem flex items-center gap-2 px-2 py-1 cursor-pointer" onClick={_ -> goTo(p.file, p.range.start.line, p.range.start.character)}>
+	function problemRow(p:Diagnostic):Element {
+		var located = p.file != null && p.range != null;
+		var location = located ? haxe.io.Path.withoutDirectory(p.file) + " [" + (p.range.start.line + 1) + ", " + (p.range.start.character + 1) + "]" : "Workspace";
+		var row = <div class="rayde-problem flex items-center gap-2 px-2 py-1" onClick={_ -> { if (located) goTo(p.file, p.range.start.line, p.range.start.character); }}>
 			<if {p.severity == 1}><icon document={Icons.CLOSE_CIRCLE_LINE} class="size-4 text-error"/>
 			<else><icon document={Icons.ALERT_LINE} class="size-4 text-warning"/></if>
 			<text class="text-xs flex-1 min-w-0">${p.message.split("\n")[0]}</text>
-			<text class="text-xs text-text-tertiary">${haxe.io.Path.withoutDirectory(p.file) + " [" + (p.range.start.line + 1) + ", " + (p.range.start.character + 1) + "]"}</text>
+			<text class="text-xs text-text-tertiary">${location}</text>
 		</div>;
+		if (located) ashui.css.Identity.of(row.tree, row.node.id).addClasses(["cursor-pointer"]);
+		return row;
+	}
 
 	/** The runtime the project runs on, the problem counts, and where the run stands. */
 	function statusBar():Element

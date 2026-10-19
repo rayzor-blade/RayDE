@@ -1,12 +1,12 @@
 # Sourced by RayDE's scripts: where ashui and the native libraries are, and the
 # compiler arguments every UI build shares.
 #
-# ashui is pinned to a commit on its pushed main, checked out under .deps and
+# ashui is pinned to a commit on main, checked out under .deps and
 # built once, so work in progress in ../ashui never breaks a run here.
 # ASHUI=<dir> builds against that checkout instead, such as ../ashui.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 siblings=$(dirname "$here")
-ashui_rev=e1b0a704c1ab9f478c944f3f9b0a54906d94e669
+ashui_rev=3f1b3e5cb38deca9d381470c644c8dd289f34d06
 ashui=${ASHUI:-$here/.deps/ashui-$ashui_rev}
 hlwgpu=${HLWGPU:-$siblings/hlwgpu}
 hlwindow=${HLWINDOW:-$siblings/hlwindow}
