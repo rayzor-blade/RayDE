@@ -661,7 +661,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closes every tab but the one in front. */
 	public function closeOthers():Void {
 		var file = active.get();
-		open.set(file == "" ? [] : [file]);
+		closeExcept(file == "" ? [] : [file]);
 	}
 
 	/** Closes the tabs with nothing unsaved; the one in front goes with them unless it has edits. */
@@ -669,12 +669,19 @@ class Workbench extends Component<WorkbenchProps> {
 		var keep = [for (f in open.get()) if (dirty.get().indexOf(f) >= 0) f];
 		if (keep.indexOf(active.get()) < 0)
 			active.set(keep.length == 0 ? "" : keep[0]);
-		open.set(keep);
+		closeExcept(keep);
 	}
 
 	public function closeAll():Void {
 		active.set("");
-		open.set([]);
+		closeExcept([]);
+	}
+
+	/** Bulk actions use the same teardown as a tab's close button, including extension view unmounts. */
+	function closeExcept(keep:Array<String>):Void {
+		for (file in open.get().copy())
+			if (keep.indexOf(file) < 0)
+				closeFile(file);
 	}
 
 	/** Puts the path of the file in front on the clipboard, in full or from the project's folder. */

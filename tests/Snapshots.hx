@@ -1063,6 +1063,11 @@ class Snapshots {
 				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
 				function canvas():ashui.canvaskit.CanvasKit return @:privateAccess control("git-history-canvas").kit;
 				shot("history");
+				click("#rayde-tab-Git-history-close");
+				until(() -> studio.tabViews.length == 0, "history tab close button");
+				click("#git-scm-expand .ui-button");
+				until(() -> studio.tabViews.length == 1 && within("git-history-files", "history.txt"), "sidebar maximize after the tab close button");
+				shot("history-close-button-reopened");
 				var kit = canvas(), viewport = kit.viewport, bounds = tree.getScrolledBounds(kit.node);
 				var point = viewport.contentToScreen(130, 66);
 				ashui.input.Pointer.move(tree, bounds.x + point.x, bounds.y + point.y); settle();
@@ -1124,6 +1129,28 @@ class Snapshots {
 				if (Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0] != retainedHeader) throw "opening and closing history rebuilt another tab's header";
 				// The graph's sketch loses two hooks; the remounted minimap adds its one size hook.
 				if (LayoutTree.settledHooks.length != hooks - 1) throw 'closing history leaked canvas layout hooks: $hooks -> ${LayoutTree.settledHooks.length}';
+				for (cycle in 0...2) {
+					click("#git-scm-expand .ui-button");
+					until(() -> studio.tabViews.length == 1 && within("git-history-files", "history.txt"), "sidebar maximize to reopen the closed history");
+					shot('history-reopened-$cycle');
+					click("#rayde-tab-Git-history-close");
+					until(() -> studio.tabViews.length == 0, "reopened history cleanup");
+					settle();
+					if (LayoutTree.settledHooks.length != hooks - 1) throw "reopening history leaked canvas layout hooks";
+				}
+				for (action in ["others", "saved", "all"]) {
+					click("#git-scm-expand .ui-button");
+					until(() -> studio.tabViews.length == 1 && within("git-history-files", "history.txt"), 'history before Close $action');
+					if (action == "others") { bench.openFile(sourcePath); settle(); }
+					click("#rayde-editor-menu-trigger");
+					click("#rayde-menu-close-" + action);
+					until(() -> studio.tabViews.length == 0, 'Close $action to unmount history');
+					click("#git-scm-expand .ui-button");
+					until(() -> studio.tabViews.length == 1 && within("git-history-files", "history.txt"), 'sidebar maximize after Close $action');
+					shot('history-reopened-after-close-$action');
+					click("#rayde-tab-Git-history-close");
+					until(() -> studio.tabViews.length == 0, "bulk-close regression cleanup");
+				}
 				git.connection.send({t:"run", name:"virtual-graph.rays", source:"var commands = [], regions = []; for (i in 0...1000) { var y = i * 24; commands.push({type:'path',path:[['M',20,y],['L',20,y+24]],stroke:2,color:'accent'}); commands.push({type:'circle',x:20,y:y+12,radius:4,color:'accent'}); commands.push({type:'text',x:40,y:y+16,text:'Commit ' + i,color:'textPrimary'}); regions.push({id:'row' + i,x:0,y:y,width:640,height:24}); } var full = {bounds:{x:0,y:0,width:640,height:24000},commands:commands,regions:regions}; var drawing = signal(full); registerCommand('test.virtualShort', () -> drawing.value = {bounds:{x:0,y:0,width:640,height:24},commands:[],regions:[]}); mount(() -> <canvas-kit id='virtual-graph' class='flex-1 min-h-0' navigation='scroll' textRendering='native' scene={drawing} onClick={e -> trace('virtual row ' + e.region + ' y=' + e.y)}/>, 'tab:Virtual graph');"});
 				until(() -> studio.tabViews.length == 1, "a large virtual history scene"); settle();
 				var virtualControl = control("virtual-graph"), virtualKit:ashui.canvaskit.CanvasKit = @:privateAccess virtualControl.kit;
