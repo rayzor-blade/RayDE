@@ -94,7 +94,7 @@ function Sidebar(props) {
     <div slot="graph" id="git-scm-graph" class="flex flex-col flex-1 min-h-0 min-w-0">
       <div class="flex items-center gap-2 px-3 h-8 shrink-0">
         <span class="text-xs text-text-secondary flex-1">{state.value == null ? '' : state.value.branch}</span>
-        <ui-button id="git-scm-expand" class="w-16" variant="ghost" onClick={() -> { if (expand != null) expand(); }}>Expand</ui-button>
+        <ui-button id="git-scm-expand" class="w-8" size="icon" variant="ghost" aria-label="Maximize graph" onClick={() -> { if (expand != null) expand(); }}><ui-icon name="maximize"/></ui-button>
       </div>
       <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" scene={compactScene(commits.value, refs.value, selected.value)}
         selected={selected.value == '' ? [] : [selected.value]} onClick={e -> choose(e.region)}/>

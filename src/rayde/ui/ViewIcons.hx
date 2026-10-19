@@ -34,6 +34,7 @@ class ViewIcons {
 		"bug" => Icons.BUG_LINE,
 		"more" => Icons.MORE_LINE,
 		"external" => Icons.EXTERNAL_LINK_LINE,
+		"maximize" => Icons.FULLSCREEN_LINE,
 		"up" => Icons.ARROW_UP_LINE,
 		"down" => Icons.ARROW_DOWN_LINE,
 		"left" => Icons.ARROW_LEFT_LINE,
@@ -97,8 +98,8 @@ class ViewIcons {
 	}
 
 	/** An icon an extension's config wrote: its SVG file, or the icon of RayDE's it names; null when it names none, or none that exists. */
-	public static function named(m:Manifest, icon:Null<String>):Null<ashui.svg.SvgDocument> {
-		var doc = file(m.iconFile(icon));
+	public static function named(m:Null<Manifest>, icon:Null<String>):Null<ashui.svg.SvgDocument> {
+		var doc = m == null ? null : file(m.iconFile(icon));
 		if (doc != null)
 			return doc;
 		return icon == null ? null : NAMED.get(StringTools.endsWith(icon, "-line") ? icon.substr(0, icon.length - 5) : icon);

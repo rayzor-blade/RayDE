@@ -5,6 +5,7 @@ import ashui.canvaskit.CanvasKit;
 import ashui.canvaskit.Selection2D;
 import ashui.canvaskit.Viewport2D;
 import ashui.components.Button;
+import ashui.components.Icon;
 import ashui.components.Select;
 import ashui.css.Identity;
 import ashui.layout.Element;
@@ -32,6 +33,7 @@ class BridgeControl {
 	var options:Array<Dynamic> = [];
 	var dirty = false;
 	var stopSelect:Null<Void->Void>;
+	var stopIcon:Null<Void->Void>;
 	var nativeButton:Button;
 	var nativeSelect:Select;
 	var kit:CanvasKit;
@@ -46,7 +48,7 @@ class BridgeControl {
 	var panelState:Dynamic;
 
 	public static function supported(tag:String):Bool
-		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-select" || tag == "ui-panel-group";
+		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
 
 	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic) {
 		this.tree = tree;
@@ -103,6 +105,10 @@ class BridgeControl {
 		});
 		node = box.node;
 		if (kind == "ui-panel-group") panels = new BridgePanels(tree, node, emit, panelState);
+		else if (kind == "ui-icon") {
+			node.set(Prop.Width, (16:Single)); node.set(Prop.Height, (16:Single));
+			node.set(Prop.FlexShrink, (0:Single));
+		}
 		else if (kind != "canvas-kit") node.set(Prop.Height, (32:Single));
 	}
 
@@ -118,6 +124,22 @@ class BridgeControl {
 
 	public function set(name:String, data:Dynamic):Bool {
 		switch name {
+			case "name" if (kind == "ui-icon"):
+				var name = data == null ? null : CanvasScene.text({name:data}, "name");
+				var document = rayde.ui.ViewIcons.named(null, name);
+				if (name != null && document == null) throw 'Unknown icon $name';
+				if (stopIcon != null) stopIcon();
+				if (document != null) scope.run(() -> {
+					var child = new Owner(tree);
+					stopIcon = child.dispose;
+					child.run(() -> {
+						var icon = new Icon({document:document});
+						fill(icon); tree.addChild(node.id, icon.node.id);
+					});
+				});
+				return true;
+			case "aria-label" if (kind == "ui-button"):
+				Identity.of(tree, nativeButton.node.id).setAttribute(name, data == null ? null : Std.string(data)); return true;
 			case "panels" if (panels != null): panels.set(data); return true;
 			case "height" if (kind == "ui-button" || kind == "ui-select"):
 				var height = data == null ? 32. : CanvasScene.finite(data);
@@ -131,9 +153,9 @@ class BridgeControl {
 					{value: CanvasScene.text(o, "value"), label: CanvasScene.text(o, "label"), disabled: o.disabled == true};
 				}];
 				dirty = true; return true;
-			case "size" if (kind != "canvas-kit"):
+			case "size" if (kind == "ui-button" || kind == "ui-select"):
 				var size = data == null ? "sm" : Std.string(data);
-				if (["sm", "md", "lg"].indexOf(size) < 0) throw "Unknown component size";
+				if (["sm", "md", "lg"].indexOf(size) < 0 && !(kind == "ui-button" && size == "icon")) throw "Unknown component size";
 				if (kind == "ui-button") Identity.of(tree, nativeButton.node.id).setAttribute("data-size", size);
 				else { selectSize = size; dirty = true; }
 				return true;

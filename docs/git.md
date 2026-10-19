@@ -4,7 +4,7 @@ The built-in Git extension registers Ashui's git-branch icon in the activity bar
 
 ![Source Control in the sidebar](images/git-scm.png)
 
-The sidebar stacks **Changes** and **Graph** in Ashui's native resizable panels, each with a collapsible header. Drag the divider or use its arrow keys to divide the height. The graph has dense commit rows, colored branch/merge lanes, reference badges, local hover and selection. Selecting a commit shows its author and abbreviated id below the graph. The sidebar loads the latest 60 commits; **Expand** opens the paged graph in a separate tab.
+The sidebar stacks **Changes** and **Graph** in Ashui's native resizable panels, each with a collapsible header. Drag the divider or use its arrow keys to divide the height. The graph has dense commit rows, colored branch/merge lanes, reference badges, local hover and selection. Selecting a commit shows its author and abbreviated id below the graph. The sidebar loads the latest 60 commits; its maximize icon opens the paged graph in a separate tab.
 
 The sidebar's **Refresh** action and **Git: Refresh** command reload status and history; saving a file or changing the active editor also refreshes them. The **History** toolbar action and **Git: History** command also open the expanded graph. Both views discover the repository at or above the project root through libgit2.
 

@@ -242,6 +242,8 @@ var branch = signal('all');
 
 `ui-button` accepts text or markup children, `disabled`, `variant` (`primary`, `secondary`, `outline`, `ghost`, `link`, `destructive`) and `size` (`sm`, `md`, `lg`). `ui-select` accepts `value`, `disabled`, `size` and `options`: `{value, label, disabled?}` records. It emits `change` with `{value}`. Both use Ashui's focus and keyboard handling. Their default row height is 32 px; numeric `height` permits 16–256 px for dense lists. CSS sets the wrapper's width, placement and component custom properties.
 
+`ui-icon` renders Ashui's named icon set through its `name` property, at 16 px by default. Icon buttons accept `size="icon"` and `aria-label`, for example `<ui-button size="icon" aria-label="Maximize graph"><ui-icon name="maximize"/></ui-button>`. `maximize` uses the pack's `fullscreen-line` SVG.
+
 `canvas-kit` retains a serializable drawing scene and runs Ashui CanvasKit in the editor:
 
 ```haxe
