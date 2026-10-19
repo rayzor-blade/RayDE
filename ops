@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792401867,"nonce":"+ziJBVxWrEm9zRjqPZhswvh1h2Q=","added":["debt","area:ecosystem"],"removed":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792401877,"nonce":"rB01HogGF5Ve20CvJDnHCY1ySuU=","message":"Children: extension manager 33dd4ef (RayDE, priority:high, blocks Git), Git extension c086fdf (RayDE), native FFI 5298f72 (rayscript tracker).","files":null}]}
