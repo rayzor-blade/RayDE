@@ -91,6 +91,8 @@ class InteractionProbe {
 			step('explorer-$cycle', () -> bench.sideView.set("explorer"));
 			step('sidebar-$cycle', () -> bench.sideView.set(scm.id));
 		}
+		step("open-tabs-idle", () -> Offscreen.advance(3));
+		hl.Gc.major(); emit("open-tabs-collected", []);
 		step("close-history", () -> bench.closeFile(history));
 		ready(() -> studio.tabViews.length == 0, "interaction history disposal");
 		step("close-editors", () -> {

@@ -24,7 +24,7 @@ with (output / "run.log").open("w") as log:
         record = json.loads(line.split(":", 1)[1])
         rss = subprocess.run(["ps", "-o", "rss=", "-p", str(process.pid)], capture_output=True, text=True)
         record["rssBytes"] = int(rss.stdout.strip()) * 1024 if rss.returncode == 0 and rss.stdout.strip() else None
-        if os.environ.get("RAYDE_PROBE_VMMAP") == "1" and record["phase"] in ["baseline-collected", "open-Probe6.hx", "history-ready", "idle", "collected", "collected-twice", "gpu-polled", "gpu-drained"]:
+        if os.environ.get("RAYDE_PROBE_VMMAP") == "1" and record["phase"] in ["baseline-collected", "open-Probe6.hx", "history-ready", "open-tabs-collected", "close-editors", "idle", "collected", "collected-twice", "gpu-polled", "gpu-drained"]:
             mapping = subprocess.run(["vmmap", "-summary", str(process.pid)], capture_output=True, text=True)
             (output / (record["scheme"] + "-" + record["phase"] + ".txt")).write_text(mapping.stdout + mapping.stderr)
             footprint = re.search(r"Physical footprint:\s+([\d.]+)([KMG])", mapping.stdout)
