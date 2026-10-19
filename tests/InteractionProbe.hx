@@ -22,15 +22,25 @@ class InteractionProbe {
 			bench.refreshExplorer();
 		}
 		var frames = 0;
+		var checkpoint = 0;
 		var tickedAt = haxe.Timer.stamp();
 		if (Sys.getEnv("RAYDE_PROBE_POLL") == "1") @:privateAccess bench.owner.run(() -> rayde.ui.GpuProgress.attach(renderer.device, tree, () -> frames));
 		function emit(label:String, stages:Array<Dynamic>):Void {
+			var ackDir = Sys.getEnv("RAYDE_PROBE_ACK_DIR");
+			var ackFile = ackDir == null ? null : haxe.io.Path.join([ackDir, Std.string(ashui.theme.ThemeState.get().scheme()) + "-" + checkpoint++]);
 			var count = 0, gpu = 0, cpu = 0;
 			var watches = 0, editors = 0, disposedHosts = 0;
+			var codeRows:Array<Dynamic> = [];
 			@:privateAccess for (watch in ashui.reactive.Watch.bySlot) if (watch != null) watches++;
 			@:privateAccess for (owner => component in ashui.ui.Component.hosts) {
 				if (Type.getClassName(Type.getClass(component)) == "ashui.components.CodeEditor") editors++;
 				if (owner.disposed) disposedHosts++;
+				if (!owner.disposed && Std.isOfType(component, ashui.components.CodeEditor)) {
+					var editor:ashui.components.CodeEditor = cast component;
+					var slots = Css.query(tree, editor.node.id, ".ui-code-line").length;
+					if (slots > editor.document.visible.length) throw 'unused code row slots at $label';
+					codeRows.push({type:Type.getClassName(Type.getClass(component)), slots:slots, visibleLines:editor.document.visible.length});
+				}
 			}
 			if (editors > 1) throw 'inactive tabs retained editor views at $label: $editors';
 			var documents = 0, mountedDocuments = 0, documentCharacters = 0, documentLines = 0;
@@ -52,14 +62,22 @@ class InteractionProbe {
 			}
 			var paths = Css.query(tree, bench.node.id, "#rayde-tree [data-path]"), pathBytes = 0;
 			for (id in paths) pathBytes += ashui.css.Identity.of(tree, id).attribute("data-path").length * 2;
-			Sys.println("interaction-probe:" + haxe.Json.stringify({phase:label, scheme:Std.string(ashui.theme.ThemeState.get().scheme()), stages:stages, haxe:hl.Gc.stats(),
+			Sys.println("interaction-probe:" + haxe.Json.stringify({phase:label, scheme:Std.string(ashui.theme.ThemeState.get().scheme()), ackFile:ackFile, stages:stages, haxe:hl.Gc.stats(),
 				nodes:tree.order().length, canvases:count, canvasGpuBytes:gpu, canvasCpuBytes:cpu, primitives:renderer.primitives,
 				layers:renderer.layerRecords, pointerHooks:ashui.input.Pointer.hooks.length,
 				watches:watches, editors:editors, disposedComponentHosts:disposedHosts,
+				codeRows:codeRows,
 				documents:{cached:documents, mounted:mountedDocuments, characters:documentCharacters, lines:documentLines},
 				minimaps:maps, explorer:{entries:paths.length, pathUtf16Bytes:pathBytes, nodes:Css.query(tree, bench.node.id, "#rayde-files *").length}}));
 			Sys.stdout().flush();
-			if (Sys.getEnv("RAYDE_PROBE_ACK") == "1") Sys.stdin().readLine();
+			if (ackFile != null) {
+				var deadline = haxe.Timer.stamp() + 60;
+				while (!sys.FileSystem.exists(ackFile)) {
+					if (haxe.Timer.stamp() > deadline) throw 'sampler timed out at $label';
+					Sys.sleep(.01);
+				}
+				sys.FileSystem.deleteFile(ackFile);
+			} else if (Sys.getEnv("RAYDE_PROBE_ACK") == "1") Sys.stdin().readLine();
 		}
 		function step(label:String, action:Void->Void):Void {
 			var stages:Array<Dynamic> = [];

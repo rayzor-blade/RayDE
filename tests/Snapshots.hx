@@ -1182,6 +1182,7 @@ class Snapshots {
 				click("#rayde-extension-setting-git-git-pullStrategy"); press(Named(End)); press(Named(Enter));
 				if (Reflect.field(Store.section(root, "extension.git"), "git.pullStrategy") != "rebase") throw "Git pull preference was not saved";
 				shot("pull-preference");
+				until(() -> !(@:privateAccess control("git-fetch").disabled.get()), "Git refresh after the settings change");
 				click("#git-fetch .ui-button");
 				until(() -> git.output.join("\n").indexOf("No remote configured") >= 0 && Css.query(tree, bench.node.id, ".ui-toast").length > 0, "Git failure toast and Git Output entry");
 				if (Css.query(tree, bench.node.id, "#git-scm-error").length != 0) throw "Git error was embedded in the sidebar";
@@ -1639,6 +1640,9 @@ class Snapshots {
 					throw "inactive tabs must retain document/navigation data without an editor view";
 				if (Css.query(bench.tree, bench.node.id, '.ui-code[data-mode="editor"]').length != 1)
 					throw "only the active code editor may be mounted";
+				var shortEditor = bench.editorFor(b);
+				if (Css.query(bench.tree, shortEditor.node.id, ".ui-code-line").length != shortEditor.document.visible.length)
+					throw "short files must not allocate empty viewport row slots";
 				shot("inactive-data-only");
 				bench.active.set(a); settle();
 				editor = bench.editorFor(a);

@@ -5,13 +5,17 @@ import re
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 root = Path(__file__).resolve().parent.parent
 output = root / "bin" / (os.environ.get("RAYDE_PROBE_OUTPUT") or "interaction-probe")
 output.mkdir(parents=True, exist_ok=True)
+acknowledgements = tempfile.TemporaryDirectory(prefix=".acks-", dir=output)
 environment = dict(os.environ, SNAPSHOT_ONLY="git", RAYDE_INTERACTION_PROBE="1", RAYDE_PROBE_ACK="1",
+                   RAYDE_PROBE_ACK_DIR=acknowledgements.name,
                    RAYDE_PROBE_POLL=os.environ.get("RAYDE_PROBE_POLL", "1"))
-command = [sys.argv[1]] if sys.argv[2:] == ["--native"] else [sys.argv[1], "--preset", "application", "bin/snapshots.hl"]
+bytecode = os.environ.get("RAYDE_PROBE_PROGRAM", "bin/snapshots.hl")
+command = [sys.argv[1]] if sys.argv[2:] == ["--native"] else [sys.argv[1], "--preset", "application", bytecode]
 process = subprocess.Popen(command, cwd=root,
                            env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
@@ -34,9 +38,13 @@ with (output / "run.log").open("w") as log:
         results.append(record)
         (output / "results.json").write_text(json.dumps(results, indent=2))
         print(json.dumps(record), flush=True)
-        process.stdin.write("continue\n")
-        process.stdin.flush()
+        if record.get("ackFile"):
+            Path(record["ackFile"]).touch()
+        else:
+            process.stdin.write("continue\n")
+            process.stdin.flush()
 status = process.wait()
+acknowledgements.cleanup()
 if status:
     print((output / "run.log").read_text()[-4000:], file=sys.stderr)
 sys.exit(status)
