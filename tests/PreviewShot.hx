@@ -69,11 +69,7 @@ mount(() -> <div class='flex flex-col gap-3 p-4'>
 			}
 			check(done(), 'timed out waiting for $what');
 		}
-		studio = new Studio(file, dir + "/host", () -> sys.io.File.getContent(file), tree);
-		if (studio.state.get() == "unavailable") {
-			Sys.println("preview checks skipped: no rayscript-host");
-			return;
-		}
+		studio = new Studio(file, () -> sys.io.File.getContent(file), tree);
 		studio.attach(view.node);
 		studio.reload();
 		until(() -> studio.preview.count() > 12, "the view");

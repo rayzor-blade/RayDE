@@ -12,8 +12,6 @@ lib="$prefix/lib/rayde"
 mkdir -p "$prefix/bin" "$lib" "$prefix/share/applications" "$prefix/share/mime/packages"
 stage_natives "$lib"
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl "$lib/rayde.hl"
-host=${RAYSCRIPT_HOST:-$siblings/rayscript/target/release/rayscript-host}
-[ -x "$host" ] && cp "$host" "$lib/rayscript-host"
 mkdir -p "$prefix/share/rayde/extensions"
 [ ! -d extensions ] || cp -R extensions/. "$prefix/share/rayde/extensions/"
 cp -R assets/icons/hicolor "$prefix/share/icons/" 2>/dev/null || { mkdir -p "$prefix/share/icons"; cp -R assets/icons/hicolor "$prefix/share/icons/"; }
@@ -34,7 +32,6 @@ if [ $# -eq 0 ]; then
     set -- "$project"
   fi
 fi
-[ -x "$lib/rayscript-host" ] && export RAYSCRIPT_HOST="$lib/rayscript-host"
 export RAYDE_EXTENSIONS="$(cd "$lib/../../share/rayde/extensions" && pwd)"
 exec "$ash" --preset application "$lib/rayde.hl" "$@"
 LAUNCH

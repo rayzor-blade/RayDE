@@ -534,10 +534,6 @@ class Snapshots {
 				var studio = bench.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
-				if (studio.state.get() == "unavailable") {
-					Sys.println("extension snapshots skipped: no rayscript-host");
-					return;
-				}
 				var says = (text:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text == text);
 				until(() -> says("ext/main.rays"), "the extension's view, with the file a mocked call answered with");
 				// The view is in the sidebar in the Explorer's place, and its icon is in the activity bar; the Explorer's icon brings the Explorer back.
@@ -601,10 +597,6 @@ class Snapshots {
 				var studio = bench.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
-				if (studio.state.get() == "unavailable") {
-					Sys.println("markdown snapshots skipped: no rayscript-host");
-					return;
-				}
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), readme = root + "/docs/README.md", tree = bench.tree;
 				// Text is placed word by word, so the view is looked at for a word.
 				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);
@@ -703,10 +695,6 @@ class Snapshots {
 				var studio = bench.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
-				if (studio.state.get() == "unavailable") {
-					Sys.println("views snapshots skipped: no rayscript-host");
-					return;
-				}
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
 				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);
 				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
@@ -990,8 +978,8 @@ class Snapshots {
 				settle(5);
 				press(Named(Enter));
 				until(() -> dashboard.output.join("\n").indexOf("dashboard failure") >= 0, "a script error to reach its Output channel");
-				// Ending the real child process exercises restart supervision and its Output channel.
-				@:privateAccess dashboard.connection.host.process.kill();
+				// Ending the embedded VM exercises restart supervision and its Output channel.
+				dashboard.connection.send({t: "shutdown"});
 				until(() -> dashboard.restarts.length == 1 && dashboard.connection.running(), "the exited extension to restart");
 				bench.showPanel("console");
 				bench.setPanelHeight(260);
@@ -1030,10 +1018,6 @@ class Snapshots {
 				var studio = bench.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
-				if (studio.state.get() == "unavailable") {
-					Sys.println("debug snapshots skipped: no rayscript-host");
-					return;
-				}
 				var d = studio.debug, root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
 				var has = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length > 0;
 				var says = (word:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text != null && o.text.indexOf(word) >= 0);

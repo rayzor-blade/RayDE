@@ -1,126 +1,81 @@
 package rayde.ext;
 
-/**
- * One extension, running in its own rayscript-host process. The host speaks JSON lines: `send` writes a
- * message to its input, and `poll` reads what it has written since the last call without waiting.
- *
- * The program's output goes to a file that is read as it grows, as `Job` does, because reading a pipe
- * would stop the frame loop until the host wrote something. Its input is a pipe, which a message much
- * smaller than a pipe's buffer never blocks.
- */
+/** An embedded extension VM. All VM access is serialized on its owning runtime thread. */
 class ExtensionHost {
-	/** idle, running, or exited (with its exit code in `exitCode`). */
 	public var state(default, null) = "idle";
-
 	public var exitCode(default, null):Null<Int>;
-
-	final binary:String;
-	final dir:String;
 	final root:Null<String>;
-	var process:Null<sys.io.Process>;
-	var offset = 0;
-	var partial = "";
+	var handle = -1;
+	var diagnostics = "";
 
-	/** `dir` holds the host's output and error logs; `root` is where it finds the script modules a script imports. */
-	public function new(binary:String, dir:String, ?root:String) {
-		this.binary = binary;
-		this.dir = dir;
+	public function new(?root:String) {
 		this.root = root;
 	}
-
-	public function out():String
-		return dir + "/host.out";
-
-	public function errLog():String
-		return dir + "/host.err";
 
 	public function running():Bool
 		return state == "running";
 
 	public function start():Void {
 		stop();
-		sys.FileSystem.createDirectory(dir);
-		sys.io.File.saveContent(out(), "");
-		sys.io.File.saveContent(errLog(), "");
-		offset = 0;
-		partial = "";
+		var bytes = haxe.io.Bytes.ofString(root == null ? "" : root);
+		handle = openNative(bytes.getData(), bytes.length);
+		if (handle < 0)
+			throw "Cannot create the embedded RayScript runtime";
 		exitCode = null;
-		var args = [binary].concat(root != null ? ["--root", root] : []);
-		var line = "exec " + args.map(quote).join(" ") + " > " + quote(out()) + " 2> " + quote(errLog());
-		process = new sys.io.Process("/bin/sh", ["-c", line]);
+		diagnostics = "";
 		state = "running";
 	}
 
-	/** Sends a message to the host: any value that makes JSON. False if the host is not there to take it. */
 	public function send(message:Dynamic):Bool {
-		if (process == null || state != "running")
-			return false;
-		try {
-			process.stdin.writeString(haxe.Json.stringify(message) + "\n");
-			process.stdin.flush();
-			return true;
-		} catch (e:Dynamic)
-			return false;
+		if (!running()) return false;
+		if (message.t == "closed") return closeViewNative(handle, Std.int(message.root)) != 0;
+		var bytes = haxe.io.Bytes.ofString(haxe.Json.stringify(message));
+		return sendNative(handle, bytes.getData(), bytes.length) != 0;
 	}
 
-	/** The messages the host has written since the last call, in order. */
+	/** Requests collection at a VM safepoint, without waiting on the UI thread. */
+	public function collect():Bool
+		return running() && collectNative(handle) != 0;
+
 	public function poll():Array<Dynamic> {
 		var messages:Array<Dynamic> = [];
-		if (process == null)
-			return messages;
-		// Whether it has ended is asked first, so that what it wrote just before is still read.
-		var ended = process.exitCode(false);
-		var text = readNew();
-		if (text != "") {
-			var lines = (partial + text).split("\n");
-			partial = lines.pop();
-			for (l in lines)
-				if (l != "")
-					messages.push(try haxe.Json.parse(l) catch (e:Dynamic) ({t: "error", kind: "protocol", message: "the host wrote something that is not JSON: " + l} : Dynamic));
+		if (handle < 0) return messages;
+		// Read status first: a completed runtime has already published its final output.
+		var ended = statusNative(handle);
+		var bytes = pollNative(handle);
+		if (bytes != null) {
+			var length = bytes.getI32(0);
+			var text = bytes.sub(4, length).toBytes(length).toString();
+			for (line in text.split("\n")) {
+				var message:Dynamic = haxe.Json.parse(line);
+				if (message.t == "error" && message.kind == "host") diagnostics = message.message;
+				messages.push(message);
+			}
 		}
-		if (ended != null && state == "running") {
+		if (ended != 0) {
+			exitCode = ended == 1 ? 0 : 1;
 			state = "exited";
-			exitCode = ended;
-			process.close();
-			process = null;
+			closeNative(handle);
+			handle = -1;
 		}
 		return messages;
 	}
 
-	/** What the host wrote to its error stream: free text, for when it fails to start or stops. */
 	public function errors():String
-		return sys.FileSystem.exists(errLog()) ? sys.io.File.getContent(errLog()) : "";
+		return diagnostics;
 
-	/** Asks the host to end, and ends it. */
+	/** Unmounts views and drops the VM and its fibers on their owning thread. */
 	public function stop():Void {
-		if (process == null)
-			return;
-		if (state == "running") {
-			send({t: "shutdown"});
-			// Allow normal teardown to release native resources and private library copies.
-			var end = haxe.Timer.stamp() + .1;
-			while (process.exitCode(false) == null && haxe.Timer.stamp() < end)
-				Sys.sleep(.005);
-			if (process.exitCode(false) == null)
-				process.kill();
-			process.exitCode(true);
-		}
-		process.close();
-		process = null;
+		if (handle >= 0) closeNative(handle);
+		handle = -1;
 		state = "idle";
 	}
 
-	function readNew():String {
-		if (!sys.FileSystem.exists(out()))
-			return "";
-		var input = sys.io.File.read(out(), true);
-		input.seek(offset, SeekBegin);
-		var text = input.readAll().toString();
-		input.close();
-		offset += haxe.io.Bytes.ofString(text).length;
-		return text;
-	}
-
-	static function quote(s:String):String
-		return "'" + StringTools.replace(s, "'", "'\\''") + "'";
+	@:hlNative("rayscript", "runtime_open") static function openNative(root:hl.Bytes, length:Int):Int return -1;
+	@:hlNative("rayscript", "runtime_send") static function sendNative(handle:Int, data:hl.Bytes, length:Int):Int return 0;
+	@:hlNative("rayscript", "runtime_close_view") static function closeViewNative(handle:Int, root:Int):Int return 0;
+	@:hlNative("rayscript", "runtime_collect") static function collectNative(handle:Int):Int return 0;
+	@:hlNative("rayscript", "runtime_poll") static function pollNative(handle:Int):hl.Bytes return null;
+	@:hlNative("rayscript", "runtime_status") static function statusNative(handle:Int):Int return 1;
+	@:hlNative("rayscript", "runtime_close") static function closeNative(handle:Int):Int return 0;
 }

@@ -21,13 +21,13 @@ typedef TabView = {root:Int, title:String};
 private typedef Surface = {container:Node, root:Null<Int>, view:Null<String>, attached:Array<Int>};
 
 /**
- * An extension being developed: its host process, the Preview its view is drawn in, and what it said and
+ * An extension being developed: its embedded VM, the Preview its view is drawn in, and what it said and
  * did. `reload` starts the extension afresh from the source as the editor holds it, `edited` does so
  * a moment after typing stops, and `tick` moves everything along. The remote modules an extension imports
  * are answered from a mocks file, so it can run with no editor behind it.
  */
 class Studio {
-	/** stopped, running, exited, or unavailable (no rayscript-host to run it). */
+	/** stopped, running, or exited. */
 	public final state = Signal.make("stopped");
 
 	public final console = Signal.make(([] : Array<Entry>));
@@ -104,15 +104,15 @@ class Studio {
 	/** Counts what the Console shows. */
 	static inline var MAX_ENTRIES = 1000;
 
-	/** `file` is the script that is the extension's main, `source` gives it as the editor holds it; `dir` holds the host's logs; the view's nodes are made in `tree`. */
-	public function new(file:String, dir:String, source:Void->String, tree:LayoutTree, ?manifest:Manifest, ?binary:String, ?connection:Connection) {
+	/** `file` is the script that is the extension's main, `source` gives it as the editor holds it; the view's nodes are made in `tree`. */
+	public function new(file:String, source:Void->String, tree:LayoutTree, ?manifest:Manifest, ?connection:Connection) {
 		this.file = file;
 		this.tree = tree;
 		this.manifest = manifest;
 		title = Signal.make(manifest != null ? manifest.viewTitle : "Preview");
 		Utilities.install();
 		preview = new Preview(tree, send);
-		this.connection = connection == null ? new Connection(file, dir, source, manifest, binary) : connection;
+		this.connection = connection == null ? new Connection(file, source, manifest) : connection;
 		preview.onProblem = message -> this.connection.note("console", "error", message);
 		if (connection == null) this.connection.useMocks = true;
 		this.connection.onMessage = handle;
@@ -162,6 +162,7 @@ class Studio {
 		surfaces.remove(s);
 		if (surfaces.length == 0 && preview != null)
 			preview.hide();
+		connection.collect();
 	}
 
 	/**
@@ -206,7 +207,7 @@ class Studio {
 	public function clearConsole():Void
 		console.set([]);
 
-	/** Runs the extension afresh: a new process, the Preview emptied, the mocked modules registered, the source run. */
+	/** Runs the extension afresh: a new VM, the Preview emptied, the mocked modules registered, the source run. */
 	public function reload():Void {
 		changedAt = -1;
 		if (disposed) return;

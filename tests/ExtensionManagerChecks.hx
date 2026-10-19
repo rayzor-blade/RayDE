@@ -1,5 +1,4 @@
 import rayde.ext.Connection;
-import rayde.ext.HostBinary;
 import rayde.ext.Manager;
 import rayde.ext.Manifest;
 import rayde.ext.NativeTrust;
@@ -8,7 +7,7 @@ import rayde.keys.KeyBindings;
 import rayde.settings.Extensions;
 import rayde.settings.Store;
 
-/** Exercises discovery and supervision with real host processes and no UI framework. */
+/** Exercises discovery and supervision with embedded host VMs and no UI framework. */
 class ExtensionManagerChecks {
 	static function check(ok:Bool, message:String):Void {
 		if (!ok)
@@ -63,9 +62,6 @@ class ExtensionManagerChecks {
 	}
 
 	public static function run():Void {
-		var binary = HostBinary.find();
-		if (binary == null)
-			throw "extension manager checks need rayscript-host";
 		var root = Sys.getCwd() + "bin/check-manager";
 		clean(root);
 		var app = root + "/app",
@@ -114,7 +110,6 @@ class ExtensionManagerChecks {
 		var manager = new Manager(root, {
 			builtins: app,
 			user: user,
-			binary: binary,
 			defaultEvents: ["onStartup"],
 			restartLimit: 3,
 			restartWindow: 60
@@ -159,7 +154,6 @@ class ExtensionManagerChecks {
 		var development = new Manager(root, {
 			builtins: app,
 			user: user,
-			binary: binary,
 			defaultEvents: ["onStartup"],
 			restartLimit: 3,
 			restartWindow: 60
@@ -179,18 +173,16 @@ class ExtensionManagerChecks {
 
 		var crashing = root + "/crashing";
 		fixture(crashing + "/.rayde/extensions", "crash");
-		var stub = root + "/exit-host.sh";
-		write(stub, "#!/bin/sh\nexit 3\n");
-		Sys.command("chmod", ["+x", stub]);
 		var restarts = new Manager(crashing, {
 			builtins: root + "/empty",
 			user: root + "/empty",
-			binary: stub,
 			defaultEvents: ["onStartup"],
 			restartLimit: 3,
 			restartWindow: 60
 		});
 		restarts.discover(services, []);
+		var crashingConnection = restarts.find("crash").connection;
+		crashingConnection.onStart = () -> crashingConnection.send({t: "shutdown"});
 		restarts.start();
 		try {
 			wait(restarts, () -> restarts.find("crash").restartBlocked, "an immediately exiting host stops after the restart limit");
@@ -228,11 +220,11 @@ class ExtensionManagerChecks {
 		var read = KeyBindings.read(root, true);
 		read.setContributions([{command: "ext.command.describe", key: "mod+alt+d"}]);
 		check(read.of("ext.command.describe") == null, "removing an extension default stays removed after reload");
-		nativeChecks(root + "/native-checks", binary, services);
+		nativeChecks(root + "/native-checks", services);
 		Sys.println("extension manager: precedence, activation, services, capabilities, disable, restart limit and key migration");
 	}
 
-	static function nativeChecks(root:String, binary:String, services:rayde.ext.Connection.WorkspaceServices):Void {
+	static function nativeChecks(root:String, services:rayde.ext.Connection.WorkspaceServices):Void {
 		var home = root + "/home", app = root + "/app", workspace = root + "/.rayde/extensions";
 		function nativeFixture(dir:String, id:String, hash:String, two = false):Manifest {
 			var file = fixture(dir, id);
@@ -253,7 +245,7 @@ class ExtensionManagerChecks {
 		check(manifest.problems.length == 0 && manifest.natives.length == 2, "native declarations parse");
 		Store.save(root, "extensions", {nativeApprovals: [{id: manifest.id, extension: manifest.file, library: "example", path: "natives/library", sha256: hash}]});
 		check(!NativeTrust.approved(manifest, manifest.natives[0], home), "workspace settings cannot grant native execution");
-		var manager = new Manager(root, {builtins: app, user: root + "/empty", trustHome: home, binary: binary,
+		var manager = new Manager(root, {builtins: app, user: root + "/empty", trustHome: home,
 			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
 		manager.discover(services, []);
 		try {

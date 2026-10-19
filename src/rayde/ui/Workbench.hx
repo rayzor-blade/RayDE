@@ -1320,9 +1320,8 @@ class Workbench extends Component<WorkbenchProps> {
 		var studio = studios.get(file);
 		if (studio != null)
 			return studio;
-		var name = StringTools.replace(relative(file), "/", "_");
 		var own = extension != null && extension.mainPath() == file ? extension : null;
-		studio = new Studio(file, haxe.io.Path.join([props.display.cwd, ".rayde", "studio", name]), () -> buffer(file).get(), tree, own);
+		studio = new Studio(file, () -> buffer(file).get(), tree, own);
 		studios.set(file, studio);
 		studio.services = services();
 		studio.debug.load(readBreakpoints());
@@ -1345,7 +1344,7 @@ class Workbench extends Component<WorkbenchProps> {
 		extensionManager.onDiscover = entry -> {
 			var m = entry.connection.manifest, dev = entry.installed.scope == "Development";
 			if (dev) { entry.connection.source = () -> buffer(entry.connection.file).get(); entry.connection.useMocks = true; }
-			var studio = new Studio(m.mainPath(), "", () -> entry.connection.source(), tree, m, null, entry.connection);
+			var studio = new Studio(m.mainPath(), () -> entry.connection.source(), tree, m, entry.connection);
 			studio.managed = true;
 			studio.development = dev;
 			studio.live.set(dev);

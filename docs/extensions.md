@@ -1,14 +1,14 @@
 # Writing an extension
 
-RayDE extensions are written in RayScript, run in a process of their own, and describe what they add in a `.rayext` file. The example is a Markdown preview, in [`tests/fixtures/markdown`](../tests/fixtures/markdown): a **Preview** item in the Explorer's menu opens the file rendered in a tab beside the code, redrawn on each save.
+RayDE extensions are written in RayScript, run in embedded VMs, and describe what they add in a `.rayext` file. The example is a Markdown preview, in [`tests/fixtures/markdown`](../tests/fixtures/markdown): a **Preview** item in the Explorer's menu opens the file rendered in a tab beside the code, redrawn on each save.
 
 ![The Explorer's menu for README.md, with Preview at the right end of its item](images/markdown-menu.png)
 
 ## Installed extensions
 
-RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own `rayscript-host` process; opening the Extension Studio is not required.
+RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own VM on a runtime thread inside RayDE; opening the Extension Studio is not required.
 
-Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. This runtime behavior also applies to embedding callers. The process boundary separately contains native faults and permits host restart.
+Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. The VM uses Krio script fibers; a script exception does not panic RayDE. Native libraries execute inside RayDE and native faults can terminate the application.
 
 | Scope | Folder |
 | --- | --- |
@@ -260,7 +260,7 @@ var drawing = signal({
   onClick={e -> select(e.region)}/>;
 ```
 
-Scene commands are painted in order. Coordinates and sizes are content units. Colors are RGB integers or camelCase Ashui theme tokens; `alpha` defaults to 1. `stroke` is a constant screen-pixel width; zero fills a shape.
+Scene commands are painted in order. Coordinates and sizes are content units. Colors are RGB integers or camelCase Ashui theme tokens; command `alpha` defaults to 1 and multiplies the theme color's alpha. `stroke` is a constant screen-pixel width; zero fills a shape.
 
 | Command | Fields |
 | --- | --- |
@@ -272,6 +272,8 @@ Scene commands are painted in order. Coordinates and sizes are content units. Co
 `regions` are unique string ids with rectangular bounds, used for local hover and selection. `selected` accepts an array of ids. Optional handlers receive `click` `{region,x,y,shift,control,meta}`, `hover` `{region}` (null on leave) and `selectionChange` `{ids}`. Event coordinates are local screen coordinates.
 
 The wheel zooms at the pointer; dragging empty space or using the middle/right button pans. Shift-drag selects a rectangle. Commit positions remain script data; gestures do not move the drawing's objects. Painting, hover highlighting, pan and zoom run locally without script calls per frame. Scene updates decode paths once and cull offscreen shapes and text; paths remain in paint order.
+
+For linear lists, set `navigation="scroll"` when mounting the canvas. Ashui Scroll hosts the scene at its natural size and fixed scale, with native wheel/trackpad scrolling and scrollbars. Hover and region selection remain available; pan/zoom gestures are disabled. Coordinates start at the content's top left. Only `reset` commands apply in this mode, resetting the scroll position; it otherwise survives presentation rebuilds. Both Git graph views use this mode.
 
 Set `command` to `{action:'fit'}`, `{action:'reset'}` or `{action:'zoom',factor:1.25}`. A changed `sequence` field repeats an otherwise identical command. Commands run after layout; `fit` uses full scene `bounds`, including offscreen regions. The viewport survives tab presentation rebuilds, and native control owners are disposed when views are hidden or removed. Invalid live properties report an extension error and preserve the last accepted property. Drawing, region and aggregate path-segment lists are limited to 50,000 entries.
 
@@ -332,13 +334,13 @@ The debugger is in the VM and costs nothing without breakpoints: a breakpoint re
 
 ```sh
 scripts/rayde.sh tests/fixtures/markdown/markdown.rayext   # right-click docs/README.md, choose Preview
-scripts/check.sh                                           # the extension in a real rayscript-host, with the workbench's answers played by the test
+scripts/check.sh                                           # embedded extension VMs, with the workbench's answers played by the test
 SNAPSHOT_ONLY=markdown scripts/snapshot.sh                 # the menu, the tab, a save, closing it, and the config form, into bin/snapshots
 SNAPSHOT_ONLY=extensions scripts/snapshot.sh               # two installed extensions, commands, restart, configuration and toggles
 SNAPSHOT_ONLY=debug scripts/snapshot.sh                    # a breakpoint, the stop, the variables, stepping and going on
 ```
 
-The host, `rayscript-host`, is found beside RayDE (`../rayscript/target/release`) or named by `RAYSCRIPT_HOST`. Its protocol, one JSON object a line in each direction, is documented in the crate.
+`native/rayscript` embeds the RayScript host library as `rayscript.hdll`, loaded through Haxe externs. Owned messages cross in-memory queues; VM values and pointers stay on the runtime thread. Closing a tab cancels its event fibers and their spawned children, unmounts the view, and requests collection at a safepoint. Late service replies do not resume cancelled fibers. Hiding a sidebar releases its native presentation and requests collection while retaining its mounted view state. Disabling, reloading or closing the workspace cancels all live script fibers, runs view cleanups, and releases the VM and native resources on the runtime thread. Collection requests and shutdown do not block the UI thread; an in-flight native call must return before its library can be released. The standalone `rayscript-host` remains available for backend tooling.
 
 ## Limits
 

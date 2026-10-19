@@ -28,9 +28,6 @@ class Connection {
 	public var onStart:Null<Void->Void>;
 	public var nativeAllowed:Manifest->Bool = m -> NativeTrust.allApproved(m);
 	public var useMocks = false;
-	public final binary:Null<String>;
-
-	final dir:String;
 
 	public var source:Void->String;
 
@@ -42,14 +39,10 @@ class Connection {
 	final pending = new Map<String, {name:String, data:Dynamic, at:Float}>();
 	var replies:Array<{message:Dynamic, at:Float}> = [];
 
-	public function new(file:String, dir:String, source:Void->String, ?manifest:Manifest, ?binary:String) {
+	public function new(file:String, source:Void->String, ?manifest:Manifest) {
 		this.file = file;
-		this.dir = dir;
 		this.source = source;
 		this.manifest = manifest;
-		this.binary = binary == null ? HostBinary.find() : binary;
-		if (this.binary == null)
-			state = "unavailable";
 	}
 
 	public function useManifest(m:Manifest):Void {
@@ -89,10 +82,6 @@ class Connection {
 
 	public function start():Void {
 		stop();
-		if (binary == null) {
-			setState("unavailable");
-			return;
-		}
 		if (manifest != null && manifest.natives.length > 0 && (manifest.problems.length > 0 || !nativeAllowed(manifest))) {
 			note("console", "error", manifest.problems.length > 0 ? manifest.problems[0] : "Native approval required in Settings > Extensions.");
 			setState("blocked");
@@ -105,7 +94,7 @@ class Connection {
 			catch (e:Dynamic)
 				note("console", "error", 'Cannot read mocks file: $e');
 		try {
-			host = new ExtensionHost(binary, dir, manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot());
+			host = new ExtensionHost(manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot());
 			host.start();
 			setState("running");
 			if (manifest != null && manifest.natives.length > 0)
@@ -144,7 +133,11 @@ class Connection {
 		queued = [];
 		pending.clear();
 		replies = [];
-		setState(binary == null ? "unavailable" : "stopped");
+		setState("stopped");
+	}
+
+	public function collect():Void {
+		if (host != null) host.collect();
 	}
 
 	public function send(message:Dynamic):Bool {

@@ -105,7 +105,6 @@ class StudioView extends Component<StudioViewProps> {
 		return stale ? "Showing last successful run" : switch state {
 			case "running": "Running";
 			case "exited": "Exited";
-			case "unavailable": "rayscript-host not found";
 			case _: "Stopped";
 		}
 }

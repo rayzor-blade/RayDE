@@ -6,7 +6,6 @@ import rayde.keys.KeyBindings;
 import rayde.ext.ExtensionHost;
 import rayde.ui.AppIcon;
 import rayde.files.FileOps;
-import rayde.ext.HostBinary;
 import rayde.ext.Hooks;
 import rayde.ext.Manifest;
 import rayde.ext.OrderedJson;
@@ -521,15 +520,9 @@ class Checks {
 		check(bad == 6, 'six broken texts are all refused: $bad');
 	}
 
-	/** An extension in a real rayscript-host: a view comes back as operations, an event goes in, an error comes with its place. */
+	/** An embedded extension: a view comes back as operations, an event goes in, an error comes with its place. */
 	static function extensionHostChecks():Void {
-		var binary = HostBinary.find();
-		if (binary == null) {
-			Sys.println("extension host checks skipped: no rayscript-host (set RAYSCRIPT_HOST, or build ../rayscript)");
-			return;
-		}
-		var dir = Sys.getCwd() + "bin/check-extension";
-		var host = new ExtensionHost(binary, dir);
+		var host = new ExtensionHost();
 		// Waits for a message the test wants, polling as the frame loop would; everything seen on the way is kept.
 		var seen:Array<Dynamic> = [];
 		function until(want:Dynamic->Bool):Null<Dynamic> {
@@ -565,8 +558,8 @@ class Checks {
 		check(until(m -> m.t == "error" && m.kind == "protocol") != null, "a message the host cannot read is answered, not fatal");
 		host.stop();
 		check(host.state == "idle", "the host is stopped");
-		// A host whose input closes ends by itself.
-		var second = new ExtensionHost(binary, dir + "-2");
+		// An explicit shutdown ends the embedded runtime.
+		var second = new ExtensionHost();
 		second.start();
 		var gone = haxe.Timer.stamp() + 5;
 		second.send({t: "shutdown"});
@@ -575,15 +568,15 @@ class Checks {
 			Sys.sleep(.01);
 		}
 		check(second.state == "exited" && second.exitCode == 0, 'a shut down host exits: ${second.state} ${second.exitCode}');
-		Sys.println('extension host: ${seen.length} messages from ${binary}');
-		markdownExtensionChecks(binary);
+		Sys.println('embedded extension host: ${seen.length} messages');
+		markdownExtensionChecks();
 	}
 
 	/**
 	 * The Markdown preview extension in a real host: a command mounts a tab built from a file's text, a hook
 	 * brings it up to date, and closing the tab unmounts it. The file reads are answered here, as the workbench would.
 	 */
-	static function markdownExtensionChecks(binary:String):Void {
+	static function markdownExtensionChecks():Void {
 		var fixture = Sys.getCwd() + "tests/fixtures/markdown/";
 		var manifest = Manifest.read(fixture + "markdown.rayext");
 		check(manifest.problems.length == 0, 'the markdown config reads cleanly: ${manifest.problems.join("; ")}');
@@ -591,7 +584,7 @@ class Checks {
 		check(items.length == 1 && items[0].command == "preview" && items[0].title == "Preview", "the config puts Preview in the Explorer's menu for a Markdown file");
 		check(items[0].icon == "ext/preview.svg" && sys.FileSystem.exists(manifest.iconFile(items[0].icon)), "with the icon of its command");
 		check(manifest.menuFor("explorer/context", "docs/notes.txt", "file").length == 0, "and for no other file");
-		var host = new ExtensionHost(binary, Sys.getCwd() + "bin/check-markdown", manifest.importRoot());
+		var host = new ExtensionHost(manifest.importRoot());
 		host.start();
 		var text = "# First\n\nSome **bold** text.";
 		// Messages not yet looked at, so one batch can answer several waits.
@@ -890,6 +883,6 @@ class Checks {
 			Sys.println("rayde checks failed:\n  " + failures.join("\n  "));
 			Sys.exit(1);
 		}
-		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, theme bundles, haxelib, extensions, compilation server, an extension in its own process, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
+		Sys.println("rayde checks: the build file model, the terminal and its keys, chords and key bindings, the settings file, theme bundles, haxelib, extensions, compilation server, an embedded extension VM, hover, completion on an edited buffer, definition, references, signature help, diagnostics, restart, and building and running passed");
 	}
 }

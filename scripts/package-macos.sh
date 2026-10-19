@@ -19,8 +19,6 @@ sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.pl
 mkdir -p "$res/extensions"
 [ ! -d extensions ] || cp -R extensions/. "$res/extensions/"
 cp assets/icons/rayde.icns "$res/RayDE.icns"
-host=${RAYSCRIPT_HOST:-$siblings/rayscript/target/release/rayscript-host}
-[ -x "$host" ] && cp "$host" "$res/rayscript-host"
 cat > "$app/Contents/MacOS/RayDE" <<'LAUNCH'
 #!/bin/sh
 # Starts RayDE on ash: a project given on the command line, else one chosen in a dialog.
@@ -39,7 +37,6 @@ if [ $# -eq 0 ]; then
   project=$(osascript -e 'POSIX path of (choose file with prompt "Open a project: a .hxml build file, a .rayext extension or a .raytheme theme" of type {"hxml", "rayext", "raytheme"})' 2>/dev/null) || exit 0
   set -- "$project"
 fi
-[ -x "$res/rayscript-host" ] && export RAYSCRIPT_HOST="$res/rayscript-host"
 exec "$ash" --preset application "$res/rayde.hl" "$@"
 LAUNCH
 chmod +x "$app/Contents/MacOS/RayDE"

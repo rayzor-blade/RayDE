@@ -11,7 +11,6 @@ typedef ManagerOptions = {
 	defaultEvents:Array<String>,
 	restartLimit:Int,
 	restartWindow:Float,
-	?binary:String,
 	?trustHome:String
 };
 
@@ -39,7 +38,7 @@ class ManagedExtension {
 	}
 }
 
-/** Discovers, activates and supervises extension processes independently of the Studio. */
+/** Discovers, activates and supervises extension runtimes independently of the Studio. */
 class Manager {
 	public final extensions:Array<ManagedExtension> = [];
 	public var onChanged:Null<Void->Void>;
@@ -76,8 +75,7 @@ class Manager {
 		}
 		for (e in found) {
 			var m = e.manifest;
-			var c = new Connection(m.mainPath(), haxe.io.Path.join([root, ".rayde", "extensions-run", e.id]), () -> sys.io.File.getContent(m.mainPath()), m,
-				options.binary);
+			var c = new Connection(m.mainPath(), () -> sys.io.File.getContent(m.mainPath()), m);
 			c.services = services;
 			c.nativeAllowed = manifest -> e.scope == "Built-in" || NativeTrust.allApproved(manifest, options.trustHome);
 			var entry = new ManagedExtension(e, c);

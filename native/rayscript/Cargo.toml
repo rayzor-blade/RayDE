@@ -1,0 +1,16 @@
+[package]
+name = "rayde-rayscript"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hl_abi = { git = "https://github.com/rayzor-blade/hl_abi" }
+rayscript-host = { path = "../../../rayscript/crates/rayscript-host" }
+
+[profile.release]
+debug = 1
