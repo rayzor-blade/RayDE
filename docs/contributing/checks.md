@@ -38,6 +38,8 @@ The same suite loads all 731 bundled TextMate scopes and representative aliases,
 
 Markdown checks also cover embedded HTML, HTML5 recovery, centered headings and sized SVG/raster images, native disclosures and the contextual **Open Preview** action. Repeated preview switches assert bitmap disposal, no retained image payloads in the cached document, bounded decoded raster dimensions, and restored scroll/disclosure state. The `[markdown-images]` line reports decoded pixel bytes and cached document size separately; it does not measure driver memory or the shared GPU atlas allocation.
 
+The production Markdown scroll view opts into image virtualization. Its two-image document checks that only the image in the viewport retains decoded pixels, then repeatedly scrolls between both ends and verifies reload and close cleanup. Ashui's `ImageResidencyPixels` test separately checks default-off behavior, shared sources, nested opt-outs, SVG atlas eviction, smaller atlas textures and pixel equality across reloads and atlas repacks.
+
 `scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.
 
 ## Benchmarks

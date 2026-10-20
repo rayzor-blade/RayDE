@@ -283,6 +283,8 @@ class Preview {
 		if (identity == null)
 			return;
 		switch name {
+			case "virtualizeImages":
+				ashui.ui.ImageResidency.configure(part.node, value == true);
 			case "class" | "className":
 				identity.setClasses(value == null ? (part.tag == "#root" ? classList("", true) : []) : classList(value, part.tag == "#root"));
 			case "id":

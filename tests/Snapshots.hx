@@ -1836,6 +1836,21 @@ class Snapshots {
 				bench.active.set(htmlTab); until(hasBitmap, "HTML preview after code tab"); shot("html-reopened");
 				bench.closeAll(); until(() -> studio.tabViews.length == 0, "image previews to close"); settle();
 				ashui.types.Bitmap.disposing.remove(onDispose);
+				var residencyFile = root + "/viewport-images.md";
+				sys.io.File.saveContent(residencyFile, '<img src="welcome.png" width="400"/>\n\n' + [for (i in 0...60) 'Paragraph $i between the two images.\n\n'].join("") + '<img src="welcome.png" width="200"/>\n');
+				manager.command("markdown", "markdown.preview", {path:residencyFile});
+				until(() -> activeMarkdown() != null && (@:privateAccess activeMarkdown().bitmaps.length) == 2, "scrollable image document"); settle();
+				var images = @:privateAccess activeMarkdown().bitmaps;
+				shot("viewport-images-top");
+				if (!images[0].decoded() || images[1].decoded()) throw "offscreen Markdown image retained decoded pixels";
+				for (_ in 0...3) {
+					scroll("#markdown-scroll", 100000); shot("viewport-images-bottom");
+					if (images[0].decoded() || !images[1].decoded()) throw "Markdown images did not follow the scroll viewport";
+					scroll("#markdown-scroll", 0); shot("viewport-images-returned");
+					if (!images[0].decoded() || images[1].decoded()) throw "Markdown image did not reload on reentry";
+				}
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "viewport image preview to close"); settle();
+				if (images[0].decoded() || images[1].decoded()) throw "closed viewport image document retained pixels";
 			});
 		for (dark in [true, false])
 			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {

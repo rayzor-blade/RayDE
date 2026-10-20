@@ -49,7 +49,7 @@ Embedded HTML is parsed with Scraper/html5ever and rendered with Ashui. Supporte
 <details><summary>More information</summary><p>Document content.</p></details>
 ```
 
-Images remain file references in the cached document. The visible view reads them through the workspace's capability and path checks; image bytes are not embedded in the extension VM's document JSON. Raster buffers are reduced for the requested display size, allowing 2× backing resolution with a 2048 px longest-side cap. Native decoded pixels are released when their view is hidden. Ashui packs displayed images into a shared RGBA atlas; GPU block compression is currently available for mesh textures rather than this 2D atlas.
+Images remain file references in the cached document. The visible view reads them through the workspace's capability and path checks; image bytes are not embedded in the extension VM's document JSON. Raster buffers are reduced for the requested display size, allowing 2× backing resolution with a 2048 px longest-side cap. The scroll container opts into Ashui's `virtualizeImages`: offscreen images release decoded pixels, keep dimensions and compressed source, and reload on reentry. The renderer reclaims unused atlas entries and reduces texture capacity as the resident set changes. Hiding the tab releases its image sources too. Ashui packs displayed images into a shared RGBA atlas; GPU block compression is currently available for mesh textures rather than this 2D atlas.
 
 ![HTML alignment, sized images and inline formatting](images/markdown-html.png)
 

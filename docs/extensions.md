@@ -220,6 +220,8 @@ The pure native modules `rayde.syntax` and `rayde.markdown` supply the [shared s
 
 Set the rendered document's `baseFile` to its source path before serializing it. The bridge resolves local image references relative to that file through `workspace.read`, with the workspace path and size checks. Cached documents need no base64 image payloads; only the visible Markdown view loads and owns decoded image resources.
 
+Scrollable bridge divs accept `virtualizeImages={true}` to opt into Ashui's viewport image residency. Image dimensions remain in layout while offscreen decoded pixels are released; compressed sources support reload on reentry, and the renderer reclaims atlas capacity. It defaults to false. A nested explicit false opts out; shared visible or unmanaged bitmap uses remain resident.
+
 ## Showing a tab
 
 `mount(view, name)` puts a view where the extension's view goes. A name that starts with `tab:` opens an editor tab titled with the rest of it:

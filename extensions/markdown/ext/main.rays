@@ -64,7 +64,7 @@ function Document(props) {
       <ui-button id="markdown-source" size="icon" variant="ghost" tooltip="Open Markdown source" onClick={() -> openFile(preview.path)}><ui-icon name="code"/></ui-button>
       <ui-button id="markdown-refresh" size="icon" variant="ghost" tooltip="Refresh preview" onClick={() -> { preview.source = null; update(preview); }}><ui-icon name="refresh"/></ui-button>
     </div>
-    <div id="markdown-scroll" class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
+    <div id="markdown-scroll" virtualizeImages={true} class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
       <if {preview.document.value != null}><markdown-view id="markdown-document" document={preview.document} onLink={e -> follow(preview, e.href)}/>
       <else><p class="p-6 text-text-secondary">Loading preview…</p></if>
     </div>
