@@ -3097,11 +3097,13 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function languageServerItem(server:{id:String, owner:String, name:String, state:String}):Element {
+		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == server.owner);
+		var icon = extension == null || extension.connection.manifest == null ? Icons.CODE_S_SLASH_LINE : ViewIcons.of(extension.connection.manifest);
 		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
 		var label = server.name + (server.state == "ready" ? "" : " · " + (server.state == "idle" ? "not started" : server.state));
 		return <dropdown-menu side="top" id="rayde-lsp-menu">
 			<dropdown-menu-trigger id="rayde-lsp-status" variant={Ghost} class="rayde-status-item rayde-lsp-status">
-				<icon document={Icons.CODE_S_SLASH_LINE} class="size-3.5"/><text>{label}</text>
+				<icon document={icon} class="size-3.5"/><text>{label}</text>
 			</dropdown-menu-trigger>
 			<dropdown-menu-content>
 				<dropdown-menu-label>{server.name + " — " + server.state}</dropdown-menu-label>
