@@ -1672,6 +1672,10 @@ class Snapshots {
 				var menuBounds = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, row(readme))[0]));
 				ashui.input.Pointer.move(tree, menuBounds.x + menuBounds.width/2, menuBounds.y + menuBounds.height/2);
 				ashui.input.Pointer.press(tree, Right); ashui.input.Pointer.release(tree, Right); settle();
+				var openBounds = tree.getBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, "#rayde-explorer-open")[0]));
+				var previewBounds = tree.getBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, "#rayde-explorer-open-preview")[0]));
+				if (Math.abs(openBounds.height - previewBounds.height) > 1) throw "Explorer menu icon added extra row height";
+				hover("#rayde-explorer-open-preview"); settle();
 				shot("context-preview-menu"); click("#rayde-explorer-open-preview");
 				var studio = bench.studioFor(entry.connection.file);
 				function ready():Bool return Css.query(tree, bench.node.id, ".rayde-markdown").length > 0;

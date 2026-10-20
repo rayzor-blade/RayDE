@@ -2050,24 +2050,17 @@ class Workbench extends Component<WorkbenchProps> {
 	static function menuId(label:String):String
 		return "rayde-explorer-" + [for (w in label.split(" ")) w.toLowerCase().replace("…", "")].join("-");
 
-	/** An item's label, with its icon at the right end. */
-	function itemLabel(label:String, icon:Null<ashui.svg.SvgDocument>):Element {
-		if (icon == null)
-			return <text>${label}</text>;
-		return <div class="flex items-center justify-between gap-3 flex-1 min-w-0">
-			<text>${label}</text>
-			<icon document={icon} class="size-4 shrink-0 text-text-secondary"/>
-		</div>;
-	}
-
 	function menuItem(label:String, command:Null<String>, run:Void->Void, enabled = true, ?icon:ashui.svg.SvgDocument):Element {
 		var keys = command == null ? null : bindings.label(command);
-		return <context-menu-item id={menuId(label)} shortcut={keys} disabled={!enabled} onSelect={run}>${itemLabel(label, icon)}</context-menu-item>;
+		var item = <context-menu-item id={menuId(label)} shortcut={keys} disabled={!enabled} onSelect={run}>${label}</context-menu-item>;
+		// Icons belong to the menu row, outside its label's text flow.
+		if (icon != null) item.appendChild(<icon document={icon} class="size-4 shrink-0 text-text-secondary"/>);
+		return item;
 	}
 
 	function dangerItem(label:String, command:Null<String>, run:Void->Void):Element {
 		var keys = command == null ? null : bindings.label(command);
-		return <context-menu-item id={menuId(label)} shortcut={keys} destructive={true} onSelect={run}>${itemLabel(label, null)}</context-menu-item>;
+		return <context-menu-item id={menuId(label)} shortcut={keys} destructive={true} onSelect={run}>${label}</context-menu-item>;
 	}
 
 	/** The items of the Explorer's menu for a file, a folder or the project's own folder. */
