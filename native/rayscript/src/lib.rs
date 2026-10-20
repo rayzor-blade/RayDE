@@ -16,6 +16,17 @@ mod markdown;
 mod syntax;
 mod grammars;
 
+// RAYDE_EXTENSION_TIMING=1 reports worker stages without changing scheduling.
+fn timed(start: Instant, stage: &str, detail: &str) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ENABLED.get_or_init(|| std::env::var_os("RAYDE_EXTENSION_TIMING").as_deref() == Some(std::ffi::OsStr::new("1"))) { return; }
+    let ms = start.elapsed().as_secs_f64() * 1000.;
+    if ms >= 1. {
+        eprintln!("extension-timing:{}", serde_json::json!({"thread":"vm", "worker":format!("{:?}", thread::current().id()), "stage":stage, "ms":ms, "detail":detail,
+            "at":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs_f64()}));
+    }
+}
+
 enum Command {
     Message(String),
     CloseView(u32),
@@ -42,9 +53,11 @@ impl Runtime {
         let worker = runtime.clone();
         thread::Builder::new().name("rayde-extension".into()).stack_size(64 << 20).spawn(move || {
             let result = catch_unwind(AssertUnwindSafe(|| {
+                let start = Instant::now();
                 let mut host = Host::new(Config { root, ..Config::default() });
                 markdown::install(host.vm());
                 syntax::install(host.vm());
+                timed(start, "host.init", "");
                 host.vm().set_native_waker(Arc::new(move || { let _ = tx.send(Command::Wake); }));
                 worker.push(format!("{{\"t\":\"ready\",\"protocol\":{PROTOCOL}}}"));
                 let mut next = None;
@@ -55,7 +68,12 @@ impl Runtime {
                     for _ in 0..64 {
                         let command = next.take().or_else(|| rx.try_recv().ok());
                         match command {
-                            Some(Command::Message(line)) => host.handle_line(&line),
+                            Some(Command::Message(line)) => {
+                                let start = Instant::now();
+                                host.handle_line(&line);
+                                let kind = line.split("\"t\":\"").nth(1).and_then(|s| s.split('"').next()).unwrap_or("message");
+                                timed(start, "host.command", kind);
+                            },
                             Some(Command::CloseView(root)) => {
                                 host.vm().view_unmount(root);
                                 collect = true;
@@ -78,7 +96,9 @@ impl Runtime {
                         // Vm::drop drains native calls before releasing their libraries and heap.
                         break;
                     }
+                    let start = Instant::now();
                     let more = host.pump();
+                    timed(start, "host.pump", "");
                     if collect {
                         host.vm().collect();
                         let vm = host.vm();

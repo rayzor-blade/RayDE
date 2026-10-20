@@ -103,6 +103,7 @@ class Preview {
 	public function show():Void {
 		if (shown)
 			return;
+		var timing = Timing.start();
 		shown = true;
 		for (p in parts)
 			make(p);
@@ -120,6 +121,7 @@ class Preview {
 			r.node = parts.get(r.id).node;
 		flushControls();
 		revision++;
+		if (Timing.enabled) Timing.end(timing, "preview.show", {parts:count()});
 	}
 
 	/** Takes the nodes down, wherever they are: the page that held them may already have taken them with it. The model stays. */
@@ -146,6 +148,7 @@ class Preview {
 
 	/** Applies the operations of an `ops` message in order. */
 	public function apply(ops:Array<Dynamic>):Void {
+		var timing = Timing.start();
 		for (op in ops) {
 			var args:Array<Dynamic> = op;
 			switch ((args[0] : String)) {
@@ -172,6 +175,7 @@ class Preview {
 		}
 		flushControls();
 		revision++;
+		if (Timing.enabled) Timing.end(timing, "preview.apply", {ops:ops.length, parts:count()});
 	}
 
 	function flushControls():Void {

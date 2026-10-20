@@ -49,7 +49,11 @@ The production Markdown scroll view opts into image virtualization. Its two-imag
 ```sh
 scripts/terminal-bench.sh   # terminal under a program that fills the screen, offscreen: poll, layout, encode
 scripts/scroll-bench.sh     # a long file flicked and left to decelerate, offscreen: layout, encode, finish times
+scripts/extension-bench.sh  # cold/repeat Markdown and Git opens, worker timings and longest UI turns
+scripts/extension-bench.sh --native  # the same probe compiled ahead of time
 ```
+
+The extension probe renders at 1280×800 without PNG readback. It records time to the first ready frame, the longest uninterrupted UI turn, and UI transport, message application, style, layout, draw and collection stages. Worker command/pump and Markdown rendering timings are separate and may overlap UI work. It uses the real embedded runtime, Git extension and a repository with branches and merges; Markdown includes math, Mermaid, syntax highlighting and a local SVG. Three fresh-process runs go to `bin/extension-bench`; set `RAYDE_PROBE_OUTPUT` to keep comparisons, `RAYDE_PROBE_RUNS` to change the repetition count, or `RAYDE_PROBE_MARKDOWN=README.md` to substitute a document (its adjacent `assets` directory is copied too). GC root/stat logging is disabled for these latency measurements. `RAYDE_EXTENSION_TIMING=1` also enables the same stage logging in the application.
 
 | Variable | Effect on `scroll-bench.sh` |
 | --- | --- |

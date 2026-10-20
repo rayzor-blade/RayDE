@@ -994,6 +994,11 @@ class Snapshots {
 					return @:privateAccess studio.preview.parts.get(part.id).control;
 				}
 				var icon = "#rayde-activity-ext-git-scm";
+				if (Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") {
+					if (!dark) return;
+					ExtensionProbe.run(bench, file);
+					return;
+				}
 				if (Sys.getEnv("RAYDE_INTERACTION_PROBE") == "1") {
 					var scheme = Sys.getEnv("RAYDE_PROBE_SCHEME");
 					if (scheme != null && scheme != (dark ? "dark" : "light")) return;
@@ -2157,11 +2162,12 @@ class Snapshots {
 		var only = Sys.getEnv("SNAPSHOT_ONLY");
 		if (only != null && only != "" && only != name)
 			return;
+		if (!dark && name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") return;
 		var root = copyOf(name == "documents" ? "basic" : name == "explorer" ? "git" : name), server = new CompilerServer();
 		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
-		if (name == "markdownpreview") {
+		if (name == "markdownpreview" || name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") {
 			function copy(from:String, to:String):Void {
 				sys.FileSystem.createDirectory(to);
 				for (name in sys.FileSystem.readDirectory(from)) {

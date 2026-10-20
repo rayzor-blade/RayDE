@@ -42,8 +42,11 @@ class ExtensionHost {
 		if (handle < 0) return messages;
 		// Read status first: a completed runtime has already published its final output.
 		var ended = statusNative(handle);
+		var timing = Timing.start();
 		var bytes = pollNative(handle);
+		if (Timing.enabled) Timing.end(timing, "transport.poll");
 		if (bytes != null) {
+			timing = Timing.start();
 			var length = bytes.getI32(0);
 			var text = bytes.sub(4, length).toBytes(length).toString();
 			for (line in text.split("\n")) {
@@ -51,6 +54,7 @@ class ExtensionHost {
 				if (message.t == "error" && message.kind == "host") diagnostics = message.message;
 				messages.push(message);
 			}
+			if (Timing.enabled) Timing.end(timing, "transport.decode", {bytes:length, messages:messages.length});
 		}
 		if (ended != 0) {
 			exitCode = ended == 1 ? 0 : 1;

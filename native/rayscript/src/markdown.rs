@@ -430,6 +430,7 @@ pub fn install(vm: &mut Vm) {
     let render = vm.native(
         "rayde.markdown.render",
         move |vm: &mut Vm, args: &[Value]| {
+            let start = std::time::Instant::now();
             let source = args
                 .first()
                 .and_then(|v| vm.string_of(*v))
@@ -444,7 +445,9 @@ pub fn install(vm: &mut Vm) {
                 .unwrap()
                 .parse(&source)
                 .map_err(|e| vm.new_string(&e))?;
-            Ok(vm.new_string(&result.to_string()))
+            let output = vm.new_string(&result.to_string());
+            super::timed(start, "markdown.render", &format!("{} source bytes", source.len()));
+            Ok(output)
         },
     );
     let module = vm.new_object();

@@ -179,6 +179,7 @@ class Connection {
 		}
 		var current = host;
 		for (m in current.poll()) {
+			var timing = Timing.start();
 			switch (m.t : String) {
 				case "registered":
 					var id = Std.string(m.id);
@@ -212,6 +213,7 @@ class Connection {
 			}
 			if (onMessage != null)
 				onMessage(m);
+			if (Timing.enabled) Timing.end(timing, "message." + Std.string(m.t), {extension:manifest == null ? file : manifest.id});
 		}
 		if (host == current && current.state == "exited") {
 			var err = StringTools.trim(current.errors());

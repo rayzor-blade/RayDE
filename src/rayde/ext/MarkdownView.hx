@@ -41,6 +41,7 @@ class MarkdownView {
 		var body = box("rayde-markdown");
 		node = body.node;
 		new Watch(() -> { ThemeState.get().revision.get(); return {data:visible.get() ? document.get() : null, scheme:ThemeState.get().scheme()}; }, value -> {
+			var timing = Timing.start();
 			var data = value.data;
 			baseFile = data == null || data.baseFile == null ? "" : Std.string(data.baseFile);
 			if (child != null) {
@@ -66,6 +67,7 @@ class MarkdownView {
 					Owner.onCleanup(() -> ashui.layout.LayoutTree.settledHooks.remove(restore));
 				}
 			});
+			if (Timing.enabled) Timing.end(timing, "markdown.build", {visible:data != null});
 		}, (a, b) -> a.data == b.data && a.scheme == b.scheme);
 		Owner.onCleanup(() -> { if (child != null) child.dispose(); headings.clear(); diagrams = []; bitmaps = []; });
 	}
