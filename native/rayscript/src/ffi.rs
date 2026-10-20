@@ -17,6 +17,39 @@ fn packed_text(text:&str) -> *mut vbyte {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn image_open(data:*const vbyte, len:i32, avif:bool) -> i32 {
+    catch_unwind(|| {
+        if data.is_null() || len <= 0 { return -1; }
+        super::image_preview::open(unsafe { std::slice::from_raw_parts(data, len as usize) }.to_vec(), avif)
+    }).unwrap_or(-1)
+}
+define_prim!(hlp_image_open, image_open, "PBib_i");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn image_poll(handle:i32) -> *mut vbyte {
+    catch_unwind(|| {
+        let Some(result) = super::image_preview::poll(handle) else { return ptr::null_mut(); };
+        let (status, data) = match result { Ok(png) => (1_i32, png), Err(error) => (-1, error.into_bytes()) };
+        let Some(length) = data.len().checked_add(8).and_then(|n| i32::try_from(n).ok()) else { return ptr::null_mut(); };
+        unsafe {
+            let bytes = hl_alloc_bytes(length);
+            if bytes.is_null() { return ptr::null_mut(); }
+            ptr::copy_nonoverlapping(status.to_le_bytes().as_ptr(), bytes, 4);
+            ptr::copy_nonoverlapping((data.len() as i32).to_le_bytes().as_ptr(), bytes.add(4), 4);
+            ptr::copy_nonoverlapping(data.as_ptr(), bytes.add(8), data.len());
+            bytes
+        }
+    }).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_image_poll, image_poll, "Pi_B");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn image_close(handle:i32) {
+    let _ = catch_unwind(|| super::image_preview::close(handle));
+}
+define_prim!(hlp_image_close, image_close, "Pi_v");
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn syntax_open(data:*const vbyte, len:i32) -> i32 {
     catch_unwind(|| unsafe { text(data,len) }.map_or(-1, super::syntax::open)).unwrap_or(-1)
 }

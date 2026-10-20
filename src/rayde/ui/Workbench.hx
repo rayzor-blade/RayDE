@@ -195,6 +195,8 @@ class Workbench extends Component<WorkbenchProps> {
 	static inline var HISTORY_TAB = "@local-history:";
 
 	final buffers = new Map<String, Signal<String>>();
+	final imageViews = new Map<String, ImagePreview.ImageViewState>();
+	final imageTextModes = new Map<String, Signal<Bool>>();
 	final documents = new Map<String, CodeEditorState>();
 	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
@@ -533,9 +535,9 @@ class Workbench extends Component<WorkbenchProps> {
 	static function isMarkdown(path:String):Bool
 		return ["md", "markdown", "mdown", "mkd"].indexOf(haxe.io.Path.extension(path).toLowerCase()) >= 0;
 
-	/** Editable file kinds in the Explorer and the source-folder file index. */
+	/** Files the workbench opens from the Explorer and the source-folder file index. */
 	function isSource(path:String):Bool {
-		if (path.endsWith(".hx") || path.endsWith(".rays") || isMarkdown(path))
+		if (path.endsWith(".hx") || path.endsWith(".rays") || isMarkdown(path) || ImagePreview.supports(path))
 			return true;
 		if (themeStudio != null)
 			return path.endsWith(".css") || path.endsWith(".json") || path.endsWith(".md");
@@ -571,7 +573,9 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` with the cursor at `line` and `character` (from 0), scrolled into view, and gives the editor the keyboard. */
 	public function goTo(file:String, line:Int, character:Int):Void {
+		if (ImagePreview.isSvg(file)) imageTextMode(file).set(true);
 		openFile(file);
+		if (ImagePreview.isRaster(file)) return;
 		var text = buffer(file).get(), offset = 0, at = 0;
 		while (at < line && offset < text.length) {
 			var next = text.indexOf("\n", offset);
@@ -1176,6 +1180,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The editor's text for `file`, read from disk when first opened. */
 	public function buffer(file:String):Signal<String> {
+		if (ImagePreview.isRaster(file)) throw "Image files are not text documents";
 		var b = buffers.get(file);
 		if (b == null) {
 			var disk = sys.io.File.getContent(file), recovered = localHistory.recover(file, disk);
@@ -1205,6 +1210,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
+		for (file in imageViews.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageViews.remove(file);
+		for (file in imageTextModes.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageTextModes.remove(file);
 		for (file in localHistory.files()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) localHistory.forget(file);
 		for (file in nativeSyntax.keys())
 			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) {
@@ -2089,7 +2096,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var gitTimeline = Lambda.find(contributed, c -> c.view.id == "timeline");
 		sections.push(explorerSection("timeline", false, 180).panel("Timeline", () ->
 			<div class="flex flex-col flex-1 min-h-0">
-				<local-timeline history={localHistory} revision={historyRevision} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onPreview={previewHistory}/>
+			<local-timeline history={localHistory} revision={historyRevision} file={() -> { var file = realFile(active.get()); return file != null && ImagePreview.isRaster(file) ? null : file; }} text={file -> buffer(file).get()} onPreview={previewHistory}/>
 				{gitTimeline == null ? <text class="text-xs text-text-secondary px-3 py-2">Enable Git for commit history</text> : explorerView(gitTimeline)}
 			</div>, gitTimeline == null ? [] : explorerTools(gitTimeline)));
 
@@ -2181,6 +2188,10 @@ class Workbench extends Component<WorkbenchProps> {
 		var contributed = contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
 			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (ThemeFile.isThemeFile(path)) openThemeStudio() else if (Manifest.isManifest(path)) openSettings("extension")));
+		if (!folder && ImagePreview.isSvg(path)) {
+			items.push(menuItem("Open Preview", null, () -> { imageTextMode(path).set(false); openFile(path); }, true, Icons.IMAGE_LINE));
+			items.push(menuItem("Open in Editor", null, () -> { imageTextMode(path).set(true); openFile(path); }, true, Icons.CODE_S_SLASH_LINE));
+		}
 		if (folder) {
 			items.push(menuItem("New File…", "newfile", () -> askCreate(path, false)));
 			items.push(menuItem("New Folder…", "newfolder", () -> askCreate(path, true)));
@@ -2442,7 +2453,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return [for (f in open) if (all.indexOf(f) >= 0) f].concat([for (f in all) if (open.indexOf(f) < 0) f]);
 	}
 
-	/** Every Haxe file under the project's source folders, folder by folder, in name order. */
+	/** Openable files under the project's source folders, folder by folder, in name order. */
 	function projectFiles():Array<String> {
 		var out = [];
 		function walk(dir:String):Void {
@@ -2463,7 +2474,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return out;
 	}
 
-	/** The tree items for what is in `dir`: its folders and the source files. */
+	/** The tree items for what is in `dir`: its folders and openable files. */
 	function folderEntries(dir:String):Array<Element> {
 		var names = sys.FileSystem.readDirectory(dir);
 		names.sort(Reflect.compare);
@@ -2510,7 +2521,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
-		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : isMarkdown(file) ? Icons.MARKDOWN_LINE : Icons.BRACES_LINE;
+		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : isMarkdown(file) ? Icons.MARKDOWN_LINE : ImagePreview.supports(file) ? Icons.IMAGE_LINE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)
@@ -2610,6 +2621,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") || StringTools.endsWith(file, ".rayext") || StringTools.endsWith(file, ".raytheme") ? "json" : "plain";
 
 	function pageOfFile(file:String):Element {
+		if (ImagePreview.supports(file)) return <tabs-content value={file} class="flex-1 min-h-0"><if {active.get() == file}>${imagePage(file)}</if></tabs-content>;
 		if (isExtension(file) && extension == null)
 			return studioPage(file);
 		return <tabs-content value={file} class="flex-1 min-h-0">${activeCodeEditor(file)}</tabs-content>;
@@ -2617,6 +2629,28 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function activeCodeEditor(file:String):Element
 		return <if {active.get() == file}>${codeEditor(file)}</if>;
+
+	function imageTextMode(file:String):Signal<Bool> {
+		if (!imageTextModes.exists(file)) imageTextModes.set(file, Signal.make(false));
+		return imageTextModes.get(file);
+	}
+
+	function imagePage(file:String):Element {
+		if (!imageViews.exists(file)) imageViews.set(file, ImagePreview.state());
+		var mode = imageTextMode(file);
+		return <for {code in [mode.get()]}>
+			<if {code && ImagePreview.isSvg(file)}>
+				<div class="flex flex-col flex-1 min-h-0">
+					<div class="rayde-image-tools flex items-center justify-between px-3 py-2 shrink-0"><text class="text-xs text-text-secondary">SVG source</text>
+						<tooltip label="Open Preview" side="bottom"><button id="rayde-image-show-preview" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> mode.set(false)}><icon document={Icons.IMAGE_LINE} class="size-4"/></button></tooltip>
+					</div>
+					${codeEditor(file)}
+				</div>
+			<else>
+				<image-preview file={file} state={imageViews.get(file)} source={ImagePreview.isSvg(file) ? buffer(file) : null} onEdit={ImagePreview.isSvg(file) ? () -> mode.set(true) : null}/>
+			</if>
+		</for>;
+	}
 
 	function codeEditor(file:String):Element {
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));

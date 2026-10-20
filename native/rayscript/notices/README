@@ -1,4 +1,4 @@
-Syntax and Markdown dependencies
+Syntax, Markdown and image dependencies
 
 The grammar data comes from @wooorm/starry-night 3.11.0. Its original NOTICE
 and LICENSE accompany this file. Entries referring to lang/<name>.js map to
@@ -17,3 +17,9 @@ Exact transitive dependency versions are locked in native/rayscript/Cargo.lock.
 Scraper 0.27.0 and html5ever 0.39.0 parse embedded HTML into document data.
 The html-* files include their newly introduced dependency licenses. Selectors
 is unmodified MPL-2.0 code; its SOURCE notice points to the exact source archive.
+
+Image 0.25.10 and avif-decode 3.0.0 supply the background BMP/GIF/ICO/AVIF
+decoders. The image-* files contain their newly introduced dependency licenses.
+Atomig-macro shares atomig's MIT/Apache-2.0 licensing and repository.
+Avif-parse is unmodified MPL-2.0 code; its SOURCE notice points to the exact
+source archive.

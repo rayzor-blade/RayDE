@@ -15,8 +15,9 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 - ashui is pinned to a commit (`ashui_rev` in `scripts/deps.sh`), checked out under `.deps` and built once. `ASHUI=<dir>` builds against another checkout.
 - hlwgpu and hlwindow are read from beside RayDE (`HLWGPU`, `HLWINDOW`).
 - `scripts/rayde.sh`, packaging and Git checks/snapshots build pinned libgit2 with CMake and a C compiler, generating the built-in Git manifest with its library hash. The source archive is fetched with curl and verified with shasum; Git fixtures/checks use Python 3.
-- Rust and the sibling `rayscript` checkout supply the embedded extension runtime. `scripts/build-rayscript.sh` builds `native/rayscript` into the existing `../rayscript/target` and stages `bin/rayscript.hdll`; `RAYSCRIPT_TARGET_DIR` selects another shared target. No `rayscript-host` executable is required to run RayDE.
+- Rust 1.98 or newer and the sibling `rayscript` checkout supply the embedded extension runtime. `scripts/build-rayscript.sh` builds `native/rayscript` into the existing `../rayscript/target` and stages `bin/rayscript.hdll`; `RAYSCRIPT_TARGET_DIR` selects another shared target. No `rayscript-host` executable is required to run RayDE.
 - The same library embeds the pinned shared syntax registry and native Markdown/math/Mermaid renderers. `node scripts/update-grammars.mjs` updates grammar data from a checksum-verified archive; normal builds require neither Node nor a browser. Packaging includes the bundled data's notices.
+- Image previews bundle `image` and `avif-decode` for BMP, GIF, ICO and AVIF conversion. The decoders need no external image tools or system AVIF library; their versions and dependencies are locked in Cargo.lock.
 - Source `scripts/deps.sh` from bash only.
 
 ## Environment

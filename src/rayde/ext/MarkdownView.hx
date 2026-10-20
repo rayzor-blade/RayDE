@@ -14,6 +14,7 @@ import ashui.svg.SvgDocument;
 import ashui.theme.ThemeState;
 import ashui.ui.Div;
 import ashui.ui.Text;
+import rayde.ui.SvgDocuments;
 
 /** A document owns its text, code viewers and vector images; replacing or hiding it releases them together. */
 class MarkdownView {
@@ -33,7 +34,6 @@ class MarkdownView {
 	final documentKey:Void->Dynamic;
 	final loadImage:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	var headings:Map<String, Node> = [];
-	static final drawings:Map<Int, {document:SvgDocument, uses:Int}> = [];
 
 	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic, ?documentKey:Void->Dynamic) {
 		this.documentKey = documentKey == null ? () -> document.get() : documentKey;
@@ -284,8 +284,8 @@ class MarkdownView {
 				var asset = loadImage(baseFile, Std.string(data.href)); bytes = asset.bytes; svg = asset.svg;
 			} else throw "Image unavailable";
 			if (svg) {
-				var doc = acquire(bytes.toString());
-				Owner.onCleanup(() -> release(doc));
+				var doc = SvgDocuments.acquire(bytes.toString());
+				Owner.onCleanup(() -> SvgDocuments.release(doc));
 				width = doc.width; height = doc.height;
 				picture = new ashui.ui.Svg(doc);
 			} else {
@@ -320,8 +320,8 @@ class MarkdownView {
 
 	function drawing(data:Dynamic):Element {
 		var markup:String = data.kind == "diagram" && ThemeState.get().scheme() == Dark && data.darkSvg != null ? data.darkSvg : data.svg;
-		var doc = acquire(markup);
-		Owner.onCleanup(() -> release(doc));
+		var doc = SvgDocuments.acquire(markup);
+		Owner.onCleanup(() -> SvgDocuments.release(doc));
 		if (data.kind == "diagram" && data.text != null) return diagram(doc);
 		var frame = box(data.kind == "math" && data.display != true ? "rayde-md-math-inline" : "rayde-md-drawing");
 		if (data.kind == "math" && data.display != true) {
@@ -383,23 +383,6 @@ class MarkdownView {
 		ashui.layout.LayoutTree.settledHooks.push(settle);
 		Owner.onCleanup(() -> ashui.layout.LayoutTree.settledHooks.remove(settle));
 		return frame;
-	}
-
-	// Ashui interns SVGs for icons. Document-specific SVGs leave that registry when their last view is released.
-	static function acquire(markup:String):SvgDocument {
-		var next = @:privateAccess SvgDocument.nextId;
-		var doc = SvgDocument.parse(markup), owned = drawings.get(doc.id);
-		if (owned != null) owned.uses++;
-		else if (doc.id >= next) drawings.set(doc.id, {document:doc, uses:1});
-		return doc;
-	}
-
-	static function release(doc:SvgDocument):Void {
-		var owned = drawings.get(doc.id);
-		if (owned == null || --owned.uses > 0) return;
-		drawings.remove(doc.id);
-		@:privateAccess SvgDocument.byMarkup.remove(doc.markup);
-		@:privateAccess SvgDocument.byId.remove(doc.id);
 	}
 
 	function scroller():Null<ashui.input.Scroll> {

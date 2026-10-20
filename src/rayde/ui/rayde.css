@@ -151,6 +151,11 @@
 #rayde .ui-toast-body { min-width: 0; }
 #rayde .ui-toast > .ui-button { flex-shrink: 0; align-self: center; }
 #rayde .ui-toast > .ui-button > text { white-space: nowrap; }
+
+#rayde .rayde-image-tools { border-bottom: 1px solid var(--border); }
+#rayde .rayde-image-tools .ui-button > text { white-space: nowrap; }
+#rayde .rayde-image-surface { background: #20242b; color: #ffffff; }
+#rayde .rayde-image-surface[data-light] { background: #f2f3f5; color: #000000; }
 #rayde .rds [data-tag="ui-button"] > .ui-button { border-radius: var(--radius-md); corner-shape: squircle; }
 #rayde .rds [data-tag="ui-panel-group"] > .ui-resizable { border: 0; border-radius: 0; background: transparent; }
 #rayde .rds [data-tag="ui-panel-group"] .ui-collapsible { gap: 0; }

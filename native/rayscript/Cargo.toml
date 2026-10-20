@@ -2,6 +2,7 @@
 name = "rayde-rayscript"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98"
 license = "MIT"
 publish = false
 
@@ -19,6 +20,8 @@ include_dir = "=0.7.4"
 latex-rust = { version = "=3.0.1", default-features = false }
 mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
 scraper = { version = "=0.27.0", default-features = false }
+image = { version = "=0.25.10", default-features = false, features = ["png", "bmp", "gif", "ico"] }
+avif-decode = { version = "=3.0.0", default-features = false }
 
 [profile.release]
 debug = 1

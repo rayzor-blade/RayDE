@@ -34,6 +34,14 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 - Explorer folders load their file rows on first expansion and keep them for subsequent expansions.
 - The build file (`build.hxml`) opens as a form in **Settings > Build**.
 
+## Image previews
+
+PNG, JPEG (`.jpg`, `.jpe`, `.jpeg`), BMP, GIF, ICO, WebP, AVIF and SVG files open in an image tab. Drag to pan, scroll to zoom, or use the toolbar to fit the image, view it at 100%, change background contrast or refresh it. GIF previews show the first frame.
+
+SVG tabs can switch between preview and source using the toolbar. The preview uses unsaved edits, and switching preserves undo history. The Explorer context menu also offers **Open Preview** and **Open in Editor** for SVG files.
+
+Inactive image tabs release their decoded pixels and vector documents, retaining only navigation state. BMP, GIF, ICO and AVIF decoding runs on a background worker; closing or hiding a preview cancels its pending result.
+
 ## Settings
 
 | Section | Contents |

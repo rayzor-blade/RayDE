@@ -179,6 +179,90 @@ class Snapshots {
 				shot("changed-define");
 			});
 
+			scenario(dark, "images", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var tree = bench.tree, root = bench.display().cwd, png = root + "/Photo.PNG", svg = root + "/vector.svg";
+				sys.io.File.copy("assets/rayde-welcome.png", png);
+				sys.io.File.saveContent(root + "/broken.png", "not an image");
+				sys.io.File.saveContent(root + "/broken.svg", "<svg><invalid");
+				bench.refreshExplorer(); settle();
+				function has(selector:String):Bool return Css.query(tree, bench.node.id, selector).length > 0;
+				function viewer():rayde.ui.ImagePreview {
+					for (component in (@:privateAccess ashui.ui.Component.hosts)) if (Std.isOfType(component, rayde.ui.ImagePreview)) return cast component;
+					return null;
+				}
+				click('[data-path$="Photo.PNG"] > .ui-tree-row'); settle();
+				if (!has("#rayde-image-canvas") || bench.editorFor(png) != null || (@:privateAccess bench.buffers.exists(png))) throw "raster image opened as a text document";
+				shot("raster-fit");
+				var raster = @:privateAccess viewer().bitmap, view = viewer().viewport, initialZoom = view.zoom.get();
+				click("#rayde-image-in"); settle();
+				if (view.zoom.get() <= initialZoom) throw "image zoom button did not zoom";
+				var b = bench.boundsOf("#rayde-image-canvas");
+				ashui.input.Pointer.move(tree,b.x+b.width/2,b.y+b.height/2); ashui.input.Pointer.wheel(tree,0,80); settle();
+				var before = view.panX.get();
+				ashui.input.Pointer.press(tree); ashui.input.Pointer.move(tree,b.x+b.width/2+60,b.y+b.height/2+30); ashui.input.Pointer.release(tree); settle();
+				if (view.panX.get() == before) throw "image drag did not pan";
+				shot("raster-zoom-pan");
+				var zoom = view.zoom.get(), x = view.panX.get(), y = view.panY.get();
+				bench.openFile(file); settle();
+				if (raster.decoded() || viewer() != null) throw "inactive image retained decoded pixels or a viewer";
+				bench.active.set(png); settle(); view = viewer().viewport;
+				if (Math.abs(view.zoom.get()-zoom) > .001 || Math.abs(view.panX.get()-x) > .01 || Math.abs(view.panY.get()-y) > .01) throw "image navigation was lost on tab switch";
+				click("#rayde-image-actual"); settle(); if (view.zoom.get() != 1) throw "actual image size did not restore 100 percent";
+				click("#rayde-image-fit"); settle();
+				click("#rayde-image-background"); settle(); if (!has("#rayde-image-surface[data-light]")) throw "image background control did not change contrast";
+				shot("raster-light-background");
+				var old = @:privateAccess viewer().bitmap;
+				click("#rayde-image-reload"); settle(); if (old.decoded()) throw "image refresh retained the previous pixels";
+				for (suffix in ["jpe", "jpeg"]) sys.io.File.copy(root + "/sample.jpg", root + "/sample." + suffix);
+				for (name in ["sample.jpg", "sample.jpe", "sample.jpeg", "sample.webp", "sample.bmp", "sample.gif", "sample.ico", "sample-png.ico", "sample.avif"]) {
+					bench.openFile(root + "/" + name); settle();
+					until(() -> has("#rayde-image-canvas") || has("#rayde-image-error"), 'decode $name');
+					if (!has("#rayde-image-canvas") || (@:privateAccess viewer().bitmap) == null) throw 'missing raster preview for $name';
+					if (bench.editorFor(root + "/" + name) != null || (@:privateAccess bench.buffers.exists(root + "/" + name))) throw 'raster $name opened as text';
+					shot("raster-" + StringTools.replace(name, ".", "-"));
+				}
+				bench.active.set(file); settle(); bench.active.set(root + "/sample.avif"); bench.active.set(file); settle(20);
+				if (viewer() != null || has("#rayde-image-canvas")) throw "cancelled image decode mounted into another tab";
+				sys.io.File.saveContent(root + "/broken.avif", "not an image");
+				bench.openFile(root + "/broken.avif");
+				until(() -> has("#rayde-image-error"), "invalid background image decode");
+				var large = root + "/large.svg";
+				sys.io.File.saveContent(large, '<svg xmlns="http://www.w3.org/2000/svg" width="16000" height="12000"><rect width="16000" height="12000" fill="#369cff"/><circle cx="8000" cy="6000" r="3000" fill="#ffce52"/></svg>');
+				bench.openFile(large); settle();
+				if (!has("#rayde-image-canvas") || viewer().viewport.zoom.get() >= .1) throw "oversized SVG was not fitted to the viewport";
+				shot("large-svg");
+				bench.openFile(svg); settle();
+				if (!has("#rayde-image-edit") || bench.editorFor(svg) != null) throw "SVG did not open as a preview";
+				shot("svg-preview");
+				var original = bench.buffer(svg).get(), owned = @:privateAccess rayde.ui.SvgDocuments.owned;
+				if ([for (_ in owned) 1].length != 1) throw "SVG preview is not owned";
+				var shared = rayde.ui.SvgDocuments.acquire(original);
+				click("#rayde-image-edit"); settle();
+				if (bench.editorFor(svg) == null || has("#rayde-image-canvas") || ashui.svg.SvgDocument.get(shared.id) == null) throw "SVG editor switch released another view's document";
+				rayde.ui.SvgDocuments.release(shared);
+				if (owned.iterator().hasNext()) throw "SVG editor retained a preview document";
+				var from = original.indexOf("SVG preview");
+				bench.editorFor(svg).applyEdits([{from:from,to:from+11,text:"Edited vector"}]); settle();
+				var edited = bench.buffer(svg).get();
+				if (edited == original || bench.dirty.get().indexOf(svg) < 0) throw "SVG edit was not tracked";
+				shot("svg-source");
+				click("#rayde-image-show-preview"); settle();
+				if (!has("#rayde-image-canvas") || sys.io.File.getContent(svg) != original) throw "preview failed to use the unsaved SVG";
+				if (!Lambda.exists(owned, entry -> entry.document.markup.indexOf("Edited vector") >= 0)) throw "SVG preview used stale source";
+				shot("svg-unsaved-preview");
+				click("#rayde-image-edit"); settle(); bench.editorFor(svg).undo(); settle();
+				if (bench.buffer(svg).get() != original) throw "SVG mode switch lost undo history";
+				bench.buffer(svg).set("<svg><invalid"); click("#rayde-image-show-preview"); settle();
+				if (!has("#rayde-image-error") || !has("#rayde-image-edit")) throw "invalid SVG cannot return to source";
+				shot("invalid-svg");
+				click("#rayde-image-edit"); settle(); bench.buffer(svg).set(original); click("#rayde-image-show-preview"); settle();
+				if (!has("#rayde-image-canvas")) throw "SVG did not recover after correcting its source";
+				bench.openFile(root + "/broken.png"); settle(); if (!has("#rayde-image-error")) throw "invalid raster image crashed or opened as text";
+				shot("invalid-raster");
+				bench.closeAll(); settle();
+				if (viewer() != null || owned.iterator().hasNext() || raster.decoded()) throw "closed image tabs retained view resources";
+			});
+
 			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				if (bench.panelOpen())
 					throw "the bottom panel should start closed";
@@ -1927,11 +2011,11 @@ class Snapshots {
 				firstScroll.scrollTo(0, firstScroll.y.get() + code.y - tree.getScrolledBounds(firstScroll.node).y - 80); settle(); shot("highlighted-code");
 				scroll("#markdown-scroll", 1600); shot("gfm-images");
 				var tab = bench.active.get();
-				var originalSvgCount = [for (_ in (@:privateAccess rayde.ext.MarkdownView.drawings)) 1].length;
+				var originalSvgCount = [for (_ in (@:privateAccess rayde.ui.SvgDocuments.owned)) 1].length;
 				bench.buffer(readme).set(source + "\nAn update.\n"); bench.edited(readme);
 				until(() -> Css.query(tree, bench.node.id, ".rayde-md-word").length > 0 && (@:privateAccess control.markdownDocument.get()) != null
 					&& haxe.Json.stringify(@:privateAccess control.markdownDocument.get()).indexOf("An update.") >= 0, "a document replacement"); settle();
-				if ([for (_ in (@:privateAccess rayde.ext.MarkdownView.drawings)) 1].length != originalSvgCount) throw "document refresh retained old vector images";
+				if ([for (_ in (@:privateAccess rayde.ui.SvgDocuments.owned)) 1].length != originalSvgCount) throw "document refresh retained old vector images";
 				follow("other.md");
 				until(() -> studio.tabViews.length == 2 && Css.query(tree, bench.node.id, '[data-md-heading="another-document"]').length > 0, "relative Markdown link to open a second preview");
 				bench.closeFile(bench.active.get()); settle();
@@ -1951,7 +2035,7 @@ class Snapshots {
 				shot("invalid-blocks");
 				bench.closeAll();
 				until(() -> studio.tabViews.length == 0, "bulk close to unmount Markdown"); settle();
-				if ((@:privateAccess rayde.ext.MarkdownView.drawings).iterator().hasNext()) throw "Markdown retained generated SVGs after close";
+				if ((@:privateAccess rayde.ui.SvgDocuments.owned).iterator().hasNext()) throw "Markdown retained generated SVGs after close";
 				manager.command("markdown", "markdown.preview", {path:readme});
 				until(ready, "Markdown preview after bulk close"); shot("reopened");
 				bench.openFile(root + "/example.rs"); settle();
@@ -2005,7 +2089,7 @@ class Snapshots {
 				}
 				var activeView = activeMarkdown(); bitmap = @:privateAccess activeView.bitmaps[0];
 				bench.openFile(file); settle();
-				if (disposed.indexOf(bitmap.id) < 0 || (@:privateAccess activeView.bitmaps.length) != 0 || (@:privateAccess rayde.ext.MarkdownView.drawings).iterator().hasNext()) throw "inactive image previews retained render resources";
+				if (disposed.indexOf(bitmap.id) < 0 || (@:privateAccess activeView.bitmaps.length) != 0 || (@:privateAccess rayde.ui.SvgDocuments.owned).iterator().hasNext()) throw "inactive image previews retained render resources";
 				if (studio.tabViews.length != 2) throw "hiding previews closed their document tabs";
 				Sys.println('[markdown-images] active decoded bytes=$decodedBytes; inactive decoded images=0; disposed images=${disposed.length}; cached document chars=${model.length}');
 				shot("inactive-images-released");
