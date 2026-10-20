@@ -58,6 +58,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 	final input = new Ref<CommandInput>();
 	final mode = Signal.make("files");
 	final builds = Signal.make(0);
+	final mounted = Signal.make(false);
 
 	/** What the filter holds when the list is next made: what it was opened with, or what was typed across a change of mode. */
 	var carry = "";
@@ -70,7 +71,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 
 	function render():Element {
 		panel = <div id="rayde-command-center" class="rayde-glass rayde-command-center flex flex-col overflow-hidden" width={600}>
-			<for {k in [{mode: mode.get(), build: builds.get()}]}>${body(k.mode)}</for>
+			<if {mounted.get()}><for {k in [{mode: mode.get(), build: builds.get()}]}>${body(k.mode)}</for></if>
 		</div>;
 		var root = <div position={Absolute} width={0} height={0}/>;
 		floating = new Floating(props.opened, panel);
@@ -86,6 +87,11 @@ class CommandCenter extends Component<CommandCenterProps> {
 			picker = props.request.get().picker;
 			mode.set(picker != null ? "pick" : modeOf(carry));
 			builds.set(builds.get() + 1);
+			mounted.set(true);
+		} else {
+			mounted.set(false);
+			picker = null;
+			carry = "";
 		}, (_, _) -> false);
 		// A press outside the panel and its pill closes it; the pill closes it itself when it is open.
 		var outside:LayoutTree->Void = tree -> if (tree == root.tree
@@ -122,7 +128,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 		rows.unshift(new CommandEmpty({}, [new ashui.ui.Text(empty)]));
 		var placeholder = m == "pick" ? picker.placeholder : m == "tasks" ? "Run a task" : m == "commands" ? "Run a command" : m == "line" ? "Go to line" : "Search files by name";
 		var element = <div class="flex flex-col">
-		<command id="rayde-command-list" onSelect={choose}>
+		<command ref={command} id="rayde-command-list" onSelect={choose}>
 			<command-input ref={input} id="rayde-command-input" placeholder={placeholder} onKeyDown={e -> if (m == "line" && e.key.match(Named(Enter))) {
 				goToLine();
 				e.preventDefault();
@@ -140,8 +146,10 @@ class CommandCenter extends Component<CommandCenterProps> {
 			</if>
 		</div>
 		</div>;
+		var field = ashui.ui.Input.at(element.tree, Css.query(element.tree, element.node.id, "#rayde-command-input")[0]);
+		field.value.set(carry);
 		// A change of mode builds the list again, so what was typed goes back into the new filter.
-		new Watch(() -> command.get() == null ? "" : command.get().query.get(), q -> {
+		new Watch(() -> field.value.get(), q -> {
 			var next = modeOf(q);
 			if (picker == null && command.get() != null && next != mode.get()) {
 				carry = q;
@@ -204,7 +212,8 @@ class CommandCenter extends Component<CommandCenterProps> {
 	/** Once the list is laid out, puts the carried text in the filter and the cursor there. */
 	function restoreFilter():Void {
 		var hook:LayoutTree->Void = null;
-		hook = _ -> {
+		hook = tree -> {
+			if (tree != panel.tree) return;
 			LayoutTree.flushHooks.remove(hook);
 			if (!props.opened.get() || input.get() == null)
 				return;
@@ -214,5 +223,6 @@ class CommandCenter extends Component<CommandCenterProps> {
 			input.get().focus();
 		};
 		LayoutTree.flushHooks.push(hook);
+		Owner.onCleanup(() -> LayoutTree.flushHooks.remove(hook));
 	}
 }

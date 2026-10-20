@@ -26,6 +26,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "commandcenter") {
+			CommandCenterLifecycle.main();
+			return;
+		}
 		// haxelib is a stand-in with a few libraries, so the page and what it runs do not depend on the machine or the network; home is empty.
 		var scratch = haxe.io.Path.join([Sys.getCwd(), "bin", "snapshot-tools"]);
 		if (!sys.FileSystem.exists(scratch))
