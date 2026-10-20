@@ -62,7 +62,10 @@ scripts/scroll-bench.sh     # a long file flicked and left to decelerate, offscr
 scripts/markdown-scroll-bench.sh  # phased Markdown glides, slow tails and reversals, with a preview snapshot
 scripts/extension-bench.sh  # cold/repeat Markdown and Git opens, worker timings and longest UI turns
 scripts/extension-bench.sh --native  # the same probe compiled ahead of time
+python3 tests/lsp_transport_bench.py  # framed RPC over child-process pipes and loopback TCP
 ```
+
+The LSP transport probe compiles a standalone Rust helper into `bin` without Cargo. It compares warmed stdio pipes with loopback TCP (`TCP_NODELAY`) using the same worker, framing and payload sizes. Seven trials run in shuffled order for small sequential requests, large document updates and a pipelined burst. Per-trial timings, median latency, throughput, child CPU time and machine metadata go to `bin/lsp-transport-results.json`. This isolates transport overhead; it does not measure Rayzor analysis or server startup.
 
 The extension probe renders at 1280×800 without PNG readback. It records time to the first ready frame, the longest uninterrupted UI turn, and UI transport, message application, style, layout, draw and collection stages. Worker command/pump and Markdown rendering timings are separate and may overlap UI work. It uses the real embedded runtime, Git extension and a repository with branches and merges; Markdown includes math, Mermaid, syntax highlighting and a local SVG. Three fresh-process runs go to `bin/extension-bench`; set `RAYDE_PROBE_OUTPUT` to keep comparisons, `RAYDE_PROBE_RUNS` to change the repetition count, or `RAYDE_PROBE_MARKDOWN=README.md` to substitute a document (its adjacent `assets` directory is copied too). GC root/stat logging is disabled for these latency measurements. `RAYDE_EXTENSION_TIMING=1` also enables the same stage logging in the application.
 
