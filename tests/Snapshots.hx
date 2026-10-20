@@ -186,6 +186,12 @@ class Snapshots {
 				if (!state.search.opened.get()) throw "Find shortcut did not open the component search bar";
 				click(".ui-code-find-regex"); type(".ui-code-find-query", "item(12|34)"); click(".ui-code-find-query"); settle();
 				if (ed.search.result.get().matches.length != 4) throw "Haxe regex did not find all captured items";
+				var nextId = Css.query(bench.tree, bench.node.id, ".ui-code-find-next")[0];
+				if (ashui.input.Interaction.byId(bench.tree,nextId).disabled.get()) throw "Next match button stayed disabled after finding results";
+				var initialMatch = ed.editing.anchor.get();
+				click(".ui-code-find-next"); settle(); if (ed.editing.anchor.get() <= initialMatch) throw "Next match button did not advance";
+				click(".ui-code-find-previous"); settle(); if (ed.editing.anchor.get() != initialMatch) throw "Previous match button did not return";
+				click(".ui-code-find-query");
 				shot("haxe-regex");
 				var first = ed.editing.anchor.get(); press(Named(Enter)); settle();
 				if (ed.editing.anchor.get() <= first) throw "Enter did not advance the result";
