@@ -2,6 +2,10 @@
 
 The built-in Markdown extension opens editor tabs. **Markdown: Open Preview** uses the active Markdown file; the Explorer and editor menus pass the selected file. The preview and its command use Remix's Markdown icon. The extension contributes no sidebar view.
 
+The Explorer includes Markdown in the project root, documentation folders and source folders. `.md`, `.markdown`, `.mdown` and `.mkd` are recognized without case sensitivity and use the Markdown icon. Source folders start expanded; other folders load when opened.
+
+![Markdown source opened from the project Explorer](images/markdown-explorer.png)
+
 Edits update an open preview after the editor's change debounce, including unsaved buffers. Opening the same preview again focuses its existing tab. The source and refresh actions have icon tooltips. Closing a preview, including through a bulk close action, releases its view, generated SVGs and code viewers.
 
 ## Rendering

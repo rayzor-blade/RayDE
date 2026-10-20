@@ -514,9 +514,12 @@ class Workbench extends Component<WorkbenchProps> {
 		} catch (_:Dynamic) {}
 	}
 
-	/** A file the Explorer lists and the center finds: Haxe, and an extension's scripts; for an extension project, its text files too. */
+	static function isMarkdown(path:String):Bool
+		return ["md", "markdown", "mdown", "mkd"].indexOf(haxe.io.Path.extension(path).toLowerCase()) >= 0;
+
+	/** Editable file kinds in the Explorer and the source-folder file index. */
 	function isSource(path:String):Bool {
-		if (path.endsWith(".hx") || path.endsWith(".rays"))
+		if (path.endsWith(".hx") || path.endsWith(".rays") || isMarkdown(path))
 			return true;
 		if (themeStudio != null)
 			return path.endsWith(".css") || path.endsWith(".json") || path.endsWith(".md");
@@ -2313,8 +2316,12 @@ class Workbench extends Component<WorkbenchProps> {
 		return tagged(<tree-item value={props.display.hxml} label={haxe.io.Path.withoutDirectory(props.display.hxml)} icon={Icons.SETTINGS_3_LINE}/>, props.display.hxml);
 	}
 
-	function folders():Array<Element>
-		return themeStudio != null ? folderEntries(props.display.cwd) : [for (cp in classpaths()) folder(cp.dir, cp.label, true)];
+	function folders():Array<Element> {
+		var entries = folderEntries(props.display.cwd);
+		for (cp in classpaths())
+			if (!FileOps.inside(props.display.cwd, cp.dir)) entries.push(folder(cp.dir, cp.label, true));
+		return entries;
+	}
 
 	/** The project's files with the open ones first, in the order of their tabs. */
 	function recentFiles():Array<String> {
@@ -2347,13 +2354,13 @@ class Workbench extends Component<WorkbenchProps> {
 	function folderEntries(dir:String):Array<Element> {
 		var names = sys.FileSystem.readDirectory(dir);
 		names.sort(Reflect.compare);
-		var children:Array<Element> = [];
+		var children:Array<Element> = [], sources = classpaths();
 		for (name in names) {
 			var path = haxe.io.Path.join([dir, name]);
 			if (name.startsWith("."))
 				continue;
 			if (sys.FileSystem.isDirectory(path))
-				children.push(folder(path, name, false));
+				children.push(folder(path, name, Lambda.exists(sources, cp -> FileOps.inside(path, cp.dir))));
 			else if (isSource(path))
 				children.push(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path));
 		}
@@ -2389,7 +2396,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
-		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : StringTools.endsWith(file, ".md") ? Icons.MARKDOWN_LINE : Icons.BRACES_LINE;
+		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : isMarkdown(file) ? Icons.MARKDOWN_LINE : Icons.BRACES_LINE;
 
 	function tabStrip(has:Bool):Element {
 		if (!has)

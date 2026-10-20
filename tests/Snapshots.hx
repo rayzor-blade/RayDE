@@ -1653,6 +1653,18 @@ class Snapshots {
 			scenario(dark, "markdownpreview", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(file)), readme = root + "/README.md";
 				var manager = bench.extensionManager, entry = manager.find("markdown"), tree = bench.tree;
+				function row(path:String):String return '[data-path="$path"] > .ui-tree-row';
+				for (path in [readme, root + "/other.md", root + "/src/notes.MD"])
+					if (Css.query(tree, bench.node.id, row(path)).length != 1) throw 'Explorer skipped Markdown file $path';
+				var guide = root + "/docs/guide.md";
+				if (Css.query(tree, bench.node.id, row(guide)).length != 0) throw "Explorer loaded a closed docs folder eagerly";
+				click(row(root + "/docs")); settle();
+				if (Css.query(tree, bench.node.id, row(guide)).length != 1) throw "Explorer skipped a Markdown file outside the class path";
+				click(row(guide));
+				if (bench.active.get() != guide) throw "clicking Markdown in Explorer did not open its editor";
+				click(row(readme));
+				if (bench.active.get() != readme) throw "clicking root Markdown in Explorer did not open its editor";
+				shot("explorer-markdown");
 				if (entry == null || entry.connection.running()) throw "Markdown should activate on command";
 				if (rayde.ui.ViewIcons.of(entry.connection.manifest) != rayde.ui.Icons.MARKDOWN_LINE) throw "Markdown must use the Remix Markdown icon";
 				if (Css.query(tree, bench.node.id, "#rayde-activity-ext-markdown").length != 0) throw "Markdown preview must not add an activity icon";
