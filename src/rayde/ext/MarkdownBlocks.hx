@@ -27,6 +27,9 @@ class MarkdownBlocks {
 	var first = 0;
 	var last = -1;
 	var timer:ashui.animation.AnimationScheduler.Timer;
+	var quiet:ashui.animation.AnimationScheduler.Timer;
+	var lookAhead = 0.;
+	var viewTop = 0.;
 	var requested:Null<{x:Float, y:Float}>;
 	var target = -1;
 	var revealTarget:Null<Void->Bool>;
@@ -37,7 +40,7 @@ class MarkdownBlocks {
 	var scrollX = 0.;
 	var scrollY = 0.;
 	static inline var GAP = 16.;
-	static inline var OVERSCAN = 120.;
+	static inline var OVERSCAN = 240.;
 
 	public function new(data:Array<Dynamic>, render:(Dynamic, Int)->Element, estimate:(Dynamic, Float)->Float, identify:Dynamic->String, key:Dynamic, saved:Dynamic) {
 		this.data = data; this.render = render; this.estimate = estimate; this.key = key;
@@ -62,10 +65,12 @@ class MarkdownBlocks {
 		positions();
 		choose(requested == null ? 0 : requested.y, 600);
 		sync();
+		ashui.text.InlineFlow.onMeasured(body.tree, measure);
 		LayoutTree.settledHooks.push(layout);
 		Owner.onCleanup(() -> {
 			alive = false;
 			if (timer != null) timer.cancel();
+			if (quiet != null) quiet.cancel();
 			LayoutTree.settledHooks.remove(layout);
 			mounted.clear(); revealTarget = null;
 		});
@@ -88,7 +93,9 @@ class MarkdownBlocks {
 	}
 
 	function choose(y:Float, height:Float):Void {
-		first = at(Math.max(0, y - OVERSCAN)); last = data.length == 0 ? -1 : at(y + height + OVERSCAN);
+		viewTop = y;
+		first = at(Math.max(0, y - OVERSCAN + Math.min(0, lookAhead)));
+		last = data.length == 0 ? -1 : at(y + height + OVERSCAN + Math.max(0, lookAhead));
 		if (target >= 0) { first = Std.int(Math.min(first, target)); last = Std.int(Math.max(last, target)); }
 	}
 
@@ -101,13 +108,16 @@ class MarkdownBlocks {
 	}
 
 	function sync():Void {
-		var start = haxe.Timer.stamp();
-		for (i in [for (i in mounted.keys()) if (i < first || i > last) i]) {
+		// A small hysteresis keeps a reversal from immediately rebuilding the departing block.
+		var keep = lookAhead == 0 ? 0 : 1;
+		for (i in [for (i in mounted.keys()) if (i < first-keep || i > last+keep) i]) {
 			mounted.get(i).owner.dispose(); mounted.remove(i);
 		}
-		var built = 0;
-		for (i in first...last+1) if (!mounted.exists(i)) {
-			if (built > 0 && (built >= 4 || haxe.Timer.stamp()-start > .006)) { queue(); break; }
+		var pending = [for (i in first...last+1) if (!mounted.exists(i)) i];
+		function distance(i:Int):Float return Math.max(0, Math.max(viewTop-offsets[i+1], offsets[i]-viewTop-viewportHeight));
+		pending.sort((a, b) -> Reflect.compare(distance(a), distance(b)));
+		// Layout and text shaping follow construction; budget one new block per frame.
+		for (i in pending.slice(0, 1)) {
 			var owner = new Owner(body.tree);
 			var view = owner.run(() -> {
 				var block = new Div({position:ashui.types.Style.Position.Absolute, left:0, top:offsets[i], minWidth:0, flexDirection:ashui.types.Style.FlexDirection.Column, flexShrink:0});
@@ -116,13 +126,38 @@ class MarkdownBlocks {
 				block.appendChild(render(data[i], i)); body.appendChild(block);
 				return block;
 			});
-			mounted.set(i, {owner:owner, view:view}); built++;
+			mounted.set(i, {owner:owner, view:view});
 		}
+		if (pending.length > 1) queue();
 	}
 
 	function scroll():Null<Scroll> {
 		for (id in body.tree.ancestors(node.id)) { var s = Scroll.at(id, body.tree); if (s != null) return s; }
 		return null;
+	}
+
+	function measure():Bool {
+		if (!alive) return false;
+		var s = scroll(), bounds = body.tree.getScrolledBounds(node);
+		if (s == null || bounds == null || bounds.width <= 0) return false;
+		var viewport = body.tree.getScrolledBounds(s.node);
+		if (viewport == null || viewport.height <= 0) return false;
+		var anchor = at(Math.max(0, viewport.y-bounds.y)), oldTop = offsets[anchor], changed = false;
+		if (Math.abs(width-bounds.width) > .5) {
+			width = bounds.width;
+			for (i in 0...data.length) heights[i] = estimate(data[i], width);
+			changed = true;
+		}
+		for (i => block in mounted) {
+			var b = body.tree.getBounds(block.view.node);
+			if (b != null && b.height > 0 && Math.abs(heights[i]-b.height) > .5) { heights[i] = b.height; changed = true; }
+		}
+		if (!changed) return false;
+		positions();
+		// Update positions and the anchor in the same layout pass, preserving incoming wheel deltas.
+		var delta = offsets[anchor]-oldTop;
+		if (Math.abs(delta) > .5) s.jumpTo(s.x.get(), s.y.get()+delta);
+		return true;
 	}
 
 	function layout(tree:LayoutTree):Void {
@@ -135,7 +170,16 @@ class MarkdownBlocks {
 		if (observed == null) {
 			observed = s;
 			scope.run(() -> new ashui.reactive.Watch(() -> ({x:s.x.get(), y:s.y.get()}), position -> {
+				var delta = position.y-scrollY;
 				scrollX = position.x; scrollY = position.y;
+				if (delta != 0) {
+					lookAhead = Math.max(-viewportHeight, Math.min(viewportHeight, delta*4));
+					if (quiet != null) quiet.cancel();
+					quiet = ashui.animation.AnimationScheduler.main.after(.12, () -> {
+						quiet = null; lookAhead = 0;
+						choose(Math.max(0, scrollY+origin), viewportHeight); queue();
+					});
+				}
 				var a = first, b = last;
 				choose(Math.max(0, position.y+origin), viewportHeight);
 				if (a != first || b != last) queue();
@@ -149,26 +193,13 @@ class MarkdownBlocks {
 		}
 		var limits = s.limits();
 		if (s.y.get() > limits.y + .5) { s.jumpTo(s.x.get(), limits.y); return; }
-		var y = Math.max(0, viewport.y-bounds.y), anchor = at(y), oldTop = offsets[anchor], changed = false;
-		if (Math.abs(width-bounds.width) > .5) {
-			width = bounds.width;
-			for (i in 0...data.length) heights[i] = estimate(data[i], width);
-			changed = true;
-		}
-		for (i => block in mounted) {
-			var b = tree.getBounds(block.view.node);
-			if (b != null && b.height > 0 && Math.abs(heights[i]-b.height) > .5) { heights[i] = b.height; changed = true; }
-		}
-		if (changed) {
-			positions();
-			if (Math.abs(offsets[anchor]-oldTop) > .5) requested = {x:s.x.get(), y:Math.max(0,s.y.get()+offsets[anchor]-oldTop)};
-			return;
-		}
+		var y = Math.max(0, viewport.y-bounds.y);
 		if (revealTarget != null && mounted.exists(target) && revealTarget()) { revealTarget = null; target = -1; }
 		choose(y, viewport.height);
 		var complete = true;
 		for (i in first...last+1) if (!mounted.exists(i)) complete = false;
-		for (i in mounted.keys()) if (i < first || i > last) complete = false;
+		var keep = lookAhead == 0 ? 0 : 1;
+		for (i in mounted.keys()) if (i < first-keep || i > last+keep) complete = false;
 		Identity.of(tree, node.id).setAttribute("data-md-ready", complete ? "true" : null);
 		if (!complete) queue();
 	}

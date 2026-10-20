@@ -42,6 +42,8 @@ Markdown checks also cover embedded HTML, HTML5 recovery, centered headings and 
 
 The production Markdown view mounts only blocks around the scroll viewport, in short batches. It retains block heights and text measurement keys across hiding and remounting. The two-image document checks that offscreen image blocks have no mounted bitmap, then repeatedly scrolls between both ends and verifies remount and close cleanup. A longer document checks bounded native block counts, offscreen heading navigation and viewport restoration after switching to code. The surrounding scroll view also opts into image residency for images within mounted blocks. Ashui's `ImageResidencyPixels` test separately checks default-off behavior, shared sources, nested opt-outs, SVG atlas eviction, smaller atlas textures and pixel equality across reloads and atlas repacks.
 
+Markdown scrolling preloads in the direction of travel, keeps a small reversal buffer and trims it after movement stops. Height corrections preserve the visible anchor within layout. `markdown-scroll-bench.sh` sends phased wheel gestures through long, varying paragraphs, including a slow tail and upward movement into unmeasured content. It asserts visible block coverage, anchor continuity and bounded mounted views, and reports UI frame median, p95 and worst times. Per-frame timing excludes GPU readback; a final PNG goes to the snapshot directory. Use `LIGHT=1` for the light theme or `--native` to compile the probe ahead of time.
+
 `scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.
 
 ## Benchmarks
@@ -49,6 +51,7 @@ The production Markdown view mounts only blocks around the scroll viewport, in s
 ```sh
 scripts/terminal-bench.sh   # terminal under a program that fills the screen, offscreen: poll, layout, encode
 scripts/scroll-bench.sh     # a long file flicked and left to decelerate, offscreen: layout, encode, finish times
+scripts/markdown-scroll-bench.sh  # phased Markdown glides, slow tails and reversals, with a preview snapshot
 scripts/extension-bench.sh  # cold/repeat Markdown and Git opens, worker timings and longest UI turns
 scripts/extension-bench.sh --native  # the same probe compiled ahead of time
 ```

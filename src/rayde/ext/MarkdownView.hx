@@ -228,7 +228,12 @@ class MarkdownView {
 			var word = box(["rayde-md-word"].concat(next).join(" "));
 			Identity.of(word.tree, word.node.id).types.remove("div");
 			Identity.register(word.tree, word.node, "span");
-			word.appendChild(new Text(source));
+			// InlineFlow measures this run itself and paints separate wrapped pieces.
+			var probe = new Text(source, {wrap:false});
+			probe.node.set(Prop.Position, ashui.types.Style.Position.Absolute);
+			probe.node.set(Prop.Width, (0:Single));
+			probe.node.set(Prop.Height, (0:Single));
+			word.appendChild(probe);
 			decorate(word, data);
 			if (href != null) link(word.node, href);
 			parent.appendChild(word);
