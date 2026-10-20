@@ -1495,14 +1495,21 @@ class Workbench extends Component<WorkbenchProps> {
 		return full;
 	}
 
+	/** Reads a project image within the preview's file-size budget. */
+	function imageBytes(path:String):Null<haxe.io.Bytes> {
+		var full = projectPath(path);
+		if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) return null;
+		if (sys.FileSystem.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
+		return sys.io.File.getBytes(full);
+	}
+
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
+			imageBytes: imageBytes,
 			readBytes: p -> {
-				var full = projectPath(p);
-				if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) return null;
-				if (sys.FileSystem.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
-				return haxe.crypto.Base64.encode(sys.io.File.getBytes(full));
+				var bytes = imageBytes(p);
+				return bytes == null ? null : haxe.crypto.Base64.encode(bytes);
 			},
 			readFile: p -> {
 				var full = projectPath(p);
@@ -2463,7 +2470,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (isTab(file)) {
 			var owner = studios.get(tabStudio(file));
 			return <tabs-content value={file} class="flex-1 min-h-0">
-				{owner == null ? <div/> : <studio-tab studio={owner} root={tabRoot(file)}/>}
+				<if {active.get() == file}>{owner == null ? <div/> : <studio-tab studio={owner} root={tabRoot(file)}/>}</if>
 			</tabs-content>;
 		}
 		if (isViewTab(file)) {

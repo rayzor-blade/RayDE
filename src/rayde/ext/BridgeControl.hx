@@ -57,13 +57,18 @@ class BridgeControl {
 	var tooltip:Null<String>;
 	var buttonMounted = false;
 	final markdownDocument = Signal.make((null:Dynamic));
+	final markdownVisible = Signal.make(true);
 	var markdown:MarkdownView;
+	final image:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
+	final markdownState:Dynamic;
 
 	public static function supported(tag:String):Bool
 		return tag == "markdown-view" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
 
-	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic) {
+	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}) {
 		this.tree = tree;
+		this.image = image;
+		markdownState = state;
 		this.kind = kind;
 		this.emit = emit;
 		var box:Div = Owner.root(tree, dispose -> {
@@ -292,7 +297,7 @@ class BridgeControl {
 	public function flush():Void {
 		if (kind == "markdown-view") {
 			if (markdown == null) scope.run(() -> {
-				markdown = new MarkdownView(markdownDocument, emit);
+				markdown = new MarkdownView(markdownDocument, emit, markdownVisible, image, markdownState);
 				tree.addChild(node.id, markdown.node.id);
 			});
 			return;
@@ -339,8 +344,11 @@ class BridgeControl {
 	}
 
 	public function state():Dynamic
-		return panels != null ? panels.state() : kind == "canvas-kit" ? {x: viewport.panX.get(), y: viewport.panY.get(), zoom: viewport.zoom.get(), command: lastCommand, scrollX:scroller == null ? 0. : scroller.x.get(), scrollY:scroller == null ? 0. : scroller.y.get()} : null;
+		return panels != null ? panels.state() : markdown != null ? markdown.state() : kind == "canvas-kit" ? {x: viewport.panX.get(), y: viewport.panY.get(), zoom: viewport.zoom.get(), command: lastCommand, scrollX:scroller == null ? 0. : scroller.x.get(), scrollY:scroller == null ? 0. : scroller.y.get()} : null;
 
 	public function dispose():Void
 		stop();
+
+	public function setVisible(value:Bool):Void
+		markdownVisible.set(value);
 }

@@ -18,6 +18,7 @@ irosashi = { version = "=0.3.0", default-features = false }
 include_dir = "=0.7.4"
 latex-rust = { version = "=3.0.1", default-features = false }
 mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
+scraper = { version = "=0.27.0", default-features = false }
 
 [profile.release]
 debug = 1

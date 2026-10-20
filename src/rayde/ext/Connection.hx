@@ -4,6 +4,7 @@ package rayde.ext;
 typedef WorkspaceServices = {
 	readFile:String->Null<String>,
 	?readBytes:String->Null<String>,
+	?imageBytes:String->Null<haxe.io.Bytes>,
 	activeFile:Void->Null<String>,
 	root:Void->String,
 	openFile:String->Void,

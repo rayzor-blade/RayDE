@@ -22,25 +22,52 @@ class MarkdownView {
 	final document:Signal<Dynamic>;
 	final emit:(String, Dynamic)->Void;
 	var child:Owner;
+	var bitmaps:Array<ashui.types.Bitmap> = [];
+	var baseFile = "";
+	var savedScroll:Dynamic;
+	var detailStates:Map<Int, Bool> = [];
+	var detailIndex = 0;
+	final loadImage:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	var headings:Map<String, Node> = [];
 	static final drawings:Map<Int, {document:SvgDocument, uses:Int}> = [];
 
-	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void) {
+	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic) {
 		this.document = document;
 		this.emit = emit;
+		this.loadImage = loadImage;
+		savedScroll = scrollState;
+		if (scrollState != null && scrollState.details != null) detailStates = scrollState.details;
+		if (visible == null) visible = Signal.make(true);
 		var body = box("rayde-markdown");
 		node = body.node;
-		new Watch(() -> { ThemeState.get().revision.get(); return {data:document.get(), scheme:ThemeState.get().scheme()}; }, value -> {
+		new Watch(() -> { ThemeState.get().revision.get(); return {data:visible.get() ? document.get() : null, scheme:ThemeState.get().scheme()}; }, value -> {
 			var data = value.data;
-			if (child != null) child.dispose();
+			baseFile = data == null || data.baseFile == null ? "" : Std.string(data.baseFile);
+			if (child != null) {
+				if (data == null) savedScroll = state();
+				child.dispose();
+			}
 			diagrams = [];
+			bitmaps = [];
+			detailIndex = 0;
 			headings = [];
 			child = new Owner(body.tree);
 			child.run(() -> {
 				if (data != null) for (block in children(data)) body.appendChild(render(block));
+				if (data != null && savedScroll != null) {
+					var restore:ashui.layout.LayoutTree->Void = tree -> {
+						if (tree != body.tree || savedScroll == null) return;
+						var scroll = scroller();
+						var bounds = tree.getBounds(body.node);
+						if (scroll == null || bounds == null || bounds.height == 0) return;
+						scroll.jumpTo(savedScroll.x, savedScroll.y); savedScroll = null;
+					};
+					ashui.layout.LayoutTree.settledHooks.push(restore);
+					Owner.onCleanup(() -> ashui.layout.LayoutTree.settledHooks.remove(restore));
+				}
 			});
 		}, (a, b) -> a.data == b.data && a.scheme == b.scheme);
-		Owner.onCleanup(() -> { if (child != null) child.dispose(); headings.clear(); diagrams = []; });
+		Owner.onCleanup(() -> { if (child != null) child.dispose(); headings.clear(); diagrams = []; bitmaps = []; });
 	}
 
 	static function box(classes:String):Div {
@@ -75,23 +102,19 @@ class MarkdownView {
 			if (data.source != null) error.appendChild(new Text(Std.string(data.source)));
 			return error;
 		}
-		if (kind == "image") {
-			if (data.svgBytes != null) try return drawing({kind:"diagram", svg:haxe.crypto.Base64.decode(data.svgBytes).toString()}) catch (_:Dynamic) {}
-			if (data.imageBytes != null) {
-				try {
-					var bitmap = ashui.types.Bitmap.fromBytes(haxe.crypto.Base64.decode(data.imageBytes));
-					bitmap.shrink(2048);
-					Owner.onCleanup(bitmap.dispose);
-					var frame = box("rayde-md-drawing"), scale = Math.min(1., 700 / Math.max(1, bitmap.width));
-					frame.appendChild(new ashui.ui.Image(bitmap, {width:(bitmap.width*scale:Single), height:(bitmap.height*scale:Single)}));
-					return frame;
-				} catch (_:Dynamic) {}
-			}
-			var fallback = box("rayde-md-image-alt");
-			fallback.appendChild(new Text("Image: " + text(data) + (data.imageError == null ? "" : " — " + data.imageError)));
-			return fallback;
+		if (kind == "image") return image(data);
+		if (kind == "details") {
+			var key = detailIndex++;
+			var view = new ashui.ui.Details({open:detailStates.exists(key) ? detailStates.get(key) : data.open == true, onToggle:open -> detailStates.set(key, open)}, [for (part in children(data)) render(part)]);
+			decorate(view, data); return view;
 		}
-		if (["text", "em", "strong", "strike", "link", "inline-code", "task"].indexOf(kind) >= 0) {
+		if (kind == "summary") {
+			var content = box("rayde-md-paragraph");
+			for (part in children(data)) inlinePart(content, part, [], null);
+			ashui.text.InlineFlow.attach(content);
+			var view = new ashui.ui.Summary({}, [content]); decorate(view, data); return view;
+		}
+		if (["text", "em", "strong", "strike", "link", "inline-code", "task", "inline", "break"].indexOf(kind) >= 0) {
 			var line = box("rayde-md-paragraph");
 			inlinePart(line, data, [], null);
 			ashui.text.InlineFlow.attach(line);
@@ -99,6 +122,7 @@ class MarkdownView {
 		}
 		var classes = switch kind {
 			case "heading": "rayde-md-heading rayde-md-h" + data.level;
+			case "group": "rayde-md-group";
 			case "paragraph", "html": "rayde-md-paragraph";
 			case "quote": "rayde-md-quote";
 			case "list": "rayde-md-list";
@@ -111,6 +135,7 @@ class MarkdownView {
 			case _: "rayde-md-paragraph";
 		};
 		var container = box(classes);
+		decorate(container, data);
 		if (kind == "heading" || kind == "footnote") {
 			var id = (kind == "footnote" ? "footnote-" : "") + Std.string(data.id);
 			headings.set(id, container.node);
@@ -123,23 +148,25 @@ class MarkdownView {
 			var index:Int = data.start == null ? 0 : Std.int(data.start);
 			for (item in children(data)) {
 				var row = box("rayde-md-list-row"), content = box("rayde-md-list-content");
-				if (!Lambda.exists(children(item), part -> part.kind == "task")) row.appendChild(new Text(data.start == null ? "•" : (index++) + "."));
+				if (!Lambda.exists(children(item), part -> part.kind == "task" || part.kind == "paragraph" && Lambda.exists(children(part), p -> p.kind == "task"))) row.appendChild(new Text(data.start == null ? "•" : (index++) + "."));
 				var line:Div = null;
 				for (part in children(item)) {
-					if (["text", "em", "strong", "strike", "link", "inline-code", "task"].indexOf(part.kind) >= 0) {
+					if (["text", "em", "strong", "strike", "link", "inline-code", "task", "inline", "break"].indexOf(part.kind) >= 0) {
 						if (line == null) { line = box("rayde-md-paragraph"); content.appendChild(line); ashui.text.InlineFlow.attach(line); }
 						inlinePart(line, part, [], null);
 					} else { line = null; content.appendChild(render(part)); }
 				}
 				row.appendChild(content); container.appendChild(row);
 			}
+		} else if (kind == "group") {
+			appendBlocks(container, children(data));
 		} else {
 			if (kind == "table") for (row in children(data)) {
 				var cells = children(row), align:Array<String> = data.align;
 				for (i in 0...cells.length) if (align != null && i < align.length) cells[i].align = align[i];
 			}
 			for (part in children(data)) {
-				if (["text", "em", "strong", "strike", "link", "inline-code", "task"].indexOf(part.kind) >= 0)
+				if (["text", "em", "strong", "strike", "link", "inline-code", "task", "inline", "break"].indexOf(part.kind) >= 0)
 					inlinePart(container, part, [], null);
 				else container.appendChild(render(part));
 			}
@@ -161,7 +188,9 @@ class MarkdownView {
 			parent.appendChild(marker);
 			return;
 		}
-		if (kind == "math" || kind == "diagram" || kind == "error" || kind == "image") { parent.appendChild(render(data)); return; }
+		if (kind == "math" || kind == "diagram" || kind == "error" || kind == "image") {
+			var view = render(data); if (href != null) link(view.node, href); parent.appendChild(view); return;
+		}
 		if (kind == "break") {
 			var line = box("rayde-md-break"); Identity.register(line.tree, line.node, "br"); parent.appendChild(line); return;
 		}
@@ -172,10 +201,18 @@ class MarkdownView {
 			case "strike": next.push("rayde-md-strike");
 			case "inline-code": next.push("rayde-md-inline-code");
 			case "link": href = Std.string(data.href); next.push("rayde-md-link");
+			case "inline":
+				switch Std.string(data.variant) {
+					case "sup", "sub", "small", "mark": next.push("rayde-md-" + data.variant);
+					case "u", "ins": next.push("rayde-md-underline");
+					case _:
+				}
 			case _:
 		}
 		if (data.text == null) {
-			for (part in children(data)) inlinePart(parent, part, next, href);
+			var target = parent;
+			if (data.id != null) { target = span("rayde-md-inline"); decorate(target, data); parent.appendChild(target); }
+			for (part in children(data)) inlinePart(target, part, next, href);
 			return;
 		}
 		var source = Std.string(data.text);
@@ -184,15 +221,87 @@ class MarkdownView {
 			Identity.of(word.tree, word.node.id).types.remove("div");
 			Identity.register(word.tree, word.node, "span");
 			word.appendChild(new Text(source));
-			if (href != null) {
-				var target = href;
-				Interaction.of(word.node).onClick(_ -> {
-					if (StringTools.startsWith(target, "#")) reveal(target.substr(1));
-					else emit("link", {href:target});
-				});
-				Identity.of(word.tree, word.node.id).setAttribute("data-md-link", target);
-			}
+			decorate(word, data);
+			if (href != null) link(word.node, href);
 			parent.appendChild(word);
+		}
+	}
+
+	static function span(classes:String):Div {
+		var view = box(classes);
+		Identity.of(view.tree, view.node.id).types.remove("div");
+		Identity.register(view.tree, view.node, "span");
+		return view;
+	}
+
+	function link(node:Node, href:String):Void {
+		if (href == "") return;
+		Interaction.of(node).onClick(_ -> {
+			if (StringTools.startsWith(href, "#")) reveal(href.substr(1)); else emit("link", {href:href});
+		});
+		Identity.of(node.tree, node.id).setAttribute("data-md-link", href);
+	}
+
+	function decorate(view:Element, data:Dynamic):Void {
+		var identity = Identity.of(view.tree, view.node.id);
+		if (data.htmlTag != null) identity.setAttribute("data-md-html", Std.string(data.htmlTag));
+		if (data.id != null) headings.set((data.kind == "footnote" ? "footnote-" : "") + Std.string(data.id), view.node);
+		if (data.textAlign != null) identity.setInline("text-align", Std.string(data.textAlign));
+	}
+
+	function appendBlocks(parent:Div, parts:Array<Dynamic>):Void {
+		var line:Div = null;
+		for (part in parts) {
+			if (["text", "em", "strong", "strike", "link", "inline-code", "task", "inline", "break", "image"].indexOf(part.kind) >= 0 || part.kind == "math" && part.display != true) {
+				if (line == null) { line = box("rayde-md-paragraph"); parent.appendChild(line); ashui.text.InlineFlow.attach(line); }
+				inlinePart(line, part, [], null);
+			} else { line = null; parent.appendChild(render(part)); }
+		}
+	}
+
+	function image(data:Dynamic):Element {
+		try {
+			var picture:Element, width:Float, height:Float;
+			var bitmap:ashui.types.Bitmap = null;
+			var bytes:haxe.io.Bytes = null, svg = false;
+			if (data.svgBytes != null || data.imageBytes != null) {
+				svg = data.svgBytes != null;
+				bytes = haxe.crypto.Base64.decode(svg ? data.svgBytes : data.imageBytes);
+			} else if (loadImage != null) {
+				var asset = loadImage(baseFile, Std.string(data.href)); bytes = asset.bytes; svg = asset.svg;
+			} else throw "Image unavailable";
+			if (svg) {
+				var doc = acquire(bytes.toString());
+				Owner.onCleanup(() -> release(doc));
+				width = doc.width; height = doc.height;
+				picture = new ashui.ui.Svg(doc);
+			} else {
+				bitmap = ashui.types.Bitmap.fromBytes(bytes);
+				bitmaps.push(bitmap);
+				Owner.onCleanup(bitmap.dispose);
+				width = bitmap.width; height = bitmap.height;
+				picture = new ashui.ui.Image(bitmap);
+			}
+			var w:Float = data.width != null ? data.width : data.height != null ? data.height * width / height : Math.min(700, width);
+			var h:Float = data.height != null ? data.height : w * height / width;
+			if (bitmap != null) bitmap.shrink(Std.int(Math.min(2048, Math.max(1, Math.ceil(Math.max(w, h) * 2)))));
+			var frame = box("rayde-md-image");
+			Identity.of(frame.tree, frame.node.id).types.remove("div");
+			Identity.register(frame.tree, frame.node, "img");
+			decorate(frame, data);
+			frame.node.set(Prop.Width, (w:Single));
+			if (data.widthPercent != null) frame.node.set(Prop.WidthPercent, (data.widthPercent / 100:Single));
+			frame.node.set(Prop.MaxWidthPercent, (1:Single));
+			frame.node.set(Prop.AspectRatio, (w / h:Single));
+			picture.node.set(Prop.Position, ashui.types.Style.Position.Absolute);
+			picture.node.set(Prop.Left, (0:Single)); picture.node.set(Prop.Top, (0:Single));
+			picture.node.set(Prop.WidthPercent, (1:Single)); picture.node.set(Prop.HeightPercent, (1:Single));
+			frame.appendChild(picture);
+			return frame;
+		} catch (failure:Dynamic) {
+			var fallback = span("rayde-md-image-alt");
+			fallback.appendChild(new Text("Image: " + text(data) + " — " + Std.string(failure)));
+			return fallback;
 		}
 	}
 
@@ -279,12 +388,22 @@ class MarkdownView {
 		@:privateAccess SvgDocument.byId.remove(doc.id);
 	}
 
-	public function reveal(id:String):Void {
-		var heading = headings.get(StringTools.urlDecode(id)), scroll:ashui.input.Scroll = null;
+	function scroller():Null<ashui.input.Scroll> {
+		var scroll:ashui.input.Scroll = null;
 		for (ancestor in node.tree.ancestors(node.id)) {
 			scroll = ashui.input.Scroll.at(ancestor, node.tree);
 			if (scroll != null) break;
 		}
+		return scroll;
+	}
+
+	public function state():Dynamic {
+		var scroll = scroller();
+		return scroll == null ? savedScroll : {x:scroll.x.get(), y:scroll.y.get(), details:detailStates};
+	}
+
+	public function reveal(id:String):Void {
+		var heading = headings.get(StringTools.urlDecode(id)), scroll = scroller();
 		if (heading == null || scroll == null) return;
 		var target = node.tree.getScrolledBounds(heading), view = node.tree.getScrolledBounds(scroll.node);
 		scroll.scrollTo(scroll.x.get(), scroll.y.get() + target.y - view.y - 16);

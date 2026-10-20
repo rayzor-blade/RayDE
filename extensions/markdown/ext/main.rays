@@ -1,7 +1,6 @@
 import haxe.Json;
 import rayde.markdown.render;
 import rayde.workspace.readFile;
-import rayde.workspace.readBytes;
 import rayde.workspace.activeFile;
 import rayde.workspace.openFile;
 import rayde.window.focusView;
@@ -27,27 +26,13 @@ function markdown(path) {
   return name.endsWith('.md') || name.endsWith('.markdown') || name.endsWith('.mdown') || name.endsWith('.mkd');
 }
 
-function assets(node, path) {
-  if (node.kind == 'image') {
-    var href = node.href;
-    if (href.indexOf(':') < 0 && !href.startsWith('//')) {
-      try {
-        var location = relative(path, href), bytes = await readBytes(location);
-        if (location.toLowerCase().endsWith('.svg')) node.svgBytes = bytes;
-        else node.imageBytes = bytes;
-      } catch (failure) { node.imageError = '' + failure; }
-    }
-  }
-  if (node.children != null) for (child in node.children) assets(child, path);
-}
-
 function update(preview) {
   var sequence = ++preview.sequence;
   try {
     var source = await readFile(preview.path);
     if (!preview.live || sequence != preview.sequence || source == preview.source) return;
     var document = Json.parse(render(source));
-    assets(document, preview.path);
+    document.baseFile = preview.path;
     if (preview.live && sequence == preview.sequence) {
       preview.source = source;
       preview.document.value = Json.stringify(document);

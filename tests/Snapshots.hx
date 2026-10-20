@@ -1668,7 +1668,11 @@ class Snapshots {
 				if (entry == null || entry.connection.running()) throw "Markdown should activate on command";
 				if (rayde.ui.ViewIcons.of(entry.connection.manifest) != rayde.ui.Icons.MARKDOWN_LINE) throw "Markdown must use the Remix Markdown icon";
 				if (Css.query(tree, bench.node.id, "#rayde-activity-ext-markdown").length != 0) throw "Markdown preview must not add an activity icon";
-				manager.command("markdown", "markdown.preview", {path:readme});
+				click("#rayde-editor-menu-trigger"); shot("editor-preview-menu"); press(Named(Escape));
+				var menuBounds = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, row(readme))[0]));
+				ashui.input.Pointer.move(tree, menuBounds.x + menuBounds.width/2, menuBounds.y + menuBounds.height/2);
+				ashui.input.Pointer.press(tree, Right); ashui.input.Pointer.release(tree, Right); settle();
+				shot("context-preview-menu"); click("#rayde-explorer-open-preview");
 				var studio = bench.studioFor(entry.connection.file);
 				function ready():Bool return Css.query(tree, bench.node.id, ".rayde-markdown").length > 0;
 				until(() -> {
@@ -1778,6 +1782,56 @@ class Snapshots {
 				var syntax = @:privateAccess bench.nativeSyntax.get(root + "/example.rs");
 				bench.closeFile(root + "/example.rs"); settle();
 				if ((@:privateAccess syntax.handle) != -1) throw "closing a saved document retained its native lexical session";
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "old previews to close");
+				var disposed:Array<Int> = [];
+				var onDispose = (bitmap:ashui.types.Bitmap) -> { disposed.push(bitmap.id); };
+				ashui.types.Bitmap.disposing.push(onDispose);
+				function activeMarkdown():rayde.ext.MarkdownView {
+					for (part in (@:privateAccess studio.preview.parts)) if (part.control != null) {
+						var c = part.control;
+						if ((@:privateAccess c.markdown) != null && (@:privateAccess c.markdownVisible.get())) return @:privateAccess c.markdown;
+					}
+					return null;
+				}
+				function hasBitmap():Bool {
+					var view = activeMarkdown(); return view != null && (@:privateAccess view.bitmaps.length) == 1;
+				}
+				manager.command("markdown", "markdown.preview", {path:root + "/html.md"});
+				until(hasBitmap, "HTML preview with raster image"); settle();
+				var htmlTab = bench.active.get(), htmlView = activeMarkdown();
+				var bitmap = @:privateAccess htmlView.bitmaps[0];
+				var model = haxe.Json.stringify(@:privateAccess htmlView.document.get());
+				if (model.indexOf("imageBytes") >= 0 || model.indexOf("svgBytes") >= 0 || model.length > 16000) throw "preview cached image payloads instead of file references";
+				if (bitmap.width > 800 || bitmap.height > 800) throw "preview retained raster pixels larger than twice its display size";
+				var htmlHeading = Css.query(tree, bench.node.id, '[data-md-html="h2"]')[0];
+				if (tree.textAlign(htmlHeading) != 1) throw "HTML align=center was not applied";
+				var logo = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, '[data-md-html="img"]')[0]));
+				var parent = tree.getScrolledBounds(new ashui.layout.Node(tree.ancestors(Css.query(tree, bench.node.id, '[data-md-html="img"]')[0])[0]));
+				shot("html");
+				if (Math.abs(logo.width-250) > 1 || Math.abs(logo.x+logo.width/2-parent.x-parent.width/2) > 1) throw "HTML image width/centering is incorrect: " + haxe.Json.stringify({image:logo, parent:parent});
+				scroll("#markdown-scroll", 450); shot("html-details");
+				click(".rayde-markdown summary"); settle(); shot("html-details-open");
+				var htmlY:Float = htmlView.state().y, decodedBytes = bitmap.width * bitmap.height * 4;
+				manager.command("markdown", "markdown.preview", {path:root + "/html-second.md"});
+				until(() -> bench.active.get() != htmlTab && hasBitmap(), "second HTML image preview"); settle();
+				var secondTab = bench.active.get();
+				if (disposed.indexOf(bitmap.id) < 0 || (@:privateAccess htmlView.bitmaps.length) != 0) throw "inactive preview retained decoded raster images";
+				for (_ in 0...3) {
+					bench.active.set(htmlTab); settle(); until(hasBitmap, "first cached preview to resume");
+					if (Math.abs(activeMarkdown().state().y - htmlY) > 1) throw "preview scroll position was lost while releasing images";
+					bitmap = @:privateAccess activeMarkdown().bitmaps[0];
+					bench.active.set(secondTab); settle(); until(hasBitmap, "second cached preview to resume");
+					if (disposed.indexOf(bitmap.id) < 0) throw "switching image previews did not release the previous pixels";
+				}
+				var activeView = activeMarkdown(); bitmap = @:privateAccess activeView.bitmaps[0];
+				bench.openFile(file); settle();
+				if (disposed.indexOf(bitmap.id) < 0 || (@:privateAccess activeView.bitmaps.length) != 0 || (@:privateAccess rayde.ext.MarkdownView.drawings).iterator().hasNext()) throw "inactive image previews retained render resources";
+				if (studio.tabViews.length != 2) throw "hiding previews closed their document tabs";
+				Sys.println('[markdown-images] active decoded bytes=$decodedBytes; inactive decoded images=0; disposed images=${disposed.length}; cached document chars=${model.length}');
+				shot("inactive-images-released");
+				bench.active.set(htmlTab); until(hasBitmap, "HTML preview after code tab"); shot("html-reopened");
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "image previews to close"); settle();
+				ashui.types.Bitmap.disposing.remove(onDispose);
 			});
 		for (dark in [true, false])
 			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {

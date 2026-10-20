@@ -218,6 +218,8 @@ Paths are resolved against the project folder, and one outside it is refused. Ca
 
 The pure native modules `rayde.syntax` and `rayde.markdown` supply the [shared syntax registry](syntax.md) and [Markdown renderer](markdown.md). The `markdown-view` bridge consumes the renderer's JSON document string, draws its Ashui content, and emits `link` events with `{href}` for file or external links. Same-document anchors are handled within the view.
 
+Set the rendered document's `baseFile` to its source path before serializing it. The bridge resolves local image references relative to that file through `workspace.read`, with the workspace path and size checks. Cached documents need no base64 image payloads; only the visible Markdown view loads and owns decoded image resources.
+
 ## Showing a tab
 
 `mount(view, name)` puts a view where the extension's view goes. A name that starts with `tab:` opens an editor tab titled with the rest of it:

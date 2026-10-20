@@ -111,7 +111,7 @@ class Studio {
 		this.manifest = manifest;
 		title = Signal.make(manifest != null ? manifest.viewTitle : "Preview");
 		Utilities.install();
-		preview = new Preview(tree, send);
+		preview = new Preview(tree, send, readImage);
 		this.connection = connection == null ? new Connection(file, source, manifest) : connection;
 		preview.onProblem = message -> this.connection.note("console", "error", message);
 		if (connection == null) this.connection.useMocks = true;
@@ -141,6 +141,17 @@ class Studio {
 	public function mocksPath():String
 		return connection.mocksPath();
 
+	function readImage(base:String, href:String):{bytes:haxe.io.Bytes, svg:Bool} {
+		if (manifest == null || manifest.capabilities.indexOf("workspace.read") < 0) throw "Capability workspace.read is not granted";
+		if (services == null) throw "Workspace images are unavailable";
+		if (href.indexOf(":") >= 0 || StringTools.startsWith(href, "//")) throw "Preview images must be local files";
+		var name = StringTools.urlDecode(href.split("#")[0].split("?")[0]);
+		var path = haxe.io.Path.isAbsolute(name) ? name : haxe.io.Path.join([haxe.io.Path.directory(base), name]);
+		var bytes = services.imageBytes != null ? services.imageBytes(path) : services.readBytes == null ? null : haxe.crypto.Base64.decode(services.readBytes(path));
+		if (bytes == null) throw 'No such image: $href';
+		return {bytes:bytes, svg:StringTools.endsWith(path.toLowerCase(), ".svg")};
+	}
+
 	/**
 	 * Draws the view in `container`, a node of the tree: the main view, or only the root `root` for a tab.
 	 * A page built to replace one that showed the same thing takes its place.
@@ -151,8 +162,10 @@ class Studio {
 				release(s);
 		if (!Lambda.exists(surfaces, s -> s.container.id == container.id))
 			surfaces.push({container: container, root: root, view: view, attached: []});
-		if (preview != null)
+		if (preview != null) {
+			preview.setVisibleRoots(visibleRoots());
 			preview.show();
+		}
 		adopt();
 	}
 
@@ -162,6 +175,7 @@ class Studio {
 		surfaces.remove(s);
 		if (surfaces.length == 0 && preview != null)
 			preview.hide();
+		else if (preview != null) preview.setVisibleRoots(visibleRoots());
 		connection.collect();
 	}
 
@@ -336,10 +350,16 @@ class Studio {
 	}
 
 	/** Puts each root the extension has mounted in the surface that shows it. */
+	function visibleRoots():Array<Int> {
+		preview.findRoots();
+		return [for (r in preview.roots) if (Lambda.exists(surfaces, s -> s.root != null ? r.id == s.root : !isTab(r.name) && (s.view == null || viewFor(r.name) == s.view))) r.id];
+	}
+
 	function adopt():Void {
 		if (preview == null)
 			return;
 		preview.findRoots();
+		preview.setVisibleRoots(visibleRoots());
 		for (r in preview.roots)
 			if (manifest != null && manifest.views.length == 0 && !isTab(r.name) && unhosted.indexOf(r.name) < 0) {
 				unhosted.push(r.name);

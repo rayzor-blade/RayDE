@@ -59,9 +59,11 @@ class Preview {
 	final tree:LayoutTree;
 	final parts:Map<Int, Part> = new Map();
 	final emit:PreviewEvent;
+	final image:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 
 	/** Whether there are ashui nodes: false until a page shows the view, and again once it is hidden. */
 	var shown = false;
+	var visibleRoots:Null<Array<Int>>;
 
 	/** The roots, in the order they were mounted, with the name each was mounted under; `node` is null while the view is hidden. */
 	public final roots:Array<{id:Int, name:String, node:Null<Node>}> = [];
@@ -70,9 +72,10 @@ class Preview {
 	public var revision(default, null) = 0;
 	public var onProblem:Null<String->Void>;
 
-	public function new(tree:LayoutTree, emit:PreviewEvent) {
+	public function new(tree:LayoutTree, emit:PreviewEvent, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}) {
 		this.tree = tree;
 		this.emit = emit;
+		this.image = image;
 	}
 
 	/** Takes everything down, the model and the nodes. */
@@ -172,10 +175,25 @@ class Preview {
 	}
 
 	function flushControls():Void {
+		syncVisibility();
 		for (p in parts)
 			if (p.control != null)
 				try p.control.flush() catch (e:Dynamic) problem(p, e);
 		for (p in parts) if (p.control != null && p.control.panels != null) refresh(p);
+	}
+
+	/** Hidden Markdown roots keep their document model while releasing decoded images and editor/canvas views. */
+	public function setVisibleRoots(ids:Array<Int>):Void {
+		visibleRoots = ids;
+		syncVisibility();
+	}
+
+	function syncVisibility():Void {
+		for (part in parts) if (part.control != null) {
+			var root = part;
+			while (root.parent != 0 && parts.exists(root.parent)) root = parts.get(root.parent);
+			part.control.setVisible(visibleRoots == null || visibleRoots.indexOf(root.host) >= 0);
+		}
 	}
 
 	function problem(p:Part, error:Dynamic):Void {
@@ -205,7 +223,7 @@ class Preview {
 		if (BridgeControl.supported(p.tag)) {
 			p.control = new BridgeControl(tree, p.tag, (event, payload) -> {
 				if (p.listens.exists(event)) emit(p.host, event, payload);
-			}, p.localState);
+			}, p.localState, image);
 			node = p.control.node;
 		} else node = tree.createNode();
 		var root = p.tag == "#root";

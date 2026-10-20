@@ -11,8 +11,8 @@
   "contributes": {
     "commands": [{"id":"markdown.preview", "title":"Markdown: Open Preview", "icon":"markdown"}],
     "menus": {
-      "explorer/context": [{"command":"markdown.preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}],
-      "editor/title": [{"command":"markdown.preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}]
+      "explorer/context": [{"command":"markdown.preview", "title":"Open Preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}],
+      "editor/title": [{"command":"markdown.preview", "title":"Open Preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}]
     }
   }
 }

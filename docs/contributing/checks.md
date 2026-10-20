@@ -36,6 +36,8 @@ Background diagnostic checks cover unsaved buffers, replacement and cancellation
 
 The same suite loads all 731 bundled TextMate scopes and representative aliases, checks incremental multiline state and native-session disposal, and renders GFM, math and Mermaid with malformed-input recovery. `SNAPSHOT_ONLY=markdownpreview scripts/snapshot.sh` installs the production Markdown extension and checks Explorer rows at the project root and inside/outside source folders, lazy folder loading and Markdown file opening (including uppercase suffixes), command activation, Remix icon/no sidebar entry, live unsaved buffers, tab reuse and reopen, stable text/watch registries and SVG cleanup, heading/file links, table alignment, equal-size task checkboxes, code highlighting in preview and ordinary Rust tabs, plus Mermaid wheel zoom, drag pan and fit in both schemes.
 
+Markdown checks also cover embedded HTML, HTML5 recovery, centered headings and sized SVG/raster images, native disclosures and the contextual **Open Preview** action. Repeated preview switches assert bitmap disposal, no retained image payloads in the cached document, bounded decoded raster dimensions, and restored scroll/disclosure state. The `[markdown-images]` line reports decoded pixel bytes and cached document size separately; it does not measure driver memory or the shared GPU atlas allocation.
+
 `scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.
 
 ## Benchmarks

@@ -310,6 +310,13 @@
 #rayde .rayde-md-footnote { font-size: 13px; color: var(--text-secondary); }
 #rayde .rayde-md-error { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--error); flex-shrink: 0; }
 #rayde .rayde-md-image-alt { color: var(--text-secondary); }
+#rayde .rayde-md-image { position: relative; flex-shrink: 0; }
+#rayde .rayde-md-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; flex-shrink: 0; }
+#rayde .rayde-md-small, #rayde .rayde-md-sub, #rayde .rayde-md-sup { font-size: 12px; }
+#rayde .rayde-md-sup { transform: translateY(-5px); }
+#rayde .rayde-md-sub { transform: translateY(3px); }
+#rayde .rayde-md-mark { background: var(--accent-subtle); }
+#rayde .rayde-md-underline { text-decoration: underline; }
 #rayde .rayde-md-diagram { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex-shrink: 0; min-width: 0; }
 #rayde .rayde-md-diagram-tools { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
 #rayde .rayde-md-diagram-tools > text { flex: 1; font-size: 12px; color: var(--text-secondary); }
