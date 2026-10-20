@@ -607,6 +607,16 @@ class Workbench extends Component<WorkbenchProps> {
 		return ref == null ? null : ref.get();
 	}
 
+	function editorFind(replace = false):Void {
+		var editor = editorOf(active.get());
+		if (editor != null) editor.showFind(replace);
+	}
+
+	function editorFindNext(backward = false):Void {
+		var editor = editorOf(active.get());
+		if (editor != null) editor.findNext(backward);
+	}
+
 	/** Runs the command `id` as its key or the command center would. */
 	public function runCommand(id:String):Void {
 		var action = Lambda.find(commandList, a -> a.id == id);
@@ -1043,6 +1053,10 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "quickopen", label: "Go to File...", icon: Icons.SEARCH_LINE, run: () -> openCenter()},
 			{id: "commands", label: "Show All Commands", icon: Icons.CODE_BOX_LINE, run: () -> openCenter(">")},
 			{id: "gotoline", label: "Go to Line...", icon: Icons.ARROW_RIGHT_LINE, run: () -> openCenter(":")},
+			{id: "find", label: "Find", icon: Icons.SEARCH_LINE, run: () -> editorFind()},
+			{id: "replace", label: "Replace", icon: Icons.FIND_REPLACE_LINE, run: () -> editorFind(true)},
+			{id: "findnext", label: "Find Next", icon: Icons.ARROW_DOWN_LINE, run: () -> editorFindNext()},
+			{id: "findprevious", label: "Find Previous", icon: Icons.ARROW_UP_LINE, run: () -> editorFindNext(true)},
 			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: run},
 			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: stopRun},
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: saveAll},
@@ -2654,7 +2668,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function codeEditor(file:String):Element {
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)}
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);

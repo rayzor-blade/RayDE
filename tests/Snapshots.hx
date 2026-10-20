@@ -179,6 +179,38 @@ class Snapshots {
 				shot("changed-define");
 			});
 
+			scenario(dark, "find", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				bench.openFile(file); settle();
+				var ed = bench.editorFor(file), original = bench.buffer(file).get(), state = ed.state;
+				click(".ui-code-viewport"); press(Character("f"), false, Sys.systemName() != "Mac", false, Sys.systemName() == "Mac"); settle();
+				if (!state.search.opened.get()) throw "Find shortcut did not open the component search bar";
+				click(".ui-code-find-regex"); type(".ui-code-find-query", "item(12|34)"); click(".ui-code-find-query"); settle();
+				if (ed.search.result.get().matches.length != 4) throw "Haxe regex did not find all captured items";
+				shot("haxe-regex");
+				var first = ed.editing.anchor.get(); press(Named(Enter)); settle();
+				if (ed.editing.anchor.get() <= first) throw "Enter did not advance the result";
+				press(Named(Enter), true); settle(); if (ed.editing.anchor.get() != first) throw "Shift+Enter did not select the previous result";
+				bench.runCommand("replace"); settle(); type(".ui-code-find-replacement", "entry$1"); settle();
+				shot("replace-captures"); click(".ui-code-find-replace"); settle();
+				if (ed.search.result.get().matches.length != 3 || bench.buffer(file).get().indexOf("entry12") < 0) throw "Replace did not change just the selected captured match";
+				ed.undo(); settle(); if (bench.buffer(file).get() != original) throw "Replace did not undo";
+				click(".ui-code-find-replace-all"); settle();
+				if (bench.buffer(file).get().indexOf("item12") >= 0 || bench.buffer(file).get().indexOf("entry34") < 0 || bench.dirty.get().indexOf(file) < 0) throw "Replace All did not use captured text or mark the buffer dirty";
+				shot("replaced"); ed.focus(); ed.undo(); settle(); if (bench.buffer(file).get() != original) throw "Replace All was not one undo step";
+				var other = haxe.io.Path.directory(file) + "/Other.hx";
+				bench.openFile(other); settle();
+				if (state.mounted || Css.query(bench.tree, bench.node.id, ".ui-code-find").length > 0) throw "inactive search retained mounted controls";
+				bench.active.set(file); settle(); ed = bench.editorFor(file);
+				if (ed.state != state || state.search.query.get() != "item(12|34)" || ed.search.result.get().matches.length != 4) throw "search state did not survive an editor remount";
+				click(".ui-code-find-query"); type(".ui-code-find-query", "["); settle();
+				if (ed.search.result.get().error == null) throw "invalid regex had no recoverable error";
+				shot("invalid-regex");
+				type(".ui-code-find-query", "item(12|34)"); settle();
+				if (ed.search.result.get().error != null || ed.search.result.get().matches.length != 4) throw "find did not recover after fixing the regex";
+				press(Named(Escape)); settle(); if (state.search.opened.get() || ed.search.result.get().matches.length != 0) throw "closing find retained controls or result data";
+				bench.closeAll(); settle(); if (state.mounted) throw "closed document retained an editor";
+			});
+
 			scenario(dark, "images", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var tree = bench.tree, root = bench.display().cwd, png = root + "/Photo.PNG", svg = root + "/vector.svg";
 				sys.io.File.copy("assets/rayde-welcome.png", png);

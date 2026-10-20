@@ -12,6 +12,8 @@ SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
 
 `SNAPSHOT_ONLY=images scripts/snapshot.sh` checks PNG/JPEG/WebP/BMP/GIF/ICO/AVIF and SVG previews in both schemes, wheel zoom, drag pan, fit/100%, background contrast, refresh, inactive pixel release, cancelled background decoding, malformed inputs and oversized SVGs. SVG checks cover source switching, unsaved edits, shared vector ownership and undo preservation. Native `image_preview` tests exercise additional-format decoding and job cancellation.
 
+`SNAPSHOT_ONLY=find scripts/snapshot.sh` exercises Ashui's compact frosted-glass search panel, current-file shortcuts, bare regex/captured replacements, match navigation, Replace All undo, dirty state, inactive editor disposal, restored search inputs and invalid-pattern recovery in both schemes. Ashui's `CodeFindTest` additionally checks Haxe literal flags, Unicode and zero-width matches, bounded highlight nodes, narrow editors, read-only/disabled guards and same-batch edits.
+
 The `extensions` scenario includes native approval, startup and revocation in both schemes. Its approvals use an isolated home under the fixture; it does not change your user settings.
 
 `SNAPSHOT_ONLY=toast scripts/snapshot.sh` checks short and wrapping Git notifications in both schemes, including single-line action labels, centered button text, non-overlapping controls and action dismissal.

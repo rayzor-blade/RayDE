@@ -8,7 +8,10 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 | --- | --- |
 | Cmd+P | Command center: go to a file as you type. Clicking the project pill opens it too. |
 | Cmd+Shift+P, or `>` in the center | Commands. |
-| Cmd+G, or `:` in the center | Go to line. |
+| Ctrl+G, or `:` in the center | Go to line. |
+| Cmd+F | Find in the current editor. |
+| Cmd+Option+F (Ctrl+H elsewhere) | Replace in the current editor. |
+| Cmd+G / Cmd+Shift+G (F3 / Shift+F3 elsewhere) | Next / previous match. |
 | Cmd+S | Save every edited file. |
 | Cmd+W | Close the tab. |
 | F12 | Go to the definition of the name under the cursor. |
@@ -33,6 +36,10 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 - Each editor has a minimap and code folding.
 - Explorer folders load their file rows on first expansion and keep them for subsequent expansions.
 - The build file (`build.hxml`) opens as a form in **Settings > Build**.
+
+Find and Replace use Ashui's compact floating glass panel. Enter/Shift+Enter in Find navigate matches; Enter in Replace replaces one, and Cmd+Enter/Ctrl+Enter replaces all. Replace All uses one undo operation within the editor's history limits. Escape closes the panel. The command palette and key-binding settings also expose **Find**, **Replace**, **Find Next** and **Find Previous**.
+
+Enable `.*` for regular expressions and enter a bare pattern such as `item(\d+)`; no `~/…/` wrapper is required. Optional Haxe literals such as `~/item(\d+)/i` supply explicit flags. Regex replacement supports captures such as `$1`; `$$` inserts a dollar sign. `Aa` selects case-sensitive matching and underlined `Ab` selects whole words. Invalid patterns show an error. Search inputs survive switching tabs while their mounted controls and match caches are released.
 
 ## Image previews
 
