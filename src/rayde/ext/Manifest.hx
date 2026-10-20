@@ -54,7 +54,7 @@ typedef NativeLibrary = {name:String, path:String, sha256:String};
  * an `id`, and the script mounts a view under its id: `mount(view, 'inspector')`. A view says how it shows itself:
  * its `title`, an SVG file for its `icon`, its `tools` and its `location`: `sidebar` (the default: its icon joins the
  * activity bar and its view takes the Explorer's place when the icon is chosen), `secondary` (the side bar on the
- * right), `panel` (a tab of the bottom panel) or `editor` (a tab among the open files). A name that is no view's id
+ * right), `explorer` (a collapsible, resizable section beneath the file tree), `panel` (a tab of the bottom panel) or `editor` (a tab among the open files). A name that is no view's id
  * goes to the first view; `tab:<title>` opens a tab, which needs no declaration.
  *
  * `contributes` adds to the workbench: `commands` (each an `id`, a `title` and optionally an `icon`; the script
@@ -72,7 +72,7 @@ class Manifest {
 	public static inline var EXTENSION = ".rayext";
 
 	/** Where a view can be shown. */
-	public static final LOCATIONS = ["sidebar", "secondary", "panel", "editor"];
+	public static final LOCATIONS = ["sidebar", "secondary", "panel", "editor", "explorer"];
 
 	public final file:String;
 

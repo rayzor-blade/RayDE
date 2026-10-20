@@ -167,12 +167,15 @@ class Studio {
 			preview.show();
 		}
 		adopt();
+		if (root == null && view != null) hook("view.visibility", {id:view, visible:true});
 	}
 
 	/** Lets go of a surface: what is drawn goes from it and from the tree, and the model of the view stays. */
 	function release(s:Surface):Void {
 		tree.detachChildren(s.container.id);
 		surfaces.remove(s);
+		if (s.root == null && s.view != null && !Lambda.exists(surfaces, other -> other.root == null && other.view == s.view))
+			hook("view.visibility", {id:s.view, visible:false});
 		if (surfaces.length == 0 && preview != null)
 			preview.hide();
 		else if (preview != null) preview.setVisibleRoots(visibleRoots());
@@ -298,6 +301,8 @@ class Studio {
 
 	function handle(m:Dynamic):Void {
 		switch (m.t : String) {
+			case "subscribe" if (m.hook == "view.visibility" && manifest != null):
+				for (view in manifest.views) hook("view.visibility", {id:view.id, visible:Lambda.exists(surfaces, s -> s.root == null && s.view == view.id)});
 			case "started":
 				replace();
 			case "ops":

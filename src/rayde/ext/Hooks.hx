@@ -12,6 +12,7 @@ class Hooks {
 	public static final events:Array<HookInfo> = [
 		{name: "project.opened", data: "{ root }", detail: "Project folder. Sent once, when the extension subscribes"},
 		{name: "active.changed", data: "{ path }", detail: "Editor in front changed; path is null for a page that is not a file. Sent on subscribe"},
+		{name: "view.visibility", data: "{ id, visible }", detail: "Declared view attached or detached; current visibility of each view is sent on subscribe"},
 		{name: "file.opened", data: "{ path }", detail: "Editor tab opened for a file"},
 		{name: "file.closed", data: "{ path }", detail: "Editor tab closed"},
 		{name: "file.changed", data: "{ path }", detail: "Buffer edited. Repeats within 300 ms collapse into one call per file"},

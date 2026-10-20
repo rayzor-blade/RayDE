@@ -4,7 +4,7 @@ package rayde.run;
  * A command run in the background, its output going to a log file that is read
  * from as it grows, so polling never waits on the process. The command replaces
  * the shell that starts it, so stopping the job stops the command itself. It has
- * no input: a program that asks a question gets the end of the file.
+ * input from a file when provided; otherwise a program that asks a question gets EOF.
  */
 class Job {
 	public final log:String;
@@ -16,9 +16,9 @@ class Job {
 	var process:Null<sys.io.Process>;
 	var offset = 0;
 
-	public function new(command:String, args:Array<String>, log:String) {
+	public function new(command:String, args:Array<String>, log:String, ?input:String, ?cwd:String) {
 		this.log = log;
-		line = "exec " + [command].concat(args).map(quote).join(" ") + " < /dev/null > " + quote(log) + " 2>&1";
+		line = (cwd == null ? "" : "cd " + quote(cwd) + " && ") + "exec " + [command].concat(args).map(quote).join(" ") + " < " + (input == null ? "/dev/null" : quote(input)) + " > " + quote(log) + " 2>&1";
 	}
 
 	public function start():Void {

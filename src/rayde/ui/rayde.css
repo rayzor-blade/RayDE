@@ -321,3 +321,31 @@
 #rayde .rayde-md-diagram-tools { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
 #rayde .rayde-md-diagram-tools > text { flex: 1; font-size: 12px; color: var(--text-secondary); }
 #rayde .rayde-md-diagram-viewport { position: relative; height: 300px; overflow: hidden; flex-shrink: 0; min-width: 0; }
+
+/* Explorer sections use the native collapse and split-panel interactions. */
+#rayde #rayde-explorer-sections > .ui-resizable-handle { height: 4px; flex-shrink: 0; }
+#rayde #rayde-explorer-sections > .ui-resizable-panel { min-width: 0; }
+#rayde #rayde-explorer-sections .ui-collapsible { gap: 0; position: relative; }
+#rayde #rayde-explorer-sections .ui-collapsible-trigger { height: 28px; min-height: 28px; flex-shrink: 0; width: 100%; gap: 4px; justify-content: flex-start; padding: 0 64px 0 6px; border-radius: 0; font-weight: 600; }
+#rayde #rayde-explorer-sections .ui-collapsible-content { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#rayde #rayde-explorer-sections .rayde-explorer-section-tools { position: absolute; right: 6px; top: 0; height: 28px; }
+#rayde #rayde-explorer-sections .rayde-explorer-section-tools .rayde-panel-button { width: 24px; height: 24px; min-width: 24px; }
+#rayde #rayde-explorer-sections .ui-tree-row { min-width: 0; }
+#rayde #rayde-outline-tree [data-symbol-kind="class"] > .ui-tree-row > .ui-tree-icon { color: var(--warning); }
+#rayde #rayde-outline-tree [data-symbol-kind="type"] > .ui-tree-row > .ui-tree-icon { color: var(--success); }
+#rayde #rayde-outline-tree [data-symbol-kind="method"] > .ui-tree-row > .ui-tree-icon { color: color-mix(in srgb, var(--primary) 55%, var(--error) 45%); }
+#rayde #rayde-outline-tree [data-symbol-kind="field"] > .ui-tree-row > .ui-tree-icon { color: var(--info); }
+#rayde #rayde-outline-tree [data-symbol-kind="variable"] > .ui-tree-row > .ui-tree-icon { color: var(--primary); }
+#rayde #rayde-outline-tree [data-symbol-kind="namespace"] > .ui-tree-row > .ui-tree-icon { color: var(--warning); }
+
+#rayde .rayde-local-revision { width: 100%; height: 26px; min-height: 26px; border-radius: 0; padding: 0 12px; gap: 6px; }
+
+#rayde #rayde-explorer-sections > .ui-resizable-handle > .ui-resizable-line { background: var(--border); }
+
+#rayde #rayde-local-timeline .ui-tooltip-trigger { align-self: stretch; width: 100%; min-width: 0; }
+
+#rayde #rayde-outline-tree .ui-tree-row, #rayde #rayde-dependencies-tree .ui-tree-row { height: 24px; gap: 4px; padding: 0 4px; }
+#rayde #rayde-outline-tree .ui-tree-chevron, #rayde #rayde-dependencies-tree .ui-tree-chevron { width: 12px; height: 12px; }
+#rayde #rayde-outline-tree .ui-tree-chevron-space, #rayde #rayde-dependencies-tree .ui-tree-chevron-space { width: 12px; }
+#rayde #rayde-outline-tree .ui-tree-group, #rayde #rayde-dependencies-tree .ui-tree-group { margin-left: 10px; padding-left: 1px; border-left-color: transparent; }
+#rayde #rayde-outline-tree:hover .ui-tree-group, #rayde #rayde-dependencies-tree:hover .ui-tree-group { border-left-color: var(--border); }

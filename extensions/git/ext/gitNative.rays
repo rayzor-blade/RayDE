@@ -88,6 +88,7 @@ native "git2" {
   @:owner(repository) @:blocking function git_revwalk_new(out:Out<Walk>, repository:Repository):Int32;
   function git_revwalk_free(walk:Walk):Void;
   function git_revwalk_sorting(walk:Walk, mode:UInt32):Int32;
+  function git_revwalk_simplify_first_parent(walk:Walk):Int32;
   @:blocking function git_revwalk_push_glob(walk:Walk, glob:CString):Int32;
   @:blocking function git_revwalk_push_head(walk:Walk):Int32;
   @:blocking function git_revwalk_push_ref(walk:Walk, ref:CString):Int32;
@@ -264,7 +265,10 @@ function diff(repository, staged) {
 
 /** Changes against the first parent; a root commit is compared with an empty tree. */
 function commitChanges(path, id) {
-  return withRepository(path, repository -> {
+  return withRepository(path, repository -> changesInRepository(repository, id));
+}
+
+function changesInRepository(repository, id) {
     var commit = null, before = null, after = null, changes = null;
     function close() {
       for (handle in [changes, before, after, commit]) if (handle != null) handle.close();
@@ -301,7 +305,6 @@ function commitChanges(path, id) {
       close();
       return files;
     } catch (failure) { close(); throw failure; }
-  });
 }
 
 function inspect(path) {
@@ -370,7 +373,7 @@ function repositoryStatus(path) {
   });
 }
 
-function openHistory(path, ref = 'all') {
+function openHistory(path, ref = 'all', firstParent = false) {
   check(git_libgit2_init(), 'initialize history');
   var repository = null, walk = null, closed = false, done = false;
   function close() {
@@ -388,11 +391,12 @@ function openHistory(path, ref = 'all') {
     check(git_revwalk_new(cursor, repository), 'history cursor');
     walk = cursor.value;
     check(git_revwalk_sorting(walk, 3), 'history ordering');
+    if (firstParent) check(git_revwalk_simplify_first_parent(walk), 'file history ordering');
     if (ref == 'all') {
       for (reference in refs) check(git_revwalk_push_ref(walk, reference.name), 'history reference');
       if (check(git_repository_head_unborn(repository), 'history HEAD state') == 0)
         check(git_revwalk_push_head(walk), 'history HEAD');
-    } else {
+    } else if (ref != 'HEAD' || check(git_repository_head_unborn(repository), 'history HEAD state') == 0) {
       var object = Out(Tree);
       check(git_revparse_single(object, repository, ref + '^{commit}'), 'history focus');
       var target = object.value;
@@ -422,7 +426,7 @@ function openHistory(path, ref = 'all') {
         return {commits: rows, done: done};
       } catch (error) { close(); throw error; }
     }
-    return {next: next, close: close, refs: refs, repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
+    return {next: next, close: close, changes: id -> changesInRepository(repository, id), refs: refs, repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
   } catch (error) { close(); throw error; }
 }
 
@@ -576,4 +580,28 @@ function remoteOperation(path, operation, strategy = 'ff-only') {
       close(); return result;
     } catch (error) { close(); throw error; }
   });
+}
+
+/** Bounded pages on HEAD, following first-parent file renames as the walk moves backwards. */
+function openFileHistory(path, file) {
+  var cursor = openHistory(path, 'HEAD', true);
+  var relative = file.startsWith(cursor.workdir) ? file.substr(cursor.workdir.length) : null;
+  if (relative == null || relative == '' || relative.startsWith('../')) { cursor.close(); throw 'File is outside this repository'; }
+  var current = relative, closed = false;
+  function close() { if (!closed) { closed = true; cursor.close(); } }
+  function next(limit = 50) {
+    if (closed) throw 'File history cursor is closed';
+    try {
+      var page = cursor.next(limit), rows = [];
+      for (commit in page.commits) {
+        for (entry in cursor.changes(commit.id)) if (entry.path == current || entry.oldPath == current) {
+          rows.push(commit);
+          if (entry.status == 4 && entry.path == current) current = entry.oldPath;
+          break;
+        }
+      }
+      return {commits:rows, done:page.done};
+    } catch (error) { close(); throw error; }
+  }
+  return {next:next, close:close};
 }

@@ -30,6 +30,7 @@ import rayde.ext.Manager.ManagedExtension;
 import rayde.settings.Extensions;
 import rayde.ext.Manifest.ViewDecl;
 import rayde.files.FileOps;
+import rayde.history.LocalHistory;
 import rayde.ext.Studio;
 import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
@@ -141,7 +142,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || file == THEME_TAB || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || file.startsWith(HISTORY_TAB) || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -161,6 +162,10 @@ class Workbench extends Component<WorkbenchProps> {
 	public final treeSelected = Signal.make("");
 
 	/** Whether each folder of the Explorer is open, kept when the tree is built again. */
+	final explorerFilesSize = Signal.make(Math.NaN);
+	final explorerSections = new Map<String, ExplorerSection>();
+	final dependenciesRevision = Signal.make(0);
+
 	final folderOpen = new Map<String, Signal<Bool>>();
 
 	/** Bumped when a folder first has an open state, so the selection looks at it. */
@@ -182,6 +187,12 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A line the status bar shows for a few seconds: what a command could not do. */
 	final notice = Signal.make("");
+
+	final localHistory:LocalHistory;
+	final historyRevision = Signal.make(0);
+	final historyPending = new Map<String, Bool>();
+	final historyTabs = new Map<String, {file:String, revision:Int, text:String}>();
+	static inline var HISTORY_TAB = "@local-history:";
 
 	final buffers = new Map<String, Signal<String>>();
 	final documents = new Map<String, CodeEditorState>();
@@ -323,6 +334,9 @@ class Workbench extends Component<WorkbenchProps> {
 	var lastBuild:Null<Array<Diagnostic>>;
 
 	public function new(props:WorkbenchProps) {
+		localHistory = new LocalHistory(props.display.cwd);
+		localHistory.changed = () -> historyRevision.set(historyRevision.get() + 1);
+		localHistory.failed = message -> ashui.animation.AnimationScheduler.main.after(.01, () -> { if (!gone) say(message); });
 		explorerShown = Computed.make(() -> treeWidth.get() > ACTIVITY + 8);
 		panelShown = Computed.make(() -> problemsHeight.get() > 40);
 		super(props);
@@ -435,6 +449,8 @@ class Workbench extends Component<WorkbenchProps> {
 		assist.stop(file, null);
 		var rest = files.copy();
 		rest.splice(at, 1);
+		historyTabs.remove(file);
+		if (!isVirtual(file)) localHistory.flush(file);
 		var studio = studios.get(file);
 		if (studio != null && !studio.managed) {
 			studio.dispose();
@@ -460,7 +476,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The file a page stands for, null for the pages that are not files. */
 	function realFile(file:String):Null<String>
-		return file == "" || isVirtual(file) ? null : file;
+		return file.startsWith(HISTORY_TAB) && historyTabs.exists(file) ? historyTabs.get(file).file : file == "" || isVirtual(file) ? null : file;
 
 	/** Adds the tabs of an extension to the editor, and takes those it has unmounted away. */
 	function syncTabs(studio:Studio, list:Array<TabView>):Void {
@@ -1162,8 +1178,16 @@ class Workbench extends Component<WorkbenchProps> {
 	public function buffer(file:String):Signal<String> {
 		var b = buffers.get(file);
 		if (b == null) {
-			b = Signal.make(sys.io.File.getContent(file));
+			var disk = sys.io.File.getContent(file), recovered = localHistory.recover(file, disk);
+			b = Signal.make(recovered);
 			buffers.set(file, b);
+			if (recovered != disk && dirty.get().indexOf(file) < 0) {
+				ashui.animation.AnimationScheduler.main.after(.01, () -> {
+					if (gone || !buffers.exists(file)) return;
+					if (dirty.get().indexOf(file) < 0) dirty.set(dirty.get().concat([file]));
+					say("Recovered unsaved changes in " + haxe.io.Path.withoutDirectory(file));
+				});
+			}
 		}
 		return b;
 	}
@@ -1172,6 +1196,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var state = documents.get(file);
 		if (state == null) {
 			state = new CodeEditorState(buffer(file));
+			DocumentHistory.restore(state, localHistory.undo(file, state.value.get()));
 			documents.set(file, state);
 		}
 		return state;
@@ -1180,6 +1205,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
+		for (file in localHistory.files()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) localHistory.forget(file);
 		for (file in nativeSyntax.keys())
 			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) {
 				var syntax = nativeSyntax.get(file);
@@ -1200,6 +1226,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
 	public function edited(file:String):Void {
+		checkpointHistory(file);
 		if (dirty.get().indexOf(file) < 0)
 			dirty.set(dirty.get().concat([file]));
 		check(file);
@@ -1212,6 +1239,44 @@ class Workbench extends Component<WorkbenchProps> {
 			extensionStudio().edited();
 		emit("file.changed", {path: file}, .3);
 		followBreakpoints(file);
+	}
+
+	function checkpointHistory(file:String):Void {
+		var state = documents.get(file), text = buffer(file).get();
+		var before = localHistory.current(file, text);
+		localHistory.record(file, before, text, state == null ? null : DocumentHistory.snapshot(state));
+		if (historyPending.exists(file)) return;
+		historyPending.set(file, true);
+		ashui.animation.AnimationScheduler.main.after(.35, () -> { historyPending.remove(file); if (!gone) localHistory.flush(file); });
+	}
+
+	function previewHistory(file:String, revision:Int):Void {
+		var id = HISTORY_TAB + file + "#" + revision;
+		historyTabs.set(id, {file:file, revision:revision, text:localHistory.revision(file, buffer(file).get(), revision)}); openFile(id);
+	}
+
+	function restoreHistory(file:String, text:String):Void {
+		openFile(file);
+		var attempts = 0;
+		function apply():Void {
+			var editor = editorOf(file);
+			if (editor != null && active.get() == file) editor.applyEdits([{from:0, to:buffer(file).get().length, text:text}]);
+			else if (!gone && ++attempts < 80) ashui.animation.AnimationScheduler.main.after(.02, apply);
+		}
+		ashui.animation.AnimationScheduler.main.after(.02, apply);
+	}
+
+	function historyPage(id:String):Element {
+		var entry = historyTabs.get(id);
+		if (entry == null) return <div/>;
+		var text = entry.text;
+		return <div class="flex flex-col flex-1 min-h-0">
+			<div class="flex items-center gap-2 px-3 py-2 shrink-0 border-b">
+				<text class="text-xs text-text-secondary flex-1">Local revision ${Std.string(entry.revision)} · ${haxe.io.Path.withoutDirectory(entry.file)}</text>
+				<tooltip label="Restore this revision to the unsaved buffer; the change can be undone" side="bottom"><button id="rayde-history-restore" variant={Ghost} size={Icon} onClick={_ -> restoreHistory(entry.file, text)}><icon document={Icons.HISTORY_LINE} class="size-4"/></button></tooltip>
+			</div>
+			<code-view id="rayde-history-preview" value={text} language={languageOf(entry.file)} lineNumbers={true} minimap={false} class="flex-1 min-h-0"/>
+		</div>;
 	}
 
 	/** Files whose breakpoints are about to be read back from the editor. */
@@ -1306,8 +1371,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The Theme Studio of the theme file `file`: it reads the editor's text, and what it writes goes to the editor and the file. */
 	function makeThemeStudio(file:String):ThemeStudio {
 		var studio = new ThemeStudio(file, () -> buffer(file).get(), text -> {
+			localHistory.record(file, buffer(file).get(), text, null, "Theme edit");
 			buffer(file).set(text);
 			sys.io.File.saveContent(file, text);
+			localHistory.saved(file, text, null);
 			dirty.set([for (d in dirty.get()) if (d != file) d]);
 		}, () -> appearance);
 		// What is wrong with the theme is a problem of its file: underlined in the editor and listed with the others.
@@ -1532,8 +1599,10 @@ class Workbench extends Component<WorkbenchProps> {
 			},
 			writeFile: (p, text) -> {
 				var full = projectPath(p);
+				var b = buffers.get(full), before = b != null ? b.get() : sys.FileSystem.exists(full) ? sys.io.File.getContent(full) : "";
+				localHistory.record(full, before, text, null, "Extension edit");
 				sys.io.File.saveContent(full, text);
-				var b = buffers.get(full);
+				localHistory.saved(full, text, null);
 				if (b != null)
 					b.set(text);
 				dirty.set([for (d in dirty.get()) if (d != full) d]);
@@ -1563,6 +1632,7 @@ class Workbench extends Component<WorkbenchProps> {
 	public function saveAll():Void {
 		for (file in dirty.get()) {
 			sys.io.File.saveContent(file, buffer(file).get());
+			localHistory.saved(file, buffer(file).get(), documents.exists(file) ? DocumentHistory.snapshot(documents.get(file)) : null);
 			var studio = studios.get(file);
 			if (studio != null && !studio.live.get())
 				studio.reload();
@@ -1707,6 +1777,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			localHistory.dispose();
 			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
 			nativeSyntax.clear();
 			diagnosticJobs.dispose();
@@ -1891,7 +1962,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The Explorer's icon and one for each extension view, which an extension that is in the sidebar swaps with the Explorer. */
 	function containerItems(shown:Bool, view:String):Element {
 		var items:Array<Element> = [activityItem("rayde-activity-explorer", "Explorer", Icons.FOLDERS_LINE, shown && view == "explorer", chooseExplorer)];
-		for (c in containers) {
+		for (c in containers) if (c.location != "explorer") {
 			// Only the view the side panel shows is selected; a view in another part of the layout is toggled from here but is not what the activity bar is showing.
 			var on = c.location == "sidebar" && shown && view == c.id;
 			items.push(activityItem("rayde-activity-" + c.id, c.title, c.icon, on, () -> chooseContainer(c)));
@@ -1922,6 +1993,9 @@ class Workbench extends Component<WorkbenchProps> {
 	public function chooseContainer(c:Container):Void {
 		extensionManager.view(c.extension.id, c.view.id);
 		switch c.location {
+			case "explorer":
+				sideView.set("explorer");
+				if (!explorerShown.get()) treeWidth.set(ACTIVITY + EXPLORER_WIDTH);
 			case "sidebar":
 				if (sideView.get() == c.id && explorerShown.get())
 					treeWidth.set(ACTIVITY);
@@ -1997,18 +2071,55 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
-		var root = tagged(<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>, props.display.cwd);
+		var files = () -> {
+			var root = tagged(<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>, props.display.cwd);
+			return <context-menu ref={explorerMenu} id="rayde-explorer-menu">
+					<context-menu-trigger id="rayde-explorer-trigger">
+						<div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
+							<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (ThemeFile.isThemeFile(v)) openThemeStudio() else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
+						</div>
+					</context-menu-trigger>
+					<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
+				</context-menu>;
+		};
+		var sections:Array<Element> = [new ResizablePanel({id:"rayde-explorer-panel-files", size:explorerFilesSize, minSize:60}, [files()])];
+		sections.push(explorerSection("outline", false, 180).panel("Outline", () ->
+			<explorer-outline display={props.display} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
+		var contributed = [for (c in containers) if (c.location == "explorer") c];
+		var gitTimeline = Lambda.find(contributed, c -> c.view.id == "timeline");
+		sections.push(explorerSection("timeline", false, 180).panel("Timeline", () ->
+			<div class="flex flex-col flex-1 min-h-0">
+				<local-timeline history={localHistory} revision={historyRevision} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onPreview={previewHistory}/>
+				{gitTimeline == null ? <text class="text-xs text-text-secondary px-3 py-2">Enable Git for commit history</text> : explorerView(gitTimeline)}
+			</div>, gitTimeline == null ? [] : explorerTools(gitTimeline)));
+
+		for (c in contributed) if (c != gitTimeline)
+			sections.push(explorerSection(c.view.id, false, 160).panel(c.title, () -> explorerView(c), explorerTools(c)));
+
+		sections.push(explorerSection("dependencies", false, 160).panel("Dependencies", () ->
+			<for {revision in [dependenciesRevision.get()]}><explorer-dependencies root={props.display.cwd} args={props.display.args} onOpen={openFile}/></for>, [
+			<tooltip label="Refresh dependencies" side="bottom"><button id="rayde-dependencies-refresh" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> dependenciesRevision.set(dependenciesRevision.get() + 1)}><icon document={Icons.REFRESH_LINE} class="size-3"/></button></tooltip>,
+			<tooltip label="Manage libraries" side="bottom"><button id="rayde-dependencies-settings" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> openSettings("libraries")}><icon document={Icons.SETTINGS_3_LINE} class="size-3"/></button></tooltip>
+		]));
 		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
 			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
-			<context-menu ref={explorerMenu} id="rayde-explorer-menu">
-				<context-menu-trigger id="rayde-explorer-trigger">
-					<div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
-						<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (ThemeFile.isThemeFile(v)) openThemeStudio() else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
-					</div>
-				</context-menu-trigger>
-				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
-			</context-menu>
+			<resizable id="rayde-explorer-sections" direction="vertical" class="flex-1 min-h-0">{sections}</resizable>
 		</div>;
+	}
+
+	function explorerTools(c:Container):Array<Element>
+		return [for (t in c.view.tools) <tooltip label={t.title} side="bottom"><button id={"rayde-tool-" + t.id} variant={Ghost} size={Icon} class="rayde-panel-button"
+			onClick={_ -> studioOf(c.extension.mainPath()).tool(t.id)}><icon document={ViewIcons.tool(c.extension, t)} class="size-3"/></button></tooltip>];
+
+	function explorerView(c:Container):Element {
+		extensionManager.view(c.extension.id, c.view.id);
+		var studio = studioOf(c.extension.mainPath());
+		return <studio-view studio={studio} framed={false} header={false} view={c.view} onMocks={() -> openMocks(studio)} onConsole={() -> showPanel("extension")}/>;
+	}
+
+	function explorerSection(id:String, open:Bool, size:Float):ExplorerSection {
+		if (!explorerSections.exists(id)) explorerSections.set(id, new ExplorerSection(id, open, size));
+		return explorerSections.get(id);
 	}
 
 	/** Marks a row of the tree with the path it stands for, so a press on it can be traced to the file. */
@@ -2222,6 +2333,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A file or folder was renamed: the tabs, buffers and edits under it follow it to the new path. */
 	function moveTabs(from:String, to:String):Void {
+		localHistory.move(from, to);
+		for (entry in historyTabs) if (entry.file == from || entry.file.startsWith(haxe.io.Path.addTrailingSlash(from))) entry.file = to + entry.file.substr(from.length);
 		var moved = FileOps.moved(open.get(), from, to);
 		for (old => now in FileOps.moved([for (k in nativeSyntax.keys()) k], from, to)) {
 			var syntax = nativeSyntax.get(old);
@@ -2379,7 +2492,7 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 
 	function tabLabel(file:String):String
-		return file == THEME_TAB ? (themeStudio == null ? "Theme" : themeStudio.theme.get().name) : isTab(file) ? tabTitle(file) : file == SETTINGS ? "Settings" : isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
+		return file.startsWith(HISTORY_TAB) && historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(historyTabs.get(file).file) + " #" + historyTabs.get(file).revision : file == THEME_TAB ? (themeStudio == null ? "Theme" : themeStudio.theme.get().name) : isTab(file) ? tabTitle(file) : file == SETTINGS ? "Settings" : isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
 
 	function viewTabTitle(file:String):String {
 		var v = viewOfTab(file);
@@ -2387,6 +2500,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function tabIcon(file:String):ashui.svg.SvgDocument {
+		if (file.startsWith(HISTORY_TAB)) return Icons.HISTORY_LINE;
 		if (isTab(file)) {
 			var studio = studios.get(tabStudio(file));
 			return studio != null && studio.manifest != null ? ViewIcons.of(studio.manifest) : Icons.PUZZLE_LINE;
@@ -2429,6 +2543,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
+		if (file.startsWith(HISTORY_TAB) && historyTabs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(historyTabs.get(file).file), "Local history"])}</breadcrumb>;
 		if (file == SETTINGS)
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(["Settings", SettingsPage.labelOf(SettingsPage.category(settingsCategory.get()), extension)])}</breadcrumb>;
 		if (file == THEME_TAB)
@@ -2456,6 +2571,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String):Element {
+		if (file.startsWith(HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {active.get() == file}>${historyPage(file)}</if></tabs-content>;
 		if (file == THEME_TAB && themeStudio != null)
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<theme-studio-view studio={themeStudio} appearance={appearance} revision={settingsRevision} onScheme={pickScheme} onText={openThemeText} onOpen={name -> openFile(haxe.io.Path.join([props.display.cwd, name]))}/>

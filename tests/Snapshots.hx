@@ -37,7 +37,7 @@ class Snapshots {
 		var stub = haxe.io.Path.join([scratch, "haxelib.sh"]), home = haxe.io.Path.join([scratch, "home"]);
 		if (!sys.FileSystem.exists(home))
 			sys.FileSystem.createDirectory(home);
-		sys.io.File.saveContent(stub, "#!/bin/sh\nstate=\"$(dirname \"$0\")/libs.txt\"\ncase \"$1\" in\n list) cat \"$state\" 2>/dev/null ;;\n --always) shift; case \"$1\" in install) echo \"$2: [${3:-1.0.0}]\" >> \"$state\"; echo \"Installed $2\" ;; update) echo \"Updated $2\" ;; esac ;;\n remove) grep -v \"^$2:\" \"$state\" > \"$state.new\"; mv \"$state.new\" \"$state\"; echo \"Removed $2\" ;;\nesac\n");
+		sys.io.File.saveContent(stub, "#!/bin/sh\nstate=\"$(dirname \"$0\")/libs.txt\"\ncase \"$1\" in\n list) cat \"$state\" 2>/dev/null ;;\n path) echo \"$RAYDE_SNAPSHOT_LIBRARY_PATH\" ;;\n --always) shift; case \"$1\" in install) echo \"$2: [${3:-1.0.0}]\" >> \"$state\"; echo \"Installed $2\" ;; update) echo \"Updated $2\" ;; esac ;;\n remove) grep -v \"^$2:\" \"$state\" > \"$state.new\"; mv \"$state.new\" \"$state\"; echo \"Removed $2\" ;;\nesac\n");
 		Sys.command("chmod", ["+x", stub]);
 		Sys.putEnv("RAYDE_HAXELIB", stub);
 		Sys.putEnv("HOME", home);
@@ -47,6 +47,103 @@ class Snapshots {
 		for (dark in [true, false]) {
 			sys.io.File.saveContent(haxe.io.Path.join([scratch, "libs.txt"]), "ash-simd: [0.1.0]\nformat: [3.7.0]\nhashlink: [1.14.0]\ntink_core: [2.1.1]\ntink_hxx: [0.25.1]\n");
 			Haxelib.refresh();
+			scenario(dark, "explorer", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var tree = bench.tree, root = haxe.io.Path.directory(haxe.io.Path.directory(file));
+				function has(selector:String):Bool return Css.query(tree, bench.node.id, selector).length > 0;
+				function label(word:String):Bool return Lambda.exists(Css.query(tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text().indexOf(word) >= 0);
+				bench.openFile(file); settle();
+				if (has("#rayde-outline-scroll") || has("#rayde-dependencies-scroll") || has("#rayde-activity-ext-git-timeline")) throw "closed sections built their contents or added an activity icon";
+				click("#rayde-explorer-toggle-outline");
+				until(() -> label("Main"), "compiler Outline symbols");
+				bench.editorFor(file).select(0, 0);
+				click('#rayde-outline-tree [data-symbol-kind="method"] > .ui-tree-row');
+				until(() -> bench.caretLine(file) == 1, "Outline click to navigate to the method declaration");
+				var classIcon = bench.boundsOf('#rayde-outline-tree [data-symbol-kind="class"] > .ui-tree-row > .ui-tree-icon');
+				var methodIcon = bench.boundsOf('#rayde-outline-tree [data-symbol-kind="method"] > .ui-tree-row > .ui-tree-icon');
+				if (methodIcon.x - classIcon.x > 14) throw "Outline indentation is too wide";
+				shot("outline");
+				// Persistence contains only bounded undo data, including redo on the other side of an undo.
+				var savedState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make("ab"));
+				savedState.history.record("a", "ab", {caret:1,anchor:1}, {caret:2,anchor:2});
+				savedState.history.record("ab", "abc", {caret:2,anchor:2}, {caret:3,anchor:3});
+				var undone = savedState.history.apply("abc", false);
+				var json = haxe.Json.stringify(rayde.ui.DocumentHistory.snapshot(savedState));
+				var recoveredState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make(undone.text));
+				rayde.ui.DocumentHistory.restore(recoveredState, haxe.Json.parse(json));
+				if (recoveredState.history.apply("ab", true).text != "abc" || recoveredState.history.apply("abc", false).text != "ab" || recoveredState.history.apply("ab", false).text != "a") throw "persisted undo and redo did not round-trip";
+				var source = bench.buffer(file).get();
+				bench.buffer(file).set(StringTools.replace(source, "main()", "changed()"));
+				until(() -> label("changed"), "Outline from the unsaved buffer");
+				if (sys.io.File.getContent(file) != source) throw "Outline wrote the source file";
+				bench.buffer(file).set(source);
+				until(() -> label("main"), "restored Outline");
+				var git = bench.extensionManager.find("git");
+				bench.extensionManager.setNativeApproved("git", "git2", true);
+				click("#rayde-explorer-toggle-timeline");
+				var studio = bench.studioFor(git.connection.file);
+				function says(word:String):Bool return studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
+				until(() -> { if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get()); return says("Prepare extension runtime 1"); }, "file Timeline to search bounded pages for the initial commit");
+				shot("timeline");
+				click("#rayde-explorer-toggle-dependencies");
+				until(() -> has("#rayde-dependencies-tree"), "Dependencies empty build");
+				// Resolve a declared library through the isolated haxelib command, with lazy source rows.
+				var lib = root + "/library";
+				sys.FileSystem.createDirectory(lib + "/sample");
+				sys.io.File.saveContent(lib + "/sample/Widget.hx", "package sample; class Widget {}\n");
+				Sys.putEnv("RAYDE_SNAPSHOT_LIBRARY_PATH", lib);
+				bench.display().args.push("-lib"); bench.display().args.push("format");
+				click("#rayde-dependencies-refresh");
+				until(() -> has("#rayde-dependency-" + haxe.crypto.Md5.encode("format") + "-ready"), "resolved library source root");
+				click("#rayde-dependency-" + haxe.crypto.Md5.encode("format") + "-ready > .ui-tree-row"); settle(25);
+				shot("dependencies-root");
+				var libraryRoot = "#rayde-library-" + haxe.crypto.Md5.encode(lib);
+				click(libraryRoot + " > .ui-tree-row"); settle(25);
+				var folder = "#rayde-library-" + haxe.crypto.Md5.encode(lib + "/sample");
+				click(folder + " > .ui-tree-row"); settle(25);
+				if (!Lambda.exists(Css.query(tree, bench.node.id, folder + " text"), id -> ashui.ui.Text.at(id).text() == "Widget.hx")) throw "library expansion did not lazily expose sources";
+				bench.display().args.pop(); bench.display().args.pop();
+				click(folder + " > .ui-tree-group > .ui-tree-item > .ui-tree-row");
+				until(() -> bench.active.get() == lib + "/sample/Widget.hx" && bench.editorFor(lib + "/sample/Widget.hx") != null, "dependency source to open in an editor tab");
+				shot("library-source");
+				bench.openFile(file);
+				until(() -> label("Main") && says("Prepare extension runtime 1"), "Outline and Timeline after library source navigation");
+				var heights = [for (id in ["outline", "timeline", "dependencies"]) bench.boundsOf("#rayde-explorer-panel-" + id).height];
+				var handles = Css.query(tree, bench.node.id, "#rayde-explorer-sections > .ui-resizable-handle");
+				var divider = tree.getScrolledBounds(new ashui.layout.Node(handles[1]));
+				ashui.input.Pointer.move(tree, divider.x + divider.width / 2, divider.y + divider.height / 2);
+				ashui.input.Pointer.press(tree);
+				ashui.input.Pointer.move(tree, divider.x + divider.width / 2, divider.y - 35); settle();
+				ashui.input.Pointer.release(tree); settle();
+				if (bench.boundsOf("#rayde-explorer-panel-timeline").height <= heights[1] + 20) throw "Explorer vertical splitter did not resize Timeline";
+				var expanded = bench.boundsOf("#rayde-explorer-panel-outline").height;
+				click("#rayde-explorer-toggle-outline"); settle(40);
+				if (bench.boundsOf("#rayde-explorer-panel-outline").height > 29 || has("#rayde-outline-scroll")) throw "collapsed Outline kept its content";
+				click("#rayde-explorer-toggle-outline"); settle(40);
+				if (Math.abs(bench.boundsOf("#rayde-explorer-panel-outline").height - expanded) > 2) throw "Outline lost its expanded height";
+				click("#rayde-explorer-toggle-timeline");
+				until(() -> !says("Prepare extension runtime 1"), "Timeline visibility cleanup"); settle(40);
+				click("#rayde-explorer-toggle-timeline"); settle(40);
+				until(() -> says("Prepare extension runtime 1"), "Timeline reopening");
+				var editor = bench.editorFor(file);
+				editor.applyEdits([{from:source.length, to:source.length, text:"\n// never staged\n"}]); settle();
+				click("#rayde-local-revision-0");
+				if (!has("#rayde-history-preview") || sys.io.File.getContent(file) != source) throw "local revision should open read-only without writing the source";
+				shot("local-revision");
+				click("#rayde-history-restore");
+				until(() -> bench.active.get() == file && bench.buffer(file).get() == source, "restore into the unsaved editor buffer");
+				bench.editorFor(file).undo(); settle();
+				if (bench.buffer(file).get().indexOf("never staged") < 0) throw "restoring a local revision was not undoable";
+				@:privateAccess bench.localHistory.flush(file);
+				var recovered = new rayde.history.LocalHistory(root);
+				if (recovered.recover(file, source) != bench.buffer(file).get()) throw "unsaved work did not survive a new history instance";
+				var restoredState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make(bench.buffer(file).get()));
+				rayde.ui.DocumentHistory.restore(restoredState, recovered.undo(file, restoredState.value.get()));
+				if (restoredState.history.apply(restoredState.value.get(), true).text != source) throw "redo after restart did not restore the selected local revision";
+				recovered.dispose();
+				until(() -> label("Main") && says("Prepare extension runtime 1"), "settled Outline and Git Timeline after revision restore");
+				shot("panels");
+			});
+
 			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				if (bench.panelOpen())
 					throw "the bottom panel should start closed";
@@ -2004,7 +2101,7 @@ class Snapshots {
 					deleteTree(haxe.io.Path.join([to, entry]));
 		copy(from, to);
 		// What a run opened last, and what it set, is not carried into the next: the project starts as a new one would.
-		for (leftover in ["recent.txt", "settings.json", "keybindings.json", "extensions"])
+		for (leftover in ["recent.txt", "settings.json", "keybindings.json", "extensions", "history"])
 			if (sys.FileSystem.exists(to + "/.rayde/" + leftover))
 				deleteTree(to + "/.rayde/" + leftover);
 		return to;
@@ -2060,8 +2157,8 @@ class Snapshots {
 		var only = Sys.getEnv("SNAPSHOT_ONLY");
 		if (only != null && only != "" && only != name)
 			return;
-		var root = copyOf(name == "documents" ? "basic" : name), server = new CompilerServer();
-		if (name == "git" && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
+		var root = copyOf(name == "documents" ? "basic" : name == "explorer" ? "git" : name), server = new CompilerServer();
+		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
 		if (name == "markdownpreview") {
@@ -2093,7 +2190,7 @@ class Snapshots {
 			stop = s;
 			return bench = new Workbench({display: display, name: extension != null ? extension.name : theme != null ? theme.name : name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme});
 		});
-		if (name == "extensions" || name == "git") {
+		if (name == "extensions" || name == "git" || name == "explorer") {
 			var home = root + "/snapshot-home";
 			sys.FileSystem.createDirectory(home);
 			Store.save(home, "extensions", {});

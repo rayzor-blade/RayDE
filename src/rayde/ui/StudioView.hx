@@ -17,6 +17,8 @@ typedef StudioViewProps = {
 	onConsole:Void->Void,
 	/** Whether it is a card of its own, as in a tab or beside the code; false where the part of the layout it is in has its own. */
 	?framed:Bool,
+	/** The surrounding Explorer section provides the header. */
+	?header:Bool,
 	/** The declared view it shows; none for an extension run on its own, which shows everything it mounts. */
 	?view:rayde.ext.Manifest.ViewDecl
 };
@@ -31,11 +33,11 @@ class StudioView extends Component<StudioViewProps> {
 	function render():Element {
 		var studio = props.studio, surface = new Ref<Div>();
 		var body = <div class="flex flex-col flex-1 min-h-0 min-w-0">
-			<div id="rayde-studio-bar" class="rayde-studio-bar flex items-center gap-1 pl-3 pr-2 shrink-0" height={36}>
+			<if {props.header != false}><div id="rayde-studio-bar" class="rayde-studio-bar flex items-center gap-1 pl-3 pr-2 shrink-0" height={36}>
 				<text id="rayde-studio-title" class="rayde-heading flex-1 min-w-0 truncate">${shownTitle(studio)}</text>
 				{[for (t in studio.tools(viewId())) tool(t)]}
 				<if {studio.development}><for {k in [{state: studio.state.get(), stale: studio.stale.get(), live: studio.live.get()}]}>${menu(k.state, k.stale, k.live)}</for></if>
-			</div>
+			</div></if>
 			<for {stale in [studio.stale.get()]}>${banner(stale)}</for>
 			<div ref={surface} id="rayde-studio-surface" class="rayde-studio-surface flex flex-col flex-1 min-h-0 overflow-auto"/>
 		</div>;

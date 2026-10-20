@@ -429,7 +429,7 @@ class Checks {
 		var places = Manifest.read(dir + "/places.rayext");
 		check(places.problems.length == 1 && places.problems[0].indexOf('"moon/context"') > 0 && places.problems[0].indexOf("explorer/context or editor/title") > 0, 'a menu location that does not exist is named with the ones that do: ${places.problems}');
 		check(places.menuFor("editor/title", "a.md", "file").length == 1, "each location has its own items");
-		check(Hooks.knownEvent("file.saved") && !Hooks.knownEvent("file.save") && Hooks.knownMenu("editor/title") && !Hooks.knownMenu("editor/context"), "hooks and menus are told apart by name");
+		check(Hooks.knownEvent("file.saved") && Hooks.knownEvent("view.visibility") && !Hooks.knownEvent("file.save") && Hooks.knownMenu("editor/title") && !Hooks.knownMenu("editor/context"), "hooks and menus are told apart by name");
 		sys.io.File.saveContent(dir + "/icons.rayext", '{"name": "I", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a", "title": "A", "icon": "ext/notes.svg"}, {"id": "b", "title": "B", "icon": "eye"}, {"id": "c", "title": "C", "icon": "gone.svg"}, {"id": "d"}], "menus": {"explorer/context": [{"command": "a"}, {"command": "b", "icon": "star"}, {"command": "d"}, {"command": "d", "icon": "nowhere.svg"}]}}}');
 		var icons = Manifest.read(dir + "/icons.rayext");
 		var shown = icons.menuFor("explorer/context", "x", "file").map(i -> i.command + ":" + i.icon);
@@ -804,10 +804,16 @@ class Checks {
 		extensionHostChecks();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
+		LocalHistoryChecks.run();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);
 		var server = new CompilerServer(), display = Display.ofHxml(server, root + "/build.hxml");
 		try {
+			var symbols = rayde.lang.Outline.parse(server.request(root, display.args.concat(["--no-output", "--display", file + "@0@module-symbols"])));
+			check(symbols.length == 1 && symbols[0].name == "Main", "Outline uses the compiler's module symbols");
+			var method = Lambda.find(symbols[0].children, s -> s.name == "greet");
+			check(method != null && method.children.length == 2 && method.children[0].name == "name", "Outline nests parameters under their method");
+			check(Lambda.find(symbols[0].children, s -> s.name == "main").children[0].name == "greeting", "Outline nests local variables");
 			var started = haxe.Timer.stamp();
 			var hover = display.hover(file, at(text, "var greeting", 5));
 			check(hover != null && hover.type == "String", 'hover on greeting: ${hover == null ? "nothing" : hover.type}');

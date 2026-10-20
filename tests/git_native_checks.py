@@ -105,6 +105,7 @@ import gitNative.openHistory;
 import gitNative.repositoryStatus;
 import gitNative.remoteOperation;
 import gitNative.commitChanges;
+import gitNative.openFileHistory;
 function emit(value) { trace('@result:' + stringify(value)); }
 function text(snapshot) {
   for (part in [snapshot.staged, snapshot.changes])
@@ -339,6 +340,22 @@ gc(); emit({files:commitChanges(REPO,'HEAD'),error:error});
         assert {item["path"]:item["status"] for item in result["files"]} == {"after.txt":4,"deleted.txt":2,"nested/added.txt":1}, result
         assert next(item["oldPath"] for item in result["files"] if item["status"] == 4) == "before.txt", result
         assert "resolve commit:" in result["error"], result
+        result = host.run(PREAMBLE + """
+var cursor = openFileHistory(REPO, ACTIVE_FILE), commits = [], done = false;
+while (!done) { var page = cursor.next(1); commits = commits.concat(page.commits); done = page.done; }
+cursor.close(); cursor.close();
+var error = '';
+try { cursor.next(1); } catch (failure) { error = '' + failure; }
+var missing = openFileHistory(REPO, MISSING); var absent = missing.next(50); missing.close();
+var unborn = openFileHistory(EMPTY, EMPTY_FILE); var empty = unborn.next(50); unborn.close();
+emit({commits:commits, error:error, absent:absent, empty:empty});
+""".replace("REPO", json.dumps(str(changes))).replace("ACTIVE_FILE", json.dumps(str(changes / "after.txt")))
+            .replace("MISSING", json.dumps(str(changes / "absent.txt")))
+            .replace("EMPTY_FILE", json.dumps(str(empty / "not-yet.txt"))).replace("EMPTY", json.dumps(str(empty))))
+        assert [row["subject"] for row in result["commits"]] == ["rename and deletion", "root"], result
+        assert result["absent"] == {"commits":[], "done":True}, result
+        assert result["empty"] == {"commits":[], "done":True}, result
+        assert "closed" in result["error"], result
     print("git commit files: root, modification, first-parent merge, rename, deletion, invalid revision recovery and metadata filtering", flush=True)
     git(history, "checkout", "--detach", "HEAD~2")
     with Host() as host:

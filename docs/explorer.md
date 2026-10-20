@@ -1,0 +1,13 @@
+# Explorer views
+
+The file tree occupies the top pane. Drag the horizontal dividers to resize it and the Outline, Timeline and Dependencies panes. Outline, Timeline and Dependencies have collapsible headers; reopening restores their height. Their state survives switching between Explorer and another sidebar. Focus a divider and use the arrow keys to resize with the keyboard.
+
+Outline follows the active Haxe buffer, including unsaved edits. Its symbols come from the compiler's module-symbols request and include types, fields, methods, parameters and local variables. Select a symbol to navigate to its declaration. Other file types show an empty-state message.
+
+Timeline contains local history independently of source control. Selecting a local revision opens a read-only tab. Its Restore icon replaces the source's unsaved buffer as an undoable edit; saving remains a separate action. Local checkpoints preserve text patches and the bounded editor undo/redo stacks without retaining editor instances or render resources. They include edits that were never staged and intermediate states later abandoned after Undo.
+
+Checkpoints are written atomically under `.rayde/history` after at most 350 ms of continuous editing, and flushed on close and workbench shutdown. Reopening a file restores unsaved work when its on-disk text still matches the last saved baseline. An external disk change is left in place; earlier local revisions remain available in Timeline. Explorer renames carry the history to the new path. Each file retains up to 200 changes plus its oldest retained baseline, within an 8 MiB checkpoint limit. Older patches are compacted into that baseline. Files beyond the size limit cannot be checkpointed and report the failure in the status bar. History is local to this workspace and should not be committed.
+
+With the Git extension enabled and its native library approved, Timeline also shows commits for the active file on the current branch, follows renames along first-parent history, and reveals changed files when a commit is selected. It searches in bounded pages; **Load more history** continues from the cursor. Collapsing Timeline or switching sidebars closes the cursor and clears its rendered history. Local recovery remains available without Git.
+
+Dependencies lists the libraries declared by the current build, with selected versions or `dev` labels. Expand a library to browse its resolved source folders. Folder rows load on first expansion; selecting a source file opens it. The header icons refresh the list or open Libraries settings. Resolution runs in background jobs from the workspace directory, including its local haxelib repository.

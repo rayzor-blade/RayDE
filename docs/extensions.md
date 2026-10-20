@@ -132,6 +132,7 @@ mount(() -> <Log lines={lines}/>, 'log');
 
 | Location | Where | Its icon |
 | --- | --- | --- |
+| `explorer` | a collapsible, resizable Explorer section | no activity-bar icon |
 | `sidebar` | the side panel, in the Explorer's place | in the activity bar, selected while the view is showing |
 | `secondary` | the right side bar | in the activity bar; it shows or hides the side bar |
 | `panel` | a tab of the bottom panel | in the activity bar; it shows or hides the tab |
@@ -175,6 +176,7 @@ Editor events reach an extension only if it asks for them with `onHook(name, han
 | Hook | Called with | When |
 | --- | --- | --- |
 | `project.opened` | `{root}` | the project folder, once, when the extension subscribes |
+| `view.visibility` | `{id, visible}` | declared view attached or detached; the visibility of each declared view is replayed on subscribe |
 | `active.changed` | `{path}` | the editor in front changed; `path` is null for a page that is not a file; also sent on subscribe |
 | `file.opened` | `{path}` | an editor tab opened for a file |
 | `file.closed` | `{path}` | an editor tab closed |

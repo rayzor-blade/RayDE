@@ -58,3 +58,6 @@ scripts/scroll-bench.sh     # a long file flicked and left to decelerate, offscr
 | `ALONE=<letters>` | The editor on its own, a letter for each feature on (`ALONE=gfib`). |
 
 The terminal's native library has its own `cargo test` in `native/terminal`.
+
+
+`SNAPSHOT_ONLY=explorer scripts/snapshot.sh` checks the Explorer's native Collapsible/Resizable sections, compiler Outline including unsaved edits, active-file Git history, dependency source expansion and opening in tabs, Outline declaration jumps and compact indentation, local revision preview and undoable restore, persistent undo/redo and visibility cleanup in both schemes. The core suite separately checks never-staged recovery, external disk changes, abandoned edit states, renamed journals, bounded patch compaction and malformed checkpoints.

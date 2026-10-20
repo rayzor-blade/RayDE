@@ -1,0 +1,80 @@
+import rayde.workspace.activeFile;
+import rayde.workspace.root;
+import gitNative.openFileHistory;
+import historyGraph.timestamp;
+import commitFiles.selection;
+import commitFiles.Files;
+import report.report;
+
+var refreshVisible = null, visible = signal(false);
+
+function Timeline() {
+  var file = signal(''), rows = signal([]), busy = signal(false), done = signal(true), message = signal('Open a file to view its timeline');
+  var selected = signal(''), changed = selection(null);
+  var cursor = null, live = true, sequence = 0;
+  function closeCursor() { if (cursor != null) { cursor.close(); cursor = null; } }
+  function page() {
+    if (!live || busy.value || done.value || cursor == null) return;
+    var request = sequence, current = cursor;
+    busy.value = true;
+    try {
+      var entries = [], finished = false, scanned = 0;
+      while (entries.length == 0 && !finished && scanned < 500) {
+        var page = current.next(50);
+        if (!live || request != sequence) return;
+        entries = entries.concat(page.commits); finished = page.done; scanned += 50;
+      }
+      rows.value = rows.value.concat(entries); done.value = finished;
+      message.value = rows.value.length == 0 ? (done.value ? 'No commits for this file' : 'Search older history to continue') : '';
+      if (done.value) closeCursor();
+    } catch (failure) {
+      if (!live || request != sequence) return;
+      closeCursor(); done.value = true; message.value = 'File history unavailable'; report(failure);
+    }
+    busy.value = false;
+  }
+
+  function load() {
+    var request = ++sequence;
+    closeCursor(); rows.value = []; selected.value = ''; changed.choose(''); busy.value = true; done.value = true;
+    try {
+      var active = await activeFile(), path = await root();
+      if (!live || request != sequence) return;
+      file.value = active == null ? '' : active;
+      if (active == null) { message.value = 'Open a file to view its timeline'; busy.value = false; return; }
+      var next = openFileHistory(path, active);
+      if (!live || request != sequence) { next.close(); return; }
+      cursor = next;
+      message.value = ''; done.value = false; busy.value = false;
+      page();
+    } catch (failure) {
+      if (live && request == sequence) { closeCursor(); message.value = 'File history unavailable'; busy.value = false; report(failure); }
+    }
+  }
+  refreshVisible = (path = null) -> { if (path == null || path != file.value || busy.value) load(); };
+  onCleanup(() -> { live = false; sequence++; closeCursor(); refreshVisible = null; });
+  spawn(load);
+  return <div id="git-timeline" class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
+    <if {file.value != ''}><span id="git-timeline-file" class="px-3 py-1 text-xs text-text-secondary truncate">{file.value.substr(file.value.lastIndexOf('/') + 1)}</span></if>
+    <if {busy.value}><span class="px-3 py-1 text-xs text-text-secondary">Loading history…</span></if>
+    <if {message.value != ''}><span class="px-3 py-1 text-xs text-text-secondary">{message}</span></if>
+    <for {commit in rows}>
+      <ui-button id={'git-timeline-' + commit.id} variant="ghost" class="min-w-0 shrink-0 w-full" height={24} style={{'--ui-button-padding':'0 12px'}} tooltip={commit.author + ' · ' + timestamp(commit.time) + ' · ' + commit.id.substr(0,7)}
+        onClick={() -> { selected.value = commit.id; changed.choose(commit.id); }}>
+        <div class="flex items-center gap-2 min-w-0 flex-1"><ui-icon name="history" class="shrink-0"/>
+        <span class="text-xs truncate flex-1 min-w-0">{commit.subject}</span></div>
+      </ui-button>
+      <if {selected.value == commit.id}>
+        <span class="px-3 text-xs text-text-secondary">{commit.author} · {commit.id.substr(0,7)}</span>
+        <Files state={changed} id="git-timeline-files"/>
+      </if>
+    </for>
+    <if {!done.value}><ui-button id="git-timeline-more" variant="ghost" disabled={busy} onClick={page}>Load more history</ui-button></if>
+  </div>;
+}
+
+onTool('git-timeline-refresh', () -> { if (refreshVisible != null) refreshVisible(); });
+onHook('active.changed', e -> { if (refreshVisible != null) refreshVisible(e.path); });
+onHook('file.saved', e -> { if (refreshVisible != null) refreshVisible(); });
+onHook('view.visibility', e -> { if (e.id == 'timeline') visible.value = e.visible; });
+mount(() -> <if {visible.value}><Timeline/></if>, 'timeline');
