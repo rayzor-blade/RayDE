@@ -330,6 +330,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final consoleText = Signal.make("");
 	var diagnosticJobs:DiagnosticJobs;
 	public var languageServers(default, null):LanguageServers;
+	final languageStatusRevision = Signal.make(0);
 	final languageRevision = Signal.make(0);
 	var languagesScheduled = false;
 	var languagePollSerial = 0;
@@ -1814,6 +1815,7 @@ class Workbench extends Component<WorkbenchProps> {
 		diagnosticJobs = new DiagnosticJobs(props.display);
 		languageServers = new LanguageServers(props.display.cwd);
 		languageServers.onWake = () -> wakeLanguages();
+		languageServers.onStatus = () -> { if (!gone) languageStatusRevision.set(languageStatusRevision.get() + 1); };
 		languageServers.onDiagnostics = value -> {
 			var file = LspProtocol.path(value.uri);
 			if (file != null) problems.set([for (p in problems.get()) if (p.file != file) p].concat(LspProtocol.diagnostics(value)));
@@ -2806,7 +2808,7 @@ class Workbench extends Component<WorkbenchProps> {
 				if (gone || editorOf(file) != editor || editor.value.get() != text || editor.hoverOffset != offset || result == null) return;
 				var range:Dynamic = result.range;
 				editor.showHint({from:range == null ? offset : LspProtocol.offset(text, range.start),
-					to:range == null ? offset + 1 : LspProtocol.offset(text, range.end), docs:LspProtocol.documentation(result.contents)});
+					to:range == null ? offset + 1 : LspProtocol.offset(text, range.end), renderDocs:() -> HoverDocumentation.render(result.contents)});
 			}, file + "#hover");
 			return null;
 		}
@@ -3085,8 +3087,43 @@ class Workbench extends Component<WorkbenchProps> {
 			<if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>
 			<for {state in [runState.get()]}>${runStatus(state)}</for>
 			<for {on in [panelShown.get()]}>${panelItem(on)}</for>
+			<for {server in [languageStatus()]}><if {server != null}>${languageServerItem(server)}</if></for>
 			<div class="rayde-status-item flex"><text>Haxe</text></div>
 		</div>;
+
+	function languageStatus():Null<{id:String, owner:String, name:String, state:String}> {
+		languageStatusRevision.get(); languageRevision.get();
+		return languageServers.status(active.get());
+	}
+
+	function languageServerItem(server:{id:String, owner:String, name:String, state:String}):Element {
+		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
+		var label = server.name + (server.state == "ready" ? "" : " · " + (server.state == "idle" ? "not started" : server.state));
+		return <dropdown-menu side="top" id="rayde-lsp-menu">
+			<dropdown-menu-trigger id="rayde-lsp-status" variant={Ghost} class="rayde-status-item rayde-lsp-status">
+				<icon document={Icons.CODE_S_SLASH_LINE} class="size-3.5"/><text>{label}</text>
+			</dropdown-menu-trigger>
+			<dropdown-menu-content>
+				<dropdown-menu-label>{server.name + " — " + server.state}</dropdown-menu-label>
+				<dropdown-menu-item id="rayde-lsp-start" disabled={running || server.state == "closing"} onSelect={() -> languageServers.control(server.id, "start")}>Start</dropdown-menu-item>
+				<dropdown-menu-item id="rayde-lsp-restart" disabled={server.state == "closing"} onSelect={() -> languageServers.control(server.id, "restart")}>Restart</dropdown-menu-item>
+				<dropdown-menu-item id="rayde-lsp-stop" disabled={!running} onSelect={() -> languageServers.control(server.id, "stop")}>Stop</dropdown-menu-item>
+				<dropdown-menu-separator/>
+				<dropdown-menu-item id="rayde-lsp-settings" onSelect={() -> openSettings("extensions")}>Language Server Settings…</dropdown-menu-item>
+				<dropdown-menu-item id="rayde-lsp-output" onSelect={() -> showLanguageOutput(server.owner)}>Show Output</dropdown-menu-item>
+			</dropdown-menu-content>
+		</dropdown-menu>;
+	}
+
+	function showLanguageOutput(owner:String):Void {
+		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == owner);
+		if (extension != null) {
+			outputChannel.set("ext:" + extension.installed.id);
+			refreshExtensionOutput();
+		}
+		showPanel("console");
+		ashui.animation.AnimationScheduler.main.after(.01, () -> revealExtensionOutput());
+	}
 
 	/** Opens and closes the bottom panel; lit while it is open. */
 	function panelItem(on:Bool):Element {

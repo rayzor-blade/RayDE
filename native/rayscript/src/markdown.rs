@@ -1,4 +1,4 @@
-//! Markdown parsing and vector rendering stay on the extension's owning thread.
+//! Markdown parsing for previews and documentation, with vector rendering for full previews.
 use latex_rust::{MathFont, SvgOptions};
 use pulldown_cmark::{Options, Parser};
 use rayscript_vm::{Value, Vm};
@@ -6,24 +6,33 @@ use scraper::{ElementRef, Html, Node};
 use serde_json::{Value as Json, json};
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
+/// Small documentation fragments never load fonts or execute diagram renderers.
+pub(crate) fn fragment(source: &str) -> Result<Json, String> {
+    if source.len() > 65_536 { return Err("Hover documentation exceeds 64 KiB".into()); }
+    Renderer { font: None }.parse(source)
+}
+
 struct Renderer {
-    font: MathFont,
+    font: Option<MathFont>,
 }
 
 impl Renderer {
     fn new() -> Result<Self, String> {
         Ok(Self {
-            font: MathFont::stix_two_math().map_err(|e| e.to_string())?,
+            font: Some(MathFont::stix_two_math().map_err(|e| e.to_string())?),
         })
     }
 
     fn math(&self, source: &str, display: bool) -> Json {
+        let Some(font) = &self.font else {
+            return json!({"kind":"inline-code", "text":source});
+        };
         let options = SvgOptions {
             display,
             font_size_pt: latex_rust::Dim::from_i64(16),
             ..SvgOptions::new()
         };
-        match latex_rust::latex_to_svg(source, &self.font, &options) {
+        match latex_rust::latex_to_svg(source, font, &options) {
             Ok(svg) => json!({"kind":"math", "text":source, "display":display,
                 "svg":svg.replace("#000000", "currentColor")}),
             Err(error) => json!({"kind":"error", "text":format!("Math: {error}"), "source":source}),
@@ -32,6 +41,9 @@ impl Renderer {
 
     fn code(&self, source: &str, info: &str) -> Json {
         let language = info.split_whitespace().next().unwrap_or("").to_lowercase();
+        if self.font.is_none() {
+            return super::syntax::highlight(source, &language);
+        }
         if language == "mermaid" {
             if source.len() > 32_768 || source.lines().count() > 500 {
                 return json!({"kind":"error", "text":"Mermaid diagram exceeds 32 KiB or 500 lines", "source":source});
@@ -458,6 +470,20 @@ pub fn install(vm: &mut Vm) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn documentation_fragments() {
+        let doc = fragment("```haxe\npublic class AppIcon\n```\n\n*rayde.ui.AppIcon* and **bold** with `code`\n\n- [Docs](https://haxe.org)\n- second").unwrap();
+        let data = doc.to_string();
+        for kind in ["code", "em", "strong", "inline-code", "link", "list"] {
+            assert!(data.contains(&format!("\"kind\":\"{kind}\"")), "{data}");
+        }
+        assert!(data.contains("keyword"));
+        assert!(fragment(&"x".repeat(65_537)).is_err());
+        let diagram = fragment("```mermaid\ngraph TD; A-->B\n```").unwrap().to_string();
+        assert!(diagram.contains("graph TD"));
+        assert!(!diagram.contains("\"kind\":\"diagram\""));
+    }
+
     #[test]
     fn html_layout_and_mixed_markdown() {
         let renderer = Renderer::new().unwrap();

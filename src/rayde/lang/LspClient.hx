@@ -7,12 +7,13 @@ private typedef Pending = {done:Dynamic->Void, deadline:Float, scope:String};
 class LspClient {
 	public final config:Dynamic;
 	public final root:String;
-	public var state(default, null) = "starting";
+	public var state(default, set) = "starting";
 	public var capabilities(default, null):Dynamic = {};
 	public var onLog:(String, String)->Void = (_, _) -> {};
 	public var onDiagnostics:Dynamic->Void = _ -> {};
 	public var onReady:Void->Void = () -> {};
 	public var onWake:Void->Void = () -> {};
+	public var onStateChanged:Void->Void = () -> {};
 	final documents = new Map<String, Document>();
 	final pending = new Map<Int, Pending>();
 	var transport:Null<LspTransport>;
@@ -22,6 +23,12 @@ class LspClient {
 	var closingAt = 0.;
 	var startedAt = 0.;
 	var disposed = false;
+	var resumeAfterClose = false;
+
+	function set_state(value:String):String {
+		if (state != value) { state = value; if (onStateChanged != null) onStateChanged(); }
+		return value;
+	}
 
 	public function new(root:String, config:Dynamic) {
 		this.root = root;
@@ -129,7 +136,7 @@ class LspClient {
 			capabilities:{general:{positionEncodings:["utf-16"]},
 				workspace:{configuration:true}, textDocument:{
 					synchronization:{didSave:true}, publishDiagnostics:{versionSupport:true},
-					completion:{completionItem:{snippetSupport:false}}, hover:{contentFormat:["plaintext"]},
+					completion:{completionItem:{snippetSupport:false}}, hover:{contentFormat:["markdown", "plaintext"]},
 					documentSymbol:{hierarchicalDocumentSymbolSupport:true}, signatureHelp:{signatureInformation:{parameterInformation:{labelOffsetSupport:true}}}}},
 			initializationOptions:config.initializationOptions
 		}, result -> {
@@ -151,7 +158,7 @@ class LspClient {
 			else read();
 			return;
 		}
-		if (disposed || state == "failed" || state == "idle") return;
+		if (disposed || state == "failed" || state == "idle" || state == "stopped") return;
 		if (transport == null && now >= retryAt) start();
 		read();
 		if (state == "starting" && now - startedAt > 22) { fail("Language server initialization timed out"); return; }
@@ -217,6 +224,7 @@ class LspClient {
 	}
 
 	function fail(error:String):Void {
+		if (state == "closing") { forceClose(); return; }
 		if (disposed) return;
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "restarting";
@@ -227,11 +235,26 @@ class LspClient {
 		for (p in callbacks) p.done(null);
 	}
 
-	/** Graceful shutdown is polled; it never waits for the server on the caller's thread. */
-	public function dispose():Void {
+	/** Explicit controls retain document data; a new process replays the current unsaved text. */
+	public function startSession():Void {
+		if (disposed || state == "ready" || state == "starting" || state == "restarting") return;
+		if (state == "closing") { resumeAfterClose = true; return; }
+		attempts = []; retryAt = 0; capabilities = {};
+		for (doc in documents) { doc.sent = 0; doc.sentText = ""; }
+		state = "starting"; onWake();
+	}
+
+	public function restartSession():Void {
 		if (disposed) return;
-		disposed = true;
-		pending.clear(); documents.clear();
+		stopSession();
+		startSession();
+	}
+
+	/** Graceful shutdown is polled; it never waits for the server on the caller's thread. */
+	public function stopSession():Void {
+		resumeAfterClose = false;
+		if (state == "closing") return;
+		pending.clear();
 		if (state == "ready" && transport != null) {
 			state = "closing"; closingAt = haxe.Timer.stamp() + 1;
 			request("shutdown", null, _ -> {
@@ -239,10 +262,19 @@ class LspClient {
 				closingAt = haxe.Timer.stamp() + .1;
 			}, "", 1);
 		} else forceClose();
+		onWake();
+	}
+
+	public function dispose():Void {
+		if (disposed) return;
+		disposed = true;
+		documents.clear();
+		stopSession();
 	}
 
 	function forceClose():Void {
 		if (transport != null) transport.close();
-		transport = null; state = "stopped"; pending.clear();
+		transport = null; capabilities = {}; state = "stopped"; pending.clear();
+		if (resumeAfterClose && !disposed) { resumeAfterClose = false; startSession(); }
 	}
 }

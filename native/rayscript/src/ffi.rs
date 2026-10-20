@@ -94,6 +94,15 @@ pub unsafe extern "C" fn syntax_line(handle:i32, data:*const vbyte, len:i32, sta
 }
 define_prim!(hlp_syntax_line, syntax_line, "PiBii_B");
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn markdown_fragment(data:*const vbyte, len:i32) -> *mut vbyte {
+    catch_unwind(|| {
+        let Some(source) = (unsafe { text(data,len) }) else { return ptr::null_mut(); };
+        super::markdown::fragment(source).map_or(ptr::null_mut(), |doc| packed_text(&doc.to_string()))
+    }).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_markdown_fragment, markdown_fragment, "PBi_B");
+
 fn runtime(handle: i32) -> Option<Arc<Runtime>> {
     RUNTIMES
         .lock()

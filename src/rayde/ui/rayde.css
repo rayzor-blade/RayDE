@@ -359,3 +359,11 @@
 #rayde #rayde-outline-tree .ui-tree-chevron-space, #rayde #rayde-dependencies-tree .ui-tree-chevron-space { width: 12px; }
 #rayde #rayde-outline-tree .ui-tree-group, #rayde #rayde-dependencies-tree .ui-tree-group { margin-left: 10px; padding-left: 1px; border-left-color: transparent; }
 #rayde #rayde-outline-tree:hover .ui-tree-group, #rayde #rayde-dependencies-tree:hover .ui-tree-group { border-left-color: var(--border); }
+
+/* Documentation popovers share Markdown's inline layout, with bounded scrollable content. */
+.rayde-hover-docs { display: flex; flex-direction: column; gap: 8px; width: 410px; max-width: 100%; max-height: 320px; overflow: auto; min-width: 0; }
+#rayde .rayde-hover-markdown { padding: 0; gap: 8px; max-width: 100%; align-self: stretch; }
+#rayde .rayde-hover-markdown .rayde-md-word { font-size: 13px; line-height: 20px; }
+#rayde .rayde-hover-markdown .rayde-md-code { padding: 8px; gap: 0; border-radius: 5px; overflow: auto; }
+#rayde .rayde-hover-markdown .rayde-md-code > .ui-code-hint-line { flex-shrink: 0; }
+#rayde .rayde-lsp-status { font-size: 12px; min-height: 0; height: 22px; padding: 0 6px; }

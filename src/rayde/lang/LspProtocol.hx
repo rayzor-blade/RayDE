@@ -40,6 +40,25 @@ class LspProtocol {
 		if (Std.isOfType(value, Array)) return [for (part in (value:Array<Dynamic>)) documentation(part)].join("\n\n");
 		return value.value == null ? "" : Std.string(value.value);
 	}
+	/** MarkupContent keeps its declared format; legacy MarkedStrings are Markdown or fenced code. */
+	public static function hoverParts(value:Dynamic):Array<{text:String, markdown:Bool}> {
+		if (value == null) return [];
+		if (Std.isOfType(value, String)) return [{text:value, markdown:true}];
+		if (Std.isOfType(value, Array)) {
+			var parts = [];
+			for (part in (value:Array<Dynamic>)) parts = parts.concat(hoverParts(part));
+			return parts;
+		}
+		if (!Std.isOfType(value.value, String)) return [];
+		var text:String = value.value;
+		if (value.language != null) {
+			var fence = "```";
+			while (text.indexOf(fence) >= 0) fence += "`";
+			var language = Std.string(value.language).split("\n")[0].split("\r")[0].split("`").join("");
+			return [{text:fence + language + "\n" + text + "\n" + fence, markdown:true}];
+		}
+		return [{text:text, markdown:value.kind == "markdown"}];
+	}
 	public static function locations(value:Dynamic):Array<Location> {
 		if (value == null) return [];
 		var items:Array<Dynamic> = Std.isOfType(value, Array) ? value : [value];

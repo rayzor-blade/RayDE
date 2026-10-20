@@ -1,10 +1,11 @@
 package rayde.lang;
 
-private typedef Registration = {id:String, owner:String, languages:Array<String>, extensions:Array<String>, client:LspClient};
+private typedef Registration = {id:String, name:String, owner:String, languages:Array<String>, extensions:Array<String>, client:LspClient};
 
 /** Extensions own registrations; the workspace owns processes, documents and asynchronous requests. */
 class LanguageServers {
 	public var onChanged:Void->Void = () -> {};
+	public var onStatus:Void->Void = () -> {};
 	public var onWake:Void->Void = () -> {};
 	public var onDiagnostics:Dynamic->Void = _ -> {};
 	final root:String;
@@ -52,8 +53,9 @@ class LanguageServers {
 		client.onLog = (kind, text) -> log(kind, id + ": " + text);
 		client.onDiagnostics = onDiagnostics;
 		client.onReady = onChanged;
+		client.onStateChanged = () -> onStatus();
 		client.onWake = onWake;
-		entries.push({id:id, owner:owner, languages:languages, extensions:[for (ext in extensions) ext.toLowerCase()], client:client});
+		entries.push({id:id, name:Std.isOfType(definition.name, String) ? definition.name : id, owner:owner, languages:languages, extensions:[for (ext in extensions) ext.toLowerCase()], client:client});
 		onChanged();
 		return id;
 	}
@@ -74,15 +76,32 @@ class LanguageServers {
 
 	function registration(file:String):Null<Registration> {
 		var extension = "." + haxe.io.Path.extension(file).toLowerCase();
-		return Lambda.find(entries, e -> e.extensions.indexOf(extension) >= 0 && e.client.state != "failed");
+		return Lambda.find(entries, e -> e.extensions.indexOf(extension) >= 0);
 	}
 	public function client(file:String):Null<LspClient> {
 		var entry = registration(file);
-		return entry == null ? null : entry.client;
+		return entry == null || ["failed", "stopped", "closing"].indexOf(entry.client.state) >= 0 ? null : entry.client;
 	}
 	public function language(file:String):Null<String> {
 		var entry = registration(file);
 		return entry == null ? null : entry.languages[0];
+	}
+	public function status(file:String):Null<{id:String, owner:String, name:String, state:String}> {
+		var entry = registration(file);
+		if (entry == null && entries.length > 0) entry = entries[0];
+		return entry == null ? null : {id:entry.id, owner:entry.owner, name:entry.name, state:entry.client.state};
+	}
+	public function control(id:String, action:String):Void {
+		var entry = Lambda.find(entries, e -> e.id == id);
+		if (entry == null) return;
+		switch action {
+			case "start": entry.client.startSession();
+			case "restart": entry.client.restartSession();
+			case "stop": entry.client.stopSession();
+			case _: return;
+		}
+		if (action != "start") for (file in entry.client.files()) onDiagnostics({uri:LspProtocol.uri(file), diagnostics:[]});
+		onChanged();
 	}
 	public function sync(file:String, text:String):Void {
 		var entry = registration(file);
@@ -99,10 +118,10 @@ class LanguageServers {
 		}
 		for (client in closing.copy()) { client.tick(); if (client.state == "stopped") closing.remove(client); }
 	}
-	public function busy():Bool return Lambda.exists(entries, e -> e.client.state != "failed" && e.client.state != "idle") || closing.length > 0;
+	public function busy():Bool return Lambda.exists(entries, e -> ["failed", "idle", "stopped"].indexOf(e.client.state) < 0) || closing.length > 0;
 	public function pollDelay():Float {
 		var delay = closing.length > 0 ? .025 : .2;
-		for (entry in entries) if (entry.client.state != "failed") delay = Math.min(delay, entry.client.pollDelay());
+		for (entry in entries) if (["failed", "idle", "stopped"].indexOf(entry.client.state) < 0) delay = Math.min(delay, entry.client.pollDelay());
 		return delay;
 	}
 	public function dispose():Void {

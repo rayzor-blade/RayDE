@@ -8,6 +8,10 @@ The built-in [Rayzor extension](../extensions/rayzor) is enabled by default and 
 
 **Settings > Extensions > Rayzor Language Server** configures the executable, build file, Rayzor standard library and macro time budget. The default command `rayzor` discovers `RAYZOR_LSP`, a packaged executable, PATH, then an existing sibling development build. An explicit command path overrides discovery. The bundled or sibling standard library is detected automatically; the `stdlib` setting overrides it through `RAYZOR_STD_PATH`. **Rayzor: Restart Language Server** applies changed settings. **Rayzor: Language Server Status** reports the registration's state.
 
+The bottom status bar shows the registered server and its state, including stopped or failed sessions. Click it for **Start**, **Restart**, **Stop**, extension settings or Output. Stop suspends the process until explicitly started; opening or editing a file does not relaunch it. Start and Restart replay the current unsaved buffers. These controls keep the existing configuration; apply changed Rayzor settings with **Rayzor: Restart Language Server**.
+
+Hover popovers render Markdown with syntax-highlighted fenced code, emphasis, inline code, lists and links. Explicit `plaintext` responses remain literal. Long documentation scrolls within the popover, whose rendered content is released when it closes.
+
 RayDE routes completion, hover, signature help, definitions, diagnostics and Outline to Rayzor by default. Build and Run continue to use the selected project runtime. Disabling Rayzor or reaching its restart limit restores the Haxe display fallback. Conflicting registrations for the same file extension are rejected.
 
 ## Extension API
@@ -20,7 +24,7 @@ import rayde.languages.unregisterServer;
 import rayde.languages.servers;
 
 await registerServer({
-  id: 'rayzor', languages: ['haxe'], fileExtensions: ['.hx'],
+  id: 'rayzor', name: 'Rayzor', languages: ['haxe'], fileExtensions: ['.hx'],
   transport: {kind: 'stdio', command: 'rayzor', args: ['lsp']},
   initializationOptions: {hxml: 'build.hxml', macroBudgetMs: 5000}
 });

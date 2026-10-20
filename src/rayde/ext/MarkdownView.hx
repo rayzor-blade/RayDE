@@ -31,11 +31,13 @@ class MarkdownView {
 	var detailKeys = new haxe.ds.ObjectMap<{}, Int>();
 	var headingBlocks:Map<String, Int> = [];
 	var blocks:MarkdownBlocks;
+	final compact:Bool;
 	final documentKey:Void->Dynamic;
 	final loadImage:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	var headings:Map<String, Node> = [];
 
-	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic, ?documentKey:Void->Dynamic) {
+	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic, ?documentKey:Void->Dynamic, compact = false) {
+		this.compact = compact;
 		this.documentKey = documentKey == null ? () -> document.get() : documentKey;
 		this.document = document;
 		this.emit = emit;
@@ -43,7 +45,7 @@ class MarkdownView {
 		savedScroll = scrollState;
 		if (scrollState != null && scrollState.details != null) detailStates = scrollState.details;
 		if (visible == null) visible = Signal.make(true);
-		var body = box("rayde-markdown");
+		var body = box(compact ? "rayde-markdown rayde-hover-markdown" : "rayde-markdown");
 		node = body.node;
 		new Watch(() -> { ThemeState.get().revision.get(); return {data:visible.get() ? document.get() : null, scheme:ThemeState.get().scheme()}; }, value -> {
 			var timing = Timing.start();
@@ -69,8 +71,11 @@ class MarkdownView {
 						for (item in children(part)) index(item, block);
 					}
 					for (i in 0...items.length) index(items[i], i);
-					blocks = new MarkdownBlocks(items, (part, _) -> render(part), estimate, measurementKey, this.documentKey(), savedScroll);
-					body.tree.addChild(body.node.id, blocks.node.id);
+					if (compact) appendBlocks(body, items);
+					else {
+						blocks = new MarkdownBlocks(items, (part, _) -> render(part), estimate, measurementKey, this.documentKey(), savedScroll);
+						body.tree.addChild(body.node.id, blocks.node.id);
+					}
 				}
 			});
 			if (Timing.enabled) Timing.end(timing, "markdown.build", {visible:data != null});
@@ -96,6 +101,23 @@ class MarkdownView {
 		var kind:String = data.kind;
 		if (kind == "code") {
 			var frame = box("rayde-md-code");
+			if (compact) {
+				var syntax = rayde.ui.TextMateSyntax.fromTokens(data.tokens), state = "";
+				for (line in Std.string(data.text).split("\n")) {
+					var row = box("ui-code-hint-line"), result = syntax.highlight(line, state);
+					state = result.state;
+					var tokens:Array<ashui.components.code.CodeHighlighter.CodeToken> = result.tokens.length == 0 ? [{from:0, to:line.length, kind:Plain}] : result.tokens;
+					for (token in tokens) {
+						var run = new Text(line == "" ? " " : line.substring(token.from, token.to));
+						var identity = Identity.of(run.tree, run.node.id);
+						identity.setClasses(["ui-code-text", "ui-code-hint-token"]);
+						identity.setAttribute("data-token", token.kind);
+						row.appendChild(run);
+					}
+					frame.appendChild(row);
+				}
+				return frame;
+			}
 			frame.appendChild(new Text(data.language == "" ? "Plain text" : Std.string(data.language)));
 			var viewer = new CodeView({value:Std.string(data.text), highlighter:rayde.ui.TextMateSyntax.fromTokens(data.tokens),
 				lineNumbers:false, folding:false, minimap:false, indentGuides:false, highlightBrackets:false});

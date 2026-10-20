@@ -82,7 +82,7 @@ while True:
         send({"id": identifier, "result": [{"label": "fixtureMember", "kind": 3,
                                            "detail": "LSP completion", "insertText": "fixtureMember"}]})
     elif method == "textDocument/hover":
-        send({"id": identifier, "result": {"contents": {"kind": "plaintext", "value": "LSP hover from stdio"}}})
+        send({"id": identifier, "result": {"contents": {"kind": "markdown", "value": "```haxe\npublic class AppIcon\n```\n\n*rayde.ui.AppIcon*\n\nBuilds the **application icon** from `SVG`.\n\n- [Documentation](https://haxe.org)\n- Supports dark and light themes."}}})
     elif method == "textDocument/signatureHelp":
         send({"id": identifier, "result": {"signatures": [{"label": "greet(name:String, times:Int)",
               "parameters": [{"label": "name:String"}, {"label": "times:Int"}]}],
