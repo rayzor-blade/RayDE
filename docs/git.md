@@ -12,7 +12,7 @@ The branch header has **Fetch**, **Pull** and **Push** icon actions with tooltip
 
 Errors and completed remote operations appear as toasts and in the **Git** Output channel. **Show Output** on a toast opens the full message without occupying space in the SCM sidebar.
 
-The sidebar's **Refresh** action and **Git: Refresh** command reload status and history; saving a file or changing the active editor also refreshes them. The **History** toolbar action and **Git: History** command also open the expanded graph. Both views discover the repository at or above the project root through libgit2.
+The sidebar's **Refresh** action and **Git: Refresh** command reload status and history; saving a file also refreshes them. While the sidebar is visible it checks for external repository changes every 2.5 seconds. Tab switches do not refresh SCM; unchanged status and references preserve their existing views, and history is walked again only when HEAD, references or the chosen focus changes. The **History** toolbar action and **Git: History** command also open the expanded graph. Both views discover the repository at or above the project root through libgit2.
 
 ![Git history and selected merge commit](images/git-history.png)
 

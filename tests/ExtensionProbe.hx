@@ -91,12 +91,12 @@ class ExtensionProbe {
 		var assets = haxe.io.Path.join([haxe.io.Path.directory(mdSource), "assets"]);
 		if (sys.FileSystem.exists(assets)) copy(assets, root + "/assets");
 		sys.io.File.copy("tests/fixtures/markdownpreview/sample.svg", root + "/sample.svg");
-		measure("markdown-cold", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown"));
+		measure("markdown-cold", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
 		var markdown = bench.active.get();
 		measure("markdown-hide", () -> bench.active.set(history), () -> !has(".rayde-markdown"));
-		measure("markdown-reopen", () -> bench.active.set(markdown), () -> has(".rayde-markdown"));
+		measure("markdown-reopen", () -> bench.active.set(markdown), () -> has(".rayde-markdown [data-md-ready=true]"));
 		measure("markdown-close", () -> bench.closeFile(markdown), () -> !has(".rayde-markdown"));
-		measure("markdown-remount", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown"));
+		measure("markdown-remount", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
 		target.destroy(); texture.destroy();
 	}
 }

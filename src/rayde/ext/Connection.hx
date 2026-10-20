@@ -27,6 +27,7 @@ class Connection {
 	public var file(default, null):String;
 	public var services:Null<WorkspaceServices>;
 	public var onMessage:Null<Dynamic->Void>;
+	public var onBatch:Null<Void->Void>;
 	public var onState:Null<String->Void>;
 	public var onEntry:Null<(String, HostEntry) -> Void>;
 	public var onWake:Null<Void->Void>;
@@ -43,6 +44,8 @@ class Connection {
 	var queued:Array<{id:String, args:Dynamic, deadline:Float}> = [];
 	final pending = new Map<String, {name:String, data:Dynamic, at:Float}>();
 	var replies:Array<{message:Dynamic, at:Float}> = [];
+	var messages:Array<Dynamic> = [];
+	var nextMessage = 0;
 
 	public function new(file:String, source:Void->String, ?manifest:Manifest) {
 		this.file = file;
@@ -138,6 +141,7 @@ class Connection {
 		queued = [];
 		pending.clear();
 		replies = [];
+		messages = []; nextMessage = 0;
 		setState("stopped");
 	}
 
@@ -178,7 +182,10 @@ class Connection {
 			note("console", "error", 'Command ${q.id} was not registered before its activation timed out.');
 		}
 		var current = host;
-		for (m in current.poll()) {
+		if (nextMessage == messages.length) { messages = current.poll(); nextMessage = 0; }
+		var deadline = haxe.Timer.stamp() + .004;
+		while (nextMessage < messages.length) {
+			var m = messages[nextMessage++];
 			var timing = Timing.start();
 			switch (m.t : String) {
 				case "registered":
@@ -206,6 +213,7 @@ class Connection {
 							hook(name, replay);
 					}
 				case "call":
+					if (m.fn == "rayde.window.focusView" && onBatch != null) onBatch();
 					answer(m);
 				case "log":
 					note("console", "log", m.message);
@@ -214,8 +222,11 @@ class Connection {
 			if (onMessage != null)
 				onMessage(m);
 			if (Timing.enabled) Timing.end(timing, "message." + Std.string(m.t), {extension:manifest == null ? file : manifest.id});
+			if (host != current || haxe.Timer.stamp() >= deadline) break;
 		}
-		if (host == current && current.state == "exited") {
+		if (onBatch != null) onBatch();
+		if (nextMessage < messages.length && onWake != null) onWake();
+		if (host == current && current.state == "exited" && nextMessage == messages.length) {
 			var err = StringTools.trim(current.errors());
 			note("console", "error", 'Extension host exited with code ${current.exitCode}.' + (err == "" ? "" : "\n" + err));
 			host = null;

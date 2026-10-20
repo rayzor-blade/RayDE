@@ -218,7 +218,7 @@ Paths are resolved against the project folder, and one outside it is refused. Ca
 
 `rayde.window.focusView(root)` focuses an existing tab mounted by this extension. `rayde.window.openExternal(url)` requires `window.openExternal` and opens HTTP, HTTPS or mailto links in the system handler. Both return promises.
 
-The pure native modules `rayde.syntax` and `rayde.markdown` supply the [shared syntax registry](syntax.md) and [Markdown renderer](markdown.md). The `markdown-view` bridge consumes the renderer's JSON document string, draws its Ashui content, and emits `link` events with `{href}` for file or external links. Same-document anchors are handled within the view.
+The pure native modules `rayde.syntax` and `rayde.markdown` supply the [shared syntax registry](syntax.md) and [Markdown renderer](markdown.md). The `markdown-view` bridge consumes the renderer's JSON document string, draws its Ashui content, and emits `link` events with `{href}` for file or external links. Same-document anchors are handled within the view, including headings in blocks that have not been mounted. Native Markdown content is virtualized by document block, with small mount batches and data-only height caches for scroll restoration.
 
 Set the rendered document's `baseFile` to its source path before serializing it. The bridge resolves local image references relative to that file through `workspace.read`, with the workspace path and size checks. Cached documents need no base64 image payloads; only the visible Markdown view loads and owns decoded image resources.
 

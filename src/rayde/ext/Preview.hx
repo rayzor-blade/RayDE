@@ -64,6 +64,8 @@ class Preview {
 	/** Whether there are ashui nodes: false until a page shows the view, and again once it is hidden. */
 	var shown = false;
 	var visibleRoots:Null<Array<Int>>;
+	final dirtyControls:Map<Int, Bool> = [];
+	final dirtyParents:Map<Int, Bool> = [];
 
 	/** The roots, in the order they were mounted, with the name each was mounted under; `node` is null while the view is hidden. */
 	public final roots:Array<{id:Int, name:String, node:Null<Node>}> = [];
@@ -147,7 +149,7 @@ class Preview {
 	}
 
 	/** Applies the operations of an `ops` message in order. */
-	public function apply(ops:Array<Dynamic>):Void {
+	public function apply(ops:Array<Dynamic>, finish = true):Void {
 		var timing = Timing.start();
 		for (op in ops) {
 			var args:Array<Dynamic> = op;
@@ -173,17 +175,33 @@ class Preview {
 				case _:
 			}
 		}
+		if (finish) commit();
+		if (Timing.enabled) Timing.end(timing, "preview.apply", {ops:ops.length, parts:count()});
+	}
+
+	/** Flushes adjacent operation batches together before the next layout. */
+	public function commit():Void {
+		var parents = [for (id in dirtyParents.keys()) id]; dirtyParents.clear();
+		for (id in parents) { var p = parts.get(id); if (p != null && p.node != null) refresh(p); }
 		flushControls();
 		revision++;
-		if (Timing.enabled) Timing.end(timing, "preview.apply", {ops:ops.length, parts:count()});
+	}
+
+	function changedChildren(part:Part):Void {
+		dirtyParents.set(part.host, true);
+		if (part.control != null && part.control.panels != null) dirtyControls.set(part.host, true);
 	}
 
 	function flushControls():Void {
 		syncVisibility();
-		for (p in parts)
-			if (p.control != null)
+		var dirty = [for (id in dirtyControls.keys()) id];
+		dirtyControls.clear();
+		for (id in dirty) {
+			var p = parts.get(id);
+			if (p != null && p.control != null)
 				try p.control.flush() catch (e:Dynamic) problem(p, e);
-		for (p in parts) if (p.control != null && p.control.panels != null) refresh(p);
+		}
+		for (id in dirty) { var p = parts.get(id); if (p != null && p.control != null && p.control.panels != null) refresh(p); }
 	}
 
 	/** Hidden Markdown roots keep their document model while releasing decoded images and editor/canvas views. */
@@ -229,6 +247,7 @@ class Preview {
 				if (p.listens.exists(event)) emit(p.host, event, payload);
 			}, p.localState, image);
 			node = p.control.node;
+			dirtyControls.set(p.host, true);
 		} else node = tree.createNode();
 		var root = p.tag == "#root";
 		var identity = Identity.register(tree, node, root || !Tags.known(p.tag) ? "div" : p.tag);
@@ -261,7 +280,7 @@ class Preview {
 		part.text = text;
 		var up = parts.get(part.parent);
 		if (shown && up != null)
-			refresh(up);
+			changedChildren(up);
 	}
 
 	function set(id:Int, name:String, value:Dynamic):Void {
@@ -282,7 +301,7 @@ class Preview {
 
 	/** Applies one property of an element to its node. */
 	function style(part:Part, name:String, value:Dynamic):Void {
-		if (part.control != null && part.control.set(name, value)) return;
+		if (part.control != null && part.control.set(name, value)) { dirtyControls.set(part.host, true); return; }
 		var identity = Identity.of(tree, part.node.id);
 		if (identity == null)
 			return;
@@ -407,8 +426,8 @@ class Preview {
 		c.parent = parent;
 		if (shown) {
 			if (old != null && old != p)
-				refresh(old);
-			refresh(p);
+				changedChildren(old);
+			changedChildren(p);
 		}
 	}
 
@@ -471,7 +490,7 @@ class Preview {
 			up.children.remove(id);
 		if (shown) {
 			if (up != null)
-				refresh(up);
+				changedChildren(up);
 			release(part);
 			if (part.node != null) {
 				Identity.forgetSubtree(tree, part.node.id);

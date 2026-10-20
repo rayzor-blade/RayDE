@@ -56,6 +56,7 @@ class BridgeControl {
 	var restoreScroll:Dynamic;
 	var tooltip:Null<String>;
 	var buttonMounted = false;
+	var markdownSource:Dynamic;
 	final markdownDocument = Signal.make((null:Dynamic));
 	final markdownVisible = Signal.make(true);
 	var markdown:MarkdownView;
@@ -215,6 +216,7 @@ class BridgeControl {
 	public function set(name:String, data:Dynamic):Bool {
 		switch name {
 			case "document" if (kind == "markdown-view"):
+				markdownSource = data;
 				markdownDocument.set(data == null ? null : Std.isOfType(data, String) ? haxe.Json.parse(data) : data); return true;
 			case "navigation" if (kind == "canvas-kit"):
 				var mode = data == null ? "canvas" : Std.string(data);
@@ -297,7 +299,7 @@ class BridgeControl {
 	public function flush():Void {
 		if (kind == "markdown-view") {
 			if (markdown == null) scope.run(() -> {
-				markdown = new MarkdownView(markdownDocument, emit, markdownVisible, image, markdownState);
+				markdown = new MarkdownView(markdownDocument, emit, markdownVisible, image, markdownState, () -> markdownSource);
 				tree.addChild(node.id, markdown.node.id);
 			});
 			return;

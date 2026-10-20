@@ -94,12 +94,15 @@ class Studio {
 	var changedAt = -1.;
 	var lastActive = 0.;
 	var scheduled = false;
+	var scheduledAt = 0.;
+	var pollTimer:ashui.animation.AnimationScheduler.Timer;
 
 	/** Whether the Studio has been taken down, and so starts nothing. */
 	var disposed = false;
 
 	/** Set by a reload: the view stays until the new version has started, so a typing mistake does not blank it. */
 	var replacing = false;
+	var opsPending = false;
 
 	/** Counts what the Console shows. */
 	static inline var MAX_ENTRIES = 1000;
@@ -116,6 +119,7 @@ class Studio {
 		preview.onProblem = message -> this.connection.note("console", "error", message);
 		if (connection == null) this.connection.useMocks = true;
 		this.connection.onMessage = handle;
+		this.connection.onBatch = flushOps;
 		this.connection.onEntry = (list, entry) -> note(list == "console" ? console : activity, entry.kind, entry.text,
 			entry.line == null ? null : {file: entry.file, line: entry.line, col: entry.col});
 		this.connection.onState = value -> {
@@ -204,6 +208,8 @@ class Studio {
 	public function dispose():Void {
 		// A reload that was waiting for typing to stop must not start the extension again.
 		disposed = true;
+		if (pollTimer != null) pollTimer.cancel();
+		pollTimer = null; scheduled = false;
 		changedAt = -1;
 		stop();
 		for (s in surfaces.copy())
@@ -280,11 +286,15 @@ class Studio {
 	}
 
 	function schedule(delay:Float):Void {
-		if (scheduled)
+		var at = haxe.Timer.stamp() + delay;
+		if (scheduled && scheduledAt <= at)
 			return;
+		if (pollTimer != null) pollTimer.cancel();
 		scheduled = true;
-		ashui.animation.AnimationScheduler.main.after(delay, () -> {
+		scheduledAt = at;
+		pollTimer = ashui.animation.AnimationScheduler.main.after(delay, () -> {
 			scheduled = false;
+			pollTimer = null;
 			tick();
 			// The longer the extension has been quiet, the less often it is looked at; a click or a command brings the next look forward.
 			var quiet = haxe.Timer.stamp() - lastActive;
@@ -307,10 +317,8 @@ class Studio {
 				replace();
 			case "ops":
 				if (preview != null) {
-					preview.apply(m.ops);
-					adopt();
-					refreshTabs();
-					elements.set(elements.get() + 1);
+					preview.apply(m.ops, false);
+					opsPending = true;
 				}
 				note(activity, "ops", (m.ops : Array<Dynamic>).length + (m.ops.length == 1 ? " operation" : " operations"));
 			case "view":
@@ -324,6 +332,14 @@ class Studio {
 				failed(m);
 			case _:
 		}
+	}
+
+	function flushOps():Void {
+		if (!opsPending || preview == null) return;
+		opsPending = false;
+		preview.commit();
+		adopt(); refreshTabs();
+		elements.set(elements.get() + 1);
 	}
 
 	/** The new version of the extension has started: what the old one drew goes, and the new one draws. */

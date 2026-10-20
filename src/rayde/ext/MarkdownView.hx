@@ -27,11 +27,16 @@ class MarkdownView {
 	var savedScroll:Dynamic;
 	var detailStates:Map<Int, Bool> = [];
 	var detailIndex = 0;
+	var detailKeys = new haxe.ds.ObjectMap<{}, Int>();
+	var headingBlocks:Map<String, Int> = [];
+	var blocks:MarkdownBlocks;
+	final documentKey:Void->Dynamic;
 	final loadImage:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	var headings:Map<String, Node> = [];
 	static final drawings:Map<Int, {document:SvgDocument, uses:Int}> = [];
 
-	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic) {
+	public function new(document:Signal<Dynamic>, emit:(String, Dynamic)->Void, ?visible:Signal<Bool>, ?loadImage:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, ?scrollState:Dynamic, ?documentKey:Void->Dynamic) {
+		this.documentKey = documentKey == null ? () -> document.get() : documentKey;
 		this.document = document;
 		this.emit = emit;
 		this.loadImage = loadImage;
@@ -45,7 +50,7 @@ class MarkdownView {
 			var data = value.data;
 			baseFile = data == null || data.baseFile == null ? "" : Std.string(data.baseFile);
 			if (child != null) {
-				if (data == null) savedScroll = state();
+				if (blocks != null) savedScroll = state();
 				child.dispose();
 			}
 			diagrams = [];
@@ -53,18 +58,19 @@ class MarkdownView {
 			detailIndex = 0;
 			headings = [];
 			child = new Owner(body.tree);
+			blocks = null;
+			detailKeys = new haxe.ds.ObjectMap(); headingBlocks = [];
 			child.run(() -> {
-				if (data != null) for (block in children(data)) body.appendChild(render(block));
-				if (data != null && savedScroll != null) {
-					var restore:ashui.layout.LayoutTree->Void = tree -> {
-						if (tree != body.tree || savedScroll == null) return;
-						var scroll = scroller();
-						var bounds = tree.getBounds(body.node);
-						if (scroll == null || bounds == null || bounds.height == 0) return;
-						scroll.jumpTo(savedScroll.x, savedScroll.y); savedScroll = null;
-					};
-					ashui.layout.LayoutTree.settledHooks.push(restore);
-					Owner.onCleanup(() -> ashui.layout.LayoutTree.settledHooks.remove(restore));
+				if (data != null) {
+					var items = children(data);
+					function index(part:Dynamic, block:Int):Void {
+						if (part.kind == "details") detailKeys.set(part, detailIndex++);
+						if (part.id != null) headingBlocks.set((part.kind == "footnote" ? "footnote-" : "") + Std.string(part.id), block);
+						for (item in children(part)) index(item, block);
+					}
+					for (i in 0...items.length) index(items[i], i);
+					blocks = new MarkdownBlocks(items, (part, _) -> render(part), estimate, measurementKey, this.documentKey(), savedScroll);
+					body.tree.addChild(body.node.id, blocks.node.id);
 				}
 			});
 			if (Timing.enabled) Timing.end(timing, "markdown.build", {visible:data != null});
@@ -106,7 +112,7 @@ class MarkdownView {
 		}
 		if (kind == "image") return image(data);
 		if (kind == "details") {
-			var key = detailIndex++;
+			var key = detailKeys.get(data);
 			var view = new ashui.ui.Details({open:detailStates.exists(key) ? detailStates.get(key) : data.open == true, onToggle:open -> detailStates.set(key, open)}, [for (part in children(data)) render(part)]);
 			decorate(view, data); return view;
 		}
@@ -140,7 +146,7 @@ class MarkdownView {
 		decorate(container, data);
 		if (kind == "heading" || kind == "footnote") {
 			var id = (kind == "footnote" ? "footnote-" : "") + Std.string(data.id);
-			headings.set(id, container.node);
+			registerHeading(id, container.node);
 			Identity.of(container.tree, container.node.id).setAttribute("data-md-heading", id);
 		}
 		if (["heading", "paragraph", "html", "table-cell"].indexOf(kind) >= 0) {
@@ -247,7 +253,7 @@ class MarkdownView {
 	function decorate(view:Element, data:Dynamic):Void {
 		var identity = Identity.of(view.tree, view.node.id);
 		if (data.htmlTag != null) identity.setAttribute("data-md-html", Std.string(data.htmlTag));
-		if (data.id != null) headings.set((data.kind == "footnote" ? "footnote-" : "") + Std.string(data.id), view.node);
+		if (data.id != null) registerHeading((data.kind == "footnote" ? "footnote-" : "") + Std.string(data.id), view.node);
 		if (data.textAlign != null) identity.setInline("text-align", Std.string(data.textAlign));
 	}
 
@@ -280,7 +286,7 @@ class MarkdownView {
 			} else {
 				bitmap = ashui.types.Bitmap.fromBytes(bytes);
 				bitmaps.push(bitmap);
-				Owner.onCleanup(bitmap.dispose);
+				Owner.onCleanup(() -> { bitmap.dispose(); bitmaps.remove(bitmap); });
 				width = bitmap.width; height = bitmap.height;
 				picture = new ashui.ui.Image(bitmap);
 			}
@@ -340,6 +346,7 @@ class MarkdownView {
 		kit.node.set(Prop.WidthPercent, (1:Single)); kit.node.set(Prop.HeightPercent, (1:Single));
 		Identity.of(kit.tree, kit.node.id).addClasses(["rayde-md-mermaid-canvas"]);
 		area.appendChild(kit); diagrams.push(kit);
+		Owner.onCleanup(() -> diagrams.remove(kit));
 		new Watch(() -> ({x:view.panX.get(), y:view.panY.get(), zoom:view.zoom.get()}), state -> {
 			picture.node.set(Prop.Transform, new ashui.types.Transform(state.x*state.zoom + (state.zoom-1)*doc.width/2,
 				state.y*state.zoom + (state.zoom-1)*doc.height/2, 0, state.zoom, state.zoom));
@@ -401,13 +408,46 @@ class MarkdownView {
 
 	public function state():Dynamic {
 		var scroll = scroller();
-		return scroll == null ? savedScroll : {x:scroll.x.get(), y:scroll.y.get(), details:detailStates};
+		if (blocks == null) return savedScroll;
+		var position = scroll == null ? blocks.navigation() : {x:scroll.x.get(), y:scroll.y.get()};
+		return {x:position.x, y:position.y, details:detailStates, layout:blocks.state()};
 	}
 
+	function registerHeading(id:String, node:Node):Void {
+		headings.set(id, node);
+		Owner.onCleanup(() -> { if (headings.get(id) == node) headings.remove(id); });
+	}
+
+	static function estimate(data:Dynamic, width:Float):Float {
+		var chars = Math.max(12, width / 8);
+		return switch Std.string(data.kind) {
+			case "heading": 26 + Math.ceil(text(data).length / chars) * (data.level == 1 ? 40 : data.level == 2 ? 34 : 30);
+			case "code": Math.min(360, Math.max(44, Std.string(data.text).split("\n").length * 21 + 20)) + 50;
+			case "diagram": 336;
+			case "image": data.height == null ? 300 : (data.height:Float);
+			case "math": 100;
+			case "rule": 1;
+			case "list": Lambda.fold(children(data), (part, sum) -> sum + estimate(part, width-24) + 6, 0.);
+			case "table": children(data).length * 44.;
+			case "group", "quote", "item": Lambda.fold(children(data), (part, sum) -> sum + estimate(part, width-16) + 16, 0.);
+			case _: Math.max(26, Math.ceil(text(data).length / chars) * 26);
+		};
+	}
+
+	static function measurementKey(data:Dynamic):String
+		return haxe.Json.stringify({kind:data.kind, text:text(data), href:data.href, width:data.width, height:data.height,
+			level:data.level, language:data.language, align:data.textAlign, start:data.start});
+
 	public function reveal(id:String):Void {
-		var heading = headings.get(StringTools.urlDecode(id)), scroll = scroller();
-		if (heading == null || scroll == null) return;
-		var target = node.tree.getScrolledBounds(heading), view = node.tree.getScrolledBounds(scroll.node);
-		scroll.scrollTo(scroll.x.get(), scroll.y.get() + target.y - view.y - 16);
+		id = StringTools.urlDecode(id);
+		if (blocks == null || !headingBlocks.exists(id)) return;
+		blocks.reveal(headingBlocks.get(id), () -> {
+			var heading = headings.get(id), scroll = scroller();
+			if (heading == null || scroll == null) return false;
+			var target = node.tree.getScrolledBounds(heading), view = node.tree.getScrolledBounds(scroll.node);
+			if (target == null || view == null) return false;
+			scroll.jumpTo(scroll.x.get(), scroll.y.get() + target.y - view.y - 16);
+			return true;
+		});
 	}
 }

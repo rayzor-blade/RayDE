@@ -1,3 +1,4 @@
+import haxe.Json;
 import rayde.workspace.root;
 import rayde.workspace.openFile;
 import rayde.settings.get;
@@ -35,10 +36,15 @@ var operation = signal(''), focus = signal('all');
 var focusOptions = signal([{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}]);
 var command = signal(null), sequence = 0;
 var changed = selection(null), selectedSubject = signal('');
+var refreshing = false, visible = false, refreshAgain = false;
+var lastFailure = '';
+var statusKey = '', entriesKey = '', historyKey = '';
+var repositoryPath = null;
 
 function configureHistory(action) { expand = action; }
 
 function choose(id) {
+  if (id == selected.value && selectedInfo.value != '' && changed.error.value == '') return;
   selected.value = id;
   selectedInfo.value = '';
   selectedSubject.value = '';
@@ -49,29 +55,44 @@ function choose(id) {
   changed.choose(id);
 }
 
-function refresh() {
-  if (busy.value) return;
-  busy.value = true;
+function refresh(showBusy = true) {
+  if (refreshing) { if (showBusy) refreshAgain = true; return; }
+  if (operation.value != '') return;
+  refreshing = true;
+  if (showBusy) busy.value = true;
   try {
-    var path = await root(), snapshot = repositoryStatus(path);
-    state.value = snapshot;
-    sections.value = groups(snapshot.entries);
-    var cursor = openHistory(path, focus.value);
-    try {
-      var page = cursor.next(60);
-      refs.value = cursor.refs;
-      var items = [{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}];
-      for (ref in cursor.refs) items.push({value:ref.name,label:ref.label});
-      if (focus.value != 'all' && focus.value != 'HEAD' && focus.value.substr(0,5) != 'refs/') items.push({value:focus.value,label:'Commit ' + focus.value.substr(0,7)});
-      focusOptions.value = items;
-      commits.value = page.commits;
-      var id = page.commits.length == 0 ? '' : page.commits[0].id;
-      for (commit in page.commits) if (commit.id == selected.value) id = selected.value;
-      choose(id);
-      cursor.close();
-    } catch (failure) { cursor.close(); throw failure; }
-  } catch (failure) { report(failure); }
-  busy.value = false;
+    if (repositoryPath == null) repositoryPath = await root();
+    var path = repositoryPath, snapshot = repositoryStatus(path);
+    var status = Json.stringify(snapshot), entries = Json.stringify(snapshot.entries);
+    if (status != statusKey) { statusKey = status; state.value = snapshot; }
+    if (entries != entriesKey) { entriesKey = entries; sections.value = groups(snapshot.entries); }
+    var nextHistory = Json.stringify({path:path, head:snapshot.head, refs:snapshot.refs, focus:focus.value});
+    if (nextHistory != historyKey) {
+      var cursor = openHistory(path, focus.value);
+      try {
+        var page = cursor.next(60);
+        refs.value = cursor.refs;
+        var items = [{value:'all',label:'All branches'}, {value:'HEAD',label:'Current branch'}];
+        for (ref in cursor.refs) items.push({value:ref.name,label:ref.label});
+        if (focus.value != 'all' && focus.value != 'HEAD' && focus.value.substr(0,5) != 'refs/') items.push({value:focus.value,label:'Commit ' + focus.value.substr(0,7)});
+        focusOptions.value = items;
+        commits.value = page.commits;
+        var id = page.commits.length == 0 ? '' : page.commits[0].id;
+        for (commit in page.commits) if (commit.id == selected.value) id = selected.value;
+        choose(id);
+        historyKey = nextHistory;
+        cursor.close();
+      } catch (failure) { cursor.close(); throw failure; }
+    }
+    lastFailure = '';
+  } catch (failure) {
+    var message = '' + failure;
+    if (showBusy || message != lastFailure) report(failure);
+    lastFailure = message;
+  }
+  refreshing = false;
+  if (showBusy) busy.value = false;
+  if (refreshAgain) { refreshAgain = false; spawn(() -> refresh()); }
 }
 
 function runRemote(action, strategy = null) {
@@ -165,5 +186,6 @@ registerCommand('git.pull', args -> runRemote('pull'));
 registerCommand('git.push', args -> runRemote('push'));
 onTool('git-refresh', () -> refresh());
 onHook('file.saved', e -> refresh());
-onHook('active.changed', e -> refresh());
+onHook('view.visibility', e -> { if (e.id == 'scm') { visible = e.visible; if (visible) refresh(false); } });
+spawn(() -> { while (true) { await sleep(2500); if (visible) refresh(false); } });
 spawn(() -> refresh());

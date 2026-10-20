@@ -359,17 +359,18 @@ function references(repository) {
 
 function repositoryStatus(path) {
   return withRepository(path, repository -> {
-    var branch = 'No commits', head = Out(Reference);
+    var branch = 'No commits', headId = '', head = Out(Reference);
     var unborn = check(git_repository_head_unborn(repository), 'repository HEAD state');
     if (unborn == 0) {
       check(git_repository_head(head, repository), 'repository HEAD');
       var ref = head.value;
       try {
         branch = check(git_repository_head_detached(repository), 'detached HEAD state') == 1 ? 'Detached HEAD' : git_reference_shorthand(ref);
+        headId = git_oid_tostr_s(git_reference_target(ref));
         ref.close();
       } catch (error) { ref.close(); throw error; }
     }
-    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository), branch: branch, entries: status(repository)};
+    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository), branch: branch, head:headId, refs:references(repository), entries: status(repository)};
   });
 }
 

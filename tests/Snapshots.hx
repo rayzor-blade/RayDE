@@ -1075,6 +1075,17 @@ class Snapshots {
 				var sourcePath = bench.active.get();
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
 				until(() -> within("git-scm-commit-files", "history.txt"), "the selected sidebar commit's changed files");
+				var previousScene = @:privateAccess control("git-scm-canvas").scene.get();
+				git.connection.hook("active.changed", {path:sourcePath}); settle(30);
+				if ((@:privateAccess control("git-scm-canvas").scene.get()) != previousScene) throw "tab switches refreshed unchanged Git history";
+				// Quiet polling still discovers worktree edits made outside the editor.
+				var external = haxe.io.Path.directory(haxe.io.Path.directory(file)) + "/external-change.txt";
+				sys.io.File.saveContent(external, "External edit\n");
+				until(() -> says("external-change.txt"), "visible SCM to discover an external file");
+				if ((@:privateAccess control("git-scm-canvas").scene.get()) != previousScene) throw "worktree-only changes rebuilt commit history";
+				sys.FileSystem.deleteFile(external); git.connection.command("git.refresh", null);
+				until(() -> !says("external-change.txt"), "explicit SCM refresh after deletion");
+
 				var previousRight = 0.;
 				for (id in ["git-fetch", "git-pull", "git-pull-options", "git-push"]) {
 					var bounds = tree.getScrolledBounds(control(id).node);
@@ -1220,7 +1231,7 @@ class Snapshots {
 				click("#git-history-branch .ui-select"); press(Named(End)); press(Named(Enter));
 				until(() -> says("Prepare extension runtime 105"), "the tag's first history page");
 				click("#git-history-more .ui-button");
-				until(() -> says("105"), "tag filtering through the native select component");
+				until(() -> within("git-history-count", "105") && !(@:privateAccess control("git-history-branch").disabled.get()), "tag filtering through the native select component");
 				shot("filtered");
 				var focusedCommit = canvas().selection.ids.get()[0];
 				click("#git-history-focus .ui-button");
@@ -1790,14 +1801,34 @@ class Snapshots {
 					return ready();
 				}, "the production Markdown preview"); settle();
 				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
-				for (selector in ["[data-md-render=math]", "[data-md-render=diagram]", ".rayde-md-code", ".rayde-md-table", ".rayde-md-list", ".rayde-md-footnote"])
-					if (Css.query(tree, bench.node.id, selector).length == 0) throw 'missing Markdown renderer $selector';
 				var firstScroll = ashui.input.Scroll.at(Css.query(tree, bench.node.id, "#markdown-scroll")[0], tree);
 				if (firstScroll.y.get() != 0) throw "Markdown preview did not start at the document's beginning";
 				var heading = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, ".rayde-md-h1")[0]));
 				if (heading.y < tree.getScrolledBounds(firstScroll.node).y) throw "Markdown heading was laid out above the viewport";
 				var part = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=markdown-document") >= 0);
 				var control:rayde.ext.BridgeControl = @:privateAccess studio.preview.parts.get(part.id).control;
+				function mountWhere(predicate:Dynamic->Bool):Void {
+					var view = @:privateAccess control.markdown;
+					var data:Dynamic = @:privateAccess view.document.get();
+					function matches(part:Dynamic):Bool {
+						if (predicate(part)) return true;
+						var children:Array<Dynamic> = part.children == null ? [] : part.children;
+						return Lambda.exists(children, matches);
+					}
+					var items:Array<Dynamic> = data.children;
+					for (i in 0...items.length) if (matches(items[i])) {
+						@:privateAccess view.blocks.reveal(i, () -> true); settle(); return;
+					}
+					throw "missing Markdown fixture block";
+				}
+				function kind(name:String):Void mountWhere(p -> p.kind == name);
+				for (name in ["math", "diagram", "code", "table", "list", "footnote"]) {
+					kind(name);
+					var selector = name == "math" || name == "diagram" ? '[data-md-render="$name"]' : '.rayde-md-$name';
+					if (Css.query(tree, bench.node.id, selector).length == 0) throw 'missing Markdown renderer $selector';
+				}
+				scroll("#markdown-scroll", 0);
+
 				function watches():Int return [for (watch in (@:privateAccess ashui.reactive.Watch.bySlot)) if (watch != null) 1].length;
 				function texts():Int return [for (_ in (@:privateAccess ashui.ui.Text.byNode)) 1].length;
 				var watchCount = watches();
@@ -1809,6 +1840,7 @@ class Snapshots {
 				if (watches() != watchCount) throw 'Markdown refresh retained text layout watches: $watchCount -> ${watches()}';
 				if (texts() != textCount) throw 'Markdown refresh retained text layout entries: $textCount -> ${texts()}';
 				function follow(href:String):Void {
+					mountWhere(p -> p.href == href);
 					var links = Css.query(tree, bench.node.id, '[data-md-link="$href"]');
 					if (links.length == 0) throw 'missing Markdown link $href';
 					var target:ashui.layout.Node = null;
@@ -1827,8 +1859,10 @@ class Snapshots {
 				}
 				follow("#mathematics");
 				if (firstScroll.y.get() == 0) throw "Markdown heading link did not scroll to its anchor";
+				kind("table");
 				var cells = Css.query(tree, bench.node.id, ".rayde-md-table-head .rayde-md-table-cell");
 				if (tree.textAlign(cells[1]) != 2) throw "Markdown table column alignment was lost";
+				kind("list");
 				var tasks = Css.query(tree, bench.node.id, ".rayde-md-task .ui-checkbox");
 				if (tasks.length != 2) throw "Markdown task lists must use Ashui checkboxes";
 				for (task in tasks) {
@@ -1853,6 +1887,7 @@ class Snapshots {
 				shot("mermaid-zoomed");
 				click(".rayde-md-diagram-fit");
 				if (Math.abs(viewport.zoom.get() - zoom) > .001) throw "Mermaid fit did not restore the fitted viewport";
+				kind("code");
 				var code = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, ".rayde-md-code")[0]));
 				firstScroll.scrollTo(0, firstScroll.y.get() + code.y - tree.getScrolledBounds(firstScroll.node).y - 80); settle(); shot("highlighted-code");
 				scroll("#markdown-scroll", 1600); shot("gfm-images");
@@ -1928,7 +1963,7 @@ class Snapshots {
 				if (disposed.indexOf(bitmap.id) < 0 || (@:privateAccess htmlView.bitmaps.length) != 0) throw "inactive preview retained decoded raster images";
 				for (_ in 0...3) {
 					bench.active.set(htmlTab); settle(); until(hasBitmap, "first cached preview to resume");
-					if (Math.abs(activeMarkdown().state().y - htmlY) > 1) throw "preview scroll position was lost while releasing images";
+					if (Math.abs(activeMarkdown().state().y - htmlY) > 1) throw 'preview scroll position was lost while releasing images: $htmlY -> ${activeMarkdown().state().y}';
 					bitmap = @:privateAccess activeMarkdown().bitmaps[0];
 					bench.active.set(secondTab); settle(); until(hasBitmap, "second cached preview to resume");
 					if (disposed.indexOf(bitmap.id) < 0) throw "switching image previews did not release the previous pixels";
@@ -1945,18 +1980,38 @@ class Snapshots {
 				var residencyFile = root + "/viewport-images.md";
 				sys.io.File.saveContent(residencyFile, '<img src="welcome.png" width="400"/>\n\n' + [for (i in 0...60) 'Paragraph $i between the two images.\n\n'].join("") + '<img src="welcome.png" width="200"/>\n');
 				manager.command("markdown", "markdown.preview", {path:residencyFile});
-				until(() -> activeMarkdown() != null && (@:privateAccess activeMarkdown().bitmaps.length) == 2, "scrollable image document"); settle();
-				var images = @:privateAccess activeMarkdown().bitmaps;
+				until(hasBitmap, "scrollable image document"); settle();
+				var image = @:privateAccess activeMarkdown().bitmaps[0];
 				shot("viewport-images-top");
-				if (!images[0].decoded() || images[1].decoded()) throw "offscreen Markdown image retained decoded pixels";
+				if (!image.decoded() || (@:privateAccess activeMarkdown().bitmaps.length) != 1) throw "offscreen Markdown image was mounted";
 				for (_ in 0...3) {
-					scroll("#markdown-scroll", 100000); shot("viewport-images-bottom");
-					if (images[0].decoded() || !images[1].decoded()) throw "Markdown images did not follow the scroll viewport";
-					scroll("#markdown-scroll", 0); shot("viewport-images-returned");
-					if (!images[0].decoded() || images[1].decoded()) throw "Markdown image did not reload on reentry";
+					scroll("#markdown-scroll", 100000); until(hasBitmap, "bottom image to mount"); shot("viewport-images-bottom");
+					if (image.decoded()) throw "departed Markdown image retained decoded pixels";
+					image = @:privateAccess activeMarkdown().bitmaps[0];
+					if (!image.decoded() || image.width > 400 || Css.query(tree, bench.node.id, "[data-md-block]").length > 25) throw "bottom image or bounded block range was lost";
+					scroll("#markdown-scroll", 0); until(hasBitmap, "top image to remount"); shot("viewport-images-returned");
+					if (image.decoded()) throw "bottom image stayed resident after return";
+					image = @:privateAccess activeMarkdown().bitmaps[0];
+					if (!image.decoded() || image.width <= 400) throw "top image did not remount";
 				}
 				bench.closeAll(); until(() -> studio.tabViews.length == 0, "viewport image preview to close"); settle();
-				if (images[0].decoded() || images[1].decoded()) throw "closed viewport image document retained pixels";
+				if (image.decoded()) throw "closed viewport image document retained pixels";
+				var longFile = root + "/virtual-blocks.md";
+				sys.io.File.saveContent(longFile, "# Virtual document\n\n[Jump to end](#destination)\n\n" + [for (i in 0...160) 'Paragraph $i. A block that should leave no native views outside the viewport.\n\n'].join("") + "## Destination\n\nFinal paragraph.\n");
+				manager.command("markdown", "markdown.preview", {path:longFile});
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="virtual-document"]').length > 0, "virtual document"); settle();
+				if (Css.query(tree, bench.node.id, "[data-md-block]").length > 25 || Css.query(tree, bench.node.id, '[data-md-heading="destination"]').length > 0) throw "document mounted distant blocks eagerly";
+				shot("virtual-blocks-top");
+				activeMarkdown().reveal("destination"); settle();
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="destination"]').length > 0, "offscreen heading anchor");
+				var position:Float = activeMarkdown().state().y, virtualTab = bench.active.get();
+				if (position < 1000 || Css.query(tree, bench.node.id, "[data-md-block]").length > 25 || Css.query(tree, bench.node.id, '[data-md-heading="virtual-document"]').length > 0) throw "anchor failed to move the virtual range";
+				shot("virtual-blocks-end");
+				bench.openFile(file); settle(); bench.active.set(virtualTab); settle();
+				if (Math.abs(activeMarkdown().state().y-position) > 1 || Css.query(tree, bench.node.id, "[data-md-block]").length > 25) throw "cached virtual position was not restored";
+				shot("virtual-blocks-restored");
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "virtual document close");
+
 			});
 		for (dark in [true, false])
 			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {

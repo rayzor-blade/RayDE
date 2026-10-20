@@ -7,6 +7,8 @@ class ExtensionHost {
 	final root:Null<String>;
 	var handle = -1;
 	var diagnostics = "";
+	var lines:Array<String> = [];
+	var nextLine = 0;
 
 	public function new(?root:String) {
 		this.root = root;
@@ -43,20 +45,26 @@ class ExtensionHost {
 		// Read status first: a completed runtime has already published its final output.
 		var ended = statusNative(handle);
 		var timing = Timing.start();
-		var bytes = pollNative(handle);
+		var fetched = nextLine == lines.length;
+		var bytes = fetched ? pollNative(handle) : null;
 		if (Timing.enabled) Timing.end(timing, "transport.poll");
 		if (bytes != null) {
 			timing = Timing.start();
 			var length = bytes.getI32(0);
 			var text = bytes.sub(4, length).toBytes(length).toString();
-			for (line in text.split("\n")) {
-				var message:Dynamic = haxe.Json.parse(line);
-				if (message.t == "error" && message.kind == "host") diagnostics = message.message;
-				messages.push(message);
-			}
-			if (Timing.enabled) Timing.end(timing, "transport.decode", {bytes:length, messages:messages.length});
+			lines = text.split("\n"); nextLine = 0;
+			if (Timing.enabled) Timing.end(timing, "transport.copy", {bytes:length});
 		}
-		if (ended != 0) {
+		timing = Timing.start();
+		var deadline = haxe.Timer.stamp() + .004;
+		while (nextLine < lines.length) {
+			var message:Dynamic = haxe.Json.parse(lines[nextLine++]);
+			if (message.t == "error" && message.kind == "host") diagnostics = message.message;
+			messages.push(message);
+			if (haxe.Timer.stamp() >= deadline) break;
+		}
+		if (Timing.enabled) Timing.end(timing, "transport.decode", {messages:messages.length});
+		if (ended != 0 && fetched && nextLine == lines.length) {
 			exitCode = ended == 1 ? 0 : 1;
 			state = "exited";
 			closeNative(handle);
@@ -72,6 +80,7 @@ class ExtensionHost {
 	public function stop():Void {
 		if (handle >= 0) closeNative(handle);
 		handle = -1;
+		lines = []; nextLine = 0;
 		state = "idle";
 	}
 
