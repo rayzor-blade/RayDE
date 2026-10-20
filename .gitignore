@@ -6,3 +6,4 @@
 /extensions/git/natives/
 /extensions/git/git.rayext
 __pycache__/
+.rayzor
