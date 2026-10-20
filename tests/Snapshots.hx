@@ -26,6 +26,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "toast") {
+			ToastLayout.main();
+			return;
+		}
 		if (Sys.getEnv("SNAPSHOT_ONLY") == "commandcenter") {
 			CommandCenterLifecycle.main();
 			return;

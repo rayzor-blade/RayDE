@@ -146,6 +146,11 @@
 #rayde { --ui-input-height: 32px; --ui-input-radius: var(--radius-md); --ui-button-shadow: none; }
 #rayde input.ui-input { box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px; corner-shape: squircle; }
 #rayde .rayde-add { --ui-button-height: 32px; border-radius: var(--radius-md); corner-shape: squircle; }
+
+/* Notification actions stay on one line while their message takes the wrapping space. */
+#rayde .ui-toast-body { min-width: 0; }
+#rayde .ui-toast > .ui-button { flex-shrink: 0; align-self: center; }
+#rayde .ui-toast > .ui-button > text { white-space: nowrap; }
 #rayde .rds [data-tag="ui-button"] > .ui-button { border-radius: var(--radius-md); corner-shape: squircle; }
 #rayde .rds [data-tag="ui-panel-group"] > .ui-resizable { border: 0; border-radius: 0; background: transparent; }
 #rayde .rds [data-tag="ui-panel-group"] .ui-collapsible { gap: 0; }
