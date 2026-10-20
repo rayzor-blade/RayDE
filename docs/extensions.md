@@ -109,6 +109,8 @@ Approval trusts the extension's scripts to call native code with your account pe
 
 ## Views
 
+Language extensions can instead register [workspace language servers](languages.md) through `rayde.languages`, without a view or sidebar contribution.
+
 A view is a part of the layout that shows an extension continuously, as opposed to a tab opened for a file. The Markdown preview declares none. Views are declared with `view` (one) or `views` (several):
 
 ```json

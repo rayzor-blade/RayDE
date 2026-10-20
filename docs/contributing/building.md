@@ -16,6 +16,7 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 - hlwgpu and hlwindow are read from beside RayDE (`HLWGPU`, `HLWINDOW`).
 - `scripts/rayde.sh`, packaging and Git checks/snapshots build pinned libgit2 with CMake and a C compiler, generating the built-in Git manifest with its library hash. The source archive is fetched with curl and verified with shasum; Git fixtures/checks use Python 3.
 - Rust 1.98 or newer and the sibling `rayscript` checkout supply the embedded extension runtime. `scripts/build-rayscript.sh` builds `native/rayscript` into the existing `../rayscript/target` and stages `bin/rayscript.hdll`; `RAYSCRIPT_TARGET_DIR` selects another shared target. No `rayscript-host` executable is required to run RayDE.
+- Rayzor is the default Haxe language server. Builds stage an existing `RAYZOR_LSP` executable, sibling `rayzor/target/release/rayzor`, or Rayzor on PATH, plus the available `RAYZOR_STD_PATH` or sibling `compiler/haxe-std`. They do not build Rayzor. The staged executable retains its linked-library requirements; release packages need a distributable Rayzor build. Without an available server, RayDE falls back to the Haxe display service after bounded startup attempts.
 - The same library embeds the pinned shared syntax registry and native Markdown/math/Mermaid renderers. `node scripts/update-grammars.mjs` updates grammar data from a checksum-verified archive; normal builds require neither Node nor a browser. Packaging includes the bundled data's notices.
 - Image previews bundle `image` and `avif-decode` for BMP, GIF, ICO and AVIF conversion. The decoders need no external image tools or system AVIF library; their versions and dependencies are locked in Cargo.lock.
 - Source `scripts/deps.sh` from bash only.
@@ -30,6 +31,8 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 | `RAYDE_THEMES=<folder>` | User theme folder instead of `~/.rayde/themes`. |
 | `RAYDE_OPAQUE=1` | Opaque window instead of a transparent one. |
 | `RAYDE_ASH=<path>` | ash for the packaged launchers. |
+| `RAYZOR_LSP=<path>` | Rayzor LSP executable for staging and automatic discovery. |
+| `RAYZOR_STD_PATH=<folder>` | Rayzor standard library for staging and server launch. |
 | `ASHUI_FRAME_STATS=1` | Log frame timings and compositing layers, plus loop wake-ups, busy time and pointer hooks. |
 
 One editor window at a time while testing: check `pgrep -fl rayde.hl` before launching another.

@@ -7,7 +7,7 @@
 
 <p align="center"><img  src="assets/rayde-welcome.png" width="800" alt="RayDE on a dark scheme, with the welcome page and the build file open in the Explorer" /></p>
 
-RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://github.com/rayzor-blade/ashui) and runs on the ash runtime. Language features come from the Haxe compiler's own display server.
+RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://github.com/rayzor-blade/ashui) and runs on the ash runtime. [Rayzor](docs/languages.md) is its default Haxe language server, with the Haxe compiler's display service as a fallback.
 
 ## Features
 

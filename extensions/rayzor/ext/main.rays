@@ -1,0 +1,28 @@
+import rayde.languages.registerServer;
+import rayde.languages.servers;
+import rayde.settings.get;
+import rayde.window.notify;
+
+function start() {
+  var command = await get('command', 'rayzor');
+  var hxml = await get('hxml', '');
+  var stdlib = await get('stdlib', '');
+  var budget = await get('macroBudgetMs', 5000);
+  var options = {macroBudgetMs: budget};
+  if (hxml != '') options.hxml = hxml;
+  var environment = {};
+  if (stdlib != '') environment.RAYZOR_STD_PATH = stdlib;
+  return await registerServer({
+    id:'rayzor', languages:['haxe'], fileExtensions:['.hx'], lazy:true,
+    transport:{kind:'stdio', command:command, args:['lsp'], env:environment},
+    initializationOptions:options
+  });
+}
+
+registerCommand('rayzor.restart', args -> await start());
+registerCommand('describe', args -> {
+  var items = await servers();
+  if (items.length == 0) await notify('Rayzor is not registered', 'warning');
+  for (item in items) await notify(item.id + ': ' + item.state);
+});
+await start();

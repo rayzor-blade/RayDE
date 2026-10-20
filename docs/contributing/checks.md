@@ -14,6 +14,10 @@ SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
 
 `SNAPSHOT_ONLY=find scripts/snapshot.sh` exercises Ashui's compact frosted-glass search panel, current-file shortcuts, bare regex/captured replacements, match navigation, Replace All undo, dirty state, inactive editor disposal, restored search inputs and invalid-pattern recovery in both schemes. Ashui's `CodeFindTest` additionally checks Haxe literal flags, Unicode and zero-width matches, bounded highlight nodes, narrow editors, read-only/disabled guards and same-batch edits.
 
+`SNAPSHOT_ONLY=lsp scripts/snapshot.sh` installs the actual Rayzor extension against a framed stdio fixture and checks completion acceptance, hover, signature help, definition navigation, Outline, tab closure/reopening and contributed settings in both schemes. `LspChecks` checks UTF-16 positions and URI encoding, coalesced unsaved buffers, concurrent out-of-order replies, cancellation, timeouts, request-error survival, persistent process identity after all tabs close, crash replay, restart limits, graceful shutdown and the actual registration script, including capability denial/revocation, status/restart commands and event-fiber exception recovery. Native transport tests cover partial reads, UTF-8 byte lengths and malformed/oversized frames. These checks do not rebuild or test Rayzor's compiler.
+
+`RAYDE_RAYZOR_LSP=<executable> scripts/check.sh` additionally checks 32 in-flight hover requests against a real Rayzor process, verifies semantic results and confirms document closure and an unsupported request leave it connected. Run Rayzor's own `rayzor-lsp` session suite for compiler/macro recovery coverage.
+
 The `extensions` scenario includes native approval, startup and revocation in both schemes. Its approvals use an isolated home under the fixture; it does not change your user settings.
 
 `SNAPSHOT_ONLY=toast scripts/snapshot.sh` checks short and wrapping Git notifications in both schemes, including single-line action labels, centered button text, non-overlapping controls and action dismissal.

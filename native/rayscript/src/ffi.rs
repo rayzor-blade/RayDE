@@ -17,6 +17,30 @@ fn packed_text(text:&str) -> *mut vbyte {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn lsp_open(data:*const vbyte, len:i32) -> i32 {
+    catch_unwind(|| unsafe { text(data,len) }.and_then(|s| super::lsp::open(s).ok()).unwrap_or(-1)).unwrap_or(-1)
+}
+define_prim!(hlp_lsp_open, lsp_open, "PBi_i");
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lsp_send(handle:i32, data:*const vbyte, len:i32) -> bool {
+    catch_unwind(|| unsafe { text(data,len) }.is_some_and(|s| super::lsp::send(handle,s))).unwrap_or(false)
+}
+define_prim!(hlp_lsp_send, lsp_send, "PiBi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lsp_poll(handle:i32) -> *mut vbyte {
+    catch_unwind(|| super::lsp::poll(handle).map_or(ptr::null_mut(), |s| packed_text(&s))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_lsp_poll, lsp_poll, "Pi_B");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lsp_close(handle:i32) {
+    let _ = catch_unwind(|| super::lsp::close(handle));
+}
+define_prim!(hlp_lsp_close, lsp_close, "Pi_v");
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn image_open(data:*const vbyte, len:i32, avif:bool) -> i32 {
     catch_unwind(|| {
         if data.is_null() || len <= 0 { return -1; }

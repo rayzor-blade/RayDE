@@ -51,6 +51,54 @@ class Snapshots {
 		for (dark in [true, false]) {
 			sys.io.File.saveContent(haxe.io.Path.join([scratch, "libs.txt"]), "ash-simd: [0.1.0]\nformat: [3.7.0]\nhashlink: [1.14.0]\ntink_core: [2.1.1]\ntink_hxx: [0.25.1]\n");
 			Haxelib.refresh();
+			scenario(dark, "lsp", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var root = bench.display().cwd;
+				var installed = bench.extensionManager.find("rayzor");
+				if (installed == null || installed.disabled || installed.installed.scope != "Built-in") throw "Rayzor must be a built-in default";
+				until(() -> bench.languageServers.client(file) != null, "Rayzor extension registration");
+				var client = bench.languageServers.client(file);
+				bench.openFile(file);
+				until(() -> client.state == "ready", "LSP initialization");
+				bench.openFile(file); settle();
+				var source = "class Main {\n\tstatic function main() {\n\t\tvar greeting = 'hello';\n\t\tgreeting.\n\t}\n}\n";
+				bench.buffer(file).set(source); bench.edited(file); settle();
+				var editor = bench.editorFor(file), caret = source.indexOf("greeting.") + "greeting.".length;
+				editor.select(caret, caret); editor.focus();
+				bench.runCommand("suggest");
+				until(() -> editor.completionsOpen(), "LSP completion list");
+				shot("completion"); press(Named(Enter));
+				if (bench.buffer(file).get().indexOf("greeting.fixtureMember") < 0) throw "LSP completion was not applied";
+				bench.goToDefinition();
+				until(() -> bench.caret(file) == 6, "LSP definition navigation");
+				click("#rayde-explorer-toggle-outline");
+				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text() == "LspMain"), "LSP Outline");
+				shot("outline");
+				var call = StringTools.replace(bench.buffer(file).get(), "greeting.fixtureMember", "greet(");
+				bench.buffer(file).set(call); bench.edited(file); settle();
+				var open = call.indexOf("greet(") + "greet(".length;
+				editor.select(open, open); editor.focus();
+				bench.runCommand("parameterhints");
+				until(() -> Css.query(bench.tree, bench.node.id, ".ui-code-hint").length > 0, "LSP signature help");
+				shot("signature"); editor.hideHint();
+				var spot = editor.rectAt(6);
+				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 2, spot.y + spot.height / 2);
+				until(() -> Css.query(bench.tree, bench.node.id, ".ui-code-hint").length > 0, "asynchronous LSP hover");
+				shot("hover"); editor.hideHint();
+				var gotPid = false, pid = 0;
+				client.request("test/state", {}, result -> { pid = result.pid; gotPid = true; });
+				until(() -> gotPid, "LSP process identity");
+				bench.closeAll(); settle();
+				bench.openFile(file); settle();
+				gotPid = false;
+				client.request("test/state", {}, result -> { if (result.pid != pid) throw "Tab lifecycle restarted the LSP"; gotPid = true; });
+				until(() -> gotPid, "persistent LSP after close and reopen");
+				if (bench.languageServers.client(file) != client) throw "Reopening replaced the LSP client";
+				bench.openSettings("extensions"); settle();
+				var prefix = "#rayde-extension-setting-rayzor-";
+				for (name in ["command", "hxml", "stdlib", "macroBudgetMs"])
+					if (Css.query(bench.tree, bench.node.id, prefix + name).length == 0) throw "Missing Rayzor setting: " + name;
+				shot("settings");
+			});
 			scenario(dark, "explorer", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var tree = bench.tree, root = haxe.io.Path.directory(haxe.io.Path.directory(file));
 				function has(selector:String):Bool return Css.query(tree, bench.node.id, selector).length > 0;
@@ -2375,10 +2423,23 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		if (!dark && name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") return;
-		var root = copyOf(name == "documents" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
+		var root = copyOf(name == "documents" || name == "lsp" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
+		var previousBuiltins = Sys.getEnv("RAYDE_EXTENSIONS");
 		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
+		if (name == "lsp") {
+			var folder = root + "/.snapshot-builtins/rayzor";
+			sys.FileSystem.createDirectory(folder + "/ext");
+			sys.io.File.copy("extensions/rayzor/rayzor.rayext", folder + "/rayzor.rayext");
+			sys.io.File.copy("extensions/rayzor/ext/main.rays", folder + "/ext/main.rays");
+			sys.io.File.copy("extensions/rayzor/logo.svg", folder + "/logo.svg");
+			var fixture = Sys.getCwd() + "tests/lsp_server_fixture.py", command = root + "/lsp-fixture-server";
+			sys.io.File.saveContent(command, "#!/usr/bin/env python3\nimport runpy, sys\nsys.argv = [" + haxe.Json.stringify(fixture) + ", " + haxe.Json.stringify(root + "/lsp-events") + "]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n");
+			Sys.command("chmod", ["+x", command]);
+			Store.save(root, "extension.rayzor", {command:command});
+			Sys.putEnv("RAYDE_EXTENSIONS", haxe.io.Path.directory(folder));
+		}
 		if (name == "markdownpreview" || name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") {
 			function copy(from:String, to:String):Void {
 				sys.FileSystem.createDirectory(to);
@@ -2504,5 +2565,6 @@ class Snapshots {
 		stop();
 		tree.dispose();
 		server.stop();
+		if (name == "lsp") Sys.putEnv("RAYDE_EXTENSIONS", previousBuiltins);
 	}
 }

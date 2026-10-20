@@ -36,6 +36,8 @@ import rayde.keys.Chord;
 import rayde.keys.KeyBindings;
 import rayde.keys.Keymaps;
 import rayde.lang.Display;
+import rayde.lang.LanguageServers;
+import rayde.lang.LspProtocol;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
 import rayde.run.DiagnosticJobs;
@@ -327,6 +329,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What the build and the program have printed, and where the run is: idle, building, running, finished or failed. */
 	final consoleText = Signal.make("");
 	var diagnosticJobs:DiagnosticJobs;
+	public var languageServers(default, null):LanguageServers;
+	final languageRevision = Signal.make(0);
+	var languagesScheduled = false;
+	var languagePollSerial = 0;
 	var diagnosticsScheduled = false;
 
 	final runState = Signal.make("idle");
@@ -537,6 +543,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Files the workbench opens from the Explorer and the source-folder file index. */
 	function isSource(path:String):Bool {
+		if (languageServers != null && languageServers.client(path) != null) return true;
 		if (path.endsWith(".hx") || path.endsWith(".rays") || isMarkdown(path) || ImagePreview.supports(path))
 			return true;
 		if (themeStudio != null)
@@ -626,14 +633,14 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** After an edit of a Haxe file: opens the completion list or signature help when what was typed calls for it. */
 	function assistInput(file:String):Void {
-		var editor = StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		var editor = StringTools.endsWith(file, ".hx") || languageServers.client(file) != null ? editorOf(file) : null;
 		if (editor != null)
 			assist.typed(file, editor, buffer(file).get());
 	}
 
 	/** Keeps signature help showing while the text or the caret of a Haxe file moves inside a call. */
 	function assistWatch(file:String, editor:Null<CodeEditor>):Void {
-		if (editor == null || !StringTools.endsWith(file, ".hx"))
+		if (editor == null || (!StringTools.endsWith(file, ".hx") && languageServers.client(file) == null))
 			return;
 		new ashui.reactive.Watch(() -> {
 			editor.value.get();
@@ -644,14 +651,14 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens the completion list at the caret of the Haxe file in front. */
 	function triggerSuggest():Void {
-		var file = active.get(), editor = file != "" && !isVirtual(file) && StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		var file = active.get(), editor = file != "" && !isVirtual(file) && (StringTools.endsWith(file, ".hx") || languageServers.client(file) != null) ? editorOf(file) : null;
 		if (editor != null)
 			assist.complete(file, editor, buffer(file).get());
 	}
 
 	/** Shows the signatures of the call the caret of the Haxe file in front is in. */
 	function triggerParameterHints():Void {
-		var file = active.get(), editor = file != "" && !isVirtual(file) && StringTools.endsWith(file, ".hx") ? editorOf(file) : null;
+		var file = active.get(), editor = file != "" && !isVirtual(file) && (StringTools.endsWith(file, ".hx") || languageServers.client(file) != null) ? editorOf(file) : null;
 		if (editor != null)
 			assist.signature(file, editor, buffer(file).get());
 	}
@@ -679,6 +686,18 @@ class Workbench extends Component<WorkbenchProps> {
 		var file = active.get(), offset = caret(file);
 		if (file == "" || offset < 0)
 			return;
+		var client = languageServers.client(file), text = buffer(file).get();
+		if (client != null) {
+			if (!client.supports("definitionProvider")) return;
+			languageServers.sync(file, text);
+			client.request("textDocument/definition", LspProtocol.at(file, text, offset), result -> {
+				if (gone || active.get() != file || !buffers.exists(file) || buffer(file).get() != text || caret(file) != offset) return;
+				var found = LspProtocol.locations(result);
+				if (found.length == 0) say("No definition found");
+				else goTo(found[0].file, found[0].range.start.line, found[0].range.start.character);
+			}, file + "#definition");
+			return;
+		}
 		var found = try props.display.definition(file, Display.byteOffset(buffer(file).get(), offset), buffer(file).get()) catch (_:Dynamic) [];
 		if (found.length == 0)
 			say("No definition found");
@@ -1224,6 +1243,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
+		if (languageServers != null) languageServers.retain(opened);
 		for (file in imageViews.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageViews.remove(file);
 		for (file in imageTextModes.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageTextModes.remove(file);
 		for (file in localHistory.files()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) localHistory.forget(file);
@@ -1519,6 +1539,22 @@ class Workbench extends Component<WorkbenchProps> {
 		extensionManager.tick(null, false);
 	}
 
+	function wakeLanguages(urgent = true):Void {
+		if (gone || !languageServers.busy() || languagesScheduled && !urgent) return;
+		languagesScheduled = true;
+		var serial = ++languagePollSerial;
+		ashui.animation.AnimationScheduler.main.after(urgent ? .016 : languageServers.pollDelay(), () -> {
+			if (serial == languagePollSerial) pollLanguages();
+		});
+	}
+
+	function pollLanguages():Void {
+		languagesScheduled = false;
+		if (gone) return;
+		languageServers.tick();
+		wakeLanguages(false);
+	}
+
 	function refreshExtensionBindings():Void {
 		var keys = [], owners = new Map<String, Array<String>>();
 		for (e in extensionManager.extensions) {
@@ -1594,6 +1630,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
+			registerLanguage:(owner, definition, log) -> languageServers.register(owner, definition, log),
+			unregisterLanguage:(owner, id) -> languageServers.unregister(owner, id),
+			languageServers:owner -> languageServers.servers(owner),
+			releaseLanguages:owner -> languageServers.release(owner),
 			imageBytes: imageBytes,
 			readBytes: p -> {
 				var bytes = imageBytes(p);
@@ -1658,6 +1698,8 @@ class Workbench extends Component<WorkbenchProps> {
 			if (studio != null && !studio.live.get())
 				studio.reload();
 			emit("file.saved", {path: file});
+			var client = languageServers.client(file);
+			if (client != null) { languageServers.sync(file, buffer(file).get()); client.saved(file); }
 		}
 		if (dirty.get().length > 0)
 			dirty.set([]);
@@ -1712,6 +1754,11 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
+		if (!isVirtual(file) && languageServers != null && languageServers.client(file) != null) {
+			diagnosticJobs.cancel(file);
+			languageServers.sync(file, buffer(file).get());
+			return;
+		}
 		if (isVirtual(file) || !StringTools.endsWith(file, ".hx"))
 			return;
 		diagnosticJobs.request(file, buffer(file).get());
@@ -1725,7 +1772,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (gone) return;
 		for (result in diagnosticJobs.tick()) {
 			var source = buffers.get(result.file);
-			if (source != null && source.get() == result.text && open.get().indexOf(result.file) >= 0)
+			if (languageServers.client(result.file) == null && source != null && source.get() == result.text && open.get().indexOf(result.file) >= 0)
 				problems.set([for (p in problems.get()) if (p.file != result.file) p].concat(result.problems));
 		}
 		diagnosticsScheduled = diagnosticJobs.busy();
@@ -1765,10 +1812,23 @@ class Workbench extends Component<WorkbenchProps> {
 		extension = props.extension;
 		runner = new Runner(props.display);
 		diagnosticJobs = new DiagnosticJobs(props.display);
+		languageServers = new LanguageServers(props.display.cwd);
+		languageServers.onWake = () -> wakeLanguages();
+		languageServers.onDiagnostics = value -> {
+			var file = LspProtocol.path(value.uri);
+			if (file != null) problems.set([for (p in problems.get()) if (p.file != file) p].concat(LspProtocol.diagnostics(value)));
+		};
+		languageServers.onChanged = () -> {
+			if (gone) return;
+			languageRevision.set(languageRevision.get() + 1);
+			for (file in open.get()) if (!isVirtual(file)) check(file);
+			refreshExplorer();
+			wakeLanguages();
+		};
 		terminalSettings = Settings.read(props.display.cwd);
 		appearance = Appearance.read(props.display.cwd);
 		chrome = props.chrome != null ? props.chrome : new WindowChrome();
-		assist = new CodeAssist(props.display);
+		assist = new CodeAssist(props.display, languageServers);
 		if (props.theme != null)
 			themeStudio = makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
@@ -1802,6 +1862,7 @@ class Workbench extends Component<WorkbenchProps> {
 			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
 			nativeSyntax.clear();
 			diagnosticJobs.dispose();
+			languageServers.dispose();
 			for (s in sessions)
 				s.terminal.close();
 			// An extension's host is a process of its own, which goes with the workbench.
@@ -2105,7 +2166,7 @@ class Workbench extends Component<WorkbenchProps> {
 		};
 		var sections:Array<Element> = [new ResizablePanel({id:"rayde-explorer-panel-files", size:explorerFilesSize, minSize:60}, [files()])];
 		sections.push(explorerSection("outline", false, 180).panel("Outline", () ->
-			<explorer-outline display={props.display} revision={() -> buildRevision.get()} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
+			<explorer-outline display={props.display} languages={languageServers} revision={() -> buildRevision.get() + languageRevision.get()} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
 		var contributed = [for (c in containers) if (c.location == "explorer") c];
 		var gitTimeline = Lambda.find(contributed, c -> c.view.id == "timeline");
 		sections.push(explorerSection("timeline", false, 180).panel("Timeline", () ->
@@ -2731,12 +2792,24 @@ class Workbench extends Component<WorkbenchProps> {
 	 * Where a problem is underlined the problem's message shows, which the editor does when this gives nothing.
 	 */
 	function hintAt(file:String, offset:Int):Null<ashui.components.code.CodeHints.CodeHint> {
-		if (!StringTools.endsWith(file, ".hx"))
+		if (!StringTools.endsWith(file, ".hx") && languageServers.client(file) == null)
 			return null;
 		var editor = editorOf(file);
 		if (editor != null && editor.decorationsAt(offset).length > 0)
 			return null;
 		var text = buffer(file).get();
+		var client = languageServers.client(file);
+		if (client != null) {
+			if (editor == null || !client.supports("hoverProvider")) return null;
+			languageServers.sync(file, text);
+			client.request("textDocument/hover", LspProtocol.at(file, text, offset), result -> {
+				if (gone || editorOf(file) != editor || editor.value.get() != text || editor.hoverOffset != offset || result == null) return;
+				var range:Dynamic = result.range;
+				editor.showHint({from:range == null ? offset : LspProtocol.offset(text, range.start),
+					to:range == null ? offset + 1 : LspProtocol.offset(text, range.end), docs:LspProtocol.documentation(result.contents)});
+			}, file + "#hover");
+			return null;
+		}
 		var found = try props.display.hover(file, Display.byteOffset(text, offset), text) catch (_:Dynamic) null;
 		if (found == null || found.range == null)
 			return null;

@@ -1,0 +1,26 @@
+{
+  "id": "rayzor",
+  "name": "Rayzor Language Server",
+  "icon": "logo.svg",
+  "version": "1.0.0",
+  "description": "Haxe services from a persistent Rayzor LSP session",
+  "main": "ext/main.rays",
+  "sources": ["ext"],
+  "activationEvents": ["onStartup"],
+  "capabilities": ["languages.register"],
+  "contributes": {
+    "commands": [
+      {"id":"rayzor.restart", "title":"Rayzor: Restart Language Server"},
+      {"id":"describe", "title":"Rayzor: Language Server Status"}
+    ],
+    "configuration": {
+      "title": "Rayzor Language Server",
+      "properties": {
+        "command": {"title":"Executable", "type":"string", "default":"rayzor", "description":"Automatic discovery for rayzor, or an explicit executable path. Restart the server after changes."},
+        "hxml": {"title":"Build file", "type":"string", "default":"", "description":"Workspace-relative build file. Empty selects the server's workspace default."},
+        "stdlib": {"title":"Standard library", "type":"string", "default":"", "description":"Optional Rayzor haxe-std directory (RAYZOR_STD_PATH)."},
+        "macroBudgetMs": {"title":"Macro timeout (ms)", "type":"integer", "default":5000, "description":"Maximum macro evaluation time per analysis, in milliseconds."}
+      }
+    }
+  }
+}

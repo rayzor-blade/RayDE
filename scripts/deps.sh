@@ -55,6 +55,29 @@ stage_natives() {
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/rayscript.hdll" "$out/rayscript.hdll"
   mkdir -p "$out/notices/syntax-markdown"
   cp "$here/native/rayscript/notices/"* "$out/notices/syntax-markdown/"
+  stage_rayzor "$out"
+}
+
+# Stages an existing LSP executable; RayDE builds never start a Rayzor Cargo build.
+stage_rayzor() {
+  local out=$1 name=rayzor
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) name=rayzor.exe ;; esac
+  local binary=${RAYZOR_LSP:-$siblings/rayzor/target/release/$name}
+  [ -x "$binary" ] || binary=$(command -v "$name" || true)
+  [ -n "$binary" ] && [ -x "$binary" ] || return 0
+  if ! cmp -s "$binary" "$out/$name"; then
+    cp "$binary" "$out/$name.next"
+    mv -f "$out/$name.next" "$out/$name"
+  fi
+  local stdlib=${RAYZOR_STD_PATH:-$siblings/rayzor/compiler/haxe-std}
+  if [ -f "$stdlib/Std.hx" ] && ! diff -qr "$stdlib" "$out/haxe-std" >/dev/null 2>&1; then
+    mkdir -p "$out/haxe-std"
+    cp -R "$stdlib/." "$out/haxe-std/"
+  fi
+  if [ -f "$siblings/rayzor/LICENSE" ]; then
+    mkdir -p "$out/notices/rayzor"
+    cp "$siblings/rayzor/LICENSE" "$out/notices/rayzor/LICENSE"
+  fi
 }
 
 ui_args=(-cp src -lib hashlink -lib tink_hxx -D ash_simd -D ashui_scene_stencil -D "ashui_css=src/rayde/ui/rayde.css"

@@ -11,6 +11,7 @@ import rayde.lang.Outline.OutlineSymbol;
 
 typedef ExplorerOutlineProps = {
 	display:Display,
+	?languages:rayde.lang.LanguageServers,
 	?revision:Void->Int,
 	file:Void->String,
 	text:String->String,
@@ -22,14 +23,31 @@ class ExplorerOutline extends Component<ExplorerOutlineProps> {
 		var symbols = Signal.make(([]:Array<OutlineSymbol>)), message = Signal.make("Open a Haxe file to view its outline");
 		var job = new ExplorerJob(props.display.cwd);
 		var shownFile:String = null;
+		var serial = 0;
+		var cancel:Void->Void = () -> {};
+		ashui.reactive.Owner.onCleanup(() -> { serial++; cancel(); });
 		new Watch(() -> {
 			var file = props.file();
-			return {file:file, text:file != null && StringTools.endsWith(file.toLowerCase(), ".hx") ? props.text(file) : null, revision:props.revision == null ? 0 : props.revision()};
+			return {file:file, text:file != null && (StringTools.endsWith(file.toLowerCase(), ".hx") || props.languages != null && props.languages.client(file) != null) ? props.text(file) : null, revision:props.revision == null ? 0 : props.revision()};
 		}, value -> {
 			job.cancel();
+			serial++; cancel(); cancel = () -> {};
 			if (shownFile != value.file) { symbols.set([]); shownFile = value.file; }
 			if (value.text == null) { message.set("Open a Haxe file to view its outline"); return; }
 			message.set(symbols.get().length == 0 ? "Loading outline…" : "");
+			var client = props.languages == null ? null : props.languages.client(value.file);
+			if (client != null) {
+				if (!client.supports("documentSymbolProvider")) { message.set("Language server outline unavailable"); return; }
+				props.languages.sync(value.file, value.text);
+				var request = serial, scope = value.file + "#outline";
+				cancel = () -> client.cancelScope(scope);
+				client.request("textDocument/documentSymbol", {textDocument:{uri:rayde.lang.LspProtocol.uri(value.file)}}, result -> {
+					if (request != serial) return;
+					var found = rayde.lang.LspProtocol.outline(result);
+					symbols.set(found); message.set(found.length == 0 ? "No symbols in this file" : "");
+				}, scope);
+				return;
+			}
 			job.run(props.display.server.haxe, Outline.arguments(props.display.args, value.file), (code, reply) -> {
 				try {
 					var found = Outline.parse(reply);

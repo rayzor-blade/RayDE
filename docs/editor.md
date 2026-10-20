@@ -1,5 +1,7 @@
 # Editor and keys
 
+The built-in [Rayzor language server](languages.md) provides Haxe services over stdio. Extensions can register servers for other languages.
+
 Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings > Key bindings** edits them; user changes are stored in `.rayde/keybindings.json` as `{"command": ..., "key": ...}` entries, and an empty `key` removes a binding.
 
 ## Keys

@@ -12,6 +12,10 @@ typedef WorkspaceServices = {
 	?notify:(String, String, String, String)->Void,
 	?focusView:(String, Int)->Void,
 	?openExternal:String->Void,
+	?registerLanguage:(String, Dynamic, (String, String)->Void)->String,
+	?unregisterLanguage:(String, String)->Void,
+	?languageServers:String->Array<Dynamic>,
+	?releaseLanguages:String->Void,
 	replay:String->Dynamic
 };
 
@@ -20,7 +24,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -55,6 +59,8 @@ class Connection {
 
 	public function useManifest(m:Manifest):Void {
 		var grantsChanged = manifest != null && haxe.Json.stringify(manifest.natives) != haxe.Json.stringify(m.natives);
+		var languagesRevoked = manifest != null && manifest.capabilities.indexOf("languages.register") >= 0 && m.capabilities.indexOf("languages.register") < 0;
+		if ((file != m.mainPath() || languagesRevoked) && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		manifest = m;
 		file = m.mainPath();
 		var denied = m.problems.length > 0 || !nativeAllowed(m);
@@ -68,6 +74,7 @@ class Connection {
 		return manifest == null ? haxe.io.Path.join([haxe.io.Path.directory(file), "studio.mocks.json"]) : manifest.mocksPath();
 
 	function setState(value:String):Void {
+		if (value != "running" && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		state = value;
 		if (onState != null)
 			onState(value);
@@ -329,11 +336,21 @@ class Connection {
 				id: call.id,
 				message: 'Capability $need is not granted; add it to "capabilities" in ${haxe.io.Path.withoutDirectory(manifest.file)}'
 			};
+		if (module == "rayde.languages" && (manifest == null || manifest.capabilities.indexOf("languages.register") < 0))
+			return {t:"reject", id:call.id, message:"Capability languages.register is not granted"};
 		if (services == null)
 			return {t: "reject", id: call.id, message: "The workbench provides no services here."};
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "registerServer" if (module == "rayde.languages"):
+					if (services.registerLanguage == null) throw "Language servers are unavailable";
+					services.registerLanguage(file, args[0], (kind, text) -> note("console", kind, text));
+				case "unregisterServer" if (module == "rayde.languages"):
+					if (services.unregisterLanguage != null) services.unregisterLanguage(file, Std.string(args[0]));
+					null;
+				case "servers" if (module == "rayde.languages"):
+					services.languageServers == null ? [] : services.languageServers(file);
 				case "focusView" if (module == "rayde.window"):
 					if (services.focusView != null) services.focusView(file, Std.int(args[0]));
 					null;
@@ -376,9 +393,10 @@ class Connection {
 				case "openFile":
 					services.openFile(Std.string(args[0]));
 					null;
-				case _:
+				case "writeFile" if (module == "rayde.workspace"):
 					services.writeFile(Std.string(args[0]), Std.string(args[1]));
 					null;
+				case _: throw 'Unknown service $module.$fn';
 			};
 			return {t: "resolve", id: call.id, value: value};
 		} catch (e:Dynamic)

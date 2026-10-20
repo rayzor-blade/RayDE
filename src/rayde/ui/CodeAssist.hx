@@ -4,6 +4,8 @@ import ashui.components.CodeEditor;
 import ashui.components.code.CodeCompletions.CodeCompletion;
 import ashui.components.code.CodeHints.CodeHint;
 import rayde.lang.CallSite;
+import rayde.lang.LanguageServers;
+import rayde.lang.LspProtocol;
 import rayde.lang.Display;
 import rayde.lang.Display.CompletionItem;
 import rayde.lang.Display.SignatureHelp;
@@ -17,12 +19,15 @@ import rayde.lang.Display.TextPosition;
  */
 class CodeAssist {
 	final display:Display;
+	final languages:Null<LanguageServers>;
 
 	/** The call each file's signature help is showing: where its `(` is, and what the compiler said for it. */
 	final calls = new Map<String, {open:Int, help:SignatureHelp}>();
 
-	public function new(display:Display)
+	public function new(display:Display, ?languages:LanguageServers) {
 		this.display = display;
+		this.languages = languages;
+	}
 
 	/** Called after an edit of `file`, whose text is now `text`. */
 	public function typed(file:String, editor:CodeEditor, text:String):Void {
@@ -56,6 +61,36 @@ class CodeAssist {
 	/** Opens the list at the caret: what the compiler offers there, narrowed by the word before the caret. */
 	public function complete(file:String, editor:CodeEditor, text:String, auto = false):Void {
 		var caret = editor.editing.caret.get();
+		var client = languages == null ? null : languages.client(file);
+		if (client != null) {
+			if (!client.supports("completionProvider")) return;
+			languages.sync(file, text);
+			client.request("textDocument/completion", LspProtocol.at(file, text, caret), result -> {
+				if (editor.value.get() != text || editor.editing.caret.get() != caret) return;
+				var offered:Array<Dynamic> = result == null ? [] : Std.isOfType(result, Array) ? (cast result:Array<Dynamic>) : result.items == null ? [] : result.items;
+				var from = caret;
+				while (from > 0 && word(text.charAt(from - 1))) from--;
+				var items:Array<CodeCompletion> = [], replacement:Null<Int> = null;
+				for (i in offered) {
+					if (i.insertTextFormat == 2) continue;
+					var start = from, insert:String = i.insertText == null ? i.label : i.insertText;
+					if (i.textEdit != null) {
+						var range:Dynamic = i.textEdit.range == null ? i.textEdit.insert : i.textEdit.range;
+						if (range == null || LspProtocol.offset(text, range.end) != caret) continue;
+						start = LspProtocol.offset(text, range.start); insert = i.textEdit.newText;
+					}
+					if (replacement == null) replacement = start;
+					if (replacement != start) continue;
+					items.push({label:i.label, insert:insert, detail:i.detail, docs:LspProtocol.documentation(i.documentation),
+						filter:i.filterText, sort:i.sortText, kind:switch (i.kind:Int) { case 2: "method"; case 3: "function"; case 7: "class"; case 8: "interface"; case 9: "module"; case 14: "keyword"; case 5: "field"; case _: "variable"; },
+						more:i.additionalTextEdits == null ? [] : [for (edit in (i.additionalTextEdits:Array<Dynamic>))
+							{from:LspProtocol.offset(text, edit.range.start), to:LspProtocol.offset(text, edit.range.end), text:(edit.newText:String)}]});
+				}
+				if (items.length == 0) editor.hideCompletions();
+				else editor.showCompletions(items, replacement == null ? from : replacement);
+			}, file + "#completion");
+			return;
+		}
 		var found = try display.completion(file, Display.byteOffset(text, caret), text, auto) catch (_:Dynamic) null;
 		if (found == null || found.items.length == 0) {
 			editor.hideCompletions();
@@ -72,6 +107,19 @@ class CodeAssist {
 			stop(file, editor);
 			return;
 		}
+		var client = languages == null ? null : languages.client(file);
+		if (client != null) {
+			if (!client.supports("signatureHelpProvider")) return;
+			languages.sync(file, text);
+			client.request("textDocument/signatureHelp", LspProtocol.at(file, text, caret), result -> {
+				if (editor.value.get() != text || editor.editing.caret.get() != caret) return;
+				var help = LspProtocol.signatures(result);
+				if (help == null) { stop(file, editor); return; }
+				calls.set(file, {open:open, help:help});
+				show(editor, text, caret, open, help);
+			}, file + "#signature");
+			return;
+		}
 		var help = try display.signatureHelp(file, Display.byteOffset(text, caret), text, auto) catch (_:Dynamic) null;
 		if (help == null || help.signatures.length == 0) {
 			stop(file, editor);
@@ -84,6 +132,8 @@ class CodeAssist {
 	/** Takes signature help away, as when the call ends or the file closes. */
 	public function stop(file:String, editor:Null<CodeEditor>):Void {
 		calls.remove(file);
+		var client = languages == null ? null : languages.client(file);
+		if (client != null) { client.cancelScope(file + "#completion"); client.cancelScope(file + "#signature"); client.cancelScope(file + "#hover"); }
 		if (editor != null)
 			editor.hideHint();
 	}
