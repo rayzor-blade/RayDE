@@ -1,0 +1,18 @@
+{
+  "id": "markdown",
+  "name": "Markdown",
+  "icon": "markdown",
+  "version": "1.0.0",
+  "description": "Markdown preview with GFM, LaTeX math, Mermaid and TextMate code highlighting",
+  "main": "ext/main.rays",
+  "sources": ["ext"],
+  "activationEvents": ["onCommand:markdown.preview"],
+  "capabilities": ["workspace.read", "window.openExternal"],
+  "contributes": {
+    "commands": [{"id":"markdown.preview", "title":"Markdown: Open Preview", "icon":"markdown"}],
+    "menus": {
+      "explorer/context": [{"command":"markdown.preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}],
+      "editor/title": [{"command":"markdown.preview", "when":{"kind":"file", "ext":[".md", ".markdown", ".mdown", ".mkd"]}}]
+    }
+  }
+}

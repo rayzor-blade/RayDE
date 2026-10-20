@@ -185,6 +185,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	final buffers = new Map<String, Signal<String>>();
 	final documents = new Map<String, CodeEditorState>();
+	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
 
@@ -1176,6 +1177,12 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
+		for (file in nativeSyntax.keys())
+			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) {
+				var syntax = nativeSyntax.get(file);
+				if (syntax != null) syntax.dispose();
+				nativeSyntax.remove(file);
+			}
 		for (file in documents.keys())
 			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0)
 				documents.remove(file);
@@ -1488,6 +1495,12 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
+			readBytes: p -> {
+				var full = projectPath(p);
+				if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) return null;
+				if (sys.FileSystem.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
+				return haxe.crypto.Base64.encode(sys.io.File.getBytes(full));
+			},
 			readFile: p -> {
 				var full = projectPath(p);
 				buffers.exists(full) ? buffers.get(full).get() : sys.FileSystem.exists(full) && !sys.FileSystem.isDirectory(full) ? sys.io.File.getContent(full) : null;
@@ -1495,6 +1508,18 @@ class Workbench extends Component<WorkbenchProps> {
 			activeFile: () -> realFile(active.get()),
 			root: () -> props.display.cwd,
 			openFile: p -> openFile(projectPath(p)),
+			focusView: (file, root) -> {
+				var id = TAB + file + "#" + root;
+				if (open.get().indexOf(id) >= 0) active.set(id);
+			},
+			openExternal: url -> {
+				var result = switch Sys.systemName() {
+					case "Mac": Sys.command("open", [url]);
+					case "Windows": Sys.command("rundll32", ["url.dll,FileProtocolHandler", url]);
+					case _: Sys.command("xdg-open", [url]);
+				};
+				if (result != 0) throw "Cannot open external link";
+			},
 			writeFile: (p, text) -> {
 				var full = projectPath(p);
 				sys.io.File.saveContent(full, text);
@@ -1672,6 +1697,8 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
+			nativeSyntax.clear();
 			diagnosticJobs.dispose();
 			for (s in sessions)
 				s.terminal.close();
@@ -2193,6 +2220,11 @@ class Workbench extends Component<WorkbenchProps> {
 	/** A file or folder was renamed: the tabs, buffers and edits under it follow it to the new path. */
 	function moveTabs(from:String, to:String):Void {
 		var moved = FileOps.moved(open.get(), from, to);
+		for (old => now in FileOps.moved([for (k in nativeSyntax.keys()) k], from, to)) {
+			var syntax = nativeSyntax.get(old);
+			if (syntax != null) syntax.dispose();
+			nativeSyntax.remove(old);
+		}
 		for (old => now in FileOps.moved([for (k in buffers.keys()) k], from, to)) {
 			buffers.set(now, buffers.get(old));
 			buffers.remove(old);
@@ -2347,8 +2379,13 @@ class Workbench extends Component<WorkbenchProps> {
 		return v == null ? "Extension" : v.title;
 	}
 
-	function tabIcon(file:String):ashui.svg.SvgDocument
-		return file == THEME_TAB ? Icons.PALETTE_LINE : isTab(file) ? (extension != null ? ViewIcons.of(extension) : Icons.PUZZLE_LINE) : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(containerOfTab(file).extension, viewOfTab(file)) : fileIcon(file);
+	function tabIcon(file:String):ashui.svg.SvgDocument {
+		if (isTab(file)) {
+			var studio = studios.get(tabStudio(file));
+			return studio != null && studio.manifest != null ? ViewIcons.of(studio.manifest) : Icons.PUZZLE_LINE;
+		}
+		return file == THEME_TAB ? Icons.PALETTE_LINE : file == SETTINGS ? Icons.SETTINGS_3_LINE : isViewTab(file) && viewOfTab(file) != null ? ViewIcons.ofView(containerOfTab(file).extension, viewOfTab(file)) : fileIcon(file);
+	}
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
@@ -2459,7 +2496,8 @@ class Workbench extends Component<WorkbenchProps> {
 		return <if {active.get() == file}>${codeEditor(file)}</if>;
 
 	function codeEditor(file:String):Element {
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)}
+		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);

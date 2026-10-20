@@ -1,0 +1,1 @@
+{"dependencies":["text.elixir","text.html.basic"],"injections":{"R:text.html.elixir meta.tag meta.attribute string.quoted":{"patterns":[{"include":"text.elixir"}]}},"patterns":[{"include":"text.elixir"},{"include":"text.html.basic"}],"scopeName":"text.html.elixir","fileTypes":["html.eex","heex","leex"]}

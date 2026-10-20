@@ -11,6 +11,13 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 hl_abi = { git = "https://github.com/rayzor-blade/hl_abi" }
 rayscript-host = { path = "../../../rayscript/crates/rayscript-host" }
+rayscript-vm = { path = "../../../rayscript/crates/rayscript-vm" }
+pulldown-cmark = "=0.13.4"
+serde_json = "1.0"
+irosashi = { version = "=0.3.0", default-features = false }
+include_dir = "=0.7.4"
+latex-rust = { version = "=3.0.1", default-features = false }
+mermaid-rs-renderer = { version = "=0.3.1", default-features = false }
 
 [profile.release]
 debug = 1

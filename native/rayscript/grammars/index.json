@@ -1,0 +1,8248 @@
+{
+  "package": "@wooorm/starry-night",
+  "version": "3.11.0",
+  "sha256": "b10291d2f580bc95ee9b4e75a696426f1f9fa0beaed7adb960744633da9ec374",
+  "grammars": [
+    {
+      "file": "annotation.liquidhaskell.haskell.json",
+      "scope": "annotation.liquidhaskell.haskell",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "config.xcompose.json",
+      "scope": "config.xcompose",
+      "names": [
+        "xcompose"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "etc.json",
+      "scope": "etc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "file.lasso.json",
+      "scope": "file.lasso",
+      "names": [
+        "lasso",
+        "lassoscript"
+      ],
+      "extensions": [
+        ".lasso",
+        ".las",
+        ".lasso8",
+        ".lasso9"
+      ]
+    },
+    {
+      "file": "go.mod.json",
+      "scope": "go.mod",
+      "names": [
+        "go-mod",
+        "go-module",
+        "go-work",
+        "go-workspace",
+        "go.mod",
+        "go.work"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "go.sum.json",
+      "scope": "go.sum",
+      "names": [
+        "go-checksums",
+        "go.sum",
+        "go-sum",
+        "go.work.sum",
+        "go-work-sum"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "hidden.manref.json",
+      "scope": "hidden.manref",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "injections.etc.json",
+      "scope": "injections.etc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "objdump.x86asm.json",
+      "scope": "objdump.x86asm",
+      "names": [
+        "c++-objdump",
+        "c-objdump",
+        "cpp-objdump",
+        "d-objdump",
+        "objdump"
+      ],
+      "extensions": [
+        ".c++-objdump",
+        ".c++objdump",
+        ".c-objdump",
+        ".cpp-objdump",
+        ".cppobjdump",
+        ".cxx-objdump",
+        ".d-objdump",
+        ".objdump"
+      ]
+    },
+    {
+      "file": "source.2da.json",
+      "scope": "source.2da",
+      "names": [
+        "2-dimensional-array"
+      ],
+      "extensions": [
+        ".2da"
+      ]
+    },
+    {
+      "file": "source.4dm.json",
+      "scope": "source.4dm",
+      "names": [
+        "4d"
+      ],
+      "extensions": [
+        ".4dm"
+      ]
+    },
+    {
+      "file": "source.8xp.json",
+      "scope": "source.8xp",
+      "names": [
+        "ti-program"
+      ],
+      "extensions": [
+        ".8xp",
+        ".8xp.txt"
+      ]
+    },
+    {
+      "file": "source.Caddyfile.json",
+      "scope": "source.Caddyfile",
+      "names": [
+        "caddyfile",
+        "caddy"
+      ],
+      "extensions": [
+        ".caddyfile"
+      ]
+    },
+    {
+      "file": "source.QB64.json",
+      "scope": "source.QB64",
+      "names": [
+        "quickbasic",
+        "qb",
+        "qbasic",
+        "qb64",
+        "classic-qbasic",
+        "classic-quickbasic"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.abap.json",
+      "scope": "source.abap",
+      "names": [
+        "abap"
+      ],
+      "extensions": [
+        ".abap"
+      ]
+    },
+    {
+      "file": "source.abapcds.json",
+      "scope": "source.abapcds",
+      "names": [
+        "abap-cds"
+      ],
+      "extensions": [
+        ".asddls"
+      ]
+    },
+    {
+      "file": "source.abl.json",
+      "scope": "source.abl",
+      "names": [
+        "openedge-abl",
+        "progress",
+        "openedge",
+        "abl"
+      ],
+      "extensions": [
+        ".w"
+      ]
+    },
+    {
+      "file": "source.abnf.json",
+      "scope": "source.abnf",
+      "names": [
+        "abnf"
+      ],
+      "extensions": [
+        ".abnf"
+      ]
+    },
+    {
+      "file": "source.actionscript.3.json",
+      "scope": "source.actionscript.3",
+      "names": [
+        "actionscript",
+        "actionscript-3",
+        "actionscript3",
+        "as3"
+      ],
+      "extensions": [
+        ".as"
+      ]
+    },
+    {
+      "file": "source.ada.json",
+      "scope": "source.ada",
+      "names": [
+        "ada",
+        "ada95",
+        "ada2005"
+      ],
+      "extensions": [
+        ".ada",
+        ".ads"
+      ]
+    },
+    {
+      "file": "source.afm.json",
+      "scope": "source.afm",
+      "names": [
+        "adobe-font-metrics",
+        "acfm",
+        "adobe-composite-font-metrics",
+        "adobe-multiple-font-metrics",
+        "amfm"
+      ],
+      "extensions": [
+        ".afm"
+      ]
+    },
+    {
+      "file": "source.agc.json",
+      "scope": "source.agc",
+      "names": [
+        "apollo-guidance-computer"
+      ],
+      "extensions": [
+        ".agc"
+      ]
+    },
+    {
+      "file": "source.agda.json",
+      "scope": "source.agda",
+      "names": [
+        "agda"
+      ],
+      "extensions": [
+        ".agda"
+      ]
+    },
+    {
+      "file": "source.ahk.json",
+      "scope": "source.ahk",
+      "names": [
+        "autohotkey",
+        "ahk"
+      ],
+      "extensions": [
+        ".ahk",
+        ".ah1",
+        ".ah2",
+        ".ahkl"
+      ]
+    },
+    {
+      "file": "source.aidl.json",
+      "scope": "source.aidl",
+      "names": [
+        "aidl"
+      ],
+      "extensions": [
+        ".aidl"
+      ]
+    },
+    {
+      "file": "source.aiken.json",
+      "scope": "source.aiken",
+      "names": [
+        "aiken"
+      ],
+      "extensions": [
+        ".ak"
+      ]
+    },
+    {
+      "file": "source.al.json",
+      "scope": "source.al",
+      "names": [
+        "al"
+      ],
+      "extensions": [
+        ".al"
+      ]
+    },
+    {
+      "file": "source.aleo.json",
+      "scope": "source.aleo",
+      "names": [
+        "aleo"
+      ],
+      "extensions": [
+        ".aleo"
+      ]
+    },
+    {
+      "file": "source.algol60.json",
+      "scope": "source.algol60",
+      "names": [
+        "algol"
+      ],
+      "extensions": [
+        ".alg"
+      ]
+    },
+    {
+      "file": "source.alloy.json",
+      "scope": "source.alloy",
+      "names": [
+        "alloy"
+      ],
+      "extensions": [
+        ".als"
+      ]
+    },
+    {
+      "file": "source.ampl.json",
+      "scope": "source.ampl",
+      "names": [
+        "ampl"
+      ],
+      "extensions": [
+        ".ampl",
+        ".mod"
+      ]
+    },
+    {
+      "file": "source.angelscript.json",
+      "scope": "source.angelscript",
+      "names": [
+        "angelscript"
+      ],
+      "extensions": [
+        ".angelscript"
+      ]
+    },
+    {
+      "file": "source.answersetprogramming.json",
+      "scope": "source.answersetprogramming",
+      "names": [
+        "answer-set-programming"
+      ],
+      "extensions": [
+        ".lp"
+      ]
+    },
+    {
+      "file": "source.antlr.json",
+      "scope": "source.antlr",
+      "names": [
+        "antlr"
+      ],
+      "extensions": [
+        ".g4"
+      ]
+    },
+    {
+      "file": "source.apache-config.json",
+      "scope": "source.apacheconf",
+      "names": [
+        "apacheconf",
+        "aconf",
+        "apache"
+      ],
+      "extensions": [
+        ".apacheconf",
+        ".vhost"
+      ]
+    },
+    {
+      "file": "source.apex.json",
+      "scope": "source.apex",
+      "names": [
+        "apex"
+      ],
+      "extensions": [
+        ".cls",
+        ".apex",
+        ".trigger"
+      ]
+    },
+    {
+      "file": "source.apl.json",
+      "scope": "source.apl",
+      "names": [
+        "apl"
+      ],
+      "extensions": [
+        ".apl",
+        ".dyalog"
+      ]
+    },
+    {
+      "file": "source.applescript.json",
+      "scope": "source.applescript",
+      "names": [
+        "applescript",
+        "apples",
+        "osascript"
+      ],
+      "extensions": [
+        ".applescript",
+        ".scpt"
+      ]
+    },
+    {
+      "file": "source.arr.json",
+      "scope": "source.arr",
+      "names": [
+        "pyret"
+      ],
+      "extensions": [
+        ".arr"
+      ]
+    },
+    {
+      "file": "source.ash.json",
+      "scope": "source.ash",
+      "names": [
+        "kolmafia-ash"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.asl.json",
+      "scope": "source.asl",
+      "names": [
+        "asl"
+      ],
+      "extensions": [
+        ".asl",
+        ".dsl"
+      ]
+    },
+    {
+      "file": "source.asn.json",
+      "scope": "source.asn",
+      "names": [
+        "asn.1"
+      ],
+      "extensions": [
+        ".asn",
+        ".asn1"
+      ]
+    },
+    {
+      "file": "source.asp.json",
+      "scope": "source.asp",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.aspectj.json",
+      "scope": "source.aspectj",
+      "names": [
+        "aspectj"
+      ],
+      "extensions": [
+        ".aj"
+      ]
+    },
+    {
+      "file": "source.assembly.json",
+      "scope": "source.assembly",
+      "names": [
+        "assembly",
+        "asm",
+        "nasm"
+      ],
+      "extensions": [
+        ".asm",
+        ".a51",
+        ".i",
+        ".nas",
+        ".nasm",
+        ".s"
+      ]
+    },
+    {
+      "file": "source.astro.json",
+      "scope": "source.astro",
+      "names": [
+        "astro"
+      ],
+      "extensions": [
+        ".astro"
+      ]
+    },
+    {
+      "file": "source.ats.json",
+      "scope": "source.ats",
+      "names": [
+        "ats",
+        "ats2"
+      ],
+      "extensions": [
+        ".dats",
+        ".hats",
+        ".sats"
+      ]
+    },
+    {
+      "file": "source.autoit.json",
+      "scope": "source.autoit",
+      "names": [
+        "autoit",
+        "au3",
+        "autoit3",
+        "autoitscript"
+      ],
+      "extensions": [
+        ".au3"
+      ]
+    },
+    {
+      "file": "source.avro.json",
+      "scope": "source.avro",
+      "names": [
+        "avro-idl"
+      ],
+      "extensions": [
+        ".avdl"
+      ]
+    },
+    {
+      "file": "source.awk.json",
+      "scope": "source.awk",
+      "names": [
+        "awk"
+      ],
+      "extensions": [
+        ".awk",
+        ".auk",
+        ".gawk",
+        ".mawk",
+        ".nawk"
+      ]
+    },
+    {
+      "file": "source.b.json",
+      "scope": "source.b",
+      "names": [
+        "b-(formal-method)"
+      ],
+      "extensions": [
+        ".mch"
+      ]
+    },
+    {
+      "file": "source.ballerina.json",
+      "scope": "source.ballerina",
+      "names": [
+        "ballerina"
+      ],
+      "extensions": [
+        ".bal"
+      ]
+    },
+    {
+      "file": "source.baml-jinja.json",
+      "scope": "source.baml-jinja",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.baml.json",
+      "scope": "source.baml",
+      "names": [
+        "baml"
+      ],
+      "extensions": [
+        ".baml"
+      ]
+    },
+    {
+      "file": "source.basic.json",
+      "scope": "source.basic",
+      "names": [
+        "basic"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.batchfile.json",
+      "scope": "source.batchfile",
+      "names": [
+        "batchfile",
+        "bat",
+        "batch",
+        "dosbatch",
+        "winbatch"
+      ],
+      "extensions": [
+        ".bat",
+        ".cmd"
+      ]
+    },
+    {
+      "file": "source.bb.json",
+      "scope": "source.bb",
+      "names": [
+        "bitbake"
+      ],
+      "extensions": [
+        ".bb",
+        ".bbappend",
+        ".bbclass"
+      ]
+    },
+    {
+      "file": "source.bdf.json",
+      "scope": "source.bdf",
+      "names": [
+        "glyph-bitmap-distribution-format"
+      ],
+      "extensions": [
+        ".bdf"
+      ]
+    },
+    {
+      "file": "source.befunge.json",
+      "scope": "source.befunge",
+      "names": [
+        "befunge"
+      ],
+      "extensions": [
+        ".befunge"
+      ]
+    },
+    {
+      "file": "source.berry.json",
+      "scope": "source.berry",
+      "names": [
+        "berry",
+        "be"
+      ],
+      "extensions": [
+        ".be"
+      ]
+    },
+    {
+      "file": "source.bf.json",
+      "scope": "source.bf",
+      "names": [
+        "brainfuck"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.bh.json",
+      "scope": "source.bh",
+      "names": [
+        "bluespec-bh",
+        "bh",
+        "bluespec-classic"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.bicep.json",
+      "scope": "source.bicep",
+      "names": [
+        "bicep"
+      ],
+      "extensions": [
+        ".bicep",
+        ".bicepparam"
+      ]
+    },
+    {
+      "file": "source.bird2.json",
+      "scope": "source.bird2",
+      "names": [
+        "bird2",
+        "bird",
+        "bird3"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.blitzmax.json",
+      "scope": "source.blitzmax",
+      "names": [
+        "b3d",
+        "blitz3d",
+        "blitzbasic",
+        "blitzmax",
+        "blitzplus",
+        "bmax",
+        "bplus"
+      ],
+      "extensions": [
+        ".bmx",
+        ".decls"
+      ]
+    },
+    {
+      "file": "source.blueprint.json",
+      "scope": "source.blueprint",
+      "names": [
+        "blueprint",
+        "blp"
+      ],
+      "extensions": [
+        ".blp"
+      ]
+    },
+    {
+      "file": "source.boo.json",
+      "scope": "source.boo",
+      "names": [
+        "boo"
+      ],
+      "extensions": [
+        ".boo"
+      ]
+    },
+    {
+      "file": "source.boogie.json",
+      "scope": "source.boogie",
+      "names": [
+        "boogie"
+      ],
+      "extensions": [
+        ".bpl"
+      ]
+    },
+    {
+      "file": "source.bp.json",
+      "scope": "source.bp",
+      "names": [
+        "soong"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.bqn.json",
+      "scope": "source.bqn",
+      "names": [
+        "bqn"
+      ],
+      "extensions": [
+        ".bqn"
+      ]
+    },
+    {
+      "file": "source.brs.json",
+      "scope": "source.brs",
+      "names": [
+        "brighterscript",
+        "brightscript"
+      ],
+      "extensions": [
+        ".brs"
+      ]
+    },
+    {
+      "file": "source.bru.json",
+      "scope": "source.bru",
+      "names": [
+        "bru"
+      ],
+      "extensions": [
+        ".bru"
+      ]
+    },
+    {
+      "file": "source.bsl.json",
+      "scope": "source.bsl",
+      "names": [
+        "1c-enterprise"
+      ],
+      "extensions": [
+        ".bsl",
+        ".os"
+      ]
+    },
+    {
+      "file": "source.bst.json",
+      "scope": "source.bst",
+      "names": [
+        "bibtex-style"
+      ],
+      "extensions": [
+        ".bst"
+      ]
+    },
+    {
+      "file": "source.bsv.json",
+      "scope": "source.bsv",
+      "names": [
+        "bluespec",
+        "bluespec-bsv",
+        "bsv"
+      ],
+      "extensions": [
+        ".bsv"
+      ]
+    },
+    {
+      "file": "source.c++.json",
+      "scope": "source.c++",
+      "names": [
+        "ags",
+        "ags-script",
+        "asymptote",
+        "c++",
+        "cpp",
+        "edje-data-collection",
+        "game-maker-language",
+        "hip",
+        "metal",
+        "sip",
+        "swig"
+      ],
+      "extensions": [
+        ".asc",
+        ".ash",
+        ".asy",
+        ".c++",
+        ".cc",
+        ".cp",
+        ".cpp",
+        ".cppm",
+        ".cxx",
+        ".edc",
+        ".gml",
+        ".h++",
+        ".hh",
+        ".hip",
+        ".hpp",
+        ".hxx",
+        ".inl",
+        ".ino",
+        ".ipp",
+        ".ixx",
+        ".metal",
+        ".re",
+        ".swg",
+        ".swig",
+        ".tcc",
+        ".tpp",
+        ".txx"
+      ]
+    },
+    {
+      "file": "source.c.ec.json",
+      "scope": "source.c.ec",
+      "names": [
+        "ec"
+      ],
+      "extensions": [
+        ".ec",
+        ".eh"
+      ]
+    },
+    {
+      "file": "source.c.json",
+      "scope": "source.c",
+      "names": [
+        "b",
+        "c",
+        "dtrace",
+        "dtrace-script",
+        "oncrpc",
+        "opencl",
+        "pro*c",
+        "rpc",
+        "rpcgen",
+        "unified-parallel-c",
+        "x-bitmap",
+        "x-pixmap",
+        "xbm",
+        "xdr",
+        "xpm",
+        "xs"
+      ],
+      "extensions": [
+        ".b",
+        ".c",
+        ".cats",
+        ".h",
+        ".h.in",
+        ".idc",
+        ".opencl",
+        ".pc",
+        ".upc",
+        ".xbm",
+        ".xpm",
+        ".xs"
+      ]
+    },
+    {
+      "file": "source.c.linker.json",
+      "scope": "source.c.linker",
+      "names": [
+        "linker-script"
+      ],
+      "extensions": [
+        ".ld",
+        ".lds",
+        ".x"
+      ]
+    },
+    {
+      "file": "source.c.nwscript.json",
+      "scope": "source.c.nwscript",
+      "names": [
+        "nwscript"
+      ],
+      "extensions": [
+        ".nss"
+      ]
+    },
+    {
+      "file": "source.c.platform.json",
+      "scope": "source.c.platform",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.c3.json",
+      "scope": "source.c3",
+      "names": [
+        "c3"
+      ],
+      "extensions": [
+        ".c3"
+      ]
+    },
+    {
+      "file": "source.cabal.json",
+      "scope": "source.cabal",
+      "names": [
+        "cabal-config",
+        "cabal"
+      ],
+      "extensions": [
+        ".cabal"
+      ]
+    },
+    {
+      "file": "source.cadence.json",
+      "scope": "source.cadence",
+      "names": [
+        "cadence"
+      ],
+      "extensions": [
+        ".cdc"
+      ]
+    },
+    {
+      "file": "source.cairo.json",
+      "scope": "source.cairo",
+      "names": [
+        "cairo"
+      ],
+      "extensions": [
+        ".cairo"
+      ]
+    },
+    {
+      "file": "source.cairo0.json",
+      "scope": "source.cairo0",
+      "names": [
+        "cairo-zero"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.camlp4.ocaml.json",
+      "scope": "source.camlp4.ocaml",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.capnp.json",
+      "scope": "source.capnp",
+      "names": [
+        "cap'n-proto"
+      ],
+      "extensions": [
+        ".capnp"
+      ]
+    },
+    {
+      "file": "source.carbon.json",
+      "scope": "source.carbon",
+      "names": [
+        "carbon"
+      ],
+      "extensions": [
+        ".carbon"
+      ]
+    },
+    {
+      "file": "source.cds.json",
+      "scope": "source.cds",
+      "names": [
+        "cap-cds",
+        "cds"
+      ],
+      "extensions": [
+        ".cds"
+      ]
+    },
+    {
+      "file": "source.cel.json",
+      "scope": "source.cel",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.ceylon.json",
+      "scope": "source.ceylon",
+      "names": [
+        "ceylon"
+      ],
+      "extensions": [
+        ".ceylon"
+      ]
+    },
+    {
+      "file": "source.cfscript.json",
+      "scope": "source.cfscript",
+      "names": [
+        "coldfusion-cfc",
+        "cfc"
+      ],
+      "extensions": [
+        ".cfc"
+      ]
+    },
+    {
+      "file": "source.changelogs.rpm-spec.json",
+      "scope": "source.changelogs.rpm-spec",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.chapel.json",
+      "scope": "source.chapel",
+      "names": [
+        "chapel",
+        "chpl"
+      ],
+      "extensions": [
+        ".chpl"
+      ]
+    },
+    {
+      "file": "source.cil.json",
+      "scope": "source.cil",
+      "names": [
+        "cil"
+      ],
+      "extensions": [
+        ".cil"
+      ]
+    },
+    {
+      "file": "source.circom.json",
+      "scope": "source.circom",
+      "names": [
+        "circom"
+      ],
+      "extensions": [
+        ".circom"
+      ]
+    },
+    {
+      "file": "source.cirru.json",
+      "scope": "source.cirru",
+      "names": [
+        "cirru"
+      ],
+      "extensions": [
+        ".cirru"
+      ]
+    },
+    {
+      "file": "source.cj.json",
+      "scope": "source.cj",
+      "names": [
+        "cangjie"
+      ],
+      "extensions": [
+        ".cj"
+      ]
+    },
+    {
+      "file": "source.clar.json",
+      "scope": "source.clar",
+      "names": [
+        "clarity"
+      ],
+      "extensions": [
+        ".clar"
+      ]
+    },
+    {
+      "file": "source.clarion.json",
+      "scope": "source.clarion",
+      "names": [
+        "clarion"
+      ],
+      "extensions": [
+        ".clw"
+      ]
+    },
+    {
+      "file": "source.clean.json",
+      "scope": "source.clean",
+      "names": [
+        "clean"
+      ],
+      "extensions": [
+        ".icl",
+        ".dcl"
+      ]
+    },
+    {
+      "file": "source.click.json",
+      "scope": "source.click",
+      "names": [
+        "click"
+      ],
+      "extensions": [
+        ".click"
+      ]
+    },
+    {
+      "file": "source.clips.json",
+      "scope": "source.clips",
+      "names": [
+        "clips"
+      ],
+      "extensions": [
+        ".clp"
+      ]
+    },
+    {
+      "file": "source.clojure.json",
+      "scope": "source.clojure",
+      "names": [
+        "clojure",
+        "edn",
+        "rouge",
+        "wisp"
+      ],
+      "extensions": [
+        ".boot",
+        ".cl2",
+        ".clj",
+        ".cljc",
+        ".cljs",
+        ".cljs.hl",
+        ".cljscm",
+        ".cljx",
+        ".edn",
+        ".hic",
+        ".rg",
+        ".wisp"
+      ]
+    },
+    {
+      "file": "source.clue.json",
+      "scope": "source.clue",
+      "names": [
+        "clue"
+      ],
+      "extensions": [
+        ".clue"
+      ]
+    },
+    {
+      "file": "source.cmake.json",
+      "scope": "source.cmake",
+      "names": [
+        "cmake"
+      ],
+      "extensions": [
+        ".cmake",
+        ".cmake.in"
+      ]
+    },
+    {
+      "file": "source.cobol.json",
+      "scope": "source.cobol",
+      "names": [
+        "cobol"
+      ],
+      "extensions": [
+        ".cob",
+        ".cbl",
+        ".ccp",
+        ".cobol",
+        ".cpy"
+      ]
+    },
+    {
+      "file": "source.coffee.json",
+      "scope": "source.coffee",
+      "names": [
+        "coffee",
+        "coffee-script",
+        "coffeescript",
+        "cson",
+        "emberscript"
+      ],
+      "extensions": [
+        "._coffee",
+        ".cjsx",
+        ".coffee",
+        ".coffee.erb",
+        ".cson",
+        ".em",
+        ".emberscript",
+        ".iced"
+      ]
+    },
+    {
+      "file": "source.commonlisp.json",
+      "scope": "source.commonlisp",
+      "names": [
+        "common-lisp",
+        "lisp"
+      ],
+      "extensions": [
+        ".lisp",
+        ".asd",
+        ".cl",
+        ".l",
+        ".lsp",
+        ".ny",
+        ".podsl",
+        ".sexp"
+      ]
+    },
+    {
+      "file": "source.context.json",
+      "scope": "source.context",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.cooklang.json",
+      "scope": "source.cooklang",
+      "names": [
+        "cooklang"
+      ],
+      "extensions": [
+        ".cook"
+      ]
+    },
+    {
+      "file": "source.cool.json",
+      "scope": "source.cool",
+      "names": [
+        "cool"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.coq.json",
+      "scope": "source.coq",
+      "names": [
+        "rocq-prover",
+        "coq",
+        "rocq"
+      ],
+      "extensions": [
+        ".coq"
+      ]
+    },
+    {
+      "file": "source.cql.json",
+      "scope": "source.cql",
+      "names": [
+        "cql"
+      ],
+      "extensions": [
+        ".cql"
+      ]
+    },
+    {
+      "file": "source.crystal.json",
+      "scope": "source.crystal",
+      "names": [
+        "crystal"
+      ],
+      "extensions": [
+        ".cr"
+      ]
+    },
+    {
+      "file": "source.cs.json",
+      "scope": "source.cs",
+      "names": [
+        "beef",
+        "c#",
+        "cake",
+        "cakescript",
+        "csharp",
+        "eq",
+        "uno"
+      ],
+      "extensions": [
+        ".bf",
+        ".cake",
+        ".cs",
+        ".cs.pp",
+        ".csx",
+        ".eq",
+        ".linq",
+        ".uno"
+      ]
+    },
+    {
+      "file": "source.csound-document.json",
+      "scope": "source.csound-document",
+      "names": [
+        "csound-document",
+        "csound-csd"
+      ],
+      "extensions": [
+        ".csd"
+      ]
+    },
+    {
+      "file": "source.csound-score.json",
+      "scope": "source.csound-score",
+      "names": [
+        "csound-score",
+        "csound-sco"
+      ],
+      "extensions": [
+        ".sco"
+      ]
+    },
+    {
+      "file": "source.csound.json",
+      "scope": "source.csound",
+      "names": [
+        "csound",
+        "csound-orc"
+      ],
+      "extensions": [
+        ".orc",
+        ".udo"
+      ]
+    },
+    {
+      "file": "source.css.json",
+      "scope": "source.css",
+      "names": [
+        "css"
+      ],
+      "extensions": [
+        ".css"
+      ]
+    },
+    {
+      "file": "source.css.less.json",
+      "scope": "source.css.less",
+      "names": [
+        "less",
+        "less-css"
+      ],
+      "extensions": [
+        ".less"
+      ]
+    },
+    {
+      "file": "source.css.mss.json",
+      "scope": "source.css.mss",
+      "names": [
+        "cartocss",
+        "carto"
+      ],
+      "extensions": [
+        ".mss"
+      ]
+    },
+    {
+      "file": "source.css.postcss.sugarss.json",
+      "scope": "source.css.postcss.sugarss",
+      "names": [
+        "sugarss"
+      ],
+      "extensions": [
+        ".sss"
+      ]
+    },
+    {
+      "file": "source.css.scss.json",
+      "scope": "source.css.scss",
+      "names": [
+        "scss"
+      ],
+      "extensions": [
+        ".scss"
+      ]
+    },
+    {
+      "file": "source.csswg.json",
+      "scope": "source.csswg",
+      "names": [
+        "bikeshed"
+      ],
+      "extensions": [
+        ".bs"
+      ]
+    },
+    {
+      "file": "source.csv.json",
+      "scope": "source.csv",
+      "names": [
+        "csv"
+      ],
+      "extensions": [
+        ".csv"
+      ]
+    },
+    {
+      "file": "source.cuda-c++.json",
+      "scope": "source.cuda-c++",
+      "names": [
+        "cuda"
+      ],
+      "extensions": [
+        ".cu",
+        ".cuh"
+      ]
+    },
+    {
+      "file": "source.cue.json",
+      "scope": "source.cue",
+      "names": [
+        "cue"
+      ],
+      "extensions": [
+        ".cue"
+      ]
+    },
+    {
+      "file": "source.cuesheet.json",
+      "scope": "source.cuesheet",
+      "names": [
+        "cue-sheet"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.curlrc.json",
+      "scope": "source.curlrc",
+      "names": [
+        "curl-config",
+        "curlrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.curry.json",
+      "scope": "source.curry",
+      "names": [
+        "curry"
+      ],
+      "extensions": [
+        ".curry"
+      ]
+    },
+    {
+      "file": "source.cwl.json",
+      "scope": "source.cwl",
+      "names": [
+        "common-workflow-language",
+        "cwl"
+      ],
+      "extensions": [
+        ".cwl"
+      ]
+    },
+    {
+      "file": "source.cylc.json",
+      "scope": "source.cylc",
+      "names": [
+        "cylc"
+      ],
+      "extensions": [
+        ".cylc"
+      ]
+    },
+    {
+      "file": "source.cypher.json",
+      "scope": "source.cypher",
+      "names": [
+        "cypher"
+      ],
+      "extensions": [
+        ".cyp",
+        ".cypher"
+      ]
+    },
+    {
+      "file": "source.cython.json",
+      "scope": "source.cython",
+      "names": [
+        "cython",
+        "pyrex"
+      ],
+      "extensions": [
+        ".pyx",
+        ".pxd",
+        ".pxi"
+      ]
+    },
+    {
+      "file": "source.d.json",
+      "scope": "source.d",
+      "names": [
+        "d",
+        "dlang",
+        "volt"
+      ],
+      "extensions": [
+        ".d",
+        ".di",
+        ".volt"
+      ]
+    },
+    {
+      "file": "source.d2.json",
+      "scope": "source.d2",
+      "names": [
+        "d2",
+        "d2lang"
+      ],
+      "extensions": [
+        ".d2"
+      ]
+    },
+    {
+      "file": "source.dart.json",
+      "scope": "source.dart",
+      "names": [
+        "dart"
+      ],
+      "extensions": [
+        ".dart"
+      ]
+    },
+    {
+      "file": "source.daslang.json",
+      "scope": "source.daslang",
+      "names": [
+        "daslang"
+      ],
+      "extensions": [
+        ".das"
+      ]
+    },
+    {
+      "file": "source.data-weave.json",
+      "scope": "source.data-weave",
+      "names": [
+        "dataweave"
+      ],
+      "extensions": [
+        ".dwl"
+      ]
+    },
+    {
+      "file": "source.deb-control.json",
+      "scope": "source.deb-control",
+      "names": [
+        "debian-package-control-file"
+      ],
+      "extensions": [
+        ".dsc"
+      ]
+    },
+    {
+      "file": "source.denizenscript.json",
+      "scope": "source.denizenscript",
+      "names": [
+        "denizenscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.desktop.json",
+      "scope": "source.desktop",
+      "names": [
+        "desktop"
+      ],
+      "extensions": [
+        ".desktop",
+        ".desktop.in"
+      ]
+    },
+    {
+      "file": "source.diff.json",
+      "scope": "source.diff",
+      "names": [
+        "diff",
+        "udiff"
+      ],
+      "extensions": [
+        ".diff",
+        ".patch"
+      ]
+    },
+    {
+      "file": "source.dircolors.json",
+      "scope": "source.dircolors",
+      "names": [
+        "dircolors"
+      ],
+      "extensions": [
+        ".dircolors"
+      ]
+    },
+    {
+      "file": "source.ditroff.desc.json",
+      "scope": "source.ditroff.desc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.ditroff.json",
+      "scope": "source.ditroff",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.dm.json",
+      "scope": "source.dm",
+      "names": [
+        "dm",
+        "byond"
+      ],
+      "extensions": [
+        ".dm"
+      ]
+    },
+    {
+      "file": "source.dockerfile.json",
+      "scope": "source.dockerfile",
+      "names": [
+        "dockerfile",
+        "containerfile"
+      ],
+      "extensions": [
+        ".dockerfile",
+        ".containerfile"
+      ]
+    },
+    {
+      "file": "source.dot.json",
+      "scope": "source.dot",
+      "names": [
+        "graphviz-(dot)"
+      ],
+      "extensions": [
+        ".dot",
+        ".gv"
+      ]
+    },
+    {
+      "file": "source.dotenv.json",
+      "scope": "source.dotenv",
+      "names": [
+        "dotenv"
+      ],
+      "extensions": [
+        ".env"
+      ]
+    },
+    {
+      "file": "source.dune.json",
+      "scope": "source.dune",
+      "names": [
+        "dune"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.dylan.json",
+      "scope": "source.dylan",
+      "names": [
+        "dylan"
+      ],
+      "extensions": [
+        ".dylan",
+        ".dyl",
+        ".intr",
+        ".lid"
+      ]
+    },
+    {
+      "file": "source.earthfile.json",
+      "scope": "source.earthfile",
+      "names": [
+        "earthly",
+        "earthfile"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ebnf.json",
+      "scope": "source.ebnf",
+      "names": [
+        "ebnf"
+      ],
+      "extensions": [
+        ".ebnf"
+      ]
+    },
+    {
+      "file": "source.ecl.json",
+      "scope": "source.ecl",
+      "names": [
+        "ecl"
+      ],
+      "extensions": [
+        ".ecl",
+        ".eclxml"
+      ]
+    },
+    {
+      "file": "source.edgeql.json",
+      "scope": "source.edgeql",
+      "names": [
+        "edgeql",
+        "esdl"
+      ],
+      "extensions": [
+        ".edgeql",
+        ".esdl"
+      ]
+    },
+    {
+      "file": "source.editorconfig.json",
+      "scope": "source.editorconfig",
+      "names": [
+        "editorconfig",
+        "editor-config"
+      ],
+      "extensions": [
+        ".editorconfig"
+      ]
+    },
+    {
+      "file": "source.eiffel.json",
+      "scope": "source.eiffel",
+      "names": [
+        "eiffel"
+      ],
+      "extensions": [
+        ".e"
+      ]
+    },
+    {
+      "file": "source.elixir.json",
+      "scope": "source.elixir",
+      "names": [
+        "elixir"
+      ],
+      "extensions": [
+        ".ex",
+        ".exs"
+      ]
+    },
+    {
+      "file": "source.elm.json",
+      "scope": "source.elm",
+      "names": [
+        "elm"
+      ],
+      "extensions": [
+        ".elm"
+      ]
+    },
+    {
+      "file": "source.elvish-transcript.json",
+      "scope": "source.elvish-transcript",
+      "names": [
+        "elvish-transcript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.elvish.json",
+      "scope": "source.elvish",
+      "names": [
+        "elvish"
+      ],
+      "extensions": [
+        ".elv"
+      ]
+    },
+    {
+      "file": "source.emacs.lisp.json",
+      "scope": "source.emacs.lisp",
+      "names": [
+        "emacs-lisp",
+        "cask",
+        "eask",
+        "elisp",
+        "emacs"
+      ],
+      "extensions": [
+        ".el",
+        ".emacs",
+        ".emacs.desktop"
+      ]
+    },
+    {
+      "file": "source.erlang.json",
+      "scope": "source.erlang",
+      "names": [
+        "erlang"
+      ],
+      "extensions": [
+        ".erl",
+        ".app",
+        ".app.src",
+        ".es",
+        ".escript",
+        ".hrl",
+        ".xrl",
+        ".yrl"
+      ]
+    },
+    {
+      "file": "source.euphoria.json",
+      "scope": "source.euphoria",
+      "names": [
+        "euphoria"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.factor.json",
+      "scope": "source.factor",
+      "names": [
+        "factor"
+      ],
+      "extensions": [
+        ".factor"
+      ]
+    },
+    {
+      "file": "source.fan.json",
+      "scope": "source.fan",
+      "names": [
+        "fantom"
+      ],
+      "extensions": [
+        ".fan"
+      ]
+    },
+    {
+      "file": "source.fancy.json",
+      "scope": "source.fancy",
+      "names": [
+        "fancy"
+      ],
+      "extensions": [
+        ".fy",
+        ".fancypack"
+      ]
+    },
+    {
+      "file": "source.faust.json",
+      "scope": "source.faust",
+      "names": [
+        "faust"
+      ],
+      "extensions": [
+        ".dsp"
+      ]
+    },
+    {
+      "file": "source.figfont.json",
+      "scope": "source.figfont",
+      "names": [
+        "figlet-font",
+        "figfont"
+      ],
+      "extensions": [
+        ".flf"
+      ]
+    },
+    {
+      "file": "source.firestore.json",
+      "scope": "source.firestore",
+      "names": [
+        "cloud-firestore-security-rules"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.firrtl.json",
+      "scope": "source.firrtl",
+      "names": [
+        "firrtl"
+      ],
+      "extensions": [
+        ".fir"
+      ]
+    },
+    {
+      "file": "source.fish.json",
+      "scope": "source.fish",
+      "names": [
+        "fish"
+      ],
+      "extensions": [
+        ".fish"
+      ]
+    },
+    {
+      "file": "source.flatbuffers.json",
+      "scope": "source.flatbuffers",
+      "names": [
+        "flatbuffers"
+      ],
+      "extensions": [
+        ".fbs"
+      ]
+    },
+    {
+      "file": "source.flix.json",
+      "scope": "source.flix",
+      "names": [
+        "flix"
+      ],
+      "extensions": [
+        ".flix"
+      ]
+    },
+    {
+      "file": "source.fnl.json",
+      "scope": "source.fnl",
+      "names": [
+        "fennel"
+      ],
+      "extensions": [
+        ".fnl"
+      ]
+    },
+    {
+      "file": "source.fontdir.json",
+      "scope": "source.fontdir",
+      "names": [
+        "x-font-directory-index"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.fontforge.json",
+      "scope": "source.fontforge",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.forth.json",
+      "scope": "source.forth",
+      "names": [
+        "forth"
+      ],
+      "extensions": [
+        ".fth",
+        ".4th",
+        ".f",
+        ".for",
+        ".forth",
+        ".fr",
+        ".frt"
+      ]
+    },
+    {
+      "file": "source.fortran.json",
+      "scope": "source.fortran",
+      "names": [
+        "fortran"
+      ],
+      "extensions": [
+        ".f77"
+      ]
+    },
+    {
+      "file": "source.fortran.modern.json",
+      "scope": "source.fortran.modern",
+      "names": [
+        "fortran-free-form"
+      ],
+      "extensions": [
+        ".f90",
+        ".f03",
+        ".f08",
+        ".f95"
+      ]
+    },
+    {
+      "file": "source.fpp.json",
+      "scope": "source.fpp",
+      "names": [
+        "fpp"
+      ],
+      "extensions": [
+        ".fpp",
+        ".fppi"
+      ]
+    },
+    {
+      "file": "source.fsharp.json",
+      "scope": "source.fsharp",
+      "names": [
+        "f#",
+        "fsharp"
+      ],
+      "extensions": [
+        ".fs",
+        ".fsi",
+        ".fsx"
+      ]
+    },
+    {
+      "file": "source.fstar.json",
+      "scope": "source.fstar",
+      "names": [
+        "f*",
+        "fstar"
+      ],
+      "extensions": [
+        ".fst",
+        ".fsti"
+      ]
+    },
+    {
+      "file": "source.ftl.json",
+      "scope": "source.ftl",
+      "names": [
+        "fluent"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.futhark.json",
+      "scope": "source.futhark",
+      "names": [
+        "futhark"
+      ],
+      "extensions": [
+        ".fut"
+      ]
+    },
+    {
+      "file": "source.gap.json",
+      "scope": "source.gap",
+      "names": [
+        "gap"
+      ],
+      "extensions": [
+        ".gap",
+        ".gd",
+        ".gi",
+        ".tst"
+      ]
+    },
+    {
+      "file": "source.gcode.json",
+      "scope": "source.gcode",
+      "names": [
+        "g-code"
+      ],
+      "extensions": [
+        ".g",
+        ".cnc",
+        ".gco",
+        ".gcode"
+      ]
+    },
+    {
+      "file": "source.gdb.json",
+      "scope": "source.gdb",
+      "names": [
+        "gdb"
+      ],
+      "extensions": [
+        ".gdb",
+        ".gdbinit"
+      ]
+    },
+    {
+      "file": "source.gdresource.json",
+      "scope": "source.gdresource",
+      "names": [
+        "godot-resource"
+      ],
+      "extensions": [
+        ".gdnlib",
+        ".gdns",
+        ".tres",
+        ".tscn"
+      ]
+    },
+    {
+      "file": "source.gdscript.json",
+      "scope": "source.gdscript",
+      "names": [
+        "gdscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.gdshader.json",
+      "scope": "source.gdshader",
+      "names": [
+        "gdshader"
+      ],
+      "extensions": [
+        ".gdshader",
+        ".gdshaderinc"
+      ]
+    },
+    {
+      "file": "source.gedcom.json",
+      "scope": "source.gedcom",
+      "names": [
+        "gedcom"
+      ],
+      "extensions": [
+        ".ged"
+      ]
+    },
+    {
+      "file": "source.gemfile-lock.json",
+      "scope": "source.gemfile-lock",
+      "names": [
+        "gemfile.lock"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.gemini.json",
+      "scope": "source.gemini",
+      "names": [
+        "gemini",
+        "gemtext"
+      ],
+      "extensions": [
+        ".gmi"
+      ]
+    },
+    {
+      "file": "source.genero-4gl.json",
+      "scope": "source.genero-4gl",
+      "names": [
+        "genero-4gl"
+      ],
+      "extensions": [
+        ".4gl"
+      ]
+    },
+    {
+      "file": "source.genero-forms.json",
+      "scope": "source.genero-forms",
+      "names": [
+        "genero-forms"
+      ],
+      "extensions": [
+        ".per"
+      ]
+    },
+    {
+      "file": "source.genero-per.json",
+      "scope": "source.genero-per",
+      "names": [
+        "genero-per"
+      ],
+      "extensions": [
+        ".per"
+      ]
+    },
+    {
+      "file": "source.genero.json",
+      "scope": "source.genero",
+      "names": [
+        "genero"
+      ],
+      "extensions": [
+        ".4gl"
+      ]
+    },
+    {
+      "file": "source.gerber.json",
+      "scope": "source.gerber",
+      "names": [
+        "gerber-image",
+        "rs-274x"
+      ],
+      "extensions": [
+        ".gbr",
+        ".cmp",
+        ".gbl",
+        ".gbo",
+        ".gbp",
+        ".gbs",
+        ".gko",
+        ".gpb",
+        ".gpt",
+        ".gtl",
+        ".gto",
+        ".gtp",
+        ".sol"
+      ]
+    },
+    {
+      "file": "source.gf.json",
+      "scope": "source.gf",
+      "names": [
+        "grammatical-framework",
+        "gf"
+      ],
+      "extensions": [
+        ".gf"
+      ]
+    },
+    {
+      "file": "source.git-revlist.json",
+      "scope": "source.git-revlist",
+      "names": [
+        "git-revision-list",
+        "git-blame-ignore-revs"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.gitattributes.json",
+      "scope": "source.gitattributes",
+      "names": [
+        "git-attributes",
+        "gitattributes"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.gitconfig.json",
+      "scope": "source.gitconfig",
+      "names": [
+        "git-config",
+        "gitconfig",
+        "gitmodules"
+      ],
+      "extensions": [
+        ".gitconfig"
+      ]
+    },
+    {
+      "file": "source.gitignore.json",
+      "scope": "source.gitignore",
+      "names": [
+        "ignore-list",
+        "ignore",
+        "gitignore",
+        "git-ignore"
+      ],
+      "extensions": [
+        ".gitignore"
+      ]
+    },
+    {
+      "file": "source.gjs.json",
+      "scope": "source.gjs",
+      "names": [
+        "glimmer-js",
+        "gjs"
+      ],
+      "extensions": [
+        ".gjs"
+      ]
+    },
+    {
+      "file": "source.gleam.json",
+      "scope": "source.gleam",
+      "names": [
+        "gleam"
+      ],
+      "extensions": [
+        ".gleam"
+      ]
+    },
+    {
+      "file": "source.glsl.json",
+      "scope": "source.glsl",
+      "names": [
+        "glsl"
+      ],
+      "extensions": [
+        ".glsl",
+        ".fp",
+        ".frag",
+        ".frg",
+        ".fsh",
+        ".fshader",
+        ".geo",
+        ".geom",
+        ".glslf",
+        ".glslv",
+        ".gs",
+        ".gshader",
+        ".rchit",
+        ".rmiss",
+        ".shader",
+        ".tesc",
+        ".tese",
+        ".vert",
+        ".vrx",
+        ".vs",
+        ".vsh",
+        ".vshader"
+      ]
+    },
+    {
+      "file": "source.gn.json",
+      "scope": "source.gn",
+      "names": [
+        "gn"
+      ],
+      "extensions": [
+        ".gn",
+        ".gni"
+      ]
+    },
+    {
+      "file": "source.gno.json",
+      "scope": "source.gno",
+      "names": [
+        "gno",
+        "gnolang"
+      ],
+      "extensions": [
+        ".gno"
+      ]
+    },
+    {
+      "file": "source.gnuplot.json",
+      "scope": "source.gnuplot",
+      "names": [
+        "gnuplot"
+      ],
+      "extensions": [
+        ".gp",
+        ".gnu",
+        ".gnuplot",
+        ".p",
+        ".plot",
+        ".plt"
+      ]
+    },
+    {
+      "file": "source.go-template.json",
+      "scope": "source.go-template",
+      "names": [
+        "go-template",
+        "gotmpl"
+      ],
+      "extensions": [
+        ".gohtml",
+        ".gotmpl",
+        ".html.tmpl",
+        ".tmpl",
+        ".tpl"
+      ]
+    },
+    {
+      "file": "source.go.json",
+      "scope": "source.go",
+      "names": [
+        "go",
+        "golang"
+      ],
+      "extensions": [
+        ".go"
+      ]
+    },
+    {
+      "file": "source.golo.json",
+      "scope": "source.golo",
+      "names": [
+        "golo"
+      ],
+      "extensions": [
+        ".golo"
+      ]
+    },
+    {
+      "file": "source.gosu.2.json",
+      "scope": "source.gosu.2",
+      "names": [
+        "gosu"
+      ],
+      "extensions": [
+        ".gst",
+        ".gsx",
+        ".vark"
+      ]
+    },
+    {
+      "file": "source.grace.json",
+      "scope": "source.grace",
+      "names": [
+        "grace"
+      ],
+      "extensions": [
+        ".grace"
+      ]
+    },
+    {
+      "file": "source.graphql.json",
+      "scope": "source.graphql",
+      "names": [
+        "graphql"
+      ],
+      "extensions": [
+        ".graphql",
+        ".gql",
+        ".graphqls"
+      ]
+    },
+    {
+      "file": "source.gremlin.json",
+      "scope": "source.gremlin",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.groovy.gradle.json",
+      "scope": "source.groovy.gradle",
+      "names": [
+        "gradle"
+      ],
+      "extensions": [
+        ".gradle"
+      ]
+    },
+    {
+      "file": "source.groovy.json",
+      "scope": "source.groovy",
+      "names": [
+        "groovy"
+      ],
+      "extensions": [
+        ".groovy",
+        ".grt",
+        ".gtpl",
+        ".gvy"
+      ]
+    },
+    {
+      "file": "source.gsc.json",
+      "scope": "source.gsc",
+      "names": [
+        "gsc"
+      ],
+      "extensions": [
+        ".gsc",
+        ".csc",
+        ".gsh"
+      ]
+    },
+    {
+      "file": "source.gtkrc.json",
+      "scope": "source.gtkrc",
+      "names": [
+        "gtkrc",
+        "gtk",
+        "gtk-1",
+        "gtk-2"
+      ],
+      "extensions": [
+        ".gtkrc"
+      ]
+    },
+    {
+      "file": "source.gts.json",
+      "scope": "source.gts",
+      "names": [
+        "glimmer-ts",
+        "gts"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.hack.json",
+      "scope": "source.hack",
+      "names": [
+        "hack"
+      ],
+      "extensions": [
+        ".hack",
+        ".hhi"
+      ]
+    },
+    {
+      "file": "source.haproxy-config.json",
+      "scope": "source.haproxy-config",
+      "names": [
+        "haproxy"
+      ],
+      "extensions": [
+        ".cfg"
+      ]
+    },
+    {
+      "file": "source.harbour.json",
+      "scope": "source.harbour",
+      "names": [
+        "advpl",
+        "clipper",
+        "foxpro",
+        "harbour",
+        "xbase"
+      ],
+      "extensions": [
+        ".ch",
+        ".hb",
+        ".prg",
+        ".prw"
+      ]
+    },
+    {
+      "file": "source.haskell.json",
+      "scope": "source.haskell",
+      "names": [
+        "c2hs",
+        "c2hs-haskell",
+        "dhall",
+        "frege",
+        "haskell"
+      ],
+      "extensions": [
+        ".chs",
+        ".dhall",
+        ".hs",
+        ".hs-boot",
+        ".hsc"
+      ]
+    },
+    {
+      "file": "source.hc.json",
+      "scope": "source.hc",
+      "names": [
+        "holyc"
+      ],
+      "extensions": [
+        ".hc"
+      ]
+    },
+    {
+      "file": "source.hcl.json",
+      "scope": "source.hcl",
+      "names": [
+        "hcl",
+        "hashicorp-configuration-language",
+        "opentofu",
+        "terraform"
+      ],
+      "extensions": [
+        ".hcl",
+        ".nomad",
+        ".tf",
+        ".tfvars",
+        ".tofu",
+        ".workflow"
+      ]
+    },
+    {
+      "file": "source.hcl.terraform.json",
+      "scope": "source.hcl.terraform",
+      "names": [
+        "terraform-template"
+      ],
+      "extensions": [
+        ".tftpl"
+      ]
+    },
+    {
+      "file": "source.hlsl.json",
+      "scope": "source.hlsl",
+      "names": [
+        "hlsl"
+      ],
+      "extensions": [
+        ".hlsl",
+        ".cginc",
+        ".fx",
+        ".fxh",
+        ".hlsli"
+      ]
+    },
+    {
+      "file": "source.hocon.json",
+      "scope": "source.hocon",
+      "names": [
+        "hocon"
+      ],
+      "extensions": [
+        ".hocon"
+      ]
+    },
+    {
+      "file": "source.hoon.json",
+      "scope": "source.hoon",
+      "names": [
+        "hoon"
+      ],
+      "extensions": [
+        ".hoon"
+      ]
+    },
+    {
+      "file": "source.hosts.json",
+      "scope": "source.hosts",
+      "names": [
+        "hosts-file",
+        "hosts"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.hql.json",
+      "scope": "source.hql",
+      "names": [
+        "hiveql"
+      ],
+      "extensions": [
+        ".hql"
+      ]
+    },
+    {
+      "file": "source.httpspec.json",
+      "scope": "source.httpspec",
+      "names": [
+        "http"
+      ],
+      "extensions": [
+        ".http"
+      ]
+    },
+    {
+      "file": "source.hurl.json",
+      "scope": "source.hurl",
+      "names": [
+        "hurl"
+      ],
+      "extensions": [
+        ".hurl"
+      ]
+    },
+    {
+      "file": "source.hx.json",
+      "scope": "source.hx",
+      "names": [
+        "haxe"
+      ],
+      "extensions": [
+        ".hx",
+        ".hxsl"
+      ]
+    },
+    {
+      "file": "source.hxml.json",
+      "scope": "source.hxml",
+      "names": [
+        "hxml"
+      ],
+      "extensions": [
+        ".hxml"
+      ]
+    },
+    {
+      "file": "source.hy.json",
+      "scope": "source.hy",
+      "names": [
+        "hy",
+        "hylang"
+      ],
+      "extensions": [
+        ".hy"
+      ]
+    },
+    {
+      "file": "source.iCalendar.json",
+      "scope": "source.iCalendar",
+      "names": [
+        "icalendar",
+        "ical"
+      ],
+      "extensions": [
+        ".ics",
+        ".ical"
+      ]
+    },
+    {
+      "file": "source.ice.json",
+      "scope": "source.ice",
+      "names": [
+        "slice"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ideal.json",
+      "scope": "source.ideal",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.idl.json",
+      "scope": "source.idl",
+      "names": [
+        "idl"
+      ],
+      "extensions": [
+        ".pro",
+        ".dlm"
+      ]
+    },
+    {
+      "file": "source.idris.json",
+      "scope": "source.idris",
+      "names": [
+        "idris"
+      ],
+      "extensions": [
+        ".idr",
+        ".lidr"
+      ]
+    },
+    {
+      "file": "source.igor.json",
+      "scope": "source.igor",
+      "names": [
+        "igor-pro",
+        "igor",
+        "igorpro"
+      ],
+      "extensions": [
+        ".ipf"
+      ]
+    },
+    {
+      "file": "source.il.json",
+      "scope": "source.il",
+      "names": [
+        "il-assembly",
+        "ilasm",
+        "msil"
+      ],
+      "extensions": [
+        ".il"
+      ]
+    },
+    {
+      "file": "source.imba.json",
+      "scope": "source.imba",
+      "names": [
+        "imba"
+      ],
+      "extensions": [
+        ".imba"
+      ]
+    },
+    {
+      "file": "source.inform7.json",
+      "scope": "source.inform7",
+      "names": [
+        "inform-7",
+        "i7",
+        "inform7"
+      ],
+      "extensions": [
+        ".ni",
+        ".i7x"
+      ]
+    },
+    {
+      "file": "source.ini.json",
+      "scope": "source.ini",
+      "names": [
+        "altium",
+        "altium-designer",
+        "conf",
+        "dosini",
+        "ini"
+      ],
+      "extensions": [
+        ".cnf",
+        ".container",
+        ".dof",
+        ".frm",
+        ".ini",
+        ".lektorproject",
+        ".mount",
+        ".network",
+        ".outjob",
+        ".pcbdoc",
+        ".prefs",
+        ".prjpcb",
+        ".properties",
+        ".schdoc",
+        ".service",
+        ".socket",
+        ".target",
+        ".timer",
+        ".url"
+      ]
+    },
+    {
+      "file": "source.ini.npmrc.json",
+      "scope": "source.ini.npmrc",
+      "names": [
+        "npm-config",
+        "npmrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ink.json",
+      "scope": "source.ink",
+      "names": [
+        "ink"
+      ],
+      "extensions": [
+        ".ink"
+      ]
+    },
+    {
+      "file": "source.inno.json",
+      "scope": "source.inno",
+      "names": [
+        "inno-setup"
+      ],
+      "extensions": [
+        ".iss",
+        ".isl"
+      ]
+    },
+    {
+      "file": "source.inputrc.json",
+      "scope": "source.inputrc",
+      "names": [
+        "readline-config",
+        "inputrc",
+        "readline"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.io.json",
+      "scope": "source.io",
+      "names": [
+        "io"
+      ],
+      "extensions": [
+        ".io"
+      ]
+    },
+    {
+      "file": "source.ioke.json",
+      "scope": "source.ioke",
+      "names": [
+        "ioke"
+      ],
+      "extensions": [
+        ".ik"
+      ]
+    },
+    {
+      "file": "source.isabelle.root.json",
+      "scope": "source.isabelle.root",
+      "names": [
+        "isabelle-root"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.isabelle.theory.json",
+      "scope": "source.isabelle.theory",
+      "names": [
+        "isabelle"
+      ],
+      "extensions": [
+        ".thy"
+      ]
+    },
+    {
+      "file": "source.ispc.json",
+      "scope": "source.ispc",
+      "names": [
+        "ispc"
+      ],
+      "extensions": [
+        ".ispc"
+      ]
+    },
+    {
+      "file": "source.j.json",
+      "scope": "source.j",
+      "names": [
+        "j"
+      ],
+      "extensions": [
+        ".ijs"
+      ]
+    },
+    {
+      "file": "source.jac.json",
+      "scope": "source.jac",
+      "names": [
+        "jac"
+      ],
+      "extensions": [
+        ".jac"
+      ]
+    },
+    {
+      "file": "source.jai.json",
+      "scope": "source.jai",
+      "names": [
+        "jai"
+      ],
+      "extensions": [
+        ".jai"
+      ]
+    },
+    {
+      "file": "source.janet.json",
+      "scope": "source.janet",
+      "names": [
+        "janet"
+      ],
+      "extensions": [
+        ".janet"
+      ]
+    },
+    {
+      "file": "source.jasmin.json",
+      "scope": "source.jasmin",
+      "names": [
+        "jasmin"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.jass.json",
+      "scope": "source.jass",
+      "names": [
+        "jass",
+        "jass2"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.java-properties.json",
+      "scope": "source.java-properties",
+      "names": [
+        "java-properties"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.java.json",
+      "scope": "source.java",
+      "names": [
+        "chuck",
+        "java",
+        "unrealscript"
+      ],
+      "extensions": [
+        ".ck",
+        ".jav",
+        ".java",
+        ".jsh",
+        ".uc"
+      ]
+    },
+    {
+      "file": "source.jcl.json",
+      "scope": "source.jcl",
+      "names": [
+        "jcl"
+      ],
+      "extensions": [
+        ".jcl"
+      ]
+    },
+    {
+      "file": "source.jest.snap.json",
+      "scope": "source.jest.snap",
+      "names": [
+        "jest-snapshot"
+      ],
+      "extensions": [
+        ".snap"
+      ]
+    },
+    {
+      "file": "source.jflex.json",
+      "scope": "source.jflex",
+      "names": [
+        "jflex"
+      ],
+      "extensions": [
+        ".jflex"
+      ]
+    },
+    {
+      "file": "source.jison.json",
+      "scope": "source.jison",
+      "names": [
+        "jison"
+      ],
+      "extensions": [
+        ".jison"
+      ]
+    },
+    {
+      "file": "source.jisonlex.json",
+      "scope": "source.jisonlex",
+      "names": [
+        "jison-lex"
+      ],
+      "extensions": [
+        ".jisonlex"
+      ]
+    },
+    {
+      "file": "source.jolie.json",
+      "scope": "source.jolie",
+      "names": [
+        "jolie"
+      ],
+      "extensions": [
+        ".ol",
+        ".iol"
+      ]
+    },
+    {
+      "file": "source.jq.json",
+      "scope": "source.jq",
+      "names": [
+        "jq"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.js.json",
+      "scope": "source.js",
+      "names": [
+        "cycript",
+        "javascript",
+        "javascript+erb",
+        "js",
+        "json5",
+        "jsonld",
+        "node",
+        "qt-script"
+      ],
+      "extensions": [
+        "._js",
+        ".bones",
+        ".cjs",
+        ".cy",
+        ".es6",
+        ".jake",
+        ".javascript",
+        ".js",
+        ".js.erb",
+        ".jsb",
+        ".jscad",
+        ".jsfl",
+        ".jslib",
+        ".jsm",
+        ".json5",
+        ".jsonld",
+        ".jspre",
+        ".jss",
+        ".jsx",
+        ".mjs",
+        ".njs",
+        ".pac",
+        ".sjs",
+        ".ssjs",
+        ".xsjs",
+        ".xsjslib"
+      ]
+    },
+    {
+      "file": "source.js.objj.json",
+      "scope": "source.js.objj",
+      "names": [
+        "objective-j",
+        "obj-j",
+        "objectivej",
+        "objj"
+      ],
+      "extensions": [
+        ".sj"
+      ]
+    },
+    {
+      "file": "source.js.regexp.json",
+      "scope": "source.js.regexp",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.jsdoc.json",
+      "scope": "source.jsdoc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.json.comments.json",
+      "scope": "source.json.comments",
+      "names": [
+        "json-with-comments",
+        "jsonc"
+      ],
+      "extensions": [
+        ".jsonc",
+        ".code-snippets",
+        ".code-workspace",
+        ".hujson",
+        ".sublime-build",
+        ".sublime-color-scheme",
+        ".sublime-commands",
+        ".sublime-completions",
+        ".sublime-keymap",
+        ".sublime-macro",
+        ".sublime-menu",
+        ".sublime-mousemap",
+        ".sublime-project",
+        ".sublime-settings",
+        ".sublime-theme",
+        ".sublime-workspace",
+        ".sublime_metrics",
+        ".sublime_session",
+        ".tsconfig.json"
+      ]
+    },
+    {
+      "file": "source.json.json",
+      "scope": "source.json",
+      "names": [
+        "ecere-projects",
+        "geojson",
+        "ipython-notebook",
+        "json",
+        "jsonl",
+        "jupyter-notebook",
+        "max",
+        "max/msp",
+        "maxmsp",
+        "oasv2-json",
+        "oasv3-json",
+        "sarif",
+        "topojson"
+      ],
+      "extensions": [
+        ".4dform",
+        ".4dproject",
+        ".avsc",
+        ".epj",
+        ".geojson",
+        ".gltf",
+        ".har",
+        ".ice",
+        ".ipynb",
+        ".json",
+        ".json",
+        ".json",
+        ".json-tmlanguage",
+        ".json.example",
+        ".jsonl",
+        ".maxhelp",
+        ".maxpat",
+        ".maxproj",
+        ".mcmeta",
+        ".mxt",
+        ".pat",
+        ".sarif",
+        ".slnlaunch",
+        ".tfstate",
+        ".tfstate.backup",
+        ".topojson",
+        ".webapp",
+        ".webmanifest",
+        ".yy",
+        ".yyp"
+      ]
+    },
+    {
+      "file": "source.jsoniq.json",
+      "scope": "source.jsoniq",
+      "names": [
+        "jsoniq"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.jsonnet.json",
+      "scope": "source.jsonnet",
+      "names": [
+        "jsonnet"
+      ],
+      "extensions": [
+        ".jsonnet",
+        ".libsonnet"
+      ]
+    },
+    {
+      "file": "source.julia.console.json",
+      "scope": "source.julia.console",
+      "names": [
+        "julia-repl"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.julia.json",
+      "scope": "source.julia",
+      "names": [
+        "julia"
+      ],
+      "extensions": [
+        ".jl"
+      ]
+    },
+    {
+      "file": "source.just.json",
+      "scope": "source.just",
+      "names": [
+        "just",
+        "justfile"
+      ],
+      "extensions": [
+        ".just"
+      ]
+    },
+    {
+      "file": "source.kakscript.json",
+      "scope": "source.kakscript",
+      "names": [
+        "kakounescript",
+        "kak",
+        "kakscript"
+      ],
+      "extensions": [
+        ".kak"
+      ]
+    },
+    {
+      "file": "source.kcl.json",
+      "scope": "source.kcl",
+      "names": [
+        "kcl"
+      ],
+      "extensions": [
+        ".k"
+      ]
+    },
+    {
+      "file": "source.kdl.json",
+      "scope": "source.kdl",
+      "names": [
+        "kdl"
+      ],
+      "extensions": [
+        ".kdl"
+      ]
+    },
+    {
+      "file": "source.kerboscript.json",
+      "scope": "source.kerboscript",
+      "names": [
+        "kerboscript"
+      ],
+      "extensions": [
+        ".ks"
+      ]
+    },
+    {
+      "file": "source.keyvalues.json",
+      "scope": "source.keyvalues",
+      "names": [
+        "valve-data-format",
+        "keyvalues",
+        "vdf"
+      ],
+      "extensions": [
+        ".vdf",
+        ".vmf"
+      ]
+    },
+    {
+      "file": "source.kickstart.json",
+      "scope": "source.kickstart",
+      "names": [
+        "kickstart"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.koka.json",
+      "scope": "source.koka",
+      "names": [
+        "koka"
+      ],
+      "extensions": [
+        ".kk"
+      ]
+    },
+    {
+      "file": "source.kotlin.json",
+      "scope": "source.kotlin",
+      "names": [
+        "gradle-kotlin-dsl",
+        "kotlin"
+      ],
+      "extensions": [
+        ".gradle.kts",
+        ".kt",
+        ".ktm",
+        ".kts"
+      ]
+    },
+    {
+      "file": "source.kusto.json",
+      "scope": "source.kusto",
+      "names": [
+        "kusto"
+      ],
+      "extensions": [
+        ".csl",
+        ".kql"
+      ]
+    },
+    {
+      "file": "source.langium.json",
+      "scope": "source.langium",
+      "names": [
+        "langium"
+      ],
+      "extensions": [
+        ".langium"
+      ]
+    },
+    {
+      "file": "source.lark.json",
+      "scope": "source.lark",
+      "names": [
+        "lark"
+      ],
+      "extensions": [
+        ".lark"
+      ]
+    },
+    {
+      "file": "source.lean.json",
+      "scope": "source.lean",
+      "names": [
+        "lean"
+      ],
+      "extensions": [
+        ".lean",
+        ".hlean"
+      ]
+    },
+    {
+      "file": "source.lean.markdown.json",
+      "scope": "source.lean.markdown",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.lean4.json",
+      "scope": "source.lean4",
+      "names": [
+        "lean-4",
+        "lean4"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.lean4.markdown.json",
+      "scope": "source.lean4.markdown",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.leo.json",
+      "scope": "source.leo",
+      "names": [
+        "leo"
+      ],
+      "extensions": [
+        ".leo"
+      ]
+    },
+    {
+      "file": "source.lex.json",
+      "scope": "source.lex",
+      "names": [
+        "lex",
+        "flex"
+      ],
+      "extensions": [
+        ".lex"
+      ]
+    },
+    {
+      "file": "source.lex.regexp.json",
+      "scope": "source.lex.regexp",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.ligo.json",
+      "scope": "source.ligo",
+      "names": [
+        "ligolang"
+      ],
+      "extensions": [
+        ".ligo"
+      ]
+    },
+    {
+      "file": "source.lilypond.json",
+      "scope": "source.lilypond",
+      "names": [
+        "lilypond"
+      ],
+      "extensions": [
+        ".ly",
+        ".ily"
+      ]
+    },
+    {
+      "file": "source.liquidsoap.json",
+      "scope": "source.liquidsoap",
+      "names": [
+        "liquidsoap"
+      ],
+      "extensions": [
+        ".liq"
+      ]
+    },
+    {
+      "file": "source.lisp.json",
+      "scope": "source.lisp",
+      "names": [
+        "gcc-machine-description",
+        "lfe",
+        "netlogo",
+        "newlisp",
+        "picolisp",
+        "srecode-template"
+      ],
+      "extensions": [
+        ".lfe",
+        ".nl",
+        ".nlogo",
+        ".srt"
+      ]
+    },
+    {
+      "file": "source.litcoffee.json",
+      "scope": "source.litcoffee",
+      "names": [
+        "literate-coffeescript",
+        "litcoffee"
+      ],
+      "extensions": [
+        ".litcoffee",
+        ".coffee.md"
+      ]
+    },
+    {
+      "file": "source.livecodescript.json",
+      "scope": "source.livecodescript",
+      "names": [
+        "livecode-script"
+      ],
+      "extensions": [
+        ".livecodescript"
+      ]
+    },
+    {
+      "file": "source.livescript.json",
+      "scope": "source.livescript",
+      "names": [
+        "livescript",
+        "live-script",
+        "ls"
+      ],
+      "extensions": [
+        ".ls",
+        "._ls"
+      ]
+    },
+    {
+      "file": "source.llvm.json",
+      "scope": "source.llvm",
+      "names": [
+        "llvm"
+      ],
+      "extensions": [
+        ".ll"
+      ]
+    },
+    {
+      "file": "source.lobster.json",
+      "scope": "source.lobster",
+      "names": [
+        "lobster"
+      ],
+      "extensions": [
+        ".lobster"
+      ]
+    },
+    {
+      "file": "source.logos.json",
+      "scope": "source.logos",
+      "names": [
+        "logos"
+      ],
+      "extensions": [
+        ".xm",
+        ".xi"
+      ]
+    },
+    {
+      "file": "source.logtalk.json",
+      "scope": "source.logtalk",
+      "names": [
+        "logtalk"
+      ],
+      "extensions": [
+        ".lgt",
+        ".logtalk"
+      ]
+    },
+    {
+      "file": "source.lolcode.json",
+      "scope": "source.lolcode",
+      "names": [
+        "lolcode"
+      ],
+      "extensions": [
+        ".lol"
+      ]
+    },
+    {
+      "file": "source.loomscript.json",
+      "scope": "source.loomscript",
+      "names": [
+        "loomscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.lp.json",
+      "scope": "source.lp",
+      "names": [
+        "lambdapi"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.lsl.json",
+      "scope": "source.lsl",
+      "names": [
+        "lsl"
+      ],
+      "extensions": [
+        ".lsl",
+        ".lslp"
+      ]
+    },
+    {
+      "file": "source.ltspice.symbol.json",
+      "scope": "source.ltspice.symbol",
+      "names": [
+        "ltspice-symbol"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.lua.json",
+      "scope": "source.lua",
+      "names": [
+        "lua"
+      ],
+      "extensions": [
+        ".lua",
+        ".fcgi",
+        ".nse",
+        ".p8",
+        ".pd_lua",
+        ".rbxs",
+        ".rockspec",
+        ".wlua"
+      ]
+    },
+    {
+      "file": "source.luau.json",
+      "scope": "source.luau",
+      "names": [
+        "luau"
+      ],
+      "extensions": [
+        ".luau"
+      ]
+    },
+    {
+      "file": "source.m2.json",
+      "scope": "source.m2",
+      "names": [
+        "macaulay2",
+        "m2"
+      ],
+      "extensions": [
+        ".m2"
+      ]
+    },
+    {
+      "file": "source.m3u.json",
+      "scope": "source.m3u",
+      "names": [
+        "m3u",
+        "hls-playlist",
+        "m3u-playlist"
+      ],
+      "extensions": [
+        ".m3u",
+        ".m3u8"
+      ]
+    },
+    {
+      "file": "source.m4.json",
+      "scope": "source.m4",
+      "names": [
+        "autoconf",
+        "m4",
+        "m4sugar"
+      ],
+      "extensions": [
+        ".m4",
+        ".m4",
+        ".mc"
+      ]
+    },
+    {
+      "file": "source.m68k.json",
+      "scope": "source.m68k",
+      "names": [
+        "motorola-68k-assembly",
+        "m68k"
+      ],
+      "extensions": [
+        ".x68"
+      ]
+    },
+    {
+      "file": "source.makefile.json",
+      "scope": "source.makefile",
+      "names": [
+        "makefile",
+        "bsdmake",
+        "make",
+        "mf"
+      ],
+      "extensions": [
+        ".mak",
+        ".make",
+        ".makefile",
+        ".mk",
+        ".mkfile"
+      ]
+    },
+    {
+      "file": "source.mask.json",
+      "scope": "source.mask",
+      "names": [
+        "mask"
+      ],
+      "extensions": [
+        ".mask"
+      ]
+    },
+    {
+      "file": "source.mata.json",
+      "scope": "source.mata",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mathematica.json",
+      "scope": "source.mathematica",
+      "names": [
+        "wolfram-language",
+        "mathematica",
+        "mma",
+        "wolfram",
+        "wolfram-lang",
+        "wl"
+      ],
+      "extensions": [
+        ".mathematica",
+        ".cdf",
+        ".ma",
+        ".mt",
+        ".nb",
+        ".nbp",
+        ".wl",
+        ".wls",
+        ".wlt"
+      ]
+    },
+    {
+      "file": "source.matlab.json",
+      "scope": "source.matlab",
+      "names": [
+        "matlab",
+        "octave"
+      ],
+      "extensions": [
+        ".matlab",
+        ".m"
+      ]
+    },
+    {
+      "file": "source.maxscript.json",
+      "scope": "source.maxscript",
+      "names": [
+        "maxscript"
+      ],
+      "extensions": [
+        ".ms",
+        ".mcr"
+      ]
+    },
+    {
+      "file": "source.mc.json",
+      "scope": "source.mc",
+      "names": [
+        "monkey-c"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.mcfunction.json",
+      "scope": "source.mcfunction",
+      "names": [
+        "mcfunction"
+      ],
+      "extensions": [
+        ".mcfunction"
+      ]
+    },
+    {
+      "file": "source.mdx.json",
+      "scope": "source.mdx",
+      "names": [
+        "mdx"
+      ],
+      "extensions": [
+        ".mdx"
+      ]
+    },
+    {
+      "file": "source.mercury.json",
+      "scope": "source.mercury",
+      "names": [
+        "mercury"
+      ],
+      "extensions": [
+        ".moo"
+      ]
+    },
+    {
+      "file": "source.mermaid.c4c-diagram.json",
+      "scope": "source.mermaid.c4c-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.class-diagram.json",
+      "scope": "source.mermaid.class-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.er-diagram.json",
+      "scope": "source.mermaid.er-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.flowchart.json",
+      "scope": "source.mermaid.flowchart",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.gantt.json",
+      "scope": "source.mermaid.gantt",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.gitgraph.json",
+      "scope": "source.mermaid.gitgraph",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.json",
+      "scope": "source.mermaid",
+      "names": [
+        "mermaid",
+        "mermaid-example"
+      ],
+      "extensions": [
+        ".mmd",
+        ".mermaid"
+      ]
+    },
+    {
+      "file": "source.mermaid.mindmap.json",
+      "scope": "source.mermaid.mindmap",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.pie-chart.json",
+      "scope": "source.mermaid.pie-chart",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.quad-chart.json",
+      "scope": "source.mermaid.quad-chart",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.requirement-diagram.json",
+      "scope": "source.mermaid.requirement-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.sankey.json",
+      "scope": "source.mermaid.sankey",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.sequence-diagram.json",
+      "scope": "source.mermaid.sequence-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.state-diagram.json",
+      "scope": "source.mermaid.state-diagram",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.timeline.json",
+      "scope": "source.mermaid.timeline",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.user-journey.json",
+      "scope": "source.mermaid.user-journey",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.mermaid.zenuml.json",
+      "scope": "source.mermaid.zenuml",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.meson.json",
+      "scope": "source.meson",
+      "names": [
+        "meson"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.metta.json",
+      "scope": "source.metta",
+      "names": [
+        "metta"
+      ],
+      "extensions": [
+        ".metta"
+      ]
+    },
+    {
+      "file": "source.miniyaml.json",
+      "scope": "source.miniyaml",
+      "names": [
+        "miniyaml"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.mint.json",
+      "scope": "source.mint",
+      "names": [
+        "mint"
+      ],
+      "extensions": [
+        ".mint"
+      ]
+    },
+    {
+      "file": "source.ml.json",
+      "scope": "source.ml",
+      "names": [
+        "standard-ml",
+        "sml"
+      ],
+      "extensions": [
+        ".fun",
+        ".sig",
+        ".sml"
+      ]
+    },
+    {
+      "file": "source.mligo.json",
+      "scope": "source.mligo",
+      "names": [
+        "cameligo"
+      ],
+      "extensions": [
+        ".mligo"
+      ]
+    },
+    {
+      "file": "source.mlir.json",
+      "scope": "source.mlir",
+      "names": [
+        "mlir"
+      ],
+      "extensions": [
+        ".mlir"
+      ]
+    },
+    {
+      "file": "source.mo.json",
+      "scope": "source.mo",
+      "names": [
+        "motoko"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.modelica.json",
+      "scope": "source.modelica",
+      "names": [
+        "modelica"
+      ],
+      "extensions": [
+        ".mo"
+      ]
+    },
+    {
+      "file": "source.modula-3.json",
+      "scope": "source.modula-3",
+      "names": [
+        "modula-3"
+      ],
+      "extensions": [
+        ".i3",
+        ".ig",
+        ".m3",
+        ".mg"
+      ]
+    },
+    {
+      "file": "source.modula2.json",
+      "scope": "source.modula2",
+      "names": [
+        "modula-2",
+        "oberon"
+      ],
+      "extensions": [
+        ".ob2"
+      ]
+    },
+    {
+      "file": "source.mojo.json",
+      "scope": "source.mojo",
+      "names": [
+        "mojo"
+      ],
+      "extensions": [
+        ".mojo"
+      ]
+    },
+    {
+      "file": "source.monkey.json",
+      "scope": "source.monkey",
+      "names": [
+        "monkey"
+      ],
+      "extensions": [
+        ".monkey",
+        ".monkey2"
+      ]
+    },
+    {
+      "file": "source.moonbit.json",
+      "scope": "source.moonbit",
+      "names": [
+        "moonbit"
+      ],
+      "extensions": [
+        ".mbt"
+      ]
+    },
+    {
+      "file": "source.moonscript.json",
+      "scope": "source.moonscript",
+      "names": [
+        "moonscript"
+      ],
+      "extensions": [
+        ".moon"
+      ]
+    },
+    {
+      "file": "source.move.json",
+      "scope": "source.move",
+      "names": [
+        "move"
+      ],
+      "extensions": [
+        ".move"
+      ]
+    },
+    {
+      "file": "source.mql5.json",
+      "scope": "source.mql5",
+      "names": [
+        "mql4",
+        "mql5"
+      ],
+      "extensions": [
+        ".mq4",
+        ".mq5",
+        ".mqh",
+        ".mqh"
+      ]
+    },
+    {
+      "file": "source.ms.json",
+      "scope": "source.ms",
+      "names": [
+        "miniscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.msg.json",
+      "scope": "source.msg",
+      "names": [
+        "omnet++-msg",
+        "omnetpp-msg"
+      ],
+      "extensions": [
+        ".msg"
+      ]
+    },
+    {
+      "file": "source.msl.json",
+      "scope": "source.msl",
+      "names": [
+        "mirc-script"
+      ],
+      "extensions": [
+        ".mrc"
+      ]
+    },
+    {
+      "file": "source.mupad.json",
+      "scope": "source.mupad",
+      "names": [
+        "mupad"
+      ],
+      "extensions": [
+        ".mu"
+      ]
+    },
+    {
+      "file": "source.mzn.json",
+      "scope": "source.mzn",
+      "names": [
+        "minizinc",
+        "minizinc-data"
+      ],
+      "extensions": [
+        ".dzn",
+        ".mzn"
+      ]
+    },
+    {
+      "file": "source.nanorc.json",
+      "scope": "source.nanorc",
+      "names": [
+        "nanorc"
+      ],
+      "extensions": [
+        ".nanorc"
+      ]
+    },
+    {
+      "file": "source.nasal.json",
+      "scope": "source.nasal",
+      "names": [
+        "nasal"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.nasl.json",
+      "scope": "source.nasl",
+      "names": [
+        "nasl"
+      ],
+      "extensions": [
+        ".nasl"
+      ]
+    },
+    {
+      "file": "source.ncl.json",
+      "scope": "source.ncl",
+      "names": [
+        "ncl"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ne.json",
+      "scope": "source.ne",
+      "names": [
+        "nearley"
+      ],
+      "extensions": [
+        ".ne",
+        ".nearley"
+      ]
+    },
+    {
+      "file": "source.ned.json",
+      "scope": "source.ned",
+      "names": [
+        "omnet++-ned",
+        "omnetpp-ned"
+      ],
+      "extensions": [
+        ".ned"
+      ]
+    },
+    {
+      "file": "source.nemerle.json",
+      "scope": "source.nemerle",
+      "names": [
+        "nemerle"
+      ],
+      "extensions": [
+        ".n"
+      ]
+    },
+    {
+      "file": "source.neon.json",
+      "scope": "source.neon",
+      "names": [
+        "neon",
+        "nette-object-notation",
+        "ne-on"
+      ],
+      "extensions": [
+        ".neon"
+      ]
+    },
+    {
+      "file": "source.nesc.json",
+      "scope": "source.nesc",
+      "names": [
+        "nesc"
+      ],
+      "extensions": [
+        ".nc"
+      ]
+    },
+    {
+      "file": "source.netlinx.erb.json",
+      "scope": "source.netlinx.erb",
+      "names": [
+        "netlinx+erb"
+      ],
+      "extensions": [
+        ".axs.erb",
+        ".axi.erb"
+      ]
+    },
+    {
+      "file": "source.netlinx.json",
+      "scope": "source.netlinx",
+      "names": [
+        "netlinx"
+      ],
+      "extensions": [
+        ".axs",
+        ".axi"
+      ]
+    },
+    {
+      "file": "source.nextflow-groovy.json",
+      "scope": "source.nextflow-groovy",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.nextflow.json",
+      "scope": "source.nextflow",
+      "names": [
+        "nextflow"
+      ],
+      "extensions": [
+        ".nf"
+      ]
+    },
+    {
+      "file": "source.nginx.json",
+      "scope": "source.nginx",
+      "names": [
+        "nginx",
+        "nginx-configuration-file"
+      ],
+      "extensions": [
+        ".nginx",
+        ".nginxconf"
+      ]
+    },
+    {
+      "file": "source.nickel.json",
+      "scope": "source.nickel",
+      "names": [
+        "nickel"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.nim.json",
+      "scope": "source.nim",
+      "names": [
+        "nim"
+      ],
+      "extensions": [
+        ".nim",
+        ".nim.cfg",
+        ".nimble",
+        ".nimrod",
+        ".nims"
+      ]
+    },
+    {
+      "file": "source.ninja.json",
+      "scope": "source.ninja",
+      "names": [
+        "ninja"
+      ],
+      "extensions": [
+        ".ninja"
+      ]
+    },
+    {
+      "file": "source.nit.json",
+      "scope": "source.nit",
+      "names": [
+        "nit"
+      ],
+      "extensions": [
+        ".nit"
+      ]
+    },
+    {
+      "file": "source.nix.json",
+      "scope": "source.nix",
+      "names": [
+        "nix",
+        "nixos"
+      ],
+      "extensions": [
+        ".nix"
+      ]
+    },
+    {
+      "file": "source.nr.json",
+      "scope": "source.nr",
+      "names": [
+        "noir",
+        "nargo"
+      ],
+      "extensions": [
+        ".nr"
+      ]
+    },
+    {
+      "file": "source.nsis.json",
+      "scope": "source.nsis",
+      "names": [
+        "nsis"
+      ],
+      "extensions": [
+        ".nsi",
+        ".nsh"
+      ]
+    },
+    {
+      "file": "source.nu.json",
+      "scope": "source.nu",
+      "names": [
+        "nu",
+        "nush"
+      ],
+      "extensions": [
+        ".nu"
+      ]
+    },
+    {
+      "file": "source.nunjucks.json",
+      "scope": "source.nunjucks",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.nushell.json",
+      "scope": "source.nushell",
+      "names": [
+        "nushell",
+        "nu-script",
+        "nushell-script"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.nut.json",
+      "scope": "source.nut",
+      "names": [
+        "squirrel"
+      ],
+      "extensions": [
+        ".nut"
+      ]
+    },
+    {
+      "file": "source.objc++.json",
+      "scope": "source.objc++",
+      "names": [
+        "objective-c++",
+        "obj-c++",
+        "objc++",
+        "objectivec++"
+      ],
+      "extensions": [
+        ".mm"
+      ]
+    },
+    {
+      "file": "source.objc.json",
+      "scope": "source.objc",
+      "names": [
+        "objective-c",
+        "obj-c",
+        "objc",
+        "objectivec"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.objc.platform.json",
+      "scope": "source.objc.platform",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.objectscript.json",
+      "scope": "source.objectscript",
+      "names": [
+        "objectscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.objectscript_macros.json",
+      "scope": "source.objectscript_macros",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.ocaml.json",
+      "scope": "source.ocaml",
+      "names": [
+        "ocaml"
+      ],
+      "extensions": [
+        ".ml",
+        ".eliom",
+        ".eliomi",
+        ".ml4",
+        ".mli",
+        ".mll",
+        ".mly"
+      ]
+    },
+    {
+      "file": "source.odin-ehr.json",
+      "scope": "source.odin-ehr",
+      "names": [
+        "object-data-instance-notation"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.odin.json",
+      "scope": "source.odin",
+      "names": [
+        "odin",
+        "odinlang",
+        "odin-lang"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ooc.json",
+      "scope": "source.ooc",
+      "names": [
+        "ooc"
+      ],
+      "extensions": [
+        ".ooc"
+      ]
+    },
+    {
+      "file": "source.opa.json",
+      "scope": "source.opa",
+      "names": [
+        "opa"
+      ],
+      "extensions": [
+        ".opa"
+      ]
+    },
+    {
+      "file": "source.opal.json",
+      "scope": "source.opal",
+      "names": [
+        "opal"
+      ],
+      "extensions": [
+        ".opal"
+      ]
+    },
+    {
+      "file": "source.openesql.json",
+      "scope": "source.openesql",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.opentype.json",
+      "scope": "source.opentype",
+      "names": [
+        "opentype-feature-file",
+        "afdko"
+      ],
+      "extensions": [
+        ".fea"
+      ]
+    },
+    {
+      "file": "source.opts.json",
+      "scope": "source.opts",
+      "names": [
+        "option-list",
+        "opts",
+        "ackrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.opy.json",
+      "scope": "source.opy",
+      "names": [
+        "overpy",
+        "opy"
+      ],
+      "extensions": [
+        ".opy"
+      ]
+    },
+    {
+      "file": "source.overpassql.json",
+      "scope": "source.overpassql",
+      "names": [
+        "overpassql"
+      ],
+      "extensions": [
+        ".overpassql"
+      ]
+    },
+    {
+      "file": "source.ox.json",
+      "scope": "source.ox",
+      "names": [
+        "ox"
+      ],
+      "extensions": [
+        ".ox",
+        ".oxh",
+        ".oxo"
+      ]
+    },
+    {
+      "file": "source.oz.json",
+      "scope": "source.oz",
+      "names": [
+        "oz"
+      ],
+      "extensions": [
+        ".oz"
+      ]
+    },
+    {
+      "file": "source.p4.json",
+      "scope": "source.p4",
+      "names": [
+        "p4"
+      ],
+      "extensions": [
+        ".p4"
+      ]
+    },
+    {
+      "file": "source.pact.json",
+      "scope": "source.pact",
+      "names": [
+        "pact"
+      ],
+      "extensions": [
+        ".pact"
+      ]
+    },
+    {
+      "file": "source.pan.json",
+      "scope": "source.pan",
+      "names": [
+        "pan"
+      ],
+      "extensions": [
+        ".pan"
+      ]
+    },
+    {
+      "file": "source.papyrus.skyrim.json",
+      "scope": "source.papyrus.skyrim",
+      "names": [
+        "papyrus"
+      ],
+      "extensions": [
+        ".psc"
+      ]
+    },
+    {
+      "file": "source.parrot.pir.json",
+      "scope": "source.parrot.pir",
+      "names": [
+        "parrot-internal-representation",
+        "pir"
+      ],
+      "extensions": [
+        ".pir"
+      ]
+    },
+    {
+      "file": "source.pascal.json",
+      "scope": "source.pascal",
+      "names": [
+        "component-pascal",
+        "delphi",
+        "objectpascal",
+        "pascal"
+      ],
+      "extensions": [
+        ".cps",
+        ".dfm",
+        ".dpr",
+        ".lpr",
+        ".pas",
+        ".pascal",
+        ".pp"
+      ]
+    },
+    {
+      "file": "source.pawn.json",
+      "scope": "source.pawn",
+      "names": [
+        "pawn"
+      ],
+      "extensions": [
+        ".pwn",
+        ".sma"
+      ]
+    },
+    {
+      "file": "source.pcb.board.json",
+      "scope": "source.pcb.board",
+      "names": [
+        "kicad-legacy-layout"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.pcb.schematic.json",
+      "scope": "source.pcb.schematic",
+      "names": [
+        "kicad-schematic",
+        "eeschema-schematic"
+      ],
+      "extensions": [
+        ".kicad_sch",
+        ".kicad_sym"
+      ]
+    },
+    {
+      "file": "source.pcb.sexp.json",
+      "scope": "source.pcb.sexp",
+      "names": [
+        "kicad-layout",
+        "pcbnew"
+      ],
+      "extensions": [
+        ".kicad_pcb",
+        ".kicad_mod",
+        ".kicad_wks"
+      ]
+    },
+    {
+      "file": "source.pddl.json",
+      "scope": "source.pddl",
+      "names": [
+        "pddl"
+      ],
+      "extensions": [
+        ".pddl"
+      ]
+    },
+    {
+      "file": "source.peggy.json",
+      "scope": "source.peggy",
+      "names": [
+        "peg.js"
+      ],
+      "extensions": [
+        ".pegjs",
+        ".peggy"
+      ]
+    },
+    {
+      "file": "source.pep8.json",
+      "scope": "source.pep8",
+      "names": [
+        "pep8"
+      ],
+      "extensions": [
+        ".pep"
+      ]
+    },
+    {
+      "file": "source.perl.6.json",
+      "scope": "source.perl.6",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.perl.json",
+      "scope": "source.perl",
+      "names": [
+        "perl",
+        "cperl"
+      ],
+      "extensions": [
+        ".pl",
+        ".cgi",
+        ".perl",
+        ".ph",
+        ".plx",
+        ".pm",
+        ".psgi",
+        ".t"
+      ]
+    },
+    {
+      "file": "source.php.zephir.json",
+      "scope": "source.php.zephir",
+      "names": [
+        "zephir"
+      ],
+      "extensions": [
+        ".zep"
+      ]
+    },
+    {
+      "file": "source.pic.json",
+      "scope": "source.pic",
+      "names": [
+        "pic",
+        "pikchr"
+      ],
+      "extensions": [
+        ".pic",
+        ".chem"
+      ]
+    },
+    {
+      "file": "source.pig_latin.json",
+      "scope": "source.pig_latin",
+      "names": [
+        "piglatin"
+      ],
+      "extensions": [
+        ".pig"
+      ]
+    },
+    {
+      "file": "source.pike.json",
+      "scope": "source.pike",
+      "names": [
+        "pike"
+      ],
+      "extensions": [
+        ".pike",
+        ".pmod"
+      ]
+    },
+    {
+      "file": "source.pip-requirements.json",
+      "scope": "source.pip-requirements",
+      "names": [
+        "pip-requirements"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.pkgconf.json",
+      "scope": "source.pkgconf",
+      "names": [
+        "pkg-config",
+        "pkgconf"
+      ],
+      "extensions": [
+        ".pc.in"
+      ]
+    },
+    {
+      "file": "source.pkl.json",
+      "scope": "source.pkl",
+      "names": [
+        "pkl"
+      ],
+      "extensions": [
+        ".pkl"
+      ]
+    },
+    {
+      "file": "source.pl.json",
+      "scope": "source.pl",
+      "names": [
+        "imhex-pattern-language",
+        "imhex",
+        "imhexpatternlanguage",
+        "imhexpl"
+      ],
+      "extensions": [
+        ".hexpat"
+      ]
+    },
+    {
+      "file": "source.plist.json",
+      "scope": "source.plist",
+      "names": [
+        "openstep-property-list"
+      ],
+      "extensions": [
+        ".plist",
+        ".glyphs"
+      ]
+    },
+    {
+      "file": "source.po.json",
+      "scope": "source.po",
+      "names": [
+        "gettext-catalog",
+        "pot"
+      ],
+      "extensions": [
+        ".po",
+        ".pot"
+      ]
+    },
+    {
+      "file": "source.pogoscript.json",
+      "scope": "source.pogoscript",
+      "names": [
+        "pogoscript"
+      ],
+      "extensions": [
+        ".pogo"
+      ]
+    },
+    {
+      "file": "source.polar.json",
+      "scope": "source.polar",
+      "names": [
+        "polar"
+      ],
+      "extensions": [
+        ".polar"
+      ]
+    },
+    {
+      "file": "source.pony.json",
+      "scope": "source.pony",
+      "names": [
+        "pony"
+      ],
+      "extensions": [
+        ".pony"
+      ]
+    },
+    {
+      "file": "source.portugol.json",
+      "scope": "source.portugol",
+      "names": [
+        "portugol"
+      ],
+      "extensions": [
+        ".por"
+      ]
+    },
+    {
+      "file": "source.postcss.json",
+      "scope": "source.postcss",
+      "names": [
+        "postcss"
+      ],
+      "extensions": [
+        ".pcss",
+        ".postcss"
+      ]
+    },
+    {
+      "file": "source.postscript.json",
+      "scope": "source.postscript",
+      "names": [
+        "postscript",
+        "postscr"
+      ],
+      "extensions": [
+        ".ps",
+        ".eps",
+        ".epsi",
+        ".pfa"
+      ]
+    },
+    {
+      "file": "source.pov-ray sdl.json",
+      "scope": "source.pov-ray sdl",
+      "names": [
+        "pov-ray-sdl",
+        "pov-ray",
+        "povray"
+      ],
+      "extensions": [
+        ".pov"
+      ]
+    },
+    {
+      "file": "source.powerbuilder.json",
+      "scope": "source.powerbuilder",
+      "names": [
+        "powerbuilder"
+      ],
+      "extensions": [
+        ".pbt",
+        ".sra",
+        ".sru",
+        ".srw"
+      ]
+    },
+    {
+      "file": "source.powerquery.json",
+      "scope": "source.powerquery",
+      "names": [
+        "power-query",
+        "powerquery"
+      ],
+      "extensions": [
+        ".pq"
+      ]
+    },
+    {
+      "file": "source.powershell.json",
+      "scope": "source.powershell",
+      "names": [
+        "powershell",
+        "posh",
+        "pwsh"
+      ],
+      "extensions": [
+        ".ps1",
+        ".psd1",
+        ".psm1"
+      ]
+    },
+    {
+      "file": "source.praat.json",
+      "scope": "source.praat",
+      "names": [
+        "praat"
+      ],
+      "extensions": [
+        ".praat"
+      ]
+    },
+    {
+      "file": "source.prisma.json",
+      "scope": "source.prisma",
+      "names": [
+        "prisma"
+      ],
+      "extensions": [
+        ".prisma"
+      ]
+    },
+    {
+      "file": "source.processing.json",
+      "scope": "source.processing",
+      "names": [
+        "processing"
+      ],
+      "extensions": [
+        ".pde"
+      ]
+    },
+    {
+      "file": "source.procfile.json",
+      "scope": "source.procfile",
+      "names": [
+        "procfile"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.prolog.eclipse.json",
+      "scope": "source.prolog.eclipse",
+      "names": [
+        "eclipse"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.prolog.json",
+      "scope": "source.prolog",
+      "names": [
+        "prolog"
+      ],
+      "extensions": [
+        ".prolog",
+        ".yap"
+      ]
+    },
+    {
+      "file": "source.promela.json",
+      "scope": "source.promela",
+      "names": [
+        "promela"
+      ],
+      "extensions": [
+        ".pml"
+      ]
+    },
+    {
+      "file": "source.proto.json",
+      "scope": "source.proto",
+      "names": [
+        "protocol-buffer",
+        "proto",
+        "protobuf",
+        "protocol-buffers"
+      ],
+      "extensions": [
+        ".proto"
+      ]
+    },
+    {
+      "file": "source.puppet.json",
+      "scope": "source.puppet",
+      "names": [
+        "puppet"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.purescript.json",
+      "scope": "source.purescript",
+      "names": [
+        "purescript"
+      ],
+      "extensions": [
+        ".purs"
+      ]
+    },
+    {
+      "file": "source.python.json",
+      "scope": "source.python",
+      "names": [
+        "bazel",
+        "bzl",
+        "easybuild",
+        "py",
+        "py3",
+        "python",
+        "python3",
+        "rusthon",
+        "sage",
+        "snakefile",
+        "snakemake",
+        "starlark",
+        "xonsh"
+      ],
+      "extensions": [
+        ".bzl",
+        ".eb",
+        ".gyp",
+        ".gypi",
+        ".lmi",
+        ".py",
+        ".py3",
+        ".pyde",
+        ".pyi",
+        ".pyp",
+        ".pyt",
+        ".pyw",
+        ".rpy",
+        ".sage",
+        ".sagews",
+        ".smk",
+        ".snakefile",
+        ".spec",
+        ".tac",
+        ".wsgi",
+        ".xpy",
+        ".xsh"
+      ]
+    },
+    {
+      "file": "source.python.kivy.json",
+      "scope": "source.python.kivy",
+      "names": [
+        "kvlang"
+      ],
+      "extensions": [
+        ".kv"
+      ]
+    },
+    {
+      "file": "source.q.json",
+      "scope": "source.q",
+      "names": [
+        "q"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.qasm.json",
+      "scope": "source.qasm",
+      "names": [
+        "openqasm"
+      ],
+      "extensions": [
+        ".qasm"
+      ]
+    },
+    {
+      "file": "source.ql.json",
+      "scope": "source.ql",
+      "names": [
+        "codeql",
+        "ql"
+      ],
+      "extensions": [
+        ".ql",
+        ".qll"
+      ]
+    },
+    {
+      "file": "source.qmake.json",
+      "scope": "source.qmake",
+      "names": [
+        "qmake"
+      ],
+      "extensions": [
+        ".pri"
+      ]
+    },
+    {
+      "file": "source.qml.json",
+      "scope": "source.qml",
+      "names": [
+        "qml"
+      ],
+      "extensions": [
+        ".qml",
+        ".qbs"
+      ]
+    },
+    {
+      "file": "source.qsharp.json",
+      "scope": "source.qsharp",
+      "names": [
+        "q#",
+        "qsharp"
+      ],
+      "extensions": [
+        ".qs"
+      ]
+    },
+    {
+      "file": "source.quake.json",
+      "scope": "source.quake",
+      "names": [
+        "quake"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.quakec.json",
+      "scope": "source.quakec",
+      "names": [
+        "quakec"
+      ],
+      "extensions": [
+        ".qc"
+      ]
+    },
+    {
+      "file": "source.quint.json",
+      "scope": "source.quint",
+      "names": [
+        "quint"
+      ],
+      "extensions": [
+        ".qnt"
+      ]
+    },
+    {
+      "file": "source.quoting.raku.json",
+      "scope": "source.quoting.raku",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.r.json",
+      "scope": "source.r",
+      "names": [
+        "r",
+        "rscript",
+        "splus"
+      ],
+      "extensions": [
+        ".r",
+        ".rd",
+        ".rhistory",
+        ".rsx"
+      ]
+    },
+    {
+      "file": "source.racket.json",
+      "scope": "source.racket",
+      "names": [
+        "racket"
+      ],
+      "extensions": [
+        ".rkt",
+        ".rktd",
+        ".rktl",
+        ".scrbl"
+      ]
+    },
+    {
+      "file": "source.raku.json",
+      "scope": "source.raku",
+      "names": [
+        "perl-6",
+        "perl6",
+        "pod-6",
+        "raku"
+      ],
+      "extensions": [
+        ".6pl",
+        ".6pm",
+        ".nqp",
+        ".p6",
+        ".p6l",
+        ".p6m",
+        ".pl6",
+        ".pm6",
+        ".pod",
+        ".pod6",
+        ".raku",
+        ".rakumod"
+      ]
+    },
+    {
+      "file": "source.rascal.json",
+      "scope": "source.rascal",
+      "names": [
+        "rascal"
+      ],
+      "extensions": [
+        ".rsc"
+      ]
+    },
+    {
+      "file": "source.rascript.json",
+      "scope": "source.rascript",
+      "names": [
+        "rascript"
+      ],
+      "extensions": [
+        ".rascript"
+      ]
+    },
+    {
+      "file": "source.rbs.json",
+      "scope": "source.rbs",
+      "names": [
+        "rbs"
+      ],
+      "extensions": [
+        ".rbs"
+      ]
+    },
+    {
+      "file": "source.reason.json",
+      "scope": "source.reason",
+      "names": [
+        "reason"
+      ],
+      "extensions": [
+        ".rei"
+      ]
+    },
+    {
+      "file": "source.rebol.json",
+      "scope": "source.rebol",
+      "names": [
+        "rebol"
+      ],
+      "extensions": [
+        ".reb",
+        ".r2",
+        ".r3",
+        ".rebol"
+      ]
+    },
+    {
+      "file": "source.record-jar.json",
+      "scope": "source.record-jar",
+      "names": [
+        "record-jar"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.red.json",
+      "scope": "source.red",
+      "names": [
+        "red",
+        "red/system"
+      ],
+      "extensions": [
+        ".red",
+        ".reds"
+      ]
+    },
+    {
+      "file": "source.redirects.json",
+      "scope": "source.redirects",
+      "names": [
+        "redirect-rules",
+        "redirects"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.redscript.json",
+      "scope": "source.redscript",
+      "names": [
+        "redscript"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.reg.json",
+      "scope": "source.reg",
+      "names": [
+        "windows-registry-entries"
+      ],
+      "extensions": [
+        ".reg"
+      ]
+    },
+    {
+      "file": "source.regexp.extended.json",
+      "scope": "source.regexp.extended",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.regexp.json",
+      "scope": "source.regexp",
+      "names": [
+        "regular-expression",
+        "regexp",
+        "regex"
+      ],
+      "extensions": [
+        ".regexp",
+        ".regex"
+      ]
+    },
+    {
+      "file": "source.regexp.posix.json",
+      "scope": "source.regexp.posix",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.regexp.python.json",
+      "scope": "source.regexp.python",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.regexp.raku.json",
+      "scope": "source.regexp.raku",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.regexp.spin.json",
+      "scope": "source.regexp.spin",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.rego.json",
+      "scope": "source.rego",
+      "names": [
+        "open-policy-agent"
+      ],
+      "extensions": [
+        ".rego"
+      ]
+    },
+    {
+      "file": "source.religo.json",
+      "scope": "source.religo",
+      "names": [
+        "reasonligo"
+      ],
+      "extensions": [
+        ".religo"
+      ]
+    },
+    {
+      "file": "source.renpy.json",
+      "scope": "source.renpy",
+      "names": [
+        "ren'py",
+        "renpy"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.rescript.json",
+      "scope": "source.rescript",
+      "names": [
+        "rescript"
+      ],
+      "extensions": [
+        ".res",
+        ".resi"
+      ]
+    },
+    {
+      "file": "source.rexx.json",
+      "scope": "source.rexx",
+      "names": [
+        "rexx",
+        "arexx"
+      ],
+      "extensions": [
+        ".rexx",
+        ".pprx",
+        ".rex"
+      ]
+    },
+    {
+      "file": "source.rez.json",
+      "scope": "source.rez",
+      "names": [
+        "rez"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.rhai.json",
+      "scope": "source.rhai",
+      "names": [
+        "rhai"
+      ],
+      "extensions": [
+        ".rhai"
+      ]
+    },
+    {
+      "file": "source.ring.json",
+      "scope": "source.ring",
+      "names": [
+        "ring"
+      ],
+      "extensions": [
+        ".ring"
+      ]
+    },
+    {
+      "file": "source.roc.json",
+      "scope": "source.roc",
+      "names": [
+        "roc"
+      ],
+      "extensions": [
+        ".roc"
+      ]
+    },
+    {
+      "file": "source.ron.json",
+      "scope": "source.ron",
+      "names": [
+        "ron"
+      ],
+      "extensions": [
+        ".ron"
+      ]
+    },
+    {
+      "file": "source.rosmsg.json",
+      "scope": "source.rosmsg",
+      "names": [
+        "ros-interface",
+        "rosmsg"
+      ],
+      "extensions": [
+        ".action",
+        ".srv"
+      ]
+    },
+    {
+      "file": "source.rpgle.json",
+      "scope": "source.rpgle",
+      "names": [
+        "rpgle",
+        "ile-rpg",
+        "sqlrpgle"
+      ],
+      "extensions": [
+        ".rpgle",
+        ".sqlrpgle"
+      ]
+    },
+    {
+      "file": "source.rpm-spec.json",
+      "scope": "source.rpm-spec",
+      "names": [
+        "rpm-spec",
+        "specfile"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ruby.json",
+      "scope": "source.ruby",
+      "names": [
+        "jruby",
+        "macruby",
+        "mirah",
+        "rake",
+        "rb",
+        "rbx",
+        "ruby"
+      ],
+      "extensions": [
+        ".builder",
+        ".druby",
+        ".duby",
+        ".eye",
+        ".gemspec",
+        ".god",
+        ".jbuilder",
+        ".mirah",
+        ".mspec",
+        ".pluginspec",
+        ".podspec",
+        ".prawn",
+        ".rabl",
+        ".rake",
+        ".rb",
+        ".rbi",
+        ".rbuild",
+        ".rbw",
+        ".rbx",
+        ".ru",
+        ".ruby",
+        ".thor",
+        ".watchr"
+      ]
+    },
+    {
+      "file": "source.rust.json",
+      "scope": "source.rust",
+      "names": [
+        "rust",
+        "rs"
+      ],
+      "extensions": [
+        ".rs",
+        ".rs.in"
+      ]
+    },
+    {
+      "file": "source.sail.json",
+      "scope": "source.sail",
+      "names": [
+        "sail"
+      ],
+      "extensions": [
+        ".sail"
+      ]
+    },
+    {
+      "file": "source.sas.json",
+      "scope": "source.sas",
+      "names": [
+        "sas"
+      ],
+      "extensions": [
+        ".sas"
+      ]
+    },
+    {
+      "file": "source.sass.json",
+      "scope": "source.sass",
+      "names": [
+        "sass"
+      ],
+      "extensions": [
+        ".sass"
+      ]
+    },
+    {
+      "file": "source.sassdoc.json",
+      "scope": "source.sassdoc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.scad.json",
+      "scope": "source.scad",
+      "names": [
+        "openscad"
+      ],
+      "extensions": [
+        ".scad"
+      ]
+    },
+    {
+      "file": "source.scala.json",
+      "scope": "source.scala",
+      "names": [
+        "scala"
+      ],
+      "extensions": [
+        ".scala",
+        ".kojo",
+        ".sbt",
+        ".sc"
+      ]
+    },
+    {
+      "file": "source.scaml.json",
+      "scope": "source.scaml",
+      "names": [
+        "scaml"
+      ],
+      "extensions": [
+        ".scaml"
+      ]
+    },
+    {
+      "file": "source.scenic.json",
+      "scope": "source.scenic",
+      "names": [
+        "scenic"
+      ],
+      "extensions": [
+        ".scenic"
+      ]
+    },
+    {
+      "file": "source.scheme.json",
+      "scope": "source.scheme",
+      "names": [
+        "scheme"
+      ],
+      "extensions": [
+        ".scm",
+        ".sld",
+        ".sps",
+        ".ss"
+      ]
+    },
+    {
+      "file": "source.scilab.json",
+      "scope": "source.scilab",
+      "names": [
+        "scilab"
+      ],
+      "extensions": [
+        ".sci",
+        ".sce"
+      ]
+    },
+    {
+      "file": "source.scm.json",
+      "scope": "source.scm",
+      "names": [
+        "tree-sitter-query",
+        "tsq"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.sdbl.json",
+      "scope": "source.sdbl",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.sed.json",
+      "scope": "source.sed",
+      "names": [
+        "sed"
+      ],
+      "extensions": [
+        ".sed"
+      ]
+    },
+    {
+      "file": "source.sepolicy.json",
+      "scope": "source.sepolicy",
+      "names": [
+        "selinux-policy",
+        "selinux-kernel-policy-language",
+        "sepolicy"
+      ],
+      "extensions": [
+        ".te"
+      ]
+    },
+    {
+      "file": "source.sfv.json",
+      "scope": "source.sfv",
+      "names": [
+        "simple-file-verification",
+        "sfv"
+      ],
+      "extensions": [
+        ".sfv"
+      ]
+    },
+    {
+      "file": "source.shaderlab.json",
+      "scope": "source.shaderlab",
+      "names": [
+        "shaderlab"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.shell.json",
+      "scope": "source.shell",
+      "names": [
+        "abuild",
+        "alpine-abuild",
+        "apkbuild",
+        "bash",
+        "envrc",
+        "gentoo-ebuild",
+        "gentoo-eclass",
+        "openrc",
+        "openrc-runscript",
+        "sh",
+        "shell",
+        "shell-script",
+        "tcsh",
+        "zsh"
+      ],
+      "extensions": [
+        ".bash",
+        ".bats",
+        ".command",
+        ".csh",
+        ".ebuild",
+        ".eclass",
+        ".ksh",
+        ".pacscript",
+        ".sbatch",
+        ".sh",
+        ".sh.in",
+        ".slurm",
+        ".tcsh",
+        ".tmux",
+        ".tool",
+        ".zsh",
+        ".zsh-theme"
+      ]
+    },
+    {
+      "file": "source.shellcheckrc.json",
+      "scope": "source.shellcheckrc",
+      "names": [
+        "shellcheck-config",
+        "shellcheckrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.shen.json",
+      "scope": "source.shen",
+      "names": [
+        "shen"
+      ],
+      "extensions": [
+        ".shen"
+      ]
+    },
+    {
+      "file": "source.sieve.json",
+      "scope": "source.sieve",
+      "names": [
+        "sieve"
+      ],
+      "extensions": [
+        ".sieve"
+      ]
+    },
+    {
+      "file": "source.singularity.json",
+      "scope": "source.singularity",
+      "names": [
+        "singularity"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.slang.json",
+      "scope": "source.slang",
+      "names": [
+        "slang"
+      ],
+      "extensions": [
+        ".slang"
+      ]
+    },
+    {
+      "file": "source.slint.json",
+      "scope": "source.slint",
+      "names": [
+        "slint"
+      ],
+      "extensions": [
+        ".slint"
+      ]
+    },
+    {
+      "file": "source.smali.json",
+      "scope": "source.smali",
+      "names": [
+        "smali"
+      ],
+      "extensions": [
+        ".smali"
+      ]
+    },
+    {
+      "file": "source.smalltalk.json",
+      "scope": "source.smalltalk",
+      "names": [
+        "smalltalk",
+        "squeak",
+        "ston"
+      ],
+      "extensions": [
+        ".st",
+        ".ston"
+      ]
+    },
+    {
+      "file": "source.smithy.json",
+      "scope": "source.smithy",
+      "names": [
+        "smithy"
+      ],
+      "extensions": [
+        ".smithy"
+      ]
+    },
+    {
+      "file": "source.smpl.json",
+      "scope": "source.smpl",
+      "names": [
+        "smpl",
+        "coccinelle"
+      ],
+      "extensions": [
+        ".cocci"
+      ]
+    },
+    {
+      "file": "source.smt.json",
+      "scope": "source.smt",
+      "names": [
+        "smt"
+      ],
+      "extensions": [
+        ".smt2",
+        ".smt",
+        ".z3"
+      ]
+    },
+    {
+      "file": "source.solidity.json",
+      "scope": "source.solidity",
+      "names": [
+        "solidity"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.solution.json",
+      "scope": "source.solution",
+      "names": [
+        "microsoft-visual-studio-solution"
+      ],
+      "extensions": [
+        ".sln"
+      ]
+    },
+    {
+      "file": "source.sourcepawn.json",
+      "scope": "source.sourcepawn",
+      "names": [
+        "sourcepawn",
+        "sourcemod"
+      ],
+      "extensions": [
+        ".sp"
+      ]
+    },
+    {
+      "file": "source.sparql.json",
+      "scope": "source.sparql",
+      "names": [
+        "sparql"
+      ],
+      "extensions": [
+        ".sparql",
+        ".rq"
+      ]
+    },
+    {
+      "file": "source.spicedb.json",
+      "scope": "source.spicedb",
+      "names": [
+        "spicedb-schema"
+      ],
+      "extensions": [
+        ".zed"
+      ]
+    },
+    {
+      "file": "source.spin.json",
+      "scope": "source.spin",
+      "names": [
+        "propeller-spin"
+      ],
+      "extensions": [
+        ".spin"
+      ]
+    },
+    {
+      "file": "source.sqf.json",
+      "scope": "source.sqf",
+      "names": [
+        "sqf"
+      ],
+      "extensions": [
+        ".sqf",
+        ".hqf"
+      ]
+    },
+    {
+      "file": "source.sql.json",
+      "scope": "source.sql",
+      "names": [
+        "plpgsql",
+        "sql",
+        "sqlpl"
+      ],
+      "extensions": [
+        ".db2",
+        ".ddl",
+        ".mysql",
+        ".pgsql",
+        ".prc",
+        ".sql",
+        ".sql",
+        ".sql",
+        ".tab",
+        ".udf",
+        ".viw"
+      ]
+    },
+    {
+      "file": "source.ssh-config.json",
+      "scope": "source.ssh-config",
+      "names": [
+        "ssh-config",
+        "sshconfig",
+        "sshdconfig",
+        "ssh_config",
+        "sshd_config"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.stan.json",
+      "scope": "source.stan",
+      "names": [
+        "stan"
+      ],
+      "extensions": [
+        ".stan"
+      ]
+    },
+    {
+      "file": "source.star.json",
+      "scope": "source.star",
+      "names": [
+        "star"
+      ],
+      "extensions": [
+        ".star"
+      ]
+    },
+    {
+      "file": "source.stata.json",
+      "scope": "source.stata",
+      "names": [
+        "stata"
+      ],
+      "extensions": [
+        ".do",
+        ".ado",
+        ".doh",
+        ".ihlp",
+        ".mata",
+        ".matah",
+        ".sthlp"
+      ]
+    },
+    {
+      "file": "source.stl.json",
+      "scope": "source.stl",
+      "names": [
+        "stl",
+        "ascii-stl",
+        "stla"
+      ],
+      "extensions": [
+        ".stl"
+      ]
+    },
+    {
+      "file": "source.string-template.json",
+      "scope": "source.string-template",
+      "names": [
+        "stringtemplate"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.stylus.json",
+      "scope": "source.stylus",
+      "names": [
+        "stylus"
+      ],
+      "extensions": [
+        ".styl"
+      ]
+    },
+    {
+      "file": "source.supercollider.json",
+      "scope": "source.supercollider",
+      "names": [
+        "supercollider"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.surrealql.json",
+      "scope": "source.surrealql",
+      "names": [
+        "surrealql",
+        "surql"
+      ],
+      "extensions": [
+        ".surql"
+      ]
+    },
+    {
+      "file": "source.svelte.json",
+      "scope": "source.svelte",
+      "names": [
+        "svelte"
+      ],
+      "extensions": [
+        ".svelte"
+      ]
+    },
+    {
+      "file": "source.sway.json",
+      "scope": "source.sway",
+      "names": [
+        "sway"
+      ],
+      "extensions": [
+        ".sw"
+      ]
+    },
+    {
+      "file": "source.swift.json",
+      "scope": "source.swift",
+      "names": [
+        "swift"
+      ],
+      "extensions": [
+        ".swift"
+      ]
+    },
+    {
+      "file": "source.sy.json",
+      "scope": "source.sy",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.systemverilog.json",
+      "scope": "source.systemverilog",
+      "names": [
+        "systemverilog"
+      ],
+      "extensions": [
+        ".sv",
+        ".svh",
+        ".vh"
+      ]
+    },
+    {
+      "file": "source.tact.json",
+      "scope": "source.tact",
+      "names": [
+        "tact"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.talon.json",
+      "scope": "source.talon",
+      "names": [
+        "talon"
+      ],
+      "extensions": [
+        ".talon"
+      ]
+    },
+    {
+      "file": "source.tcl.json",
+      "scope": "source.tcl",
+      "names": [
+        "glyph",
+        "quartus-simulation-ip",
+        "sdc",
+        "tcl",
+        "xdc"
+      ],
+      "extensions": [
+        ".adp",
+        ".glf",
+        ".sdc",
+        ".tcl",
+        ".tcl.in",
+        ".tm",
+        ".xdc"
+      ]
+    },
+    {
+      "file": "source.tea.json",
+      "scope": "source.tea",
+      "names": [
+        "tea"
+      ],
+      "extensions": [
+        ".tea"
+      ]
+    },
+    {
+      "file": "source.teal.json",
+      "scope": "source.teal",
+      "names": [
+        "teal"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.templ.json",
+      "scope": "source.templ",
+      "names": [
+        "templ"
+      ],
+      "extensions": [
+        ".templ"
+      ]
+    },
+    {
+      "file": "source.terra.json",
+      "scope": "source.terra",
+      "names": [
+        "terra"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.textgrid.json",
+      "scope": "source.textgrid",
+      "names": [
+        "textgrid"
+      ],
+      "extensions": [
+        ".textgrid"
+      ]
+    },
+    {
+      "file": "source.textproto.json",
+      "scope": "source.textproto",
+      "names": [
+        "protocol-buffer-text-format",
+        "text-proto",
+        "protobuf-text-format"
+      ],
+      "extensions": [
+        ".textproto",
+        ".pbtxt",
+        ".txtpb"
+      ]
+    },
+    {
+      "file": "source.thrift.json",
+      "scope": "source.thrift",
+      "names": [
+        "thrift"
+      ],
+      "extensions": [
+        ".thrift"
+      ]
+    },
+    {
+      "file": "source.tl.json",
+      "scope": "source.tl",
+      "names": [
+        "type-language",
+        "tl"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.tla.json",
+      "scope": "source.tla",
+      "names": [
+        "tla"
+      ],
+      "extensions": [
+        ".tla"
+      ]
+    },
+    {
+      "file": "source.tlverilog.json",
+      "scope": "source.tlverilog",
+      "names": [
+        "tl-verilog"
+      ],
+      "extensions": [
+        ".tlv"
+      ]
+    },
+    {
+      "file": "source.tm-properties.json",
+      "scope": "source.tm-properties",
+      "names": [
+        "textmate-properties",
+        "tm-properties"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.tmdl.json",
+      "scope": "source.tmdl",
+      "names": [
+        "tmdl",
+        "tabular-model-definition-language"
+      ],
+      "extensions": [
+        ".tmdl"
+      ]
+    },
+    {
+      "file": "source.toc.json",
+      "scope": "source.toc",
+      "names": [
+        "world-of-warcraft-addon-data"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.toit.json",
+      "scope": "source.toit",
+      "names": [
+        "toit"
+      ],
+      "extensions": [
+        ".toit"
+      ]
+    },
+    {
+      "file": "source.tolk.json",
+      "scope": "source.tolk",
+      "names": [
+        "tolk"
+      ],
+      "extensions": [
+        ".tolk"
+      ]
+    },
+    {
+      "file": "source.toml.json",
+      "scope": "source.toml",
+      "names": [
+        "toml"
+      ],
+      "extensions": [
+        ".toml",
+        ".toml.example"
+      ]
+    },
+    {
+      "file": "source.torrc.json",
+      "scope": "source.torrc",
+      "names": [
+        "tor-config",
+        "torrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.ts.json",
+      "scope": "source.ts",
+      "names": [
+        "typescript",
+        "ts"
+      ],
+      "extensions": [
+        ".ts",
+        ".cts",
+        ".mts"
+      ]
+    },
+    {
+      "file": "source.tsp.json",
+      "scope": "source.tsp",
+      "names": [
+        "typespec",
+        "tsp"
+      ],
+      "extensions": [
+        ".tsp"
+      ]
+    },
+    {
+      "file": "source.tsql.json",
+      "scope": "source.tsql",
+      "names": [
+        "tsql"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.tsv.json",
+      "scope": "source.tsv",
+      "names": [
+        "tsv",
+        "tab-seperated-values"
+      ],
+      "extensions": [
+        ".tsv",
+        ".vcf"
+      ]
+    },
+    {
+      "file": "source.tsx.json",
+      "scope": "source.tsx",
+      "names": [
+        "tsx",
+        "typescriptreact"
+      ],
+      "extensions": [
+        ".tsx"
+      ]
+    },
+    {
+      "file": "source.turing.json",
+      "scope": "source.turing",
+      "names": [
+        "turing"
+      ],
+      "extensions": [
+        ".tu"
+      ]
+    },
+    {
+      "file": "source.turtle.json",
+      "scope": "source.turtle",
+      "names": [
+        "turtle"
+      ],
+      "extensions": [
+        ".ttl"
+      ]
+    },
+    {
+      "file": "source.txl.json",
+      "scope": "source.txl",
+      "names": [
+        "txl"
+      ],
+      "extensions": [
+        ".txl"
+      ]
+    },
+    {
+      "file": "source.typst.json",
+      "scope": "source.typst",
+      "names": [
+        "typst",
+        "typ"
+      ],
+      "extensions": [
+        ".typ"
+      ]
+    },
+    {
+      "file": "source.ucode.json",
+      "scope": "source.ucode",
+      "names": [
+        "ucode"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.uplc.json",
+      "scope": "source.uplc",
+      "names": [
+        "untyped-plutus-core"
+      ],
+      "extensions": [
+        ".uplc"
+      ]
+    },
+    {
+      "file": "source.ur.json",
+      "scope": "source.ur",
+      "names": [
+        "urweb",
+        "ur/web",
+        "ur"
+      ],
+      "extensions": [
+        ".ur",
+        ".urs"
+      ]
+    },
+    {
+      "file": "source.v.json",
+      "scope": "source.v",
+      "names": [
+        "v",
+        "vlang"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.vala.json",
+      "scope": "source.vala",
+      "names": [
+        "vala"
+      ],
+      "extensions": [
+        ".vala",
+        ".vapi"
+      ]
+    },
+    {
+      "file": "source.varnish.vcl.json",
+      "scope": "source.varnish.vcl",
+      "names": [
+        "vcl"
+      ],
+      "extensions": [
+        ".vcl"
+      ]
+    },
+    {
+      "file": "source.vb6.json",
+      "scope": "source.vb6",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.vba.json",
+      "scope": "source.vba",
+      "names": [
+        "b4x",
+        "basic-for-android",
+        "classic-visual-basic",
+        "vb-6",
+        "vb6",
+        "vba",
+        "visual-basic-6",
+        "visual-basic-6.0",
+        "visual-basic-classic",
+        "visual-basic-for-applications"
+      ],
+      "extensions": [
+        ".bas",
+        ".bas",
+        ".bas",
+        ".ctl",
+        ".dsr",
+        ".vba"
+      ]
+    },
+    {
+      "file": "source.vbnet.json",
+      "scope": "source.vbnet",
+      "names": [
+        "fb",
+        "freebasic",
+        "realbasic",
+        "vb-.net",
+        "vb.net",
+        "vbnet",
+        "vbscript",
+        "visual-basic",
+        "visual-basic-.net"
+      ],
+      "extensions": [
+        ".bi",
+        ".rbbas",
+        ".rbfrm",
+        ".rbmnu",
+        ".rbres",
+        ".rbtbar",
+        ".rbuistate",
+        ".vb",
+        ".vbhtml",
+        ".vbs"
+      ]
+    },
+    {
+      "file": "source.vcard.json",
+      "scope": "source.vcard",
+      "names": [
+        "vcard",
+        "virtual-contact-file",
+        "electronic-business-card"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.vcl.json",
+      "scope": "source.vcl",
+      "names": [
+        "vcl"
+      ],
+      "extensions": [
+        ".vcl"
+      ]
+    },
+    {
+      "file": "source.velocity.json",
+      "scope": "source.velocity",
+      "names": [
+        "velocity-template-language",
+        "vtl",
+        "velocity"
+      ],
+      "extensions": [
+        ".vtl"
+      ]
+    },
+    {
+      "file": "source.vento.json",
+      "scope": "source.vento",
+      "names": [
+        "vento"
+      ],
+      "extensions": [
+        ".vto"
+      ]
+    },
+    {
+      "file": "source.verilog.json",
+      "scope": "source.verilog",
+      "names": [
+        "verilog"
+      ],
+      "extensions": [
+        ".veo"
+      ]
+    },
+    {
+      "file": "source.verse.json",
+      "scope": "source.verse",
+      "names": [
+        "verse"
+      ],
+      "extensions": [
+        ".verse"
+      ]
+    },
+    {
+      "file": "source.vespaSchema.json",
+      "scope": "source.vespaSchema",
+      "names": [
+        "vespa-schema-definition",
+        "vespa"
+      ],
+      "extensions": [
+        ".sd"
+      ]
+    },
+    {
+      "file": "source.vhdl.json",
+      "scope": "source.vhdl",
+      "names": [
+        "vhdl"
+      ],
+      "extensions": [
+        ".vhdl",
+        ".vhd",
+        ".vhf",
+        ".vhi",
+        ".vho",
+        ".vht",
+        ".vhw"
+      ]
+    },
+    {
+      "file": "source.vhs.json",
+      "scope": "source.vhs",
+      "names": [
+        "tape",
+        "vhs"
+      ],
+      "extensions": [
+        ".tape"
+      ]
+    },
+    {
+      "file": "source.vim-snippet.json",
+      "scope": "source.vim-snippet",
+      "names": [
+        "vim-snippet",
+        "snipmate",
+        "ultisnip",
+        "ultisnips",
+        "neosnippet"
+      ],
+      "extensions": [
+        ".snip",
+        ".snippets"
+      ]
+    },
+    {
+      "file": "source.viml.json",
+      "scope": "source.viml",
+      "names": [
+        "vim-script",
+        "vim",
+        "viml",
+        "nvim",
+        "vimscript"
+      ],
+      "extensions": [
+        ".vim",
+        ".vimrc",
+        ".vmb"
+      ]
+    },
+    {
+      "file": "source.vue.json",
+      "scope": "source.vue",
+      "names": [
+        "vue"
+      ],
+      "extensions": [
+        ".vue"
+      ]
+    },
+    {
+      "file": "source.vyper.json",
+      "scope": "source.vyper",
+      "names": [
+        "vyper"
+      ],
+      "extensions": [
+        ".vy"
+      ]
+    },
+    {
+      "file": "source.wavefront.mtl.json",
+      "scope": "source.wavefront.mtl",
+      "names": [
+        "wavefront-material"
+      ],
+      "extensions": [
+        ".mtl"
+      ]
+    },
+    {
+      "file": "source.wavefront.obj.json",
+      "scope": "source.wavefront.obj",
+      "names": [
+        "wavefront-object"
+      ],
+      "extensions": [
+        ".obj"
+      ]
+    },
+    {
+      "file": "source.wdl.json",
+      "scope": "source.wdl",
+      "names": [
+        "wdl",
+        "workflow-description-language"
+      ],
+      "extensions": [
+        ".wdl"
+      ]
+    },
+    {
+      "file": "source.webassembly.json",
+      "scope": "source.webassembly",
+      "names": [
+        "webassembly",
+        "wast",
+        "wasm"
+      ],
+      "extensions": [
+        ".wast",
+        ".wat"
+      ]
+    },
+    {
+      "file": "source.webidl.json",
+      "scope": "source.webidl",
+      "names": [
+        "webidl"
+      ],
+      "extensions": [
+        ".webidl"
+      ]
+    },
+    {
+      "file": "source.wgetrc.json",
+      "scope": "source.wgetrc",
+      "names": [
+        "wget-config",
+        "wgetrc"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.wgsl.json",
+      "scope": "source.wgsl",
+      "names": [
+        "wgsl"
+      ],
+      "extensions": [
+        ".wgsl"
+      ]
+    },
+    {
+      "file": "source.whiley.json",
+      "scope": "source.whiley",
+      "names": [
+        "whiley"
+      ],
+      "extensions": [
+        ".whiley"
+      ]
+    },
+    {
+      "file": "source.win32-messages.json",
+      "scope": "source.win32-messages",
+      "names": [
+        "win32-message-file"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.wit.json",
+      "scope": "source.wit",
+      "names": [
+        "webassembly-interface-type",
+        "wit"
+      ],
+      "extensions": [
+        ".wit"
+      ]
+    },
+    {
+      "file": "source.witcherscript.json",
+      "scope": "source.witcherscript",
+      "names": [
+        "witcher-script"
+      ],
+      "extensions": [
+        ".ws"
+      ]
+    },
+    {
+      "file": "source.wollok.json",
+      "scope": "source.wollok",
+      "names": [
+        "wollok"
+      ],
+      "extensions": [
+        ".wlk"
+      ]
+    },
+    {
+      "file": "source.wren.json",
+      "scope": "source.wren",
+      "names": [
+        "wren",
+        "wrenlang"
+      ],
+      "extensions": [
+        ".wren"
+      ]
+    },
+    {
+      "file": "source.wsd.json",
+      "scope": "source.wsd",
+      "names": [
+        "plantuml"
+      ],
+      "extensions": [
+        ".puml",
+        ".iuml",
+        ".plantuml"
+      ]
+    },
+    {
+      "file": "source.x10.json",
+      "scope": "source.x10",
+      "names": [
+        "x10",
+        "xten"
+      ],
+      "extensions": [
+        ".x10"
+      ]
+    },
+    {
+      "file": "source.x86.json",
+      "scope": "source.x86",
+      "names": [
+        "unix-assembly",
+        "gas",
+        "gnu-asm",
+        "unix-asm"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.x86asm.json",
+      "scope": "source.x86asm",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.xc.json",
+      "scope": "source.xc",
+      "names": [
+        "xc"
+      ],
+      "extensions": [
+        ".xc"
+      ]
+    },
+    {
+      "file": "source.xlfd.json",
+      "scope": "source.xlfd",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "source.xmake.json",
+      "scope": "source.xmake",
+      "names": [
+        "xmake"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "source.xojo.json",
+      "scope": "source.xojo",
+      "names": [
+        "xojo"
+      ],
+      "extensions": [
+        ".xojo_code",
+        ".xojo_menu",
+        ".xojo_report",
+        ".xojo_script",
+        ".xojo_toolbar",
+        ".xojo_window"
+      ]
+    },
+    {
+      "file": "source.xq.json",
+      "scope": "source.xq",
+      "names": [
+        "xquery"
+      ],
+      "extensions": [
+        ".xquery",
+        ".xq",
+        ".xql",
+        ".xqm",
+        ".xqy"
+      ]
+    },
+    {
+      "file": "source.xtend.json",
+      "scope": "source.xtend",
+      "names": [
+        "xtend"
+      ],
+      "extensions": [
+        ".xtend"
+      ]
+    },
+    {
+      "file": "source.yacc.json",
+      "scope": "source.yacc",
+      "names": [
+        "bison",
+        "yacc"
+      ],
+      "extensions": [
+        ".bison",
+        ".y",
+        ".yacc"
+      ]
+    },
+    {
+      "file": "source.yaml.json",
+      "scope": "source.yaml",
+      "names": [
+        "buildstream",
+        "jar-manifest",
+        "kaitai-struct",
+        "ksy",
+        "lookml",
+        "oasv2-yaml",
+        "oasv3-yaml",
+        "raml",
+        "unity3d-asset",
+        "yaml",
+        "yml"
+      ],
+      "extensions": [
+        ".anim",
+        ".asset",
+        ".ksy",
+        ".lkml",
+        ".lookml",
+        ".mat",
+        ".meta",
+        ".mir",
+        ".prefab",
+        ".raml",
+        ".reek",
+        ".rviz",
+        ".sublime-syntax",
+        ".syntax",
+        ".unity",
+        ".yaml-tmlanguage",
+        ".yaml.sed",
+        ".yml.mysql"
+      ]
+    },
+    {
+      "file": "source.yaml.salt.json",
+      "scope": "source.yaml.salt",
+      "names": [
+        "salt",
+        "saltstack",
+        "saltstate"
+      ],
+      "extensions": [
+        ".sls"
+      ]
+    },
+    {
+      "file": "source.yang.json",
+      "scope": "source.yang",
+      "names": [
+        "yang"
+      ],
+      "extensions": [
+        ".yang"
+      ]
+    },
+    {
+      "file": "source.yara.json",
+      "scope": "source.yara",
+      "names": [
+        "yara"
+      ],
+      "extensions": [
+        ".yar",
+        ".yara"
+      ]
+    },
+    {
+      "file": "source.yasnippet.json",
+      "scope": "source.yasnippet",
+      "names": [
+        "yasnippet",
+        "snippet",
+        "yas"
+      ],
+      "extensions": [
+        ".yasnippet"
+      ]
+    },
+    {
+      "file": "source.yul.json",
+      "scope": "source.yul",
+      "names": [
+        "yul"
+      ],
+      "extensions": [
+        ".yul"
+      ]
+    },
+    {
+      "file": "source.zap.json",
+      "scope": "source.zap",
+      "names": [
+        "zap"
+      ],
+      "extensions": [
+        ".zap",
+        ".xzap"
+      ]
+    },
+    {
+      "file": "source.zeek.json",
+      "scope": "source.zeek",
+      "names": [
+        "zeek",
+        "bro"
+      ],
+      "extensions": [
+        ".zeek",
+        ".bro"
+      ]
+    },
+    {
+      "file": "source.zenscript.json",
+      "scope": "source.zenscript",
+      "names": [
+        "zenscript"
+      ],
+      "extensions": [
+        ".zs"
+      ]
+    },
+    {
+      "file": "source.zig.json",
+      "scope": "source.zig",
+      "names": [
+        "zig"
+      ],
+      "extensions": [
+        ".zig",
+        ".zig.zon"
+      ]
+    },
+    {
+      "file": "source.zil.json",
+      "scope": "source.zil",
+      "names": [
+        "zil"
+      ],
+      "extensions": [
+        ".zil",
+        ".mud"
+      ]
+    },
+    {
+      "file": "source.zmodel.json",
+      "scope": "source.zmodel",
+      "names": [
+        "zmodel"
+      ],
+      "extensions": [
+        ".zmodel"
+      ]
+    },
+    {
+      "file": "text.adblock.json",
+      "scope": "text.adblock",
+      "names": [
+        "adblock-filter-list",
+        "ad-block-filters",
+        "ad-block",
+        "adb",
+        "adblock"
+      ],
+      "extensions": [
+        ".txt"
+      ]
+    },
+    {
+      "file": "text.bbcode.json",
+      "scope": "text.bbcode",
+      "names": [
+        "bbcode"
+      ],
+      "extensions": [
+        ".bbcode"
+      ]
+    },
+    {
+      "file": "text.bibtex.json",
+      "scope": "text.bibtex",
+      "names": [
+        "bibtex"
+      ],
+      "extensions": [
+        ".bib",
+        ".bibtex"
+      ]
+    },
+    {
+      "file": "text.browserslist.json",
+      "scope": "text.browserslist",
+      "names": [
+        "browserslist"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.cfml.basic.json",
+      "scope": "text.cfml.basic",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.checksums.json",
+      "scope": "text.checksums",
+      "names": [
+        "checksums",
+        "checksum",
+        "hash",
+        "hashes",
+        "sum",
+        "sums"
+      ],
+      "extensions": [
+        ".crc32",
+        ".md2",
+        ".md4",
+        ".md5",
+        ".sha1",
+        ".sha2",
+        ".sha224",
+        ".sha256",
+        ".sha256sum",
+        ".sha3",
+        ".sha384",
+        ".sha512"
+      ]
+    },
+    {
+      "file": "text.codeowners.json",
+      "scope": "text.codeowners",
+      "names": [
+        "codeowners"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.conllu.json",
+      "scope": "text.conllu",
+      "names": [
+        "conll-u",
+        "conll",
+        "conll-x"
+      ],
+      "extensions": [
+        ".conllu",
+        ".conll"
+      ]
+    },
+    {
+      "file": "text.crontab.json",
+      "scope": "text.crontab",
+      "names": [
+        "crontab",
+        "cron",
+        "cron-table"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.dfy.dafny.json",
+      "scope": "text.dfy.dafny",
+      "names": [
+        "dafny"
+      ],
+      "extensions": [
+        ".dfy"
+      ]
+    },
+    {
+      "file": "text.elixir.json",
+      "scope": "text.elixir",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.eml.basic.json",
+      "scope": "text.eml.basic",
+      "names": [
+        "e-mail",
+        "email",
+        "eml",
+        "mail",
+        "mbox"
+      ],
+      "extensions": [
+        ".eml",
+        ".mbox"
+      ]
+    },
+    {
+      "file": "text.gherkin.feature.json",
+      "scope": "text.gherkin.feature",
+      "names": [
+        "gherkin",
+        "cucumber"
+      ],
+      "extensions": [
+        ".feature",
+        ".story"
+      ]
+    },
+    {
+      "file": "text.git-commit.json",
+      "scope": "text.git-commit",
+      "names": [
+        "git-commit",
+        "commit"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.grammarkdown.json",
+      "scope": "text.grammarkdown",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.haml.json",
+      "scope": "text.haml",
+      "names": [
+        "haml"
+      ],
+      "extensions": [
+        ".haml",
+        ".haml.deface"
+      ]
+    },
+    {
+      "file": "text.html.asciidoc.json",
+      "scope": "text.html.asciidoc",
+      "names": [
+        "asciidoc"
+      ],
+      "extensions": [
+        ".asciidoc",
+        ".adoc"
+      ]
+    },
+    {
+      "file": "text.html.asdoc.json",
+      "scope": "text.html.asdoc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.html.asp.json",
+      "scope": "text.html.asp",
+      "names": [
+        "asp",
+        "asp.net",
+        "aspx",
+        "aspx-vb",
+        "classic-asp"
+      ],
+      "extensions": [
+        ".asax",
+        ".ascx",
+        ".ashx",
+        ".asmx",
+        ".asp",
+        ".aspx",
+        ".axd"
+      ]
+    },
+    {
+      "file": "text.html.basic.json",
+      "scope": "text.html.basic",
+      "names": [
+        "html",
+        "kit",
+        "mtml",
+        "xhtml"
+      ],
+      "extensions": [
+        ".hta",
+        ".htm",
+        ".html.hl",
+        ".kit",
+        ".mtml",
+        ".xht",
+        ".xhtml"
+      ]
+    },
+    {
+      "file": "text.html.cfm.json",
+      "scope": "text.html.cfm",
+      "names": [
+        "coldfusion",
+        "cfm",
+        "cfml",
+        "coldfusion-html"
+      ],
+      "extensions": [
+        ".cfm",
+        ".cfml"
+      ]
+    },
+    {
+      "file": "text.html.creole.json",
+      "scope": "text.html.creole",
+      "names": [
+        "creole"
+      ],
+      "extensions": [
+        ".creole"
+      ]
+    },
+    {
+      "file": "text.html.cshtml.json",
+      "scope": "text.html.cshtml",
+      "names": [
+        "html+razor",
+        "razor"
+      ],
+      "extensions": [
+        ".cshtml",
+        ".razor"
+      ]
+    },
+    {
+      "file": "text.html.django.json",
+      "scope": "text.html.django",
+      "names": [
+        "jinja",
+        "django",
+        "html+django",
+        "html+jinja",
+        "htmldjango"
+      ],
+      "extensions": [
+        ".jinja",
+        ".j2",
+        ".jinja2"
+      ]
+    },
+    {
+      "file": "text.html.ecmarkup.json",
+      "scope": "text.html.ecmarkup",
+      "names": [
+        "ecmarkup",
+        "ecmarkdown"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.html.ecr.json",
+      "scope": "text.html.ecr",
+      "names": [
+        "html+ecr",
+        "ecr"
+      ],
+      "extensions": [
+        ".ecr"
+      ]
+    },
+    {
+      "file": "text.html.edge.json",
+      "scope": "text.html.edge",
+      "names": [
+        "edge"
+      ],
+      "extensions": [
+        ".edge"
+      ]
+    },
+    {
+      "file": "text.html.elixir.json",
+      "scope": "text.html.elixir",
+      "names": [
+        "html+eex",
+        "eex",
+        "heex",
+        "leex"
+      ],
+      "extensions": [
+        ".html.eex",
+        ".heex",
+        ".leex"
+      ]
+    },
+    {
+      "file": "text.html.erb.json",
+      "scope": "text.html.erb",
+      "names": [
+        "html+erb",
+        "erb",
+        "rhtml",
+        "html+ruby"
+      ],
+      "extensions": [
+        ".erb",
+        ".erb.deface",
+        ".rhtml"
+      ]
+    },
+    {
+      "file": "text.html.ftl.json",
+      "scope": "text.html.ftl",
+      "names": [
+        "freemarker",
+        "ftl"
+      ],
+      "extensions": [
+        ".ftlh"
+      ]
+    },
+    {
+      "file": "text.html.handlebars.json",
+      "scope": "text.html.handlebars",
+      "names": [
+        "handlebars",
+        "hbs",
+        "htmlbars"
+      ],
+      "extensions": [
+        ".handlebars",
+        ".hbs"
+      ]
+    },
+    {
+      "file": "text.html.javadoc.json",
+      "scope": "text.html.javadoc",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.html.js.json",
+      "scope": "text.html.js",
+      "names": [
+        "ejs"
+      ],
+      "extensions": [
+        ".ejs",
+        ".ect",
+        ".ejs.t",
+        ".jst"
+      ]
+    },
+    {
+      "file": "text.html.jsp.json",
+      "scope": "text.html.jsp",
+      "names": [
+        "groovy-server-pages",
+        "gsp",
+        "java-server-page",
+        "java-server-pages",
+        "jsp"
+      ],
+      "extensions": [
+        ".gsp",
+        ".jsp",
+        ".tag"
+      ]
+    },
+    {
+      "file": "text.html.jte.json",
+      "scope": "text.html.jte",
+      "names": [
+        "java-template-engine",
+        "jte"
+      ],
+      "extensions": [
+        ".jte"
+      ]
+    },
+    {
+      "file": "text.html.liquid.json",
+      "scope": "text.html.liquid",
+      "names": [
+        "liquid"
+      ],
+      "extensions": [
+        ".liquid"
+      ]
+    },
+    {
+      "file": "text.html.mako.json",
+      "scope": "text.html.mako",
+      "names": [
+        "mako"
+      ],
+      "extensions": [
+        ".mako",
+        ".mao"
+      ]
+    },
+    {
+      "file": "text.html.markdown.d2.json",
+      "scope": "text.html.markdown.d2",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.html.markdown.source.gfm.apib.json",
+      "scope": "text.html.markdown.source.gfm.apib",
+      "names": [
+        "api-blueprint"
+      ],
+      "extensions": [
+        ".apib"
+      ]
+    },
+    {
+      "file": "text.html.markdown.source.gfm.mson.json",
+      "scope": "text.html.markdown.source.gfm.mson",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.html.mediawiki.json",
+      "scope": "text.html.mediawiki",
+      "names": [
+        "wikitext",
+        "mediawiki",
+        "wiki"
+      ],
+      "extensions": [
+        ".mediawiki",
+        ".wiki",
+        ".wikitext"
+      ]
+    },
+    {
+      "file": "text.html.nunjucks.json",
+      "scope": "text.html.nunjucks",
+      "names": [
+        "nunjucks",
+        "njk"
+      ],
+      "extensions": [
+        ".njk"
+      ]
+    },
+    {
+      "file": "text.html.php.blade.json",
+      "scope": "text.html.php.blade",
+      "names": [
+        "blade"
+      ],
+      "extensions": [
+        ".blade",
+        ".blade.php"
+      ]
+    },
+    {
+      "file": "text.html.php.json",
+      "scope": "text.html.php",
+      "names": [
+        "html+php",
+        "inc",
+        "php"
+      ],
+      "extensions": [
+        ".aw",
+        ".ctp",
+        ".php3",
+        ".php4",
+        ".php5",
+        ".phps",
+        ".phpt",
+        ".phtml"
+      ]
+    },
+    {
+      "file": "text.html.riot.json",
+      "scope": "text.html.riot",
+      "names": [
+        "riot"
+      ],
+      "extensions": [
+        ".riot"
+      ]
+    },
+    {
+      "file": "text.html.slash.json",
+      "scope": "text.html.slash",
+      "names": [
+        "slash"
+      ],
+      "extensions": [
+        ".sl"
+      ]
+    },
+    {
+      "file": "text.html.smarty.json",
+      "scope": "text.html.smarty",
+      "names": [
+        "latte",
+        "mustache",
+        "smarty"
+      ],
+      "extensions": [
+        ".latte",
+        ".mustache"
+      ]
+    },
+    {
+      "file": "text.html.soy.json",
+      "scope": "text.html.soy",
+      "names": [
+        "closure-templates",
+        "soy"
+      ],
+      "extensions": [
+        ".soy"
+      ]
+    },
+    {
+      "file": "text.html.statamic.json",
+      "scope": "text.html.statamic",
+      "names": [
+        "antlers"
+      ],
+      "extensions": [
+        ".antlers.html",
+        ".antlers.php",
+        ".antlers.xml"
+      ]
+    },
+    {
+      "file": "text.html.twig.json",
+      "scope": "text.html.twig",
+      "names": [
+        "twig"
+      ],
+      "extensions": [
+        ".twig"
+      ]
+    },
+    {
+      "file": "text.jade.json",
+      "scope": "text.jade",
+      "names": [
+        "pug"
+      ],
+      "extensions": [
+        ".jade",
+        ".pug"
+      ]
+    },
+    {
+      "file": "text.k.json",
+      "scope": "text.k",
+      "names": [
+        "kframework"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.marko.json",
+      "scope": "text.marko",
+      "names": [
+        "marko",
+        "markojs"
+      ],
+      "extensions": [
+        ".marko"
+      ]
+    },
+    {
+      "file": "text.md.json",
+      "scope": "text.md",
+      "names": [
+        "markdown",
+        "md",
+        "pandoc",
+        "rmarkdown"
+      ],
+      "extensions": [
+        ".livemd",
+        ".markdown",
+        ".mdown",
+        ".mdwn",
+        ".mkd",
+        ".mkdn",
+        ".mkdown",
+        ".qmd",
+        ".rmd",
+        ".ronn",
+        ".scd",
+        ".workbook"
+      ]
+    },
+    {
+      "file": "text.muse.json",
+      "scope": "text.muse",
+      "names": [
+        "muse",
+        "amusewiki",
+        "emacs-muse"
+      ],
+      "extensions": [
+        ".muse"
+      ]
+    },
+    {
+      "file": "text.python.console.json",
+      "scope": "text.python.console",
+      "names": [
+        "python-console",
+        "pycon"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.python.traceback.json",
+      "scope": "text.python.traceback",
+      "names": [
+        "python-traceback"
+      ],
+      "extensions": [
+        ".pytb"
+      ]
+    },
+    {
+      "file": "text.rdoc.json",
+      "scope": "text.rdoc",
+      "names": [
+        "rdoc"
+      ],
+      "extensions": [
+        ".rdoc"
+      ]
+    },
+    {
+      "file": "text.restructuredtext.json",
+      "scope": "text.restructuredtext",
+      "names": [
+        "restructuredtext",
+        "rst"
+      ],
+      "extensions": [
+        ".rst",
+        ".rest",
+        ".rest.txt",
+        ".rst.txt"
+      ]
+    },
+    {
+      "file": "text.robot.json",
+      "scope": "text.robot",
+      "names": [
+        "robotframework"
+      ],
+      "extensions": [
+        ".robot",
+        ".resource"
+      ]
+    },
+    {
+      "file": "text.robots-txt.json",
+      "scope": "text.robots-txt",
+      "names": [
+        "robots-exclusion-rules",
+        "robots",
+        "robots-txt",
+        "robotx.txt"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.roff.json",
+      "scope": "text.roff",
+      "names": [
+        "groff",
+        "man",
+        "man-page",
+        "man-page",
+        "manpage",
+        "mdoc",
+        "nroff",
+        "roff",
+        "roff-manpage",
+        "troff"
+      ],
+      "extensions": [
+        ".1",
+        ".1",
+        ".1in",
+        ".1in",
+        ".1m",
+        ".1m",
+        ".1x",
+        ".1x",
+        ".2",
+        ".2",
+        ".3",
+        ".3",
+        ".3in",
+        ".3in",
+        ".3m",
+        ".3m",
+        ".3p",
+        ".3p",
+        ".3pm",
+        ".3pm",
+        ".3qt",
+        ".3qt",
+        ".3x",
+        ".3x",
+        ".4",
+        ".4",
+        ".5",
+        ".5",
+        ".6",
+        ".6",
+        ".7",
+        ".7",
+        ".8",
+        ".8",
+        ".9",
+        ".9",
+        ".man",
+        ".man",
+        ".mdoc",
+        ".mdoc",
+        ".me",
+        ".roff",
+        ".tmac"
+      ]
+    },
+    {
+      "file": "text.rtf.json",
+      "scope": "text.rtf",
+      "names": [
+        "rich-text-format"
+      ],
+      "extensions": [
+        ".rtf"
+      ]
+    },
+    {
+      "file": "text.runoff.json",
+      "scope": "text.runoff",
+      "names": [
+        "runoff"
+      ],
+      "extensions": [
+        ".rnh",
+        ".rno"
+      ]
+    },
+    {
+      "file": "text.sfd.json",
+      "scope": "text.sfd",
+      "names": [
+        "spline-font-database"
+      ],
+      "extensions": [
+        ".sfd"
+      ]
+    },
+    {
+      "file": "text.shell-session.json",
+      "scope": "text.shell-session",
+      "names": [
+        "shellsession",
+        "bash-session",
+        "console"
+      ],
+      "extensions": [
+        ".sh-session"
+      ]
+    },
+    {
+      "file": "text.slim.json",
+      "scope": "text.slim",
+      "names": [
+        "slim"
+      ],
+      "extensions": [
+        ".slim"
+      ]
+    },
+    {
+      "file": "text.source.mps.json",
+      "scope": "text.source.mps",
+      "names": [
+        "mathematical-programming-system"
+      ],
+      "extensions": [
+        ".mps"
+      ]
+    },
+    {
+      "file": "text.srt.json",
+      "scope": "text.srt",
+      "names": [
+        "subrip-text"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.tex.json",
+      "scope": "text.tex",
+      "names": [],
+      "extensions": []
+    },
+    {
+      "file": "text.tex.latex.haskell.json",
+      "scope": "text.tex.latex.haskell",
+      "names": [
+        "literate-haskell",
+        "lhaskell",
+        "lhs"
+      ],
+      "extensions": [
+        ".lhs"
+      ]
+    },
+    {
+      "file": "text.tex.latex.json",
+      "scope": "text.tex.latex",
+      "names": [
+        "tex",
+        "latex"
+      ],
+      "extensions": [
+        ".tex",
+        ".aux",
+        ".bbx",
+        ".cbx",
+        ".dtx",
+        ".ins",
+        ".lbx",
+        ".ltx",
+        ".mkii",
+        ".mkiv",
+        ".mkvi",
+        ".sty",
+        ".toc"
+      ]
+    },
+    {
+      "file": "text.tex.latex.sweave.json",
+      "scope": "text.tex.latex.sweave",
+      "names": [
+        "sweave"
+      ],
+      "extensions": [
+        ".rnw"
+      ]
+    },
+    {
+      "file": "text.texinfo.json",
+      "scope": "text.texinfo",
+      "names": [
+        "texinfo"
+      ],
+      "extensions": [
+        ".texinfo",
+        ".texi",
+        ".txi"
+      ]
+    },
+    {
+      "file": "text.vim-help.json",
+      "scope": "text.vim-help",
+      "names": [
+        "vim-help-file",
+        "help",
+        "vimhelp"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.vtt.json",
+      "scope": "text.vtt",
+      "names": [
+        "webvtt",
+        "vtt"
+      ],
+      "extensions": [
+        ".vtt"
+      ]
+    },
+    {
+      "file": "text.xml.ant.json",
+      "scope": "text.xml.ant",
+      "names": [
+        "ant-build-system"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.xml.genshi.json",
+      "scope": "text.xml.genshi",
+      "names": [
+        "genshi",
+        "xml+genshi",
+        "xml+kid"
+      ],
+      "extensions": [
+        ".kid"
+      ]
+    },
+    {
+      "file": "text.xml.json",
+      "scope": "text.xml",
+      "names": [
+        "collada",
+        "eagle",
+        "labview",
+        "rss",
+        "web-ontology-language",
+        "wsdl",
+        "xml",
+        "xpages",
+        "xproc",
+        "xsd"
+      ],
+      "extensions": [
+        ".adml",
+        ".admx",
+        ".ant",
+        ".axaml",
+        ".axml",
+        ".brd",
+        ".builds",
+        ".ccproj",
+        ".ccxml",
+        ".clixml",
+        ".cproject",
+        ".cscfg",
+        ".csdef",
+        ".csproj",
+        ".ct",
+        ".dae",
+        ".depproj",
+        ".dita",
+        ".ditamap",
+        ".ditaval",
+        ".dll.config",
+        ".dotsettings",
+        ".filters",
+        ".fsproj",
+        ".fxml",
+        ".glade",
+        ".gmx",
+        ".gpx",
+        ".grxml",
+        ".hzp",
+        ".icls",
+        ".iml",
+        ".ivy",
+        ".jelly",
+        ".jsproj",
+        ".kml",
+        ".launch",
+        ".lvclass",
+        ".lvlib",
+        ".lvproj",
+        ".mdpolicy",
+        ".meta4",
+        ".mjml",
+        ".mxml",
+        ".natvis",
+        ".ndproj",
+        ".nproj",
+        ".nuspec",
+        ".odd",
+        ".osm",
+        ".owl",
+        ".pkgproj",
+        ".proj",
+        ".props",
+        ".ps1xml",
+        ".psc1",
+        ".pt",
+        ".pubxml",
+        ".qhelp",
+        ".rbxmx",
+        ".rdf",
+        ".resx",
+        ".rss",
+        ".sch",
+        ".sch",
+        ".scxml",
+        ".sfproj",
+        ".shproj",
+        ".slnx",
+        ".srdf",
+        ".storyboard",
+        ".sublime-snippet",
+        ".targets",
+        ".tml",
+        ".ui",
+        ".urdf",
+        ".ux",
+        ".vbproj",
+        ".vcxproj",
+        ".vsixmanifest",
+        ".vssettings",
+        ".vstemplate",
+        ".vxml",
+        ".wixproj",
+        ".wsdl",
+        ".wsf",
+        ".wxi",
+        ".wxl",
+        ".wxs",
+        ".x3d",
+        ".xacro",
+        ".xaml",
+        ".xib",
+        ".xlf",
+        ".xliff",
+        ".xmi",
+        ".xml",
+        ".xml.dist",
+        ".xmp",
+        ".xpl",
+        ".xproc",
+        ".xproj",
+        ".xsd",
+        ".xsp-config",
+        ".xsp.metadata",
+        ".xspec",
+        ".xul",
+        ".zcml"
+      ]
+    },
+    {
+      "file": "text.xml.plist.json",
+      "scope": "text.xml.plist",
+      "names": [
+        "xml-property-list"
+      ],
+      "extensions": [
+        ".sttheme",
+        ".tmcommand",
+        ".tmlanguage",
+        ".tmpreferences",
+        ".tmsnippet",
+        ".tmtheme"
+      ]
+    },
+    {
+      "file": "text.xml.pom.json",
+      "scope": "text.xml.pom",
+      "names": [
+        "maven-pom"
+      ],
+      "extensions": []
+    },
+    {
+      "file": "text.xml.svg.json",
+      "scope": "text.xml.svg",
+      "names": [
+        "svg"
+      ],
+      "extensions": [
+        ".svg"
+      ]
+    },
+    {
+      "file": "text.xml.xsl.json",
+      "scope": "text.xml.xsl",
+      "names": [
+        "xslt",
+        "xsl"
+      ],
+      "extensions": [
+        ".xslt",
+        ".xsl"
+      ]
+    },
+    {
+      "file": "text.zone_file.json",
+      "scope": "text.zone_file",
+      "names": [
+        "dns-zone"
+      ],
+      "extensions": [
+        ".zone",
+        ".arpa"
+      ]
+    }
+  ]
+}

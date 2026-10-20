@@ -81,6 +81,7 @@ markdown/
 - `capabilities` are what the extension may ask the workbench for. `workspace.read` lets it read files; `workspace.write` lets it write them. A call without the capability is rejected with the name of the one it needs.
 - There is no `view`: the extension only handles hooks and commands and presents tabs, so it takes no place in the layout, and the Explorer keeps the sidebar. An extension gets a view only by asking for one, under [Views](#views).
 - `contributes` adds commands and menu items, below.
+- A top-level `icon` names an SVG file or a built-in icon such as `markdown`. It identifies the extension and its dynamically opened tabs; otherwise the first view's icon is used.
 
 The **Extension** page of Settings edits these fields and preserves entries it does not expose. *Open as JSON* opens the text, including native declarations.
 
@@ -201,6 +202,7 @@ The extension asks the workbench for files through the `rayde.workspace` module:
 | Function | Capability | Returns |
 | --- | --- | --- |
 | `readFile(path)` | `workspace.read` | the text of the file, as the editor holds it when the file is open |
+| `readBytes(path)` | `workspace.read` | base64-encoded file bytes, limited to 8 MiB |
 | `activeFile()` | `workspace.read` | the path of the file in front, or null |
 | `root()` | `workspace.read` | the project folder |
 | `openFile(path)` | `workspace.read` | opens the file in a tab |
@@ -211,6 +213,10 @@ Paths are resolved against the project folder, and one outside it is refused. Ca
 `rayde.settings.get(key, fallback?)` returns a promise for the calling extension's own setting. Workspace values under `extension.<id>` in `.rayde/settings.json` override user values in `~/.rayde/settings.json`, then the manifest's configuration default and finally the supplied fallback. Reading this section needs no workspace capability and cannot access another extension's section.
 
 `rayde.window.notify(message, kind='info')` shows an Ashui toast and records the message in the extension's Output channel. Kinds are `info`, `success`, `warning` and `error`. Output uses the theme's error, warning and success colors for those messages, including multiline entries. The text remains selectable and copyable. The toast's **Show Output** action opens that channel. The extension's manifest supplies the toast title; no workspace capability is required.
+
+`rayde.window.focusView(root)` focuses an existing tab mounted by this extension. `rayde.window.openExternal(url)` requires `window.openExternal` and opens HTTP, HTTPS or mailto links in the system handler. Both return promises.
+
+The pure native modules `rayde.syntax` and `rayde.markdown` supply the [shared syntax registry](syntax.md) and [Markdown renderer](markdown.md). The `markdown-view` bridge consumes the renderer's JSON document string, draws its Ashui content, and emits `link` events with `{href}` for file or external links. Same-document anchors are handled within the view.
 
 ## Showing a tab
 
@@ -354,7 +360,7 @@ SNAPSHOT_ONLY=debug scripts/snapshot.sh                    # a breakpoint, the s
 
 - `setTitle` changes the first view's title; the others keep the title they declare.
 - The Explorer of an extension project lists its `sources` and the config, not the whole folder: the sample lists `docs` as a source so `README.md` has a menu.
-- Only `workspace.read` and `workspace.write` are backed by a service. The other capabilities in the form (`process.spawn`, `net.fetch`, `terminal`, `clipboard`) are recorded in the config and not yet acted on.
+- `workspace.read`, `workspace.write` and `window.openExternal` are backed by services. The other capabilities in the form (`process.spawn`, `net.fetch`, `terminal`, `clipboard`) are recorded in the config and not yet acted on.
 - The Preview lays text out box by box, so inline emphasis inside a paragraph needs the per-word markup `words()` produces; ashui's inline flow is not attached to extension markup.
 - A menu icon sits inside the item's label, at its right end, until ashui's menu items take an icon of their own.
 - A call that a built-in makes back into the script (`array.map(f)`, a computed value, an effect) cannot be stopped in, and the extension does not stop on an error or on a `debugger` statement.

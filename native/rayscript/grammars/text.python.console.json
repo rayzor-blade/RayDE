@@ -1,0 +1,1 @@
+{"dependencies":["source.python"],"patterns":[{"captures":{"1":{"name":"punctuation.separator.prompt.python.console"},"2":{"patterns":[{"include":"source.python"}]}},"match":"^(>{3}|\\.{3}|In \\[\\d+\\]:) (.+)$"}],"scopeName":"text.python.console","fileTypes":[]}

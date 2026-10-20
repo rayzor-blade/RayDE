@@ -12,6 +12,10 @@ use std::{
     time::Instant,
 };
 
+mod markdown;
+mod syntax;
+mod grammars;
+
 enum Command {
     Message(String),
     CloseView(u32),
@@ -39,6 +43,8 @@ impl Runtime {
         thread::Builder::new().name("rayde-extension".into()).stack_size(64 << 20).spawn(move || {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 let mut host = Host::new(Config { root, ..Config::default() });
+                markdown::install(host.vm());
+                syntax::install(host.vm());
                 host.vm().set_native_waker(Arc::new(move || { let _ = tx.send(Command::Wake); }));
                 worker.push(format!("{{\"t\":\"ready\",\"protocol\":{PROTOCOL}}}"));
                 let mut next = None;

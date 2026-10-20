@@ -1,0 +1,15 @@
+Syntax and Markdown dependencies
+
+The grammar data comes from @wooorm/starry-night 3.11.0. Its original NOTICE
+and LICENSE accompany this file. Entries referring to lang/<name>.js map to
+grammars/<name>.json in RayDE; names/extensions move into index.json and the
+remaining TextMate grammar is serialized as JSON.
+
+Irosashi 0.3.0 supplies the TextMate engine, with Ferroni 1.10.0 providing its
+regex implementation. RayDE disables Irosashi's embedded grammar/theme data
+and supplies the Linguist-derived bundle above.
+
+Pulldown-cmark 0.13.4 parses Markdown. Mermaid-rs-renderer 0.3.1 renders diagrams.
+LaTeX-Rust 3.0.1 renders mathematical LaTeX, including its STIX Two Math font and
+dvips color data. Their respective notices and license texts are included here.
+Exact transitive dependency versions are locked in native/rayscript/Cargo.lock.

@@ -1,0 +1,1 @@
+{"dependencies":["source.nunjucks","text.html.basic"],"patterns":[{"include":"source.nunjucks"},{"include":"text.html.basic"}],"scopeName":"text.html.nunjucks","fileTypes":["njk"]}

@@ -16,4 +16,4 @@ The icon is `assets/rayde-icon.png`, a rounded square on a transparent margin. `
 
 ## Built-in extensions
 
-Packaging copies `extensions/` with the program. macOS places it in `RayDE.app/Contents/Resources/extensions`; Linux in `<prefix>/share/rayde/extensions`. The Windows distribution places it beside `rayde.hl` and `RayDE.cmd`. The host binary is staged beside `rayde.hl`; `RAYSCRIPT_HOST` can name another host. `RAYDE_EXTENSIONS` overrides the built-in extensions folder.
+Packaging copies `extensions/` with the program. macOS places it in `RayDE.app/Contents/Resources/extensions`; Linux in `<prefix>/share/rayde/extensions`. The Windows distribution places it beside `rayde.hl` and `RayDE.cmd`. `rayscript.hdll` embeds the extension runtimes, shared syntax data and Markdown renderers beside `rayde.hl`; their third-party notices are staged under `notices/syntax-markdown`. `RAYDE_EXTENSIONS` overrides the built-in extensions folder.

@@ -86,6 +86,7 @@ class Manifest {
 	public final name:String;
 	public final version:String;
 	public final description:String;
+	public final icon:Null<String>;
 	public final main:String;
 	public final sources:Array<String>;
 	public final mocks:String;
@@ -150,6 +151,8 @@ class Manifest {
 		name = text(json, "name", fallback);
 		version = text(json, "version", "");
 		description = text(json, "description", "");
+		var symbol = text(json, "icon", "");
+		icon = symbol == "" ? null : symbol;
 		main = text(json, "main", "main.rays");
 		var folder = haxe.io.Path.directory(main);
 		var listed = strings(json, "sources");

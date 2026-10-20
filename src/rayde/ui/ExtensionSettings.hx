@@ -30,7 +30,7 @@ class ExtensionSettings extends Component<ExtensionSettingsProps> {
 		var m = e.connection.manifest;
 		var details:Array<Element> = [
 			<div class="flex items-center gap-3">
-				<icon document={Icons.PUZZLE_LINE} class="size-4 shrink-0 text-text-secondary"/>
+				<icon document={ViewIcons.of(m)} class="size-4 shrink-0 text-text-secondary"/>
 				<div class="flex flex-col flex-1 min-w-0">
 					<text class="text-sm">${m.version == "" ? m.name : m.name + "  " + m.version}</text>
 					<text class="text-xs text-text-tertiary">${e.installed.scope + " · " + e.state}</text>

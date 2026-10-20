@@ -1,0 +1,1 @@
+{"dependencies":["source.c"],"injections":{"R:source.c.nwscript - (string | comment)":{"patterns":[{"match":"\\b(?:effect|itemproperty|location|object|string|talent|vector)\\b","name":"support.type.nwscript.c"},{"match":"\\b[A-Z_][A-Z0-9_]*\\b","name":"support.constant.nwscript.c"}]}},"patterns":[{"include":"source.c"}],"scopeName":"source.c.nwscript","fileTypes":["nss"]}

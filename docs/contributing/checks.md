@@ -34,6 +34,8 @@ Background diagnostic checks cover unsaved buffers, replacement and cancellation
 
 `native/rayscript` has focused Rust tests for unmount cleanup, idle collection, fiber exception recovery, cancellation before late service replies, and shutdown with waiting scripts. Run `CARGO_TARGET_DIR=../rayscript/target cargo test --manifest-path native/rayscript/Cargo.toml --release`.
 
+The same suite loads all 731 bundled TextMate scopes and representative aliases, checks incremental multiline state and native-session disposal, and renders GFM, math and Mermaid with malformed-input recovery. `SNAPSHOT_ONLY=markdownpreview scripts/snapshot.sh` installs the production Markdown extension and checks command activation, Remix icon/no sidebar entry, live unsaved buffers, tab reuse and reopen, stable text/watch registries and SVG cleanup, heading/file links, table alignment, equal-size task checkboxes, code highlighting in preview and ordinary Rust tabs, plus Mermaid wheel zoom, drag pan and fit in both schemes.
+
 `scripts/check-git.sh` builds pinned libgit2 and checks the [Git native backend](../git.md) through the real extension host. `--benchmark` also measures status on a 10k-file repository. These checks require CMake, a C compiler, curl, shasum, Python 3 and Git.
 
 ## Benchmarks

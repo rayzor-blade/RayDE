@@ -1650,6 +1650,124 @@ class Snapshots {
 				shot("gallery-end");
 			});
 		for (dark in [true, false])
+			scenario(dark, "markdownpreview", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				var root = haxe.io.Path.directory(haxe.io.Path.directory(file)), readme = root + "/README.md";
+				var manager = bench.extensionManager, entry = manager.find("markdown"), tree = bench.tree;
+				if (entry == null || entry.connection.running()) throw "Markdown should activate on command";
+				if (rayde.ui.ViewIcons.of(entry.connection.manifest) != rayde.ui.Icons.MARKDOWN_LINE) throw "Markdown must use the Remix Markdown icon";
+				if (Css.query(tree, bench.node.id, "#rayde-activity-ext-markdown").length != 0) throw "Markdown preview must not add an activity icon";
+				manager.command("markdown", "markdown.preview", {path:readme});
+				var studio = bench.studioFor(entry.connection.file);
+				function ready():Bool return Css.query(tree, bench.node.id, ".rayde-markdown").length > 0;
+				until(() -> {
+					if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
+					return ready();
+				}, "the production Markdown preview"); settle();
+				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
+				for (selector in ["[data-md-render=math]", "[data-md-render=diagram]", ".rayde-md-code", ".rayde-md-table", ".rayde-md-list", ".rayde-md-footnote"])
+					if (Css.query(tree, bench.node.id, selector).length == 0) throw 'missing Markdown renderer $selector';
+				var firstScroll = ashui.input.Scroll.at(Css.query(tree, bench.node.id, "#markdown-scroll")[0], tree);
+				if (firstScroll.y.get() != 0) throw "Markdown preview did not start at the document's beginning";
+				var heading = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, ".rayde-md-h1")[0]));
+				if (heading.y < tree.getScrolledBounds(firstScroll.node).y) throw "Markdown heading was laid out above the viewport";
+				var part = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=markdown-document") >= 0);
+				var control:rayde.ext.BridgeControl = @:privateAccess studio.preview.parts.get(part.id).control;
+				function watches():Int return [for (watch in (@:privateAccess ashui.reactive.Watch.bySlot)) if (watch != null) 1].length;
+				function texts():Int return [for (_ in (@:privateAccess ashui.ui.Text.byNode)) 1].length;
+				var watchCount = watches();
+				var textCount = texts();
+				var previousDocument = @:privateAccess control.markdownDocument.get();
+				var source = bench.buffer(readme).get();
+				bench.buffer(readme).set(StringTools.replace(source, "Markdown, rendered", "Markdown, refreshed")); bench.edited(readme);
+				until(() -> (@:privateAccess control.markdownDocument.get()) != previousDocument, "an edit to replace the document"); settle();
+				if (watches() != watchCount) throw 'Markdown refresh retained text layout watches: $watchCount -> ${watches()}';
+				if (texts() != textCount) throw 'Markdown refresh retained text layout entries: $textCount -> ${texts()}';
+				function follow(href:String):Void {
+					var links = Css.query(tree, bench.node.id, '[data-md-link="$href"]');
+					if (links.length == 0) throw 'missing Markdown link $href';
+					var target:ashui.layout.Node = null;
+					function find(id:haxe.Int64):Void {
+						var text = ashui.ui.Text.at(id), bounds = tree.getScrolledBounds(new ashui.layout.Node(id));
+						if (text != null && bounds != null && bounds.width > 0 && bounds.height > 0) target = new ashui.layout.Node(id);
+						for (child in tree.children(id)) find(child);
+					}
+					find(links[0]);
+					if (target == null) throw 'Markdown link has no visible text: $href';
+					var bounds = tree.getScrolledBounds(target), frame = tree.getScrolledBounds(firstScroll.node);
+					firstScroll.scrollTo(0, firstScroll.y.get() + bounds.y - frame.y - 100); settle();
+					bounds = tree.getScrolledBounds(target);
+					ashui.input.Pointer.move(tree, bounds.x+bounds.width/2, bounds.y+bounds.height/2);
+					ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
+				}
+				follow("#mathematics");
+				if (firstScroll.y.get() == 0) throw "Markdown heading link did not scroll to its anchor";
+				var cells = Css.query(tree, bench.node.id, ".rayde-md-table-head .rayde-md-table-cell");
+				if (tree.textAlign(cells[1]) != 2) throw "Markdown table column alignment was lost";
+				var tasks = Css.query(tree, bench.node.id, ".rayde-md-task .ui-checkbox");
+				if (tasks.length != 2) throw "Markdown task lists must use Ashui checkboxes";
+				for (task in tasks) {
+					var size = tree.getBounds(new ashui.layout.Node(task));
+					if (size.width != 14 || size.height != 14) throw "checked and unchecked task boxes must both be 14 by 14";
+				}
+				scroll("#markdown-scroll", 0); shot("math");
+				scroll("#markdown-scroll", 390); shot("mermaid");
+				var diagram = @:privateAccess control.markdown.diagrams[0];
+				var viewport = diagram.viewport, bounds = tree.getScrolledBounds(diagram.node);
+				var zoom = viewport.zoom.get(), documentY = firstScroll.y.get();
+				ashui.input.Pointer.move(tree, bounds.x+bounds.width/2, bounds.y+bounds.height/2);
+				ashui.input.Pointer.wheel(tree, 0, -120); settle();
+				if (viewport.zoom.get() == zoom) throw "Mermaid wheel input did not zoom";
+				if (firstScroll.y.get() != documentY) throw "Mermaid zoom also scrolled the document";
+				var pan = viewport.panX.get(), panY = viewport.panY.get();
+				ashui.input.Pointer.press(tree);
+				ashui.input.Pointer.move(tree, bounds.x+bounds.width/2+60, bounds.y+bounds.height/2+30); settle();
+				ashui.input.Pointer.release(tree); settle();
+				if (viewport.panX.get() == pan) throw "Mermaid drag input did not pan";
+				if (Math.abs((viewport.panY.get()-panY)*viewport.zoom.get() - 30) > 1) throw "Mermaid pan jumped by the document scroll offset";
+				shot("mermaid-zoomed");
+				click(".rayde-md-diagram-fit");
+				if (Math.abs(viewport.zoom.get() - zoom) > .001) throw "Mermaid fit did not restore the fitted viewport";
+				var code = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, ".rayde-md-code")[0]));
+				firstScroll.scrollTo(0, firstScroll.y.get() + code.y - tree.getScrolledBounds(firstScroll.node).y - 80); settle(); shot("highlighted-code");
+				scroll("#markdown-scroll", 1600); shot("gfm-images");
+				var tab = bench.active.get();
+				var originalSvgCount = [for (_ in (@:privateAccess rayde.ext.MarkdownView.drawings)) 1].length;
+				bench.buffer(readme).set(source + "\nAn update.\n"); bench.edited(readme);
+				until(() -> Css.query(tree, bench.node.id, ".rayde-md-word").length > 0 && (@:privateAccess control.markdownDocument.get()) != null
+					&& haxe.Json.stringify(@:privateAccess control.markdownDocument.get()).indexOf("An update.") >= 0, "a document replacement"); settle();
+				if ([for (_ in (@:privateAccess rayde.ext.MarkdownView.drawings)) 1].length != originalSvgCount) throw "document refresh retained old vector images";
+				follow("other.md");
+				until(() -> studio.tabViews.length == 2 && Css.query(tree, bench.node.id, '[data-md-heading="another-document"]').length > 0, "relative Markdown link to open a second preview");
+				bench.closeFile(bench.active.get()); settle();
+				if (bench.active.get() != tab) throw "closing the linked preview did not return to its source preview";
+				bench.openFile(readme); settle();
+				manager.command("markdown", "markdown.preview", {path:readme});
+				until(() -> bench.active.get() == tab, "reuse and focus an existing preview tab");
+				if (studio.tabViews.length != 1) throw "duplicate Markdown preview";
+				var buffer = bench.buffer(readme);
+				buffer.set("# Unsaved live preview\n\n$\\frac{1}{2}$\n\n```mermaid\nsequenceDiagram\n A->>B: Hello\n```\n");
+				bench.edited(readme);
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="unsaved-live-preview"]').length > 0, "unsaved Markdown edits in the preview");
+				scroll("#markdown-scroll", 0); shot("live-sequence");
+				buffer.set("# Recoverable errors\n\n$\\invalidMathCommand{x}$\n\n```mermaid\nnot-a-diagram\n```\n\nStill readable\n");
+				bench.edited(readme);
+				until(() -> Css.query(tree, bench.node.id, ".rayde-md-error").length == 2, "malformed blocks to show errors without losing the document");
+				shot("invalid-blocks");
+				bench.closeAll();
+				until(() -> studio.tabViews.length == 0, "bulk close to unmount Markdown"); settle();
+				if ((@:privateAccess rayde.ext.MarkdownView.drawings).iterator().hasNext()) throw "Markdown retained generated SVGs after close";
+				manager.command("markdown", "markdown.preview", {path:readme});
+				until(ready, "Markdown preview after bulk close"); shot("reopened");
+				bench.openFile(root + "/example.rs"); settle();
+				var editor = bench.editorFor(root + "/example.rs");
+				if (!Lambda.exists(editor.document.lines[0].tokens, t -> t.kind == ashui.components.code.CodeHighlighter.CodeTokenKind.Keyword))
+					throw "ordinary Rust files did not receive TextMate highlighting";
+				shot("editor-textmate");
+				var syntax = @:privateAccess bench.nativeSyntax.get(root + "/example.rs");
+				bench.closeFile(root + "/example.rs"); settle();
+				if ((@:privateAccess syntax.handle) != -1) throw "closing a saved document retained its native lexical session";
+			});
+		for (dark in [true, false])
 			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var folder = haxe.io.Path.directory(file), a = folder + "/DocumentA.hx", b = folder + "/DocumentB.hx";
 				var source = 'class DocumentA {\n\tfunction test() {\n\t\treturn 1;\n\t}\n}\n' + [for (i in 0...100) '// line $i\n'].join("");
@@ -1857,6 +1975,17 @@ class Snapshots {
 		if (name == "git" && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
+		if (name == "markdownpreview") {
+			function copy(from:String, to:String):Void {
+				sys.FileSystem.createDirectory(to);
+				for (name in sys.FileSystem.readDirectory(from)) {
+					if (sys.FileSystem.isDirectory(from + "/" + name)) copy(from + "/" + name, to + "/" + name);
+					else sys.io.File.copy(from + "/" + name, to + "/" + name);
+				}
+			}
+			copy("extensions/markdown", root + "/.rayde/extensions/markdown");
+			sys.io.File.saveContent(root + "/example.rs", "fn main() {\n    /* comment\n       continued */\n    let answer = 42;\n    println!(\"λ: {answer}\");\n}\n");
+		}
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
 		// A fixture with a .rayext is an extension project, opened from that file with no build.

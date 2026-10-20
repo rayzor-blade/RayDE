@@ -1,0 +1,1 @@
+{"dependencies":["text.html.basic"],"patterns":[{"begin":"<%=?","captures":{"0":{"name":"punctuation.section.embedded.js"}},"end":"%>","name":"source.js.embedded.html","patterns":[{"include":"source.js"}]},{"include":"text.html.basic"}],"scopeName":"text.html.js","fileTypes":["ejs","ect","ejs.t","jst"]}

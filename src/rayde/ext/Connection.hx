@@ -3,11 +3,14 @@ package rayde.ext;
 /** Workspace services answered by the editor and capability checked by the connection. */
 typedef WorkspaceServices = {
 	readFile:String->Null<String>,
+	?readBytes:String->Null<String>,
 	activeFile:Void->Null<String>,
 	root:Void->String,
 	openFile:String->Void,
 	writeFile:(String, String) -> Void,
 	?notify:(String, String, String, String)->Void,
+	?focusView:(String, Int)->Void,
+	?openExternal:String->Void,
 	replay:String->Dynamic
 };
 
@@ -16,7 +19,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -317,6 +320,16 @@ class Connection {
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "focusView" if (module == "rayde.window"):
+					if (services.focusView != null) services.focusView(file, Std.int(args[0]));
+					null;
+				case "openExternal" if (module == "rayde.window"):
+					if (manifest != null && manifest.capabilities.indexOf("window.openExternal") < 0) throw "Capability window.openExternal is not granted";
+					var url = Std.string(args[0]);
+					if (!~/^(https?:\/\/|mailto:)/i.match(url)) throw "External links require http, https or mailto";
+					if (services.openExternal == null) throw "External links are unavailable";
+					services.openExternal(url);
+					null;
 				case "notify" if (module == "rayde.window"):
 					var message = Std.string(args[0]), kind = args.length > 1 ? Std.string(args[1]) : "info";
 					if (["info", "success", "warning", "error"].indexOf(kind) < 0) throw "Unknown notification kind";
@@ -340,6 +353,10 @@ class Connection {
 					if (text == null)
 						throw 'No such file: ${args[0]}';
 					text;
+				case "readBytes":
+					var bytes = services.readBytes == null ? null : services.readBytes(Std.string(args[0]));
+					if (bytes == null) throw 'No such image: ${args[0]}';
+					bytes;
 				case "activeFile": services.activeFile();
 				case "root": services.root();
 				case "openFile":

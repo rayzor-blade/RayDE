@@ -55,6 +55,7 @@ class ViewIcons {
 		"home" => Icons.HOME_LINE,
 		"terminal" => Icons.TERMINAL_BOX_LINE,
 		"code" => Icons.CODE_LINE,
+		"markdown" => Icons.MARKDOWN_LINE,
 		"branch" => Icons.GIT_BRANCH_LINE,
 		"fetch" => Icons.DOWNLOAD_CLOUD_2_LINE,
 		"pull" => Icons.ARROW_DOWN_LINE,
@@ -84,9 +85,9 @@ class ViewIcons {
 		return read.get(key);
 	}
 
-	/** The icon of an extension's first view. */
+	/** The extension's icon, falling back to its first view. */
 	public static function of(m:Manifest):ashui.svg.SvgDocument {
-		var doc = file(m.iconPath());
+		var doc = named(m, m.icon ?? m.viewIcon);
 		return doc == null ? Icons.PUZZLE_LINE : doc;
 	}
 

@@ -1,12 +1,12 @@
 # Sourced by RayDE's scripts: where ashui and the native libraries are, and the
 # compiler arguments every UI build shares.
 #
-# ashui is pinned to a commit on main, checked out under .deps and
+# ashui is pinned to a commit, checked out under .deps and
 # built once, so work in progress in ../ashui never breaks a run here.
 # ASHUI=<dir> builds against that checkout instead, such as ../ashui.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 siblings=$(dirname "$here")
-ashui_rev=cb18dbcc093b77ffa8c55bd3cb911d6e7b240228
+ashui_rev=418bc4ac36276ca584c1e2c11c599f40dadf1405
 ashui=${ASHUI:-$here/.deps/ashui-$ashui_rev}
 hlwgpu=${HLWGPU:-$siblings/hlwgpu}
 hlwindow=${HLWINDOW:-$siblings/hlwindow}
@@ -53,6 +53,8 @@ stage_natives() {
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/cterm.hdll" "$out/cterm.hdll"
   bash "$here/scripts/build-rayscript.sh"
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/rayscript.hdll" "$out/rayscript.hdll"
+  mkdir -p "$out/notices/syntax-markdown"
+  cp "$here/native/rayscript/notices/"* "$out/notices/syntax-markdown/"
 }
 
 ui_args=(-cp src -lib hashlink -lib tink_hxx -D ash_simd -D ashui_scene_stencil -D "ashui_css=src/rayde/ui/rayde.css"

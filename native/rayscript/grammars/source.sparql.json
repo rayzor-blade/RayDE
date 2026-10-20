@@ -1,0 +1,1 @@
+{"dependencies":["source.turtle"],"patterns":[{"include":"source.turtle#sparqlKeywords"},{"include":"source.turtle#sparqlFilterFns"},{"include":"source.turtle#sparqlLangConsts"},{"include":"source.turtle"}],"scopeName":"source.sparql","fileTypes":["sparql","rq"]}

@@ -56,9 +56,11 @@ class BridgeControl {
 	var restoreScroll:Dynamic;
 	var tooltip:Null<String>;
 	var buttonMounted = false;
+	final markdownDocument = Signal.make((null:Dynamic));
+	var markdown:MarkdownView;
 
 	public static function supported(tag:String):Bool
-		return tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
+		return tag == "markdown-view" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
 
 	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic) {
 		this.tree = tree;
@@ -93,11 +95,15 @@ class BridgeControl {
 		});
 		node = box.node;
 		if (kind == "ui-panel-group") panels = new BridgePanels(tree, node, emit, panelState);
+		else if (kind == "markdown-view") {
+			node.set(Prop.FlexDirection, Column);
+			node.set(Prop.FlexShrink, (0:Single));
+		}
 		else if (kind == "ui-icon") {
 			node.set(Prop.Width, (16:Single)); node.set(Prop.Height, (16:Single));
 			node.set(Prop.FlexShrink, (0:Single));
 		}
-		else if (kind != "canvas-kit") node.set(Prop.Height, (32:Single));
+		else if (kind != "canvas-kit" && kind != "markdown-view") node.set(Prop.Height, (32:Single));
 	}
 
 	function buildCanvas():Void {
@@ -196,13 +202,15 @@ class BridgeControl {
 	}
 
 	public function handles(event:String):Bool
-		return kind == "ui-button" && event == "click" || kind == "ui-select" && event == "change"
+		return kind == "markdown-view" && event == "link" || kind == "ui-button" && event == "click" || kind == "ui-select" && event == "change"
 			|| kind == "ui-menu" && event == "select"
 			|| kind == "ui-panel-group" && event == "panelChange"
 			|| kind == "canvas-kit" && ["click", "hover", "selectionChange"].indexOf(event) >= 0;
 
 	public function set(name:String, data:Dynamic):Bool {
 		switch name {
+			case "document" if (kind == "markdown-view"):
+				markdownDocument.set(data == null ? null : Std.isOfType(data, String) ? haxe.Json.parse(data) : data); return true;
 			case "navigation" if (kind == "canvas-kit"):
 				var mode = data == null ? "canvas" : Std.string(data);
 				if (["canvas", "scroll"].indexOf(mode) < 0) throw "Unknown canvas navigation";
@@ -282,6 +290,13 @@ class BridgeControl {
 	}
 
 	public function flush():Void {
+		if (kind == "markdown-view") {
+			if (markdown == null) scope.run(() -> {
+				markdown = new MarkdownView(markdownDocument, emit);
+				tree.addChild(node.id, markdown.node.id);
+			});
+			return;
+		}
 		if (kind == "ui-button" && !buttonMounted) {
 			scope.run(() -> {
 				if (tooltip != null) {

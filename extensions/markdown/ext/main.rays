@@ -1,0 +1,103 @@
+import haxe.Json;
+import rayde.markdown.render;
+import rayde.workspace.readFile;
+import rayde.workspace.readBytes;
+import rayde.workspace.activeFile;
+import rayde.workspace.openFile;
+import rayde.window.focusView;
+import rayde.window.openExternal;
+import rayde.window.notify;
+
+var previews = [];
+
+function basename(path) { return path.substr(path.lastIndexOf('/') + 1); }
+
+function relative(file, link) {
+  var path = link.startsWith('/') ? link : file.substr(0, file.lastIndexOf('/') + 1) + link;
+  var pieces = [];
+  for (piece in path.split('/')) {
+    if (piece == '..' && pieces.length > 0) pieces.pop();
+    else if (piece != '.' && piece != '') pieces.push(piece);
+  }
+  return (path.startsWith('/') ? '/' : '') + pieces.join('/');
+}
+
+function markdown(path) {
+  var name = path.toLowerCase();
+  return name.endsWith('.md') || name.endsWith('.markdown') || name.endsWith('.mdown') || name.endsWith('.mkd');
+}
+
+function assets(node, path) {
+  if (node.kind == 'image') {
+    var href = node.href;
+    if (href.indexOf(':') < 0 && !href.startsWith('//')) {
+      try {
+        var location = relative(path, href), bytes = await readBytes(location);
+        if (location.toLowerCase().endsWith('.svg')) node.svgBytes = bytes;
+        else node.imageBytes = bytes;
+      } catch (failure) { node.imageError = '' + failure; }
+    }
+  }
+  if (node.children != null) for (child in node.children) assets(child, path);
+}
+
+function update(preview) {
+  var sequence = ++preview.sequence;
+  try {
+    var source = await readFile(preview.path);
+    if (!preview.live || sequence != preview.sequence || source == preview.source) return;
+    var document = Json.parse(render(source));
+    assets(document, preview.path);
+    if (preview.live && sequence == preview.sequence) {
+      preview.source = source;
+      preview.document.value = Json.stringify(document);
+    }
+  } catch (failure) { if (preview.live) notify('' + failure, 'error'); }
+}
+
+function follow(preview, href) {
+  try {
+    if (href.startsWith('https://') || href.startsWith('http://') || href.startsWith('mailto:')) {
+      await openExternal(href); return;
+    }
+    if (href.indexOf(':') >= 0 || href.startsWith('//')) throw 'Unsupported link scheme';
+    var hash = href.indexOf('#'), name = hash < 0 ? href : href.substr(0, hash);
+    var path = relative(preview.path, name);
+    if (markdown(path)) show(path); else await openFile(path);
+  } catch (failure) { notify('' + failure, 'error'); }
+}
+
+function Document(props) {
+  var preview = props.preview;
+  onCleanup(() -> {
+    preview.live = false; preview.sequence++;
+    previews = previews.filter(item -> item != preview);
+  });
+  return <div class="flex flex-col flex-1 min-h-0 min-w-0">
+    <div class="flex items-center gap-2 px-4 py-2 border-b shrink-0">
+      <span class="text-sm text-text-secondary flex-1 truncate">{basename(preview.path)}</span>
+      <ui-button id="markdown-source" size="icon" variant="ghost" tooltip="Open Markdown source" onClick={() -> openFile(preview.path)}><ui-icon name="code"/></ui-button>
+      <ui-button id="markdown-refresh" size="icon" variant="ghost" tooltip="Refresh preview" onClick={() -> { preview.source = null; update(preview); }}><ui-icon name="refresh"/></ui-button>
+    </div>
+    <div id="markdown-scroll" class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
+      <if {preview.document.value != null}><markdown-view id="markdown-document" document={preview.document} onLink={e -> follow(preview, e.href)}/>
+      <else><p class="p-6 text-text-secondary">Loading preview…</p></if>
+    </div>
+  </div>;
+}
+
+function show(path = null) {
+  if (path == null) path = await activeFile();
+  if (path == null || !markdown(path)) { notify('Open a Markdown file to preview', 'info'); return; }
+  for (preview in previews) if (preview.path == path) {
+    update(preview); await focusView(preview.root); return;
+  }
+  var preview = {path:path, document:signal(null), source:null, live:true, sequence:0, root:0};
+  previews.push(preview);
+  preview.root = mount(() -> <Document preview={preview}/>, 'tab:Preview: ' + basename(path));
+  update(preview);
+}
+
+registerCommand('markdown.preview', args -> show(args == null ? null : args.path));
+onHook('file.changed', e -> { for (preview in previews) if (preview.path == e.path) update(preview); });
+onHook('file.saved', e -> { for (preview in previews) if (preview.path == e.path) update(preview); });

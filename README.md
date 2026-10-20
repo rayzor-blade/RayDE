@@ -13,6 +13,7 @@ RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://gith
 
 - **Haxe projects.** Opens a `build.hxml`; the build file is edited as a form. Explorer, tabs, code editor with a minimap, hover types and documentation, go to definition, compiler problems underlined and listed. Run builds the project and runs it on ash.
 - **Command center.** Files, commands and line numbers from one prompt. Key bindings follow VS Code and are editable.
+- **Syntax and Markdown.** A shared Linguist-derived TextMate bundle highlights code files and fenced blocks. Markdown previews render LaTeX math and Mermaid diagrams with pan and zoom in editor tabs.
 - **Terminal.** Integrated terminal panel with configurable profiles.
 - **Libraries.** haxelib libraries are listed and managed from Settings.
 - **Extensions.** Written in RayScript and described by a `.rayext` file: commands, menus, hooks, views in any part of the layout. Built-in, user and workspace extensions activate on events and run in embedded RayScript VMs. The Extension Studio reloads an extension as it is edited and has a console, an activity log, an element tree and a debugger.
@@ -34,6 +35,8 @@ Requirements: `haxe`, `ash` on `PATH` (or `ASH=<path>`), and a Rust toolchain fo
 | Chapter | Contents |
 | --- | --- |
 | [Editor and keys](docs/editor.md) | Command center, shortcuts, hover, debugging keys. |
+| [Syntax highlighting](docs/syntax.md) | Shared TextMate grammars, file detection and extension API. |
+| [Markdown preview](docs/markdown.md) | GFM, mathematical LaTeX, Mermaid, images and live preview. |
 | [Window](docs/window.md) | Title bar, controls, rounded corners. |
 | [Writing an extension](docs/extensions.md) | Config, commands, menus, hooks, tabs, Extension Studio, debugger. |
 | [Git](docs/git.md) | Interactive commit history, pinned libgit2 build and RayScript bindings. |

@@ -4,6 +4,39 @@ use std::ptr;
 
 static RUNTIMES: Mutex<Vec<Option<Arc<Runtime>>>> = Mutex::new(Vec::new());
 
+fn packed_text(text:&str) -> *mut vbyte {
+    let size = text.len();
+    let Some(length) = size.checked_add(4).and_then(|n| i32::try_from(n).ok()) else { return ptr::null_mut(); };
+    unsafe {
+        let bytes = hl_alloc_bytes(length);
+        if bytes.is_null() { return ptr::null_mut(); }
+        ptr::copy_nonoverlapping((size as i32).to_le_bytes().as_ptr(), bytes, 4);
+        ptr::copy_nonoverlapping(text.as_ptr(), bytes.add(4), size);
+        bytes
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn syntax_open(data:*const vbyte, len:i32) -> i32 {
+    catch_unwind(|| unsafe { text(data,len) }.map_or(-1, super::syntax::open)).unwrap_or(-1)
+}
+define_prim!(hlp_syntax_open, syntax_open, "PBi_i");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn syntax_close(handle:i32) {
+    let _ = catch_unwind(|| super::syntax::close(handle));
+}
+define_prim!(hlp_syntax_close, syntax_close, "Pi_v");
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn syntax_line(handle:i32, data:*const vbyte, len:i32, state:i32) -> *mut vbyte {
+    catch_unwind(|| {
+        let Some(line) = (unsafe { text(data,len) }) else { return ptr::null_mut(); };
+        packed_text(&super::syntax::line(handle,line,state).to_string())
+    }).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_syntax_line, syntax_line, "PiBii_B");
+
 fn runtime(handle: i32) -> Option<Arc<Runtime>> {
     RUNTIMES
         .lock()
