@@ -11,6 +11,7 @@ import rayde.lang.Outline.OutlineSymbol;
 
 typedef ExplorerOutlineProps = {
 	display:Display,
+	?revision:Void->Int,
 	file:Void->String,
 	text:String->String,
 	onSelect:(String, Int, Int)->Void
@@ -20,22 +21,22 @@ class ExplorerOutline extends Component<ExplorerOutlineProps> {
 	function render():Element {
 		var symbols = Signal.make(([]:Array<OutlineSymbol>)), message = Signal.make("Open a Haxe file to view its outline");
 		var job = new ExplorerJob(props.display.cwd);
+		var shownFile:String = null;
 		new Watch(() -> {
 			var file = props.file();
-			return {file:file, text:file != null && StringTools.endsWith(file.toLowerCase(), ".hx") ? props.text(file) : null};
+			return {file:file, text:file != null && StringTools.endsWith(file.toLowerCase(), ".hx") ? props.text(file) : null, revision:props.revision == null ? 0 : props.revision()};
 		}, value -> {
-			job.cancel(); symbols.set([]);
+			job.cancel();
+			if (shownFile != value.file) { symbols.set([]); shownFile = value.file; }
 			if (value.text == null) { message.set("Open a Haxe file to view its outline"); return; }
-			message.set("Loading outline…");
-			job.run(props.display.server.haxe, ["--cwd", props.display.cwd].concat(props.display.args).concat([
-				"--no-output", "-D", "display-stdin", "--display", value.file + "@0@module-symbols"
-			]), (code, reply) -> {
+			message.set(symbols.get().length == 0 ? "Loading outline…" : "");
+			job.run(props.display.server.haxe, Outline.arguments(props.display.args, value.file), (code, reply) -> {
 				try {
 					var found = Outline.parse(reply);
 					symbols.set(found); message.set(found.length == 0 ? "No symbols in this file" : "");
-				} catch (_:Dynamic) message.set("Outline unavailable. Check the file and build configuration.");
+				} catch (_:Dynamic) message.set(symbols.get().length == 0 ? "Outline unavailable. Check this file for syntax errors." : "Showing the last outline until syntax errors are fixed.");
 			}, value.text);
-		}, (before, after) -> before.file == after.file && before.text == after.text);
+		}, (before, after) -> before.file == after.file && before.text == after.text && before.revision == after.revision);
 		return <div id="rayde-outline-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto">
 			<if {message.get() != ""}><div class="px-3 py-2"><text class="text-xs text-text-secondary">${message.get()}</text></div></if>
 			<for {items in [symbols.get()]}><tree-view id="rayde-outline-tree" onSelect={value -> { var pieces = value.split(":"); var character = Std.parseInt(pieces.pop()), line = Std.parseInt(pieces.pop()); props.onSelect(pieces.join(":"), line, character); }}>{[for (s in items) row(s, props.file())]}</tree-view></for>

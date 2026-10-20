@@ -804,6 +804,7 @@ class Checks {
 		extensionHostChecks();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
+		OutlineChecks.run();
 		LocalHistoryChecks.run();
 		var root = Sys.getCwd() + "tests/fixtures/basic", file = root + "/src/Main.hx";
 		var text = sys.io.File.getContent(file);

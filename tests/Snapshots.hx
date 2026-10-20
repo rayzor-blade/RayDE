@@ -148,6 +148,37 @@ class Snapshots {
 				shot("panels");
 			});
 
+			scenario(dark, "outline", (bench, _, shot, settle, scroll, click, type, hover, press, until) -> {
+				var tree = bench.tree, root = bench.display().cwd, file = root + "/src/app/Main.hx";
+				function has(word:String):Bool return Lambda.exists(Css.query(tree, bench.node.id, "#rayde-outline-scroll text"), id -> ashui.ui.Text.at(id).text().indexOf(word) >= 0);
+				bench.openFile(file); click("#rayde-explorer-toggle-outline");
+				until(() -> has("Main") && has("main"), "Outline with the full fixture's missing dependency");
+				shot("missing-library");
+				click('#rayde-outline-tree [data-symbol-kind="method"] > .ui-tree-row');
+				until(() -> bench.caretLine(file) == 3, "full fixture Outline declaration navigation");
+				var original = bench.buffer(file).get();
+				bench.buffer(file).set("/* unterminated"); settle(1);
+				if (!has("main")) throw "Outline cleared while waiting for an edited buffer";
+				until(() -> has("Showing the last outline"), "last successful Outline during a syntax error");
+				if (!has("main")) throw "syntax error discarded the last Outline";
+				shot("syntax-error");
+				bench.buffer(file).set(StringTools.replace(original, "function main", "function edited"));
+				until(() -> has("edited") && !has("Showing the last outline"), "Outline recovery from an unsaved syntax error");
+				if (sys.io.File.getContent(file) != original) throw "Outline saved an unsaved buffer";
+				bench.openFile(root + "/lib/Util.hx");
+				until(() -> has("Util") && has("twice") && !has("edited"), "Outline after switching to a library file");
+				bench.openFile(root + "/tools/Gen.hx");
+				until(() -> has("Gen") && !has("twice"), "Outline outside the configured source paths");
+				shot("outside-classpath");
+				var conditional = root + "/tools/Conditional.hx";
+				sys.io.File.saveContent(conditional, "#if outline_enabled\nclass Enabled {}\n#else\nclass Disabled {}\n#end\n");
+				bench.openFile(conditional); until(() -> has("Disabled"), "Outline conditional branch");
+				sys.io.File.saveContent(root + "/build.hxml", sys.io.File.getContent(root + "/build.hxml") + "\n-D outline_enabled\n");
+				bench.buildChanged();
+				until(() -> has("Enabled") && !has("Disabled"), "Outline after a build configuration change");
+				shot("changed-define");
+			});
+
 			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				if (bench.panelOpen())
 					throw "the bottom panel should start closed";
@@ -2222,7 +2253,7 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		if (!dark && name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") return;
-		var root = copyOf(name == "documents" ? "basic" : name == "explorer" ? "git" : name), server = new CompilerServer();
+		var root = copyOf(name == "documents" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
 		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);

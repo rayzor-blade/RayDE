@@ -2084,7 +2084,7 @@ class Workbench extends Component<WorkbenchProps> {
 		};
 		var sections:Array<Element> = [new ResizablePanel({id:"rayde-explorer-panel-files", size:explorerFilesSize, minSize:60}, [files()])];
 		sections.push(explorerSection("outline", false, 180).panel("Outline", () ->
-			<explorer-outline display={props.display} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
+			<explorer-outline display={props.display} revision={() -> buildRevision.get()} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
 		var contributed = [for (c in containers) if (c.location == "explorer") c];
 		var gitTimeline = Lambda.find(contributed, c -> c.view.id == "timeline");
 		sections.push(explorerSection("timeline", false, 180).panel("Timeline", () ->
