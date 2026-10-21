@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792604053,"nonce":"NCyb23+BLE3fitkrBooNbotyAGg=","message":"Completed in 9091a60e0df1c3804b3cbbfe1b760cedc505ceec. Shared Ashui component fix: 70e0aa6b35dd304e7690a3e0b92be83bdd126d1b. Native application and macOS bundle rebuilt; all recorded checks passed.","files":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1792604053,"nonce":"jCLV2ulrNXEzAfeAoBJCrMmlkjg=","status":2}]}
