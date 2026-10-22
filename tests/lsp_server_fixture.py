@@ -92,6 +92,7 @@ while True:
         send({"id": identifier, "result": [{"name": "LspMain", "kind": 5,
               "range": position, "selectionRange": position, "children": []}]})
     elif method == "textDocument/definition":
+        record(f"definition {params['position']['line']}:{params['position']['character']}")
         send({"id": identifier, "result": {"uri": params["textDocument"]["uri"], "range": {
               "start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 10}}}})
     elif method == "shutdown":

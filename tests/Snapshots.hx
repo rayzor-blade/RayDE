@@ -79,6 +79,32 @@ class Snapshots {
 				if (bench.buffer(file).get().indexOf("greeting.fixtureMember") < 0) throw "LSP completion was not applied";
 				bench.goToDefinition();
 				until(() -> bench.caret(file) == 6, "LSP definition navigation");
+				var mac = Sys.systemName() == "Mac";
+				var navigationModifiers = window.Modifiers.State(false, !mac, false, mac, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+				var releasedModifiers = window.Modifiers.State(false, false, false, false, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+				var completed = bench.buffer(file).get();
+				for(offset in [completed.indexOf("Main") + 1, completed.indexOf("fixtureMember") + 3]) {
+					editor.select(0, 0); editor.focus(); settle();
+					var target = editor.rectAt(offset);
+					ashui.input.Pointer.move(bench.tree, target.x + target.width / 4, target.y + target.height / 2, navigationModifiers);
+					ashui.input.Pointer.press(bench.tree); ashui.input.Pointer.release(bench.tree);
+					ashui.input.Pointer.move(bench.tree, 5, 5, releasedModifiers);
+					until(() -> bench.caret(file) == 6, "modifier-click LSP definition navigation");
+					var position = rayde.lang.LspProtocol.at(file, completed, offset).position;
+					if(sys.io.File.getContent(root + "/lsp-events").indexOf('definition ' + Std.string(position.line) + ':' + Std.string(position.character)) < 0)
+						throw "Modifier-click requested the caret position instead of the clicked symbol";
+				}
+				shot("definition-modifier-click");
+				editor.select(0, 0); editor.focus(); settle();
+				var staleTarget = editor.rectAt(completed.indexOf("fixtureMember") + 3);
+				ashui.input.Pointer.move(bench.tree, staleTarget.x + staleTarget.width / 4, staleTarget.y + staleTarget.height / 2, navigationModifiers);
+				ashui.input.Pointer.press(bench.tree); ashui.input.Pointer.release(bench.tree);
+				ashui.input.Pointer.move(bench.tree, 5, 5, releasedModifiers);
+				editor.select(1, 1);
+				var drained = false;
+				client.request("test/state", {}, _ -> drained = true);
+				until(() -> drained, "definition response after moving the caret");
+				if(bench.caret(file) != 1) throw "A stale modifier-click response moved the caret";
 				click("#rayde-explorer-toggle-outline");
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text() == "LspMain"), "LSP Outline");
 				shot("outline");
@@ -548,6 +574,14 @@ class Snapshots {
 				settle();
 				if (bench.caretLine(file) != 2)
 					throw 'go to definition should land on line 3, not ${bench.caretLine(file) + 1}';
+				bench.goTo(file, 0, 0); settle();
+				var definitionEditor = bench.editorFor(file), callOffset = original.lastIndexOf("greet(") + 2;
+				var callTarget = definitionEditor.rectAt(callOffset), mac = Sys.systemName() == "Mac";
+				ashui.input.Pointer.move(bench.tree, callTarget.x + callTarget.width / 4, callTarget.y + callTarget.height / 2,
+					window.Modifiers.State(false, !mac, false, mac, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown));
+				ashui.input.Pointer.press(bench.tree); ashui.input.Pointer.release(bench.tree);
+				ashui.input.Pointer.move(bench.tree, 5, 5, window.Modifiers.State(false, false, false, false, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown)); settle();
+				if(bench.caretLine(file) != 2) throw "Modifier-click compiler definition navigation did not reach the declaration";
 				// Run the program.
 				bench.run();
 				wait(bench);

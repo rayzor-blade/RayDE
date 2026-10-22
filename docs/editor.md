@@ -16,7 +16,7 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 | Cmd+G / Cmd+Shift+G (F3 / Shift+F3 elsewhere) | Next / previous match. |
 | Cmd+S | Save every edited file. |
 | Cmd+W | Close the tab. |
-| F12 | Go to the definition of the name under the cursor. |
+| F12 | Go to the definition of the name under the cursor. Command-click a symbol on macOS, or Control-click elsewhere, to go to its definition. |
 | Ctrl+Space | Completion list at the caret (**Trigger Suggest**). |
 | Cmd+Shift+Space | Signature of the call the caret is in (**Trigger Parameter Hints**). |
 | F5, Shift+F5 | Run, stop. While an extension is stopped at a breakpoint, F5 continues. |

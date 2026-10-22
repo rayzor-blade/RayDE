@@ -686,15 +686,19 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Goes to where the name under the cursor is defined, or says there is none. */
 	public function goToDefinition():Void {
-		var file = active.get(), offset = caret(file);
+		var file = active.get();
+		definitionAt(file, caret(file));
+	}
+
+	function definitionAt(file:String, offset:Int):Void {
 		if (file == "" || offset < 0)
 			return;
-		var client = languageServers.client(file), text = buffer(file).get();
+		var client = languageServers.client(file), text = buffer(file).get(), originCaret = caret(file);
 		if (client != null) {
 			if (!client.supports("definitionProvider")) return;
 			languageServers.sync(file, text);
 			client.request("textDocument/definition", LspProtocol.at(file, text, offset), result -> {
-				if (gone || active.get() != file || !buffers.exists(file) || buffer(file).get() != text || caret(file) != offset) return;
+				if (gone || active.get() != file || !buffers.exists(file) || buffer(file).get() != text || caret(file) != originCaret) return;
 				var found = LspProtocol.locations(result);
 				if (found.length == 0) say("No definition found");
 				else goTo(found[0].file, found[0].range.start.line, found[0].range.start.character);
@@ -2737,7 +2741,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function codeEditor(file:String):Element {
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
-			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> definitionAt(file, offset)} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);
 			}}
