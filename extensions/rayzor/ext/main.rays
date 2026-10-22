@@ -13,7 +13,7 @@ function start() {
   var environment = {};
   if (stdlib != '') environment.RAYZOR_STD_PATH = stdlib;
   return await registerServer({
-    id:'rayzor', name:'Rayzor', languages:['haxe'], fileExtensions:['.hx'], lazy:true,
+    id:'rayzor', name:'Rayzor', languages:['haxe'], fileExtensions:['.hx'], lazy:true, diagnosticProgress:true,
     transport:{kind:'stdio', command:command, args:['lsp'], env:environment},
     initializationOptions:options
   });

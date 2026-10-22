@@ -9,9 +9,9 @@ class LspChecks {
 		while (!condition() && haxe.Timer.stamp() < end) { servers.tick(); Sys.sleep(.005); }
 		check(condition(), "LSP condition timed out");
 	}
-	static function query(servers:LanguageServers, client:LspClient, method:String):Dynamic {
+	static function query(servers:LanguageServers, client:LspClient, method:String, ?params:Dynamic):Dynamic {
 		var done = false, result:Dynamic = null;
-		client.request(method, {}, value -> { result = value; done = true; });
+		client.request(method, params == null ? {} : params, value -> { result = value; done = true; });
 		until(servers, () -> done);
 		return result;
 	}
@@ -36,7 +36,7 @@ class LspChecks {
 		var servers = new LanguageServers(root), logs:Array<String> = [];
 		var diagnostics:Array<Dynamic> = [];
 		servers.onDiagnostics = value -> diagnostics.push(value);
-		var definition:Dynamic = {id:"fixture", languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3", args:[root + "tests/lsp_server_fixture.py", events]}};
+		var definition:Dynamic = {id:"fixture", diagnosticProgress:true, languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3", args:[root + "tests/lsp_server_fixture.py", events]}};
 		servers.register("owner", definition, (kind, text) -> logs.push(kind + ":" + text));
 		var client = servers.client(file);
 		servers.sync(file, "class A {} λ😀");
@@ -44,19 +44,34 @@ class LspChecks {
 		var first = query(servers, client, "test/state");
 		check(Reflect.field(first.documents, LspProtocol.uri(file)).text == "class A {} λ😀", "LSP sends initial unsaved contents");
 		var pid:Int = first.pid;
+		check(servers.status(file).indexing, "An opened document is indexing until its diagnostics arrive");
+		query(servers, client, "test/diagnostics", {uri:LspProtocol.uri(file), staleOnly:true});
+		check(servers.status(file).indexing && diagnostics.length == 0, "Stale diagnostics do not finish active-file analysis");
+		query(servers, client, "test/diagnostics", {uri:LspProtocol.uri(file)});
+		check(!servers.status(file).indexing && diagnostics.length == 1, "Empty current diagnostics finish analysis");
+		diagnostics.resize(0);
+		var activity = 0; servers.onDocumentActivity = _ -> activity++;
+		servers.sync(file, "class A {} λ😀");
+		check(activity == 0 && !servers.status(file).indexing, "Unchanged synchronization does not trigger activity updates");
 		servers.sync(file, "second"); servers.sync(file, "third");
 		var current = query(servers, client, "test/state");
 		check(Reflect.field(current.documents, LspProtocol.uri(file)).text == "third", "LSP coalesces document edits");
 		check(Reflect.field(current.documents, LspProtocol.uri(file)).version == 3, "LSP document versions increase");
+		check(servers.status(file).indexing && activity == 1, "Coalesced edits start document activity once");
+		query(servers, client, "test/diagnostics", {uri:LspProtocol.uri(file)});
+		check(!servers.status(file).indexing && activity == 2, "Analysis completion emits one activity update");
+		diagnostics.resize(0);
 		var laterFile = root + "bin/lsp-later-open.hx";
 		servers.sync(laterFile, "class Later {}");
 		current = query(servers, client, "test/state");
 		check(Reflect.field(current.documents, LspProtocol.uri(laterFile)).text == "class Later {}", "A document opened after initialization is flushed");
+		check(servers.status(laterFile).indexing && !servers.status(file).indexing, "Indexing status is scoped to the requested file");
 		servers.sync(laterFile, "class Later {}");
 		for (_ in 0...20) servers.tick();
 		current = query(servers, client, "test/state");
 		check(Reflect.field(current.documents, LspProtocol.uri(laterFile)).version == 1, "Unchanged documents stay synchronized across idle polls");
 		client.closeDocument(laterFile);
+		check(!servers.status(laterFile).indexing, "Closing a document clears its activity");
 		query(servers, client, "test/diagnostics");
 		check(diagnostics.length == 1 && diagnostics[0].version == 3, "LSP rejects stale versioned diagnostics");
 		client.saved(file);
@@ -89,7 +104,7 @@ class LspChecks {
 		check(current.pid != pid && Reflect.field(current.documents, LspProtocol.uri(file)).text == "replayed after crash", "Server crash restarts and replays current documents");
 		servers.control("fixture", "stop");
 		until(servers, () -> client.state == "stopped");
-		check(servers.client(file) == null && servers.status(file).state == "stopped" && !servers.busy(), "Stop exposes stopped registration without polling or automatic relaunch");
+		check(servers.client(file) == null && servers.status(file).state == "stopped" && !servers.status(file).indexing && !servers.busy(), "Stop exposes stopped registration without polling or automatic relaunch");
 		servers.sync(file, "edited while stopped");
 		for (_ in 0...5) servers.tick();
 		check(client.state == "stopped", "Document edits do not restart a stopped server");
@@ -102,6 +117,9 @@ class LspChecks {
 		until(servers, () -> client.state == "ready");
 		current = query(servers, client, "test/state");
 		check(current.pid != pid && Reflect.field(current.documents, LspProtocol.uri(file)).text == "edited while stopped", "Manual restart replaces the process and replays unsaved text");
+		check(servers.status(file).indexing, "Restarted servers reanalyse retained document contents");
+		query(servers, client, "test/diagnostics", {unversioned:true});
+		check(!servers.status(file).indexing, "Unversioned Rayzor diagnostics also complete analysis");
 		servers.release("stranger");
 		check(servers.client(file) == client, "An extension cannot unregister another extension's server");
 		servers.release("owner");
@@ -115,6 +133,7 @@ class LspChecks {
 		var inc = incremental.client(file);
 		incremental.sync(file, "λ😀\nold 😀");
 		until(incremental, () -> inc.state == "ready");
+		check(!incremental.status(file).indexing, "Servers without diagnostic activity opt-in never wait for diagnostics");
 		incremental.sync(file, "replaced");
 		check(Reflect.field(query(incremental, inc, "test/state").documents, LspProtocol.uri(file)).text == "replaced", "Incremental synchronization uses a UTF-16 full replacement range");
 		incremental.release("incremental"); until(incremental, () -> !incremental.busy());
@@ -136,12 +155,13 @@ class LspChecks {
 		var source = "class Main {\n    static function add(a:Int, b:Int):Int {\n        return a + b;\n    }\n    static function main() {\n        var total = add(1, 2);\n        trace(total);\n    }\n}\n";
 		sys.io.File.saveContent(file, source);
 		var servers = new LanguageServers(root), logs:Array<String> = [];
-		servers.register("real", {id:"rayzor", languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:command, args:["lsp"]}},
+		servers.register("real", {id:"rayzor", diagnosticProgress:true, languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:command, args:["lsp"]}},
 			(kind, text) -> logs.push(kind + ":" + text));
 		var client = servers.client(file);
 		try {
 			until(servers, () -> client.state == "ready", 20);
 			servers.sync(file, source);
+			check(servers.status(file).indexing, "Real Rayzor marks an opened document as analysing");
 			var answered = 0, hovers:Array<Dynamic> = [];
 			for (_ in 0...32) client.request("textDocument/hover", {textDocument:{uri:LspProtocol.uri(file)}, position:{line:1, character:21}}, result -> {
 				hovers.push(result); answered++;
@@ -149,6 +169,7 @@ class LspChecks {
 			until(servers, () -> answered == 32, 22);
 			for (hover in hovers) check(hover != null && LspProtocol.documentation(hover.contents).indexOf("function add") >= 0, "Real Rayzor answers concurrent hover requests with semantic results");
 			check(client.state == "ready", "Real Rayzor remains connected after document request");
+			check(!servers.status(file).indexing, "Real Rayzor diagnostics finish active-document analysis");
 			servers.retain([]);
 			var diagnostics = query(servers, client, "rayde/unsupportedProbe");
 			check(client.state == "ready", "Real Rayzor remains connected after document close and unknown request");

@@ -8,7 +8,7 @@ The built-in [Rayzor extension](../extensions/rayzor) is enabled by default and 
 
 **Settings > Extensions > Rayzor Language Server** configures the executable, build file, Rayzor standard library and macro time budget. The default command `rayzor` discovers `RAYZOR_LSP`, a packaged executable, PATH, then an existing sibling development build. An explicit command path overrides discovery. The server discovers the installed Haxe standard library by default; the `stdlib` setting overrides it through `RAYZOR_STD_PATH`. RayDE leaves discovery to the server when that setting is empty. **Rayzor: Restart Language Server** applies changed settings. **Rayzor: Language Server Status** reports the registration's state.
 
-The bottom status bar shows the registered server and its state, including stopped or failed sessions. Click it for **Start**, **Restart**, **Stop**, extension settings or Output. Stop suspends the process until explicitly started; opening or editing a file does not relaunch it. Start and Restart replay the current unsaved buffers. These controls keep the existing configuration; apply changed Rayzor settings with **Rayzor: Restart Language Server**.
+The bottom status bar shows the registered server and its state, including stopped or failed sessions. Its logo spins during startup and while Rayzor analyses the active file; the tooltip names the file being indexed. Analysis of other open files does not keep a finished active file spinning. Click it for **Start**, **Restart**, **Stop**, extension settings or Output. Stop suspends the process until explicitly started; opening or editing a file does not relaunch it. Start and Restart replay the current unsaved buffers. These controls keep the existing configuration; apply changed Rayzor settings with **Rayzor: Restart Language Server**.
 
 Hover popovers render Markdown with syntax-highlighted fenced code, emphasis, inline code, lists and links. Explicit `plaintext` responses remain literal. Long documentation scrolls within the popover, whose rendered content is released when it closes.
 
@@ -25,12 +25,13 @@ import rayde.languages.servers;
 
 await registerServer({
   id: 'rayzor', name: 'Rayzor', languages: ['haxe'], fileExtensions: ['.hx'],
+  diagnosticProgress: true,
   transport: {kind: 'stdio', command: 'rayzor', args: ['lsp']},
   initializationOptions: {hxml: 'build.hxml', macroBudgetMs: 5000}
 });
 ```
 
-The first language id is sent in `didOpen`. Optional `lazy: true` defers process launch until the first matching document opens. `transport.env` optionally supplies string environment variables. `${workspaceFolder}` expands in the executable, arguments and environment values. The working directory is the workspace root. Arguments are passed directly, without a shell. Optional `settings` supplies the result of `workspace/configuration` queries.
+The first language id is sent in `didOpen`. Optional `lazy: true` defers process launch until the first matching document opens. `transport.env` optionally supplies string environment variables. `${workspaceFolder}` expands in the executable, arguments and environment values. The working directory is the workspace root. Arguments are passed directly, without a shell. Optional `settings` supplies the result of `workspace/configuration` queries. `diagnosticProgress: true` opts into active-document activity tracking for servers that publish diagnostics after every analysis, including an empty list. The status icon spins until diagnostics for the current document arrive; stale versioned results are ignored. Rayzor enables this by default.
 
 `registerServer` returns the id before startup completes. Registering the same id again replaces that extension's session. `unregisterServer(id)` removes it; `servers()` returns that extension's registrations and states. Disabling, reloading or stopping an extension releases its servers. An event-fiber exception alone does not stop the registration.
 

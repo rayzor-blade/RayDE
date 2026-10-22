@@ -60,6 +60,22 @@ class Snapshots {
 				bench.openFile(file);
 				until(() -> client.state == "ready", "LSP initialization");
 				bench.openFile(file); settle();
+				if(!bench.languageServers.status(file).indexing || Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 1)
+					throw "The Rayzor icon should animate while the active file is indexing";
+				hover("#rayde-lsp-status"); settle(40);
+				if(!Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — indexing Main.hx")) throw "Indexing tooltip did not name the active file";
+				var indexingIcon = ashui.css.Identity.of(bench.tree, Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon")[0]);
+				if(!ashui.css.Animations.active(indexingIcon)) throw "Indexing did not start the logo animation";
+				shot("server-indexing");
+				var indexingControl = Css.query(bench.tree, bench.node.id, "#rayde-lsp-status")[0];
+				var analyzed = false;
+				client.request("test/diagnostics", {}, _ -> analyzed = true);
+				until(() -> analyzed && !bench.languageServers.status(file).indexing, "active-file analysis completion");
+				if(Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 0) throw "The Rayzor icon kept spinning after analysis completed";
+				if(Css.query(bench.tree, bench.node.id, "#rayde-lsp-status")[0] != indexingControl) throw "Activity completion rebuilt the status controls";
+				if(ashui.css.Animations.active(indexingIcon)) throw "The ready logo retained its animation";
+				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — ready"), "open indexing tooltip to update in place");
+				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
 				var source = "class Main {\n\tstatic function main() {\n\t\tvar greeting = 'hello';\n\t\tgreeting.\n\t}\n}\n";
 				bench.buffer(file).set(source); bench.edited(file); settle();
 				var editor = bench.editorFor(file), caret = source.indexOf("greeting.") + "greeting.".length;
@@ -137,6 +153,9 @@ class Snapshots {
 				ashui.input.Pointer.wheel(bench.tree, 0, -10000); settle();
 				if(docsScroll.y.get() <= 0 || editor.scroll.y.get() != editorScrollY || Css.query(bench.tree, bench.node.id, ".ui-code-hint").length != 1) throw "Hover docs wheel moved the editor or dismissed the popup";
 				shot("hover-scroll"); editor.hideHint();
+				analyzed = false;
+				client.request("test/diagnostics", {}, _ -> analyzed = true);
+				until(() -> analyzed && !bench.languageServers.status(file).indexing, "edited-file analysis completion");
 				hover("#rayde-lsp-status"); settle(40);
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — ready"), "ready server tooltip");
 				shot("server-tooltip");

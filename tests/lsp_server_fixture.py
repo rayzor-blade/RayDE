@@ -74,7 +74,10 @@ while True:
         send({"id": identifier, "error": {"code": -32603, "message": "fixture analysis failed"}})
     elif method == "test/diagnostics":
         for doc in documents.values():
-            for version in [doc["version"] - 1, doc["version"]]:
+            if params.get("uri") is not None and params["uri"] != doc["uri"]:
+                continue
+            versions = [None] if params.get("unversioned") else [doc["version"] - 1] if params.get("staleOnly") else [doc["version"] - 1, doc["version"]]
+            for version in versions:
                 send({"method": "textDocument/publishDiagnostics", "params": {
                     "uri": doc["uri"], "version": version, "diagnostics": []}})
         send({"id": identifier, "result": True})

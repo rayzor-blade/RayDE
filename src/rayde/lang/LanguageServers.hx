@@ -6,6 +6,7 @@ private typedef Registration = {id:String, name:String, owner:String, languages:
 class LanguageServers {
 	public var onChanged:Void->Void = () -> {};
 	public var onStatus:Void->Void = () -> {};
+	public var onDocumentActivity:String->Void = _ -> {};
 	public var onWake:Void->Void = () -> {};
 	public var onDiagnostics:Dynamic->Void = _ -> {};
 	final root:String;
@@ -43,13 +44,14 @@ class LanguageServers {
 		var command = expand(transport.command);
 		if (command == "rayzor") command = RayzorBinary.find() ?? command;
 		var config:Dynamic = {command:command, args:[for (arg in strings(transport.args == null ? [] : transport.args)) expand(arg)],
-			cwd:root, env:env, lazy:definition.lazy == true, initializationOptions:definition.initializationOptions, settings:definition.settings};
+			cwd:root, env:env, lazy:definition.lazy == true, diagnosticProgress:definition.diagnosticProgress == true, initializationOptions:definition.initializationOptions, settings:definition.settings};
 		unregister(owner, id);
 		var client = new LspClient(root, config);
 		client.onLog = (kind, text) -> log(kind, id + ": " + text);
 		client.onDiagnostics = onDiagnostics;
 		client.onReady = onChanged;
 		client.onStateChanged = () -> onStatus();
+		client.onDocumentActivity = file -> onDocumentActivity(file);
 		client.onWake = onWake;
 		entries.push({id:id, name:Std.isOfType(definition.name, String) ? definition.name : id, owner:owner, languages:languages, extensions:[for (ext in extensions) ext.toLowerCase()], client:client});
 		onChanged();
@@ -82,10 +84,10 @@ class LanguageServers {
 		var entry = registration(file);
 		return entry == null ? null : entry.languages[0];
 	}
-	public function status(file:String):Null<{id:String, owner:String, name:String, state:String}> {
+	public function status(file:String):Null<{id:String, owner:String, name:String, state:String, indexing:Bool}> {
 		var entry = registration(file);
 		if (entry == null && entries.length > 0) entry = entries[0];
-		return entry == null ? null : {id:entry.id, owner:entry.owner, name:entry.name, state:entry.client.state};
+		return entry == null ? null : {id:entry.id, owner:entry.owner, name:entry.name, state:entry.client.state, indexing:entry.client.indexing(file)};
 	}
 	public function control(id:String, action:String):Void {
 		var entry = Lambda.find(entries, e -> e.id == id);

@@ -1,6 +1,6 @@
 package rayde.lang;
 
-private typedef Document = {language:String, text:String, version:Int, sent:Int, sentText:String};
+private typedef Document = {language:String, text:String, version:Int, sent:Int, sentText:String, analyzed:Int};
 private typedef Pending = {done:Dynamic->Void, deadline:Float, scope:String};
 
 /** A workspace session, independent of editor views. Failure of a request leaves the process alive. */
@@ -14,6 +14,7 @@ class LspClient {
 	public var onReady:Void->Void = () -> {};
 	public var onWake:Void->Void = () -> {};
 	public var onStateChanged:Void->Void = () -> {};
+	public var onDocumentActivity:String->Void = _ -> {};
 	final documents = new Map<String, Document>();
 	final pending = new Map<Int, Pending>();
 	var transport:Null<LspTransport>;
@@ -45,11 +46,13 @@ class LspClient {
 	public function sync(file:String, language:String, text:String):Void {
 		if (state == "idle") state = "starting";
 		var doc = documents.get(file);
-		if (doc == null) { documents.set(file, {language:language, text:text, version:1, sent:0, sentText:""}); dirty = true; }
+		var changed = doc == null || doc.text != text, waiting = doc != null && doc.analyzed < doc.version;
+		if (doc == null) { documents.set(file, {language:language, text:text, version:1, sent:0, sentText:"", analyzed:0}); dirty = true; }
 		else if (doc.text != text) {
 			doc.text = text; doc.version++; dirty = true;
 			cancelFile(file);
 		}
+		if (config.diagnosticProgress == true && changed && !waiting) onDocumentActivity(file);
 		if (doc == null || doc.sent != doc.version) onWake();
 	}
 
@@ -58,7 +61,15 @@ class LspClient {
 		if (doc == null) return;
 		if (doc.sent > 0 && state == "ready") notify("textDocument/didClose", {textDocument:{uri:LspProtocol.uri(file)}});
 		documents.remove(file);
+		if (config.diagnosticProgress == true && doc.analyzed < doc.version) onDocumentActivity(file);
 		cancelFile(file);
+	}
+
+	/** Opt-in servers publish diagnostics after every document analysis, including an empty result. **/
+	public function indexing(file:String):Bool {
+		if (state != "ready" || config.diagnosticProgress != true) return false;
+		var doc = documents.get(file);
+		return doc != null && doc.analyzed < doc.version;
 	}
 
 	public function files():Array<String> return [for (file in documents.keys()) file];
@@ -209,7 +220,12 @@ class LspClient {
 			} else switch (message.method:String) {
 				case "textDocument/publishDiagnostics":
 					var file = LspProtocol.path(params.uri), doc = file == null ? null : documents.get(file);
-					if (doc != null && doc.sent == doc.version && (params.version == null || params.version == doc.version)) onDiagnostics(params);
+					if (doc != null && doc.sent == doc.version && (params.version == null || params.version == doc.version)) {
+						var waiting = indexing(file);
+						doc.analyzed = doc.version;
+						if (waiting) onDocumentActivity(file);
+						onDiagnostics(params);
+					}
 				case "window/logMessage" | "window/showMessage": onLog(params.type == 1 ? "error" : params.type == 2 ? "warning" : "info", params.message);
 				case _:
 			}
@@ -233,7 +249,7 @@ class LspClient {
 		if (disposed) return;
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "restarting";
-		for (doc in documents) { doc.sent = 0; doc.sentText = ""; }
+		for (doc in documents) { doc.sent = 0; doc.sentText = ""; doc.analyzed = 0; }
 		dirty = true;
 		var callbacks = [for (p in pending) p]; pending.clear();
 		retryAt = haxe.Timer.stamp() + Math.min(4, Math.pow(2, attempts.length - 1));
@@ -246,7 +262,7 @@ class LspClient {
 		if (disposed || state == "ready" || state == "starting" || state == "restarting") return;
 		if (state == "closing") { resumeAfterClose = true; return; }
 		attempts = []; retryAt = 0; capabilities = {};
-		for (doc in documents) { doc.sent = 0; doc.sentText = ""; }
+		for (doc in documents) { doc.sent = 0; doc.sentText = ""; doc.analyzed = 0; }
 		dirty = true;
 		state = "starting"; onWake();
 	}

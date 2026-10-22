@@ -333,6 +333,7 @@ class Workbench extends Component<WorkbenchProps> {
 	var problemScrollY = 0.;
 	var problemScrollCount = 0;
 	final languageStatusRevision = Signal.make(0);
+	final languageActivityRevision = Signal.make(0);
 	final languageRevision = Signal.make(0);
 	var languagesScheduled = false;
 	var languagePollSerial = 0;
@@ -1822,6 +1823,7 @@ class Workbench extends Component<WorkbenchProps> {
 		languageServers = new LanguageServers(props.display.cwd);
 		languageServers.onWake = () -> wakeLanguages();
 		languageServers.onStatus = () -> { if (!gone) languageStatusRevision.set(languageStatusRevision.get() + 1); };
+		languageServers.onDocumentActivity = file -> { if (!gone && file == active.get()) languageActivityRevision.set(languageActivityRevision.get() + 1); };
 		languageServers.onDiagnostics = value -> {
 			var file = LspProtocol.path(value.uri);
 			if (file == null) return;
@@ -3114,25 +3116,33 @@ class Workbench extends Component<WorkbenchProps> {
 			<div class="rayde-status-item flex"><text>Haxe</text></div>
 		</div>;
 
-	function languageStatus():Null<{id:String, owner:String, name:String, state:String}> {
+	function languageStatus():Null<{id:String, owner:String, name:String, state:String, indexing:Bool}> {
 		languageStatusRevision.get(); languageRevision.get();
 		return languageServers.status(active.get());
 	}
 
-	function languageServerItem(server:{id:String, owner:String, name:String, state:String}):Element {
+	function languageServerItem(server:{id:String, owner:String, name:String, state:String, indexing:Bool}):Element {
 		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == server.owner);
 		var icon = extension == null || extension.connection.manifest == null ? Icons.CODE_S_SLASH_LINE : ViewIcons.of(extension.connection.manifest);
 		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
-		var status = server.state == "idle" ? "not started" : server.state;
-		var label = server.name + (server.state == "ready" ? "" : " · " + status);
-		var picture:Element = <icon document={icon} class="size-3.5"/>;
+		var indexing = Computed.make(() -> {
+			languageActivityRevision.get();
+			var current = languageServers.status(active.get());
+			return current != null && current.id == server.id && current.indexing;
+		});
+		var status = Computed.make(() -> indexing.get() ? "indexing " + haxe.io.Path.withoutDirectory(active.get()) : server.state == "idle" ? "not started" : server.state);
+		var description = Computed.make(() -> server.name + " — " + status.get());
+		var label = server.name + (server.state == "ready" ? "" : " · " + (server.state == "idle" ? "not started" : server.state));
+		var picture:Element = <icon document={icon} class="size-3.5 rayde-lsp-icon"/>;
+		ashui.css.Identity.of(picture.tree, picture.node.id).bindBooleanAttribute("data-indexing", indexing);
 		if (!running) ashui.css.Identity.of(picture.tree, picture.node.id).addClasses(["rayde-lsp-inactive"]);
-		return <tooltip id="rayde-lsp-tooltip" label={server.name + " — " + status} side="top"><dropdown-menu side="top" id="rayde-lsp-menu">
+		else if (server.state == "starting" || server.state == "restarting") ashui.css.Identity.of(picture.tree, picture.node.id).addClasses(["rayde-lsp-working"]);
+		return <tooltip id="rayde-lsp-tooltip" label={description} side="top"><dropdown-menu side="top" id="rayde-lsp-menu">
 			<dropdown-menu-trigger id="rayde-lsp-status" variant={Ghost} class="rayde-status-item rayde-lsp-status">
 				{picture}<text>{label}</text>
 			</dropdown-menu-trigger>
 			<dropdown-menu-content>
-				<dropdown-menu-label>{server.name + " — " + server.state}</dropdown-menu-label>
+				<dropdown-menu-label><text>${description}</text></dropdown-menu-label>
 				<dropdown-menu-item id="rayde-lsp-start" disabled={running || server.state == "closing"} onSelect={() -> languageServers.control(server.id, "start")}>Start</dropdown-menu-item>
 				<dropdown-menu-item id="rayde-lsp-restart" disabled={server.state == "closing"} onSelect={() -> languageServers.control(server.id, "restart")}>Restart</dropdown-menu-item>
 				<dropdown-menu-item id="rayde-lsp-stop" disabled={!running} onSelect={() -> languageServers.control(server.id, "stop")}>Stop</dropdown-menu-item>
