@@ -95,6 +95,15 @@ WELCOME_MEMORY_OUT=markdown-retention WELCOME_MEMORY_MODES=md ASHUI_WINDOW_SECON
 
 `MARKDOWN_PROBE_FILES` and `MARKDOWN_PROBE_SECTIONS` control the workload. Normal measurements release every document; `MARKDOWN_PROBE_SIMULATE=1` opts into the original captured-document/native-control comparison, which deliberately retains payloads. A phase that never becomes ready fails the probe. Records include VM collection counters and known renderer textures; the sampler saves each phase's raw mapping and hashes the executable and adjacent runtime/native libraries. `gcHeapBytes` counts occupied GC blocks, including fragmentation, rather than live object bytes. `MEMORY_PROBE_DUMP=1` adds baseline and collected heap censuses; use these to compare object counts, marked bytes and page occupancy. Match runtime hashes before comparing processes. Root tracing is separately enabled with `MEMORY_PROBE_ROOTS=1 ASH_GC_DEBUG_ROOTS=1`.
 
+`MixedWorkspaceMemoryProbe` uses the current workspace's `build.hxml` and real tracked files. It opens up to 16 Markdown previews, 32 large Haxe files with Rayzor document-symbol requests, the Git sidebar and expanded graph, eight raster images and eight SVGs, then closes each group in opening order. It leaves source files and saved sessions untouched, restores its recent-file writes, and fails rather than discarding unsaved changes. Run it from the RayDE checkout with an existing Rayzor binary:
+
+```sh
+bash -e -c 'source scripts/deps.sh; haxe "${ui_args[@]}" -D ashui_window -cp tests -main MixedWorkspaceMemoryProbe -hl bin/mixed-workspace-memory.hl; "$ash" --build bin/mixed-workspace-memory bin/mixed-workspace-memory.hl'
+WELCOME_MEMORY_OUT=mixed-workspace WELCOME_MEMORY_MODES=mixed MEMORY_PROBE_KEEP_HOME=1 MEMORY_PROBE_EXTENSIONS="$PWD/extensions" MEMORY_PROBE_CHILDREN=1 MEMORY_PROBE_DUMP=1 RAYZOR_LSP="$PWD/bin/rayzor" ASHUI_WINDOW_SECONDS=1200 python3 tests/memory_probe.py bin/mixed-workspace-memory
+```
+
+The sampler records RayDE and direct child footprints separately. `MEMORY_PROBE_KEEP_HOME=1` uses your installed settings; omit it for an isolated profile. `MEMORY_PROBE_EXTENSIONS` selects the extension directory. The probe reports requested, returned and non-null LSP answers alongside documents still indexing: draining requests can include timeouts and does not prove indexing completed. Final checkpoints wait 30 seconds with all tabs closed, collect again, then stop the LSP and collect once more. Compare live UI counts, heap censuses and graphics mappings with the baseline before attributing the remaining footprint to closed tabs.
+
 `LspMemoryProbe` compares the same offscreen editor workload with LSP disabled, a framed fixture server, and the packaged Rayzor binary. It measures opening tabs, idle polling, switches, edits, completions, hovers and closure without PNG readbacks. Compile it with the shared UI arguments, then run the sampler:
 
 ```sh
