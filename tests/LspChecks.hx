@@ -137,6 +137,7 @@ class LspChecks {
 		incremental.sync(file, "replaced");
 		check(Reflect.field(query(incremental, inc, "test/state").documents, LspProtocol.uri(file)).text == "replaced", "Incremental synchronization uses a UTF-16 full replacement range");
 		incremental.release("incremental"); until(incremental, () -> !incremental.busy());
+		hoverChecks(root);
 		extensionChecks(root);
 		var failed = new LanguageServers(root);
 		failed.register("broken", {id:"broken", languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"rayde-nonexistent-lsp-fixture", args:[]}}, (_, _) -> {});
@@ -147,6 +148,55 @@ class LspChecks {
 		var rayzor = Sys.getEnv("RAYDE_RAYZOR_LSP");
 		if (rayzor != null && rayzor != "") realServer(root, rayzor);
 		Sys.println("LSP checks passed");
+	}
+
+	static function hoverChecks(root:String):Void {
+		var file = root + "bin/lsp-hover.hx", other = root + "bin/lsp-hover-other.hx", events = root + "bin/lsp-hover.events";
+		if (sys.FileSystem.exists(events)) sys.FileSystem.deleteFile(events);
+		var servers = new LanguageServers(root);
+		servers.register("hover", {id:"hover", languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3", args:[root + "tests/lsp_server_fixture.py", events]}}, (_, _) -> {});
+		var client = servers.client(file), text = "class Hover {}";
+		servers.sync(file, text); servers.sync(other, "class Other {}");
+		until(servers, () -> client.state == "ready");
+		function fetch(offset:Int):Dynamic {
+			var done = false, value:Dynamic = null;
+			client.hover(file, offset, result -> { value = result; done = true; });
+			until(servers, () -> done);
+			return value;
+		}
+		function cached(offset:Int):Bool {
+			var immediate = false;
+			client.hover(file, offset, result -> immediate = result != null);
+			return immediate;
+		}
+		check(fetch(6) != null, "Initial hover requests documentation");
+		var traffic = sys.io.File.getContent(events), version = client.version(file);
+		// The editor view cancels its requests on unmount, but leaves document data open.
+		client.cancelScope(file + "#hover"); servers.retain([file, other]);
+		servers.sync(other, "class Other {}"); servers.sync(file, text);
+		check(cached(6), "Returning to an unchanged tab answers hover synchronously from protocol data");
+		query(servers, client, "test/state");
+		check(client.version(file) == version && sys.io.File.getContent(events) == traffic, "Tab return sends no open, change, close or hover traffic");
+		servers.sync(other, "class Other { var changed:Int; }");
+		check(!cached(6), "Changes to another document invalidate semantic hover data");
+		fetch(6);
+		client.saved(file); check(!cached(6), "Save invalidates cached semantic data"); fetch(6);
+		servers.sync(file, text + " "); check(!cached(6), "Editing the hovered document invalidates cached data"); fetch(6);
+		var stale:Dynamic = true;
+		client.hover(file, 7, result -> stale = result);
+		servers.sync(other, "class Other {}");
+		query(servers, client, "test/state");
+		check(stale == null, "A response started before a dependency edit is discarded");
+		for (i in 0...130) fetch(i);
+		check((@:privateAccess client.hovers.length) == 128 && (@:privateAccess client.hoverBytes) <= 1024 * 1024, "Hover cache is bounded across open tabs");
+		check(!cached(0) && cached(129), "Hover cache evicts least recently used entries");
+		client.closeDocument(file);
+		check((@:privateAccess client.hovers.length) == 0, "Closed documents release hover data");
+		servers.sync(file, text); fetch(6);
+		client.restartSession(); until(servers, () -> client.state == "ready");
+		check(!cached(6), "A restarted server never reuses its previous hover data");
+		servers.dispose(); until(servers, () -> !servers.busy());
+		Sys.println("LSP tab return: unchanged version and zero document/hover messages; bounded hover data survives view cancellation");
 	}
 
 	static function realServer(base:String, command:String):Void {
@@ -170,6 +220,16 @@ class LspChecks {
 			for (hover in hovers) check(hover != null && LspProtocol.documentation(hover.contents).indexOf("function add") >= 0, "Real Rayzor answers concurrent hover requests with semantic results");
 			check(client.state == "ready", "Real Rayzor remains connected after document request");
 			check(!servers.status(file).indexing, "Real Rayzor diagnostics finish active-document analysis");
+			var offset = source.indexOf("add(") + 1, loaded = false, start = haxe.Timer.stamp();
+			client.hover(file, offset, result -> { check(result != null, "Real server hover data"); loaded = true; });
+			until(servers, () -> loaded, 20);
+			var requestedMs = (haxe.Timer.stamp() - start) * 1000, version = client.version(file), requestId = @:privateAccess client.nextId;
+			client.cancelScope(file + "#hover"); servers.sync(file, source);
+			loaded = false; start = haxe.Timer.stamp();
+			client.hover(file, offset, result -> loaded = result != null);
+			var cachedMs = (haxe.Timer.stamp() - start) * 1000;
+			check(loaded && client.version(file) == version && (@:privateAccess client.nextId) == requestId && !client.indexing(file), "Real Rayzor tab return reuses documentation without a request or analysis");
+			Sys.println('Real Rayzor hover: server round trip ' + requestedMs + ' ms; cached tab return ' + cachedMs + ' ms');
 			servers.retain([]);
 			var diagnostics = query(servers, client, "rayde/unsupportedProbe");
 			check(client.state == "ready", "Real Rayzor remains connected after document close and unknown request");

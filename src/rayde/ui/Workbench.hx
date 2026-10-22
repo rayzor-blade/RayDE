@@ -2886,12 +2886,12 @@ class Workbench extends Component<WorkbenchProps> {
 		if (client != null) {
 			if (editor == null || !client.supports("hoverProvider")) return null;
 			languageServers.sync(file, text);
-			client.request("textDocument/hover", LspProtocol.at(file, text, offset), result -> {
+			client.hover(file, offset, result -> {
 				if (gone || editorOf(file) != editor || editor.value.get() != text || editor.hoverOffset != offset || result == null) return;
 				var range:Dynamic = result.range;
 				editor.showHint({from:range == null ? offset : LspProtocol.offset(text, range.start),
 					to:range == null ? offset + 1 : LspProtocol.offset(text, range.end), renderDocs:() -> HoverDocumentation.render(result.contents)});
-			}, file + "#hover");
+			});
 			return null;
 		}
 		var found = try props.display.hover(file, Display.byteOffset(text, offset), text) catch (_:Dynamic) null;

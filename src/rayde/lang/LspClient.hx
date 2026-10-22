@@ -1,6 +1,7 @@
 package rayde.lang;
 
 private typedef Document = {language:String, text:String, version:Int, sent:Int, sentText:String, analyzed:Int};
+private typedef Hover = {file:String, from:Int, to:Int, result:Dynamic, size:Int};
 private typedef Pending = {done:Dynamic->Void, deadline:Float, scope:String};
 
 /** A workspace session, independent of editor views. Failure of a request leaves the process alive. */
@@ -26,6 +27,43 @@ class LspClient {
 	var disposed = false;
 	var resumeAfterClose = false;
 	var dirty = false;
+	var semanticRevision = 0;
+	final hovers:Array<Hover> = [];
+	var hoverBytes = 0;
+
+	function clearHovers():Void {
+		semanticRevision++;
+		hovers.resize(0); hoverBytes = 0;
+	}
+
+	/** Cache protocol data only; editor views and their owners never enter the session cache. */
+	public function hover(file:String, offset:Int, done:Dynamic->Void):Void {
+		var doc = documents.get(file);
+		if (doc == null || !supports("hoverProvider")) { done(null); return; }
+		for (i in 0...hovers.length) {
+			var cached = hovers[i];
+			if (cached.file == file && offset >= cached.from && offset < cached.to) {
+				hovers.splice(i, 1); hovers.push(cached); done(cached.result); return;
+			}
+		}
+		var revision = semanticRevision;
+		request("textDocument/hover", LspProtocol.at(file, doc.text, offset), result -> {
+			if (revision != semanticRevision) { done(null); return; }
+			if (result != null && result.contents != null && !indexing(file)) {
+				var size = haxe.Json.stringify(result).length * 2;
+				if (size <= 1024 * 1024) {
+					while (hovers.length >= 128 || hoverBytes + size > 1024 * 1024) hoverBytes -= hovers.shift().size;
+					var range:Dynamic = result.range;
+					var from = range == null ? offset : LspProtocol.offset(doc.text, range.start);
+					var to = range == null ? offset + 1 : LspProtocol.offset(doc.text, range.end);
+					// A malformed range cannot make an unrelated symbol a cache hit.
+					if (from > offset || to <= offset) { from = offset; to = offset + 1; }
+					hovers.push({file:file, from:from, to:to, result:result, size:size}); hoverBytes += size;
+				}
+			}
+			done(result);
+		}, file + "#hover");
+	}
 
 	function set_state(value:String):String {
 		if (state != value) { state = value; if (onStateChanged != null) onStateChanged(); }
@@ -47,6 +85,7 @@ class LspClient {
 		if (state == "idle") state = "starting";
 		var doc = documents.get(file);
 		var changed = doc == null || doc.text != text, waiting = doc != null && doc.analyzed < doc.version;
+		if (changed) clearHovers();
 		if (doc == null) { documents.set(file, {language:language, text:text, version:1, sent:0, sentText:"", analyzed:0}); dirty = true; }
 		else if (doc.text != text) {
 			doc.text = text; doc.version++; dirty = true;
@@ -61,6 +100,7 @@ class LspClient {
 		if (doc == null) return;
 		if (doc.sent > 0 && state == "ready") notify("textDocument/didClose", {textDocument:{uri:LspProtocol.uri(file)}});
 		documents.remove(file);
+		clearHovers();
 		if (config.diagnosticProgress == true && doc.analyzed < doc.version) onDocumentActivity(file);
 		cancelFile(file);
 	}
@@ -73,11 +113,12 @@ class LspClient {
 	}
 
 	public function files():Array<String> return [for (file in documents.keys()) file];
-	public function abort():Void { disposed = true; documents.clear(); forceClose(); }
+	public function abort():Void { disposed = true; documents.clear(); clearHovers(); forceClose(); }
 	public function version(file:String):Int return documents.exists(file) ? documents.get(file).version : -1;
 
 	public function saved(file:String):Void {
 		if (state != "ready" || !documents.exists(file)) return;
+		clearHovers();
 		flush();
 		var sync:Dynamic = capabilities.textDocumentSync;
 		if (sync != null && !Std.isOfType(sync, Int) && sync.save != null && sync.save != false) {
@@ -245,6 +286,7 @@ class LspClient {
 	}
 
 	function fail(error:String):Void {
+		clearHovers();
 		if (state == "closing") { forceClose(); return; }
 		if (disposed) return;
 		if (transport != null) transport.close();
@@ -275,6 +317,7 @@ class LspClient {
 
 	/** Graceful shutdown is polled; it never waits for the server on the caller's thread. */
 	public function stopSession():Void {
+		clearHovers();
 		resumeAfterClose = false;
 		if (state == "closing") return;
 		pending.clear();

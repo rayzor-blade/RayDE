@@ -45,8 +45,10 @@ while True:
     elif method == "textDocument/didOpen":
         doc = params["textDocument"]
         documents[doc["uri"]] = doc
+        record("open " + doc["uri"])
     elif method == "textDocument/didChange":
         doc = params["textDocument"]
+        record("change " + doc["uri"])
         if os.environ.get("LSP_SYNC_KIND") == "2":
             old = documents[doc["uri"]]["text"]
             lines = old.split("\n")
@@ -54,6 +56,7 @@ while True:
             assert params["contentChanges"][-1]["range"] == {"start": {"line": 0, "character": 0}, "end": end}
         documents[doc["uri"]].update(version=doc["version"], text=params["contentChanges"][-1]["text"])
     elif method == "textDocument/didClose":
+        record("close " + params["textDocument"]["uri"])
         documents.pop(params["textDocument"]["uri"], None)
     elif method == "textDocument/didSave":
         record("save " + params.get("text", ""))
@@ -85,6 +88,7 @@ while True:
         send({"id": identifier, "result": [{"label": "fixtureMember", "kind": 3,
                                            "detail": "LSP completion", "insertText": "fixtureMember"}]})
     elif method == "textDocument/hover":
+        record("hover " + params["textDocument"]["uri"])
         send({"id": identifier, "result": {"contents": {"kind": "markdown", "value": "```haxe\npublic class AppIcon\n```\n\n*rayde.ui.AppIcon*\n\nBuilds the **application icon** from `SVG`.\n\n- [Documentation](https://haxe.org)\n- Supports dark and light themes."}}})
     elif method == "textDocument/signatureHelp":
         send({"id": identifier, "result": {"signatures": [{"label": "greet(name:String, times:Int)",
