@@ -9,6 +9,25 @@ import rayde.ext.Manifest.ViewTool;
  */
 class ViewIcons {
 	static final read = new Map<String, Null<ashui.svg.SvgDocument>>();
+	static final inactiveIcons = new haxe.ds.ObjectMap<ashui.svg.SvgDocument, ashui.svg.SvgDocument>();
+
+	/** Rasterize the inactive treatment within the icon's bounds, keeping its shape and alpha. */
+	public static function inactive(icon:ashui.svg.SvgDocument):ashui.svg.SvgDocument {
+		if (icon.mask) return icon;
+		var cached = inactiveIcons.get(icon);
+		if (cached != null) return cached;
+		var root = Xml.parse(icon.markup).firstElement(), group = Xml.createElement("g");
+		var name = "rayde-inactive-" + icon.id;
+		group.set("filter", "url(#" + name + ")");
+		for (child in [for (child in root) child]) { root.removeChild(child); group.addChild(child); }
+		var defs = Xml.createElement("defs"), filter = Xml.createElement("filter"), matrix = Xml.createElement("feColorMatrix");
+		filter.set("id", name); filter.set("color-interpolation-filters", "sRGB");
+		matrix.set("type", "saturate"); matrix.set("values", "0");
+		filter.addChild(matrix); defs.addChild(filter); root.addChild(defs); root.addChild(group);
+		cached = ashui.svg.SvgDocument.parse(root.toString());
+		inactiveIcons.set(icon, cached);
+		return cached;
+	}
 
 	/** The icons an extension can ask for by name, as `refresh` or `refresh-line`. */
 	static final NAMED:Map<String, ashui.svg.SvgDocument> = [

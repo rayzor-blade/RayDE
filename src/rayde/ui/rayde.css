@@ -385,7 +385,7 @@
 #rayde #rayde-lsp-tooltip, #rayde #rayde-lsp-menu { align-self: center; align-items: center; }
 #rayde .rayde-lsp-status { font-size: var(--text-xs); min-height: 0; height: 20px; padding: 0 6px; }
 
-#rayde .rayde-lsp-inactive { filter: grayscale(1); }
+#rayde .rayde-lsp-inactive { color: var(--text-tertiary); }
 
 #rayde .rayde-lsp-working, #rayde .rayde-lsp-icon[data-indexing] { animation: ui-spinner-turn 1000ms linear infinite; }
 

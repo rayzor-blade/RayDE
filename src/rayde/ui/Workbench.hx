@@ -3289,6 +3289,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == server.owner);
 		var icon = extension == null || extension.connection.manifest == null ? Icons.CODE_S_SLASH_LINE : ViewIcons.of(extension.connection.manifest);
 		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
+		if (!running) icon = ViewIcons.inactive(icon);
 		var indexing = Computed.make(() -> {
 			languageActivityRevision.get();
 			var current = languageServers.status(active.get());
