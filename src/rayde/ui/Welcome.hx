@@ -16,7 +16,7 @@ typedef WelcomeProps = {
 	build:String,
 	haxe:String,
 	sources:Array<String>,
-	files:Int,
+	files:Void->Int,
 	/** The file of the build's main class, when there is one. */
 	main:Null<String>,
 	recent:Signal<Array<String>>,
@@ -124,7 +124,7 @@ class Welcome extends Component<WelcomeProps> {
 				${fact("Compiler", props.haxe)}
 				${fact("Build file", props.build)}
 				${fact("Source", props.sources.join(", "))}
-				${fact("Files", props.files + (props.files == 1 ? " Haxe file" : " Haxe files"))}
+				<for {count in [props.files()]}>${fact("Files", count + (count == 1 ? " Haxe file" : " Haxe files"))}</for>
 				<for {list in [props.problems.get()]}>${problems(list)}</for>
 			</div>
 		</div>;

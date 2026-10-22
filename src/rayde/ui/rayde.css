@@ -24,6 +24,9 @@
 
 /* The command center: glass over the page, as ChimpMonk's, rising in with a spring. */
 #rayde .rayde-glass {
+	--rayde-glass-text: var(--text-primary);
+	--rayde-glass-muted: var(--text-secondary);
+	color: var(--rayde-glass-text);
 	background: color-mix(in srgb, var(--surface-elevated) 30%, transparent);
 	border: 1px solid var(--border);
 	border-radius: var(--radius-3xl);
@@ -33,10 +36,23 @@
 }
 #rayde .rayde-command-center { animation: ui-rise-in var(--duration-normal) var(--ease-spring); }
 #rayde .rayde-command-center[closing] { animation: ui-rise-out var(--duration-faster) var(--ease-in) forwards; }
-#rayde .rayde-command-center .ui-command { border: 0; border-radius: 0; background: transparent; }
-#rayde .rayde-command-center .ui-command-list { --ui-command-height: 300px; padding: 4px 8px; }
-#rayde .rayde-command-center .ui-command-item { padding: 2px 8px; min-height: 36px; border-radius: var(--radius-md); corner-shape: squircle; }
+#rayde .rayde-cc { flex-direction: column; overflow: hidden; }
+#rayde .rayde-cc-input { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+#rayde .rayde-cc-search { flex-shrink: 0; width: 16px; height: 16px; color: var(--text-tertiary); }
+#rayde input.rayde-cc-field { flex-grow: 1; width: auto; height: 44px; padding: 0; border: 0; background: transparent; font-size: var(--text-sm); }
+#rayde input.rayde-cc-field:hover, #rayde input.rayde-cc-field:focus { background: transparent; outline-width: 0; }
+#rayde .rayde-cc-list { flex-direction: column; max-height: 300px; overflow-y: auto; padding: 4px 8px; }
+#rayde .rayde-cc-list > * { flex-shrink: 0; }
+#rayde .rayde-cc-item { flex-direction: row; align-items: center; gap: 8px; padding: 2px 8px; min-height: 36px; color: var(--text-primary); border-radius: var(--radius-md); corner-shape: squircle; }
+#rayde .rayde-cc-item[data-selected] { background: var(--accent-subtle); }
+#rayde .rayde-cc-empty { justify-content: center; padding: 24px 12px; color: var(--text-secondary); }
 #rayde .rayde-cc-footer { height: 34px; border-top: 1px solid var(--border); }
+#rayde .rayde-cc-label, #rayde input.rayde-cc-field { color: var(--rayde-glass-text); }
+#rayde .rayde-cc-detail, #rayde .rayde-cc-footer text, #rayde .rayde-cc-search, #rayde .rayde-cc-empty, #rayde .rayde-cc-field .text-text-tertiary { color: var(--rayde-glass-muted); }
+@media (prefers-color-scheme: light) {
+	#rayde .rayde-glass { --rayde-glass-text: #1f2937; --rayde-glass-muted: #475569; }
+}
+
 
 /* Title bar */
 #rayde .rayde-pill { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); corner-shape: squircle; color: var(--text-secondary); }

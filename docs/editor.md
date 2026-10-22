@@ -25,6 +25,8 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 | Cmd+M | Minimize. |
 | Ctrl+Cmd+F (Alt+Shift+Enter elsewhere) | Full screen. |
 
+The command center searches the complete file catalog while mounting only the visible result rows. Folder scans run in a worker and refresh the list without resetting typed text. Arrow keys, Page Up/Down, Home and End navigate the results; Enter opens the selection. Closing the center releases its rows.
+
 ## Editor
 
 - Hovering a name in a Haxe file shows its type and documentation; hovering an underlined range shows the problem. Diagnostic popups render Markdown, including inline code, highlighted code blocks, emphasis and links. Long documentation scrolls within the popup. Hover documentation is requested from the language server; revisiting an unchanged open tab keeps its existing LSP document version.

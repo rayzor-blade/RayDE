@@ -17,19 +17,24 @@ class CommandCenterLifecycle {
 		rayde.ui.Style.use();
 		var tree = new LayoutTree(), stop:Void->Void = null;
 		var opened = Signal.make(false), request = Signal.make(({text:"", serial:0}:CenterRequest));
+		var paths = Signal.make([for (i in 0...429) '/fixture/src/File$i.hx']);
 		var scans = 0, chosen = "", line = 0, center:CommandCenter = null;
 		var root = Owner.root(tree, cleanup -> {
 			stop = cleanup;
 			var anchor = new ashui.ui.Div({width:400,height:36},[new ashui.ui.Text("Fixture project")]);
 			center = new CommandCenter({opened:opened,request:request,anchor:anchor,root:"/fixture",
-				files:() -> { scans++; return [for (i in 0...429) '/fixture/src/File$i.hx']; },
+				files:() -> { scans++; return paths.get(); },
 				actions:[{id:"test",label:"Test action",icon:rayde.ui.Icons.HAXE,run:() -> chosen="action"}],
 				tasks:() -> [{id:"task",label:"Build fixture",icon:rayde.ui.Icons.HAXE,run:() -> chosen="task"}],
 				onOpenFile:path -> chosen=path,onLine:value -> line=value});
-			return new ashui.ui.Div({id:"rayde",width:800,height:500},[anchor,center]);
+			return <div id="rayde" width={800} height={500} class="bg-background text-text-primary">${anchor}${center}</div>;
 		});
 		function settle(frames=30) for (_ in 0...frames) {
 			ashui.core.render.Offscreen.advance(1/60); Css.update(); tree.flush(); tree.computeLayout(root.node,800,500);
+		}
+		function press(key:window.Key):Void {
+			for (state in [window.MouseElementState.Pressed, window.MouseElementState.Released])
+				ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), key, None, Standard, state, false, Unavailable));
 		}
 		function identities():Int return [for (_ in (@:privateAccess Identity.trees.get(tree))) 1].length;
 		function rows():Int return [for (id in (@:privateAccess Identity.trees.get(tree))) if (id.id!=null && StringTools.startsWith(id.id,"center-")) 1].length;
@@ -43,7 +48,17 @@ class CommandCenterLifecycle {
 		settle();
 		var base=identities(), baseTexts=texts(), hooks=ashui.input.Pointer.hooks.length;
 		check("closed palette enumerated files or built rows",scans==0 && rows()==0);
-		open(""); check("open palette did not build its catalog",rows()==429 && scans==1);
+		open(""); check("open palette did not bound its mounted catalog",rows()<=13 && rows()>0 && scans==1);
+		input().value.set("File428"); settle();
+		check("search omitted an unmounted file",rows()==1 && Css.query(tree,(@:privateAccess center.panel).node.id,"#center-file-src-File428-hx").length==1);
+		input().value.set("no such file"); settle();
+		check("unmatched query retained rows", rows()==0);
+		input().value.set(""); settle();
+		press(window.Key.Named(End)); settle();
+		check("End did not reveal the last virtual row", Css.query(tree,(@:privateAccess center.panel).node.id,"#center-file-src-File428-hx[data-selected]").length==1);
+		press(window.Key.Named(Enter)); settle();
+		check("Enter did not choose the last virtual row",!opened.get() && chosen=="/fixture/src/File428.hx");
+		open("");
 		var openCount=identities();
 		ashui.core.render.Snapshot.capture('palette-${dark ? "dark" : "light"}-open',tree,root.node,800,500);
 		input().value.set(">Test"); settle();
@@ -61,8 +76,13 @@ class CommandCenterLifecycle {
 			open(""); opened.set(false); settle();
 			check("repeated opens retained rows or text",identities()==base && texts()==baseTexts && rows()==0);
 		}
+		open(""); input().value.set("AddedLater"); settle();
+		check("pending catalog query should have no results",rows()==0);
+		paths.set(paths.get().concat(["/fixture/src/AddedLater.hx"])); settle();
+		check("catalog completion reset the filter or input focus",rows()==1 && input().value.get()=="AddedLater" && ashui.input.Focus.of(tree).node.id==input().node.id);
+		opened.set(false); settle();
 		open(""); opened.set(false); settle(2); opened.set(true); settle();
-		check("rapid reopen lost focus or rows",rows()==429 && ashui.input.Focus.of(tree).node.id==input().node.id);
+		check("rapid reopen lost focus or rows",rows()<=13 && rows()>0 && ashui.input.Focus.of(tree).node.id==input().node.id);
 		opened.set(false); settle();
 		ashui.core.render.Snapshot.capture('palette-${dark ? "dark" : "light"}-closed',tree,root.node,800,500);
 		Sys.println('[palette] ${dark ? "dark" : "light"}: closed rows=${rows()}, catalog=429, styled closed=$base, styled open=$openCount, final=${identities()}');

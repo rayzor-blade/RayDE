@@ -805,6 +805,7 @@ class Checks {
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
 		PanelWorkerChecks.run();
+		FileIndexChecks.run();
 		AnsiOutputChecks.run();
 		OutlineChecks.run();
 		LspChecks.run();

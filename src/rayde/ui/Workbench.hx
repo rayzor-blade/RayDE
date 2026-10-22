@@ -30,6 +30,7 @@ import rayde.ext.Manager.ManagedExtension;
 import rayde.settings.Extensions;
 import rayde.ext.Manifest.ViewDecl;
 import rayde.files.FileOps;
+import rayde.files.FileIndex;
 import rayde.history.LocalHistory;
 import rayde.ext.Studio;
 import rayde.keys.Chord;
@@ -187,6 +188,10 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Whether the command center is open. */
 	public final quickOpen = Signal.make(false);
+
+	final fileIndex = new FileIndex();
+	final fileIndexRevision = Signal.make(0);
+	var fileIndexScheduled = false;
 
 	final centerRequest = Signal.make(({text: "", serial: 0} : CenterRequest));
 
@@ -1907,6 +1912,7 @@ class Workbench extends Component<WorkbenchProps> {
 		startExtensions();
 		containers = makeContainers();
 		commandList = commands();
+		refreshFileIndex();
 		refreshShortcuts();
 		loadRecent();
 		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> releaseClosedDocuments(), (_, _) -> false);
@@ -1931,6 +1937,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			fileIndex.dispose();
 			localHistory.dispose();
 			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
 			nativeSyntax.clear();
@@ -1964,7 +1971,7 @@ class Workbench extends Component<WorkbenchProps> {
 			${statusBar()}
 			<prompt request={prompt}/>
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${edge(direction)}</for>
-			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} root={props.display.cwd} actions={commandList} tasks={taskChoices}
+			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} refreshFiles={refreshFileIndex} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
 			<toaster id="rayde-toaster"/>
 		</div>;
@@ -2440,8 +2447,10 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** Builds the tree again from the files as they are. */
-	public function refreshExplorer():Void
+	public function refreshExplorer():Void {
+		refreshFileIndex();
 		buildRevision.set(buildRevision.get() + 1);
+	}
 
 	function askCreate(dir:String, folder:Bool):Void
 		prompt.set({
@@ -2599,29 +2608,33 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The project's files with the open ones first, in the order of their tabs. */
 	function recentFiles():Array<String> {
-		var all = projectFiles(), open = open.get();
-		return [for (f in open) if (all.indexOf(f) >= 0) f].concat([for (f in all) if (open.indexOf(f) < 0) f]);
+		var all = projectFiles(), tabs = open.get(), indexed = new Map<String, Bool>(), opened = new Map<String, Bool>();
+		for (file in all) indexed.set(file, true);
+		for (file in tabs) opened.set(file, true);
+		return [for (file in tabs) if (indexed.exists(file)) file].concat([for (file in all) if (!opened.exists(file)) file]);
 	}
 
-	/** Openable files under the project's source folders, folder by folder, in name order. */
-	function projectFiles():Array<String> {
-		var out = [];
-		function walk(dir:String):Void {
-			var names = sys.FileSystem.readDirectory(dir);
-			names.sort(Reflect.compare);
-			for (name in names) {
-				var path = haxe.io.Path.join([dir, name]);
-				if (name.startsWith("."))
-					continue;
-				if (sys.FileSystem.isDirectory(path))
-					walk(path);
-				else if (isSource(path))
-					out.push(path);
-			}
+	function refreshFileIndex():Void {
+		fileIndex.refresh([for (cp in classpaths()) cp.dir]);
+		if (fileIndexScheduled || gone) return;
+		fileIndexScheduled = true;
+		ashui.animation.AnimationScheduler.main.after(.016, pollFileIndex);
+	}
+
+	function pollFileIndex():Void {
+		fileIndexScheduled = false;
+		if (gone) return;
+		if (fileIndex.poll()) fileIndexRevision.set(fileIndexRevision.get() + 1);
+		if (fileIndex.busy()) {
+			fileIndexScheduled = true;
+			ashui.animation.AnimationScheduler.main.after(.016, pollFileIndex);
 		}
-		for (cp in classpaths())
-			walk(cp.dir);
-		return out;
+	}
+
+	/** Openable files from the most recent worker snapshot. */
+	function projectFiles():Array<String> {
+		fileIndexRevision.get();
+		return [for (path in fileIndex.paths) if (isSource(path)) path];
 	}
 
 	/** The tree items for what is in `dir`: its folders and openable files. */
@@ -2699,7 +2712,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function welcome():Element
 		return <welcome name={props.name} runtime={runtime()} root={props.display.cwd}
 			build={props.display.hxml == null ? "build.hxml" : haxe.io.Path.withoutDirectory(props.display.hxml)} haxe={compilerVersion()}
-			sources={[for (cp in classpaths()) cp.label]} files={projectFiles().length} main={mainFile()} recent={recent} problems={problems}
+			sources={[for (cp in classpaths()) cp.label]} files={() -> projectFiles().length} main={mainFile()} recent={recent} problems={problems}
 			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run} onBuild={openBuild}/>;
 
 	/** Where `file` sits in the project, folder by folder. */

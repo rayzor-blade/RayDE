@@ -1,6 +1,5 @@
 package rayde.ui;
 
-import ashui.components.Command;
 import ashui.components.Floating;
 import ashui.components.Icon;
 import ashui.css.Css;
@@ -9,6 +8,8 @@ import ashui.input.Pointer;
 import ashui.layout.Element;
 import ashui.layout.LayoutTree;
 import ashui.reactive.Owner;
+import ashui.reactive.Computed;
+import ashui.css.Identity;
 import ashui.reactive.Signal;
 import ashui.reactive.Watch;
 import ashui.types.Style;
@@ -35,8 +36,9 @@ typedef CommandCenterProps = {
 	request:Signal<CenterRequest>,
 	/** The element it hangs from: the project pill in the title bar. */
 	anchor:Element,
-	/** The project's files as paths, most recently opened first, asked for each time the center opens. */
+	/** A reactive snapshot of project files, most recently opened first. */
 	files:Void->Array<String>,
+	?refreshFiles:Void->Void,
 	/** The folder the listed paths are shown relative to. */
 	root:String,
 	actions:Array<CenterAction>,
@@ -46,16 +48,17 @@ typedef CommandCenterProps = {
 	onLine:Int->Void
 };
 
+private typedef Choice = {id:String, value:String, label:String, detail:String, icon:ashui.svg.SvgDocument, shortcut:String, search:String};
+
 /**
  * The command center, as VS Code's: a panel under the title bar's project
  * pill, over the page and not instead of it, that goes to a file as typed, to a
  * command after `>`, and to a line after `:`. The page stays live under it; a
- * press outside, or Escape, closes it. Command indexes its items when they are
- * made, so the list is made again when the mode changes or the center opens.
+ * press outside, or Escape, closes it. Catalogs contain data; only the visible
+ * result rows are mounted, with keyboard navigation across the full catalog.
  */
 class CommandCenter extends Component<CommandCenterProps> {
-	final command = new Ref<Command>();
-	final input = new Ref<CommandInput>();
+	final input = new Ref<ashui.ui.Input>();
 	final mode = Signal.make("files");
 	final builds = Signal.make(0);
 	final mounted = Signal.make(false);
@@ -68,6 +71,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 
 	/** The list of choices the center was opened to pick from, or null when it goes to files and commands. */
 	var picker:Null<Picker> = null;
+	var choices:Array<CenterAction> = [];
 
 	function render():Element {
 		panel = <div id="rayde-command-center" class="rayde-glass rayde-command-center flex flex-col overflow-hidden" width={600}>
@@ -91,6 +95,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 		} else {
 			mounted.set(false);
 			picker = null;
+			choices = [];
 			carry = "";
 		}, (_, _) -> false);
 		// A press outside the panel and its pill closes it; the pill closes it itself when it is open.
@@ -116,26 +121,56 @@ class CommandCenter extends Component<CommandCenterProps> {
 	static function modeOf(text:String):String
 		return StringTools.startsWith(text, ">") ? "commands" : StringTools.startsWith(text, ":") ? "line" : StringTools.startsWith(text, "task ") ? "tasks" : "files";
 
+	static final fileIds = ~/[^A-Za-z0-9]+/g;
+	static inline var ROW = 36;
+	static inline var CAPACITY = 13;
+
 	function body(m:String):Element {
-		var rows:Array<Element> = switch m {
-			case "pick": [for (a in picker.items) actionRow(a, "")];
-			case "tasks": [for (a in props.tasks()) actionRow(a, "task ")];
-			case "commands": [for (a in props.actions) actionRow(a, ">")];
-			case "line": [];
-			case _: [for (path in props.files()) fileRow(path)];
-		};
+		choices = m == "pick" ? picker.items : m == "tasks" ? props.tasks() : props.actions;
+		var catalog:Array<Choice> = m == "commands" || m == "tasks" || m == "pick" ? [for (a in choices) {
+			id:"center-action-" + a.id, value:"action:" + a.id, label:a.label, detail:"", icon:a.icon, shortcut:a.shortcut == null ? "" : a.shortcut,
+			search:((m == "commands" ? ">" : m == "tasks" ? "task " : "") + a.label + " " + a.id).toLowerCase()
+		}] : [];
+		var matching = Signal.make(([]:Array<Choice>)), selected = Signal.make(0);
 		var empty = m == "pick" ? "Nothing matches" : m == "tasks" ? "No tasks match" : m == "line" ? "Type a line number, then Enter, to go to it" : m == "commands" ? "No commands match" : "No files match";
-		rows.unshift(new CommandEmpty({}, [new ashui.ui.Text(empty)]));
 		var placeholder = m == "pick" ? picker.placeholder : m == "tasks" ? "Run a task" : m == "commands" ? "Run a command" : m == "line" ? "Go to line" : "Search files by name";
-		var element = <div class="flex flex-col">
-		<command ref={command} id="rayde-command-list" onSelect={choose}>
-			<command-input ref={input} id="rayde-command-input" placeholder={placeholder} onKeyDown={e -> if (m == "line" && e.key.match(Named(Enter))) {
-				goToLine();
-				e.preventDefault();
-				e.stopPropagation();
-			}}/>
-			${new CommandList({}, rows)}
-		</command>
+		var list = <div id="rayde-command-results" class="rayde-cc-list"/>;
+		var scrolling = ashui.input.Scroll.attach(list.node, false, true);
+		var first = Computed.make(() -> Std.int(Math.max(0, Math.min(matching.get().length - 1, Math.floor(scrolling.y.get() / ROW)) - 2)));
+		var end = Computed.make(() -> Std.int(Math.min(matching.get().length, first.get() + CAPACITY)));
+		var visible = Computed.make(() -> matching.get().slice(first.get(), end.get()));
+		list.appendChild(<div height={Computed.make(() -> first.get() * 36.)} flexShrink={0}/>);
+		list.appendChild(<for {row in visible}>${choiceRow(row, matching, selected)}</for>);
+		list.appendChild(<div height={Computed.make(() -> (matching.get().length - end.get()) * 36.)} flexShrink={0}/>);
+		list.appendChild(<if {matching.get().length == 0}><div class="rayde-cc-empty">${empty}</div></if>);
+		function select(index:Int):Void {
+			var count = matching.get().length;
+			if (count == 0) return;
+			index = Std.int(Math.max(0, Math.min(count - 1, index))); selected.set(index);
+			var top = index * ROW, viewport = Math.min(292, count * ROW), y = scrolling.y.get();
+			if (top < y) scrolling.jumpTo(0, top);
+			else if (top + ROW > y + viewport) scrolling.jumpTo(0, top + ROW - viewport);
+		}
+		var element = <div class="flex flex-col" onKeyDown={e -> {
+			var handled = true;
+			switch e.key {
+				case Named(ArrowDown): select(selected.get() + 1);
+				case Named(ArrowUp): select(selected.get() - 1);
+				case Named(PageDown): select(selected.get() + 8);
+				case Named(PageUp): select(selected.get() - 8);
+				case Named(Home): select(0);
+				case Named(End): select(matching.get().length - 1);
+				case Named(Enter):
+					if (m == "line") goToLine();
+					else if (matching.get().length > 0) choose(matching.get()[selected.get()].value);
+				case _: handled = false;
+			}
+			if (handled) { e.preventDefault(); e.stopPropagation(); }
+		}}>
+		<div id="rayde-command-list" class="rayde-cc">
+			<div class="rayde-cc-input"><icon document={Icons.SEARCH_LINE} class="rayde-cc-search"/><input ref={input} id="rayde-command-input" class="rayde-cc-field" placeholder={placeholder}/></div>
+			${list}
+		</div>
 		<div class="rayde-cc-footer flex items-center gap-4 px-4">
 			<if {m == "pick"}><text class="text-xs text-text-tertiary">Enter to choose</text>
 			<else>
@@ -148,37 +183,44 @@ class CommandCenter extends Component<CommandCenterProps> {
 		</div>;
 		var field = ashui.ui.Input.at(element.tree, Css.query(element.tree, element.node.id, "#rayde-command-input")[0]);
 		field.value.set(carry);
-		// A change of mode builds the list again, so what was typed goes back into the new filter.
+		function filter(q:String):Void {
+			var words = [for (word in StringTools.trim(q).toLowerCase().split(" ")) if (word != "") word];
+			matching.set(words.length == 0 ? catalog : [for (item in catalog) if (Lambda.foreach(words, word -> item.search.indexOf(word) >= 0)) item]);
+			selected.set(0); scrolling.jumpTo(0, 0);
+		}
+		if (m == "files") {
+			if (props.refreshFiles != null) props.refreshFiles();
+			new Watch(() -> props.files(), paths -> {
+				catalog = [for (path in paths) fileChoice(path)]; filter(field.value.get());
+			});
+		}
 		new Watch(() -> field.value.get(), q -> {
 			var next = modeOf(q);
-			if (picker == null && command.get() != null && next != mode.get()) {
-				carry = q;
-				mode.set(next);
-			}
+			if (picker == null && next != mode.get()) { carry = q; mode.set(next); }
+			else filter(q);
 		});
 		restoreFilter();
 		return element;
 	}
 
-	function fileRow(path:String):Element {
+	function fileChoice(path:String):Choice {
 		var name = haxe.io.Path.withoutDirectory(path), relative = shown(path);
-		return <command-item id={"center-file-" + ~/[^A-Za-z0-9]+/g.replace(relative, "-")} value={path} keywords={[name, relative]}>
-			<div class="flex items-center gap-3 w-full min-w-0" height={32}>
-				<icon document={Icons.HAXE} class="size-4 shrink-0"/>
-				<text class="text-sm shrink-0">${name}</text>
-				<text class="text-xs text-text-tertiary">${haxe.io.Path.directory(relative)}</text>
-			</div>
-		</command-item>;
+		return {id:"center-file-" + fileIds.replace(relative, "-"), value:path, label:name, detail:haxe.io.Path.directory(relative),
+			icon:Icons.HAXE, shortcut:"", search:(path + " " + name + " " + relative).toLowerCase()};
 	}
 
-	/** One action as a row; what is typed in the filter starts with `prefix` (> for commands, `task ` for tasks), which the row answers to. */
-	function actionRow(a:CenterAction, prefix:String):Element
-		return <command-item id={"center-action-" + a.id} value={"action:" + a.id} keywords={[prefix + a.label, a.label]} shortcut={a.shortcut}>
-			<div class="flex items-center gap-3 w-full min-w-0" height={32}>
-				<icon document={a.icon} class="size-4 shrink-0 text-text-secondary"/>
-				<text class="text-sm">${a.label}</text>
+	function choiceRow(row:Choice, matching:Signal<Array<Choice>>, selected:Signal<Int>):Element {
+		var box = <div id={row.id} class="rayde-cc-item shrink-0" height={ROW} onPointerEnter={_ -> selected.set(matching.get().indexOf(row))} onClick={_ -> choose(row.value)}>
+			<div class="flex items-center gap-3 flex-1 min-w-0">
+				<icon document={row.icon} class="size-4 shrink-0 text-text-secondary"/>
+				<text class="rayde-cc-label text-sm shrink-0">${row.label}</text>
+				<text class="rayde-cc-detail text-xs min-w-0" wrap={false}>${row.detail}</text>
 			</div>
-		</command-item>;
+			<if {row.shortcut != ""}><text class="rayde-cc-detail ml-auto text-xs shrink-0" wrap={false}>${row.shortcut}</text></if>
+		</div>;
+		Identity.of(box.tree, box.node.id).bindBooleanAttribute("data-selected", Computed.make(() -> matching.get()[selected.get()] == row));
+		return box;
+	}
 
 	/** `path` from the project's folder. */
 	function shown(path:String):String {
@@ -189,9 +231,9 @@ class CommandCenter extends Component<CommandCenterProps> {
 	function choose(value:String):Void {
 		if (StringTools.startsWith(value, "action:")) {
 			var id = value.substr(7);
-			var choices = picker != null ? picker.items : mode.get() == "tasks" ? props.tasks() : props.actions;
+			var offered = choices;
 			props.opened.set(false);
-			for (a in choices)
+			for (a in offered)
 				if (a.id == id)
 					a.run();
 		} else {
@@ -201,7 +243,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 	}
 
 	function goToLine():Void {
-		var text = command.get() == null ? "" : command.get().query.get();
+		var text = input.get() == null ? "" : input.get().value.get();
 		var line = Std.parseInt(StringTools.trim(text.substr(1)));
 		if (line == null || line < 1)
 			return;
