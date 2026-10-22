@@ -239,6 +239,7 @@ class Snapshots {
 				function has(selector:String):Bool return Css.query(tree, bench.node.id, selector).length > 0;
 				function label(word:String):Bool return Lambda.exists(Css.query(tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text().indexOf(word) >= 0);
 				bench.openFile(file); settle();
+				if (Css.query(tree, bench.node.id, "#rayde-language text").map(id -> ashui.ui.Text.at(id).text()).join("") != "Haxe") throw "a .hx file must show as Haxe";
 				if (has("#rayde-outline-scroll") || has("#rayde-dependencies-scroll") || has("#rayde-activity-ext-git-timeline")) throw "closed sections built their contents or added an activity icon";
 				if (!has('[data-path="' + root + '/.rayde"][data-ignored]') || !has('[data-path="' + root + '/.git"][data-ignored]') || has('[data-path="' + root + '/src"][data-ignored]') || has('[data-path="' + root + '/build.hxml"][data-ignored]')) throw "the Explorer did not mute exactly the entries .gitignore names";
 				shot("ignored");
@@ -1424,6 +1425,8 @@ class Snapshots {
 				until(() -> bench.boundsOf("#rayde-status-branch") != null, "the Git extension to show its branch in the status bar");
 				var branchBounds = bench.boundsOf("#rayde-status-branch"), runtimeBounds = bench.boundsOf("#rayde-runtime");
 				if (branchBounds.x >= runtimeBounds.x) throw "the branch item must come first at the left of the status bar";
+				if (runtimeBounds.x < bench.boundsOf("#rayde-panel-toggle").x) throw "the runtime notice belongs at the right end of the status bar";
+				if (bench.boundsOf("#rayde-language") != null) throw "the status bar named a language with no file in front";
 				shot("status-branch");
 				@:privateAccess bench.setExtensionStatus(git.connection.file, "branch", {text:"main", icon:"branch", detail:"0\u2193 3\u2191", detailIcon:"refresh", tooltip:"main: 0 behind and 3 ahead of its upstream", view:"scm"});
 				settle(10); shot("status-branch-sync");
@@ -1434,6 +1437,8 @@ class Snapshots {
 				scroll("#git-scm-working-files", 150);
 				click("#git-scm-changes .git-open-file .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM row's Open file button to open its full path in the editor");
+				until(() -> bench.boundsOf("#rayde-language") != null, "the status bar to name the language of the file in front");
+				if (Css.query(tree, bench.node.id, "#rayde-language text").map(id -> ashui.ui.Text.at(id).text()).join("") != "Plain Text") throw "a .txt file must show as Plain Text";
 				var sourceDocument = bench.editorFor(bench.active.get()).document;
 				var retainedHeader = Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0];
 				var sourcePath = bench.active.get();

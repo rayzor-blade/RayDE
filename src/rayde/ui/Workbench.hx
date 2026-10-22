@@ -3340,16 +3340,16 @@ class Workbench extends Component<WorkbenchProps> {
 	function statusBar():Element
 		return <div id="rayde-status-bar" class="rayde-status flex items-center gap-2 px-3 shrink-0" height={28}>
 			<for {items in [extensionStatus.get()]}>${extensionStatusItems(items)}</for>
-			<tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
-				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
-			</tooltip>
 			<for {list in [problems.get()]}>${problemCounts(list)}</for>
 			<div class="flex-1"/>
 			<if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>
 			<for {state in [runState.get()]}>${runStatus(state)}</for>
 			<for {on in [panelShown.get()]}>${panelItem(on)}</for>
 			<for {server in [languageStatus()]}><if {server != null}>${languageServerItem(server)}</if></for>
-			<div class="rayde-status-item flex"><text>Haxe</text></div>
+			<for {name in [LanguageNames.of(realFile(active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>
+			<tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
+				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
+			</tooltip>
 		</div>;
 
 	function languageStatus():Null<{id:String, owner:String, name:String, state:String, indexing:Bool}> {
