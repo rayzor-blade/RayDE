@@ -201,7 +201,8 @@
 
 /* Compact Explorer rows; the guides sit under the chevrons and appear on hover. */
 #rayde #rayde-tree .ui-tree-row { height: 24px; gap: 4px; padding: 0 4px; }
-#rayde #rayde-tree [data-ignored] > .ui-tree-row { color: var(--text-tertiary); opacity: .55; }
+#rayde #rayde-tree [data-ignored] > .ui-tree-row { color: var(--text-tertiary); }
+#rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-icon, #rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-label { opacity: .55; }
 #rayde #rayde-tree .ui-tree-chevron { width: 12px; height: 12px; }
 #rayde #rayde-tree .ui-tree-chevron-space { width: 12px; }
 #rayde #rayde-tree .ui-tree-group { margin-left: 10px; padding-left: 1px; border-left-color: transparent; }
