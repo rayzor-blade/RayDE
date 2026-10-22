@@ -13,6 +13,11 @@ import rayde.ui.Workbench;
 class Main {
 	static function main():Void {
 		var args = Sys.args();
+		if (args.length == 0 && Sys.systemName() == "Mac" && sys.FileSystem.exists(haxe.io.Path.directory(Sys.programPath()) + "/../Info.plist")) {
+			var chosen = rayde.ui.ProjectPicker.pick();
+			if (chosen == null) return;
+			args = [chosen];
+		}
 		if (args.length == 0) {
 			Sys.println("usage: rayde <build.hxml | name.rayext | name.raytheme>");
 			Sys.exit(1);
@@ -30,6 +35,7 @@ class Main {
 		rayde.ui.Style.use();
 		// An extension is not built by the Haxe compiler: its display has no build file, and the server never starts.
 		var server = new CompilerServer(), display = extension != null || theme != null ? new Display(server, root, []) : Display.ofHxml(server, args[0]);
+		rayde.settings.RecentProjects.remember(args[0]);
 		var name = extension != null ? extension.name : theme != null ? theme.name : haxe.io.Path.withoutDirectory(root);
 		WindowedApp.run({
 			title: "RayDE · " + name,

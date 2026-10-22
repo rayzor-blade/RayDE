@@ -17,6 +17,7 @@ class Extensions {
 		var program = haxe.io.Path.directory(Sys.programPath());
 		var candidates = [
 			haxe.io.Path.join([program, "extensions"]),
+			haxe.io.Path.join([program, "../Resources/extensions"]),
 			haxe.io.Path.join([program, "../../share/rayde/extensions"]),
 			haxe.io.Path.join([Sys.getCwd(), "extensions"])
 		];

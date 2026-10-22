@@ -797,6 +797,8 @@ class Checks {
 		hxmlChecks();
 		keyChecks();
 		settingsChecks();
+		RecentProjectsChecks.run();
+		WorkspaceSessionChecks.run();
 		terminalChecks();
 		manifestChecks();
 		iconChecks();

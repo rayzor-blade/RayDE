@@ -47,6 +47,8 @@ import rayde.run.AnsiOutput;
 import rayde.run.AnsiOutput.AnsiSpan;
 import rayde.settings.Appearance;
 import rayde.settings.Store;
+import rayde.settings.WorkspaceSession;
+import rayde.settings.WorkspaceSession.TabSession;
 import rayde.theme.JsonLocator;
 import rayde.theme.ThemeFile;
 import rayde.theme.ThemeStudio;
@@ -199,6 +201,9 @@ class Workbench extends Component<WorkbenchProps> {
 	final notice = Signal.make("");
 
 	final localHistory:LocalHistory;
+	var workspaceSession:WorkspaceSession;
+	var sessionReady = false;
+	final restoredTabs = new Map<String, Bool>();
 	final historyRevision = Signal.make(0);
 	final historyPending = new Map<String, Bool>();
 	final historyTabs = new Map<String, {file:String, revision:Int, text:String}>();
@@ -373,6 +378,22 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens what a project opens with: for an extension, its main script, with its view shown where the config puts it. */
 	public function openProject():Void {
+		if (sessionReady) return;
+		workspaceSession = new WorkspaceSession(props.display.cwd, props.display.hxml ?? (extension != null ? extension.file : themeStudio != null ? themeStudio.file : props.display.cwd));
+		var saved = workspaceSession.read();
+		if (saved != null) {
+			var files = [for (entry in saved.files) sessionPath(entry)];
+			files = [for (file in files) if (restorableTab(file)) file];
+			if (files.indexOf(SETTINGS) >= 0) buildModel = props.display.hxml == null ? null : HxmlFile.read(props.display.hxml);
+			for (file in files) if (!isVirtual(file)) restoredTabs.set(file, true);
+			open.set(files);
+			var selected = sessionPath(saved.active);
+			active.set(files.indexOf(selected) >= 0 ? selected : files.length == 0 ? "" : files[0]);
+			sessionReady = true;
+			if (active.get() != "" && !isVirtual(active.get())) { restoredTabs.remove(active.get()); check(active.get()); }
+			return;
+		}
+		sessionReady = true;
 		if (themeStudio != null) {
 			openFile(THEME_TAB);
 			return;
@@ -403,6 +424,25 @@ class Workbench extends Component<WorkbenchProps> {
 			}
 		if (main != null)
 			active.set(main);
+	}
+
+	function sessionPath(entry:String):String
+		return entry == "" || isVirtual(entry) || haxe.io.Path.isAbsolute(entry) ? entry : haxe.io.Path.join([props.display.cwd, entry]);
+
+	function persistableTab(file:String):Bool {
+		if (file == SETTINGS || file == THEME_TAB && themeStudio != null) return true;
+		if (isViewTab(file)) return containerOfTab(file) != null;
+		if (isVirtual(file) || file == "") return false;
+		return true;
+	}
+
+	function restorableTab(file:String):Bool
+		return persistableTab(file) && (isVirtual(file) || sys.FileSystem.exists(file) && !sys.FileSystem.isDirectory(file));
+
+	function sessionSnapshot():TabSession {
+		var files = [for (file in open.get()) if (persistableTab(file)) isVirtual(file) ? file : relative(file)];
+		var selected = active.get(), key = isVirtual(selected) ? selected : relative(selected);
+		return {files:files, active:files.indexOf(key) >= 0 ? key : files.length == 0 ? "" : files[0]};
 	}
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
@@ -476,6 +516,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (at < 0)
 			return;
 		assist.stop(file, null);
+		restoredTabs.remove(file);
 		var rest = files.copy();
 		rest.splice(at, 1);
 		historyTabs.remove(file);
@@ -1896,7 +1937,7 @@ class Workbench extends Component<WorkbenchProps> {
 		languageServers.onChanged = () -> {
 			if (gone) return;
 			languageRevision.set(languageRevision.get() + 1);
-			for (file in open.get()) if (!isVirtual(file)) check(file);
+			for (file in open.get()) if (!isVirtual(file) && (file == active.get() || buffers.exists(file))) check(file);
 			refreshExplorer();
 			wakeLanguages();
 		};
@@ -1917,6 +1958,9 @@ class Workbench extends Component<WorkbenchProps> {
 		loadRecent();
 		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> releaseClosedDocuments(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
+		new ashui.reactive.Watch(() -> { open.get(); active.get(); 0; }, _ -> {
+			if (sessionReady) workspaceSession.save(sessionSnapshot());
+		}, (_, _) -> false);
 		new ashui.reactive.Watch(() -> active.get(), file -> {
 			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
 			emit("active.changed", {path: realFile(file)});
@@ -1937,6 +1981,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			if (workspaceSession != null) workspaceSession.close(sessionReady ? sessionSnapshot() : null);
 			fileIndex.dispose();
 			localHistory.dispose();
 			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
@@ -2816,6 +2861,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function codeEditor(file:String):Element {
+		if (restoredTabs.remove(file)) check(file);
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> definitionAt(file, offset)} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {

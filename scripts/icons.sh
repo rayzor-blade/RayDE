@@ -2,7 +2,9 @@
 # Regenerates the app icons for every platform from assets/rayde-icon.png, into assets/icons.
 # The results are committed, so only whoever changes the icon needs ImageMagick (magick); macOS also uses iconutil.
 #
-#   macOS    assets/icons/rayde.icns         the icon on the Big Sur grid, with its shadow
+#   --macos  regenerate only the macOS icon
+#
+#   macOS    assets/icons/rayde.icns         the tile with the source margin removed
 #   Windows  assets/icons/rayde.ico          16 to 256 px, PNG-compressed
 #   Linux    assets/icons/hicolor/<n>x<n>/apps/rayde.png
 #   window   assets/icons/rayde-256.rgba     raw RGBA, embedded in the program as its window icon
@@ -12,15 +14,21 @@ src="$here/assets/rayde-icon.png"
 out="$here/assets/icons"
 command -v magick >/dev/null || { echo "icons.sh: needs ImageMagick (magick)" >&2; exit 1; }
 [ -f "$src" ] || { echo "icons.sh: no $src" >&2; exit 1; }
+mac_only=0
+case "${1:-}" in
+  "") ;;
+  --macos) mac_only=1 ;;
+  *) echo "usage: icons.sh [--macos]" >&2; exit 1 ;;
+esac
+[ "$#" -le 1 ] || { echo "usage: icons.sh [--macos]" >&2; exit 1; }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-rm -rf "$out"
+[ "$mac_only" = 1 ] || rm -rf "$out"
 mkdir -p "$out"
 
-# The master is a rounded square already, with the margin of macOS's grid and nothing else around it.
-# macOS: that on a 1024 px canvas, with a soft shadow below it.
-magick "$src" -resize 1024x1024 -background none -gravity center -extent 1024x1024 "$work/body-1024.png"
-magick "$work/body-1024.png" \( +clone -background black -shadow 35x14+0+10 \) +swap -background none -layers merge +repage -gravity center -extent 1024x1024 "$work/mac-1024.png"
+# macOS: fill the canvas with the existing tile, without the source's transparent inset.
+magick "$src" -trim +repage -resize '1024x1024^' -background none -gravity center -extent 1024x1024 "PNG32:$work/mac-1024.png"
+if [ "$mac_only" = 0 ]; then
 # Windows and Linux: the shape trimmed of its margin, so it fills the canvas as their icons do.
 magick "$src" -trim +repage -resize 1008x1008 -background none -gravity center -extent 1024x1024 "PNG32:$work/flat-1024.png"
 
@@ -49,6 +57,8 @@ PY
 
 # The window's own icon, as raw pixels the program can hand to the window without decoding anything.
 magick "$out/hicolor/256x256/apps/rayde.png" -depth 8 "rgba:$out/rayde-256.rgba"
+
+fi
 
 # macOS: an iconset of the sizes it asks for, made into an .icns.
 set="$work/rayde.iconset"
