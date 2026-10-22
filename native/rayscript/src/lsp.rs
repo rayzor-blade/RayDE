@@ -63,6 +63,42 @@ impl Client {
     }
 }
 
+/// stderr entries are complete lines, so display prefixes cannot split SGR sequences or UTF-8.
+#[derive(Default)]
+struct StderrLines {
+    pending: Vec<u8>,
+}
+
+impl StderrLines {
+    fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+        const LIMIT: usize = 64 << 10;
+        self.pending.extend_from_slice(bytes);
+        let mut lines = Vec::new();
+        while let Some(end) = self.pending.iter().position(|b| *b == b'\n') {
+            let mut line: Vec<u8> = self.pending.drain(..=end).collect();
+            line.pop();
+            if line.last() == Some(&b'\r') { line.pop(); }
+            lines.push(String::from_utf8_lossy(&line).into_owned());
+        }
+        // Bound unterminated lines, retaining a short escape sequence and any partial UTF-8 suffix.
+        while self.pending.len() > LIMIT {
+            let mut cut = LIMIT;
+            if let Some(at) = self.pending[LIMIT - 256..LIMIT].iter().rposition(|b| *b == 27) {
+                cut = LIMIT - 256 + at;
+            }
+            while cut > 0 && self.pending[cut] & 0xc0 == 0x80 { cut -= 1; }
+            lines.push(String::from_utf8_lossy(&self.pending[..cut]).into_owned());
+            self.pending.drain(..cut);
+        }
+        lines
+    }
+
+    fn finish(&mut self) -> Option<String> {
+        if self.pending.is_empty() { None }
+        else { Some(String::from_utf8_lossy(&std::mem::take(&mut self.pending)).into_owned()) }
+    }
+}
+
 fn read_message(reader: &mut impl BufRead) -> io::Result<Option<String>> {
     let mut length = None;
     let mut headers = 0;
@@ -178,10 +214,15 @@ pub fn open(config: &str) -> Result<i32, String> {
             let logger = worker.clone();
             thread::Builder::new().name("rayde-lsp-stderr".into()).spawn(move || {
                 let mut bytes = [0; 4096];
+                let mut lines = StderrLines::default();
                 while let Ok(size) = stderr.read(&mut bytes) {
                     if size == 0 || logger.stopped.load(Ordering::Acquire) { break; }
-                    // stderr is diagnostic text; dropping excess log chunks cannot corrupt LSP.
-                    logger.push(json!({"t":"stderr", "message":String::from_utf8_lossy(&bytes[..size])}).to_string());
+                    for message in lines.push(&bytes[..size]) {
+                        logger.push(json!({"t":"stderr", "message":message}).to_string());
+                    }
+                }
+                if let Some(message) = lines.finish() {
+                    logger.push(json!({"t":"stderr", "message":message}).to_string());
                 }
             })?;
             worker.push("{\"t\":\"connected\"}".into());
@@ -260,6 +301,28 @@ pub fn close(handle: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stderr_lines_preserve_split_ansi_and_utf8() {
+        let expected = "\x1b[31mλ😀\x1b[0m";
+        let mut lines = StderrLines::default();
+        let bytes = format!("{expected}\r\ntrailing");
+        let mut found = Vec::new();
+        for byte in bytes.as_bytes() { found.extend(lines.push(&[*byte])); }
+        assert_eq!(found, vec![expected.to_string()]);
+        assert_eq!(lines.finish().as_deref(), Some("trailing"));
+        assert_eq!(lines.finish(), None);
+    }
+
+    #[test]
+    fn stderr_unterminated_lines_are_bounded_without_splitting_a_color() {
+        let mut lines = StderrLines::default();
+        let prefix = "x".repeat((64 << 10) - 2);
+        let text = format!("{prefix}\x1b[31mred\x1b[0m");
+        let found = lines.push(text.as_bytes());
+        assert_eq!(found, vec![prefix]);
+        assert_eq!(lines.finish().as_deref(), Some("\x1b[31mred\x1b[0m"));
+    }
+
     #[test]
     fn frames_use_bytes_and_survive_partial_reads() {
         let text = "{\"text\":\"λ😀\"}";

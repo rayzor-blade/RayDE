@@ -42,6 +42,8 @@ import rayde.run.LibraryManager;
 import rayde.run.Runner;
 import rayde.run.DiagnosticJobs;
 import rayde.run.OutputJobs;
+import rayde.run.AnsiOutput;
+import rayde.run.AnsiOutput.AnsiSpan;
 import rayde.settings.Appearance;
 import rayde.settings.Store;
 import rayde.theme.JsonLocator;
@@ -310,6 +312,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final outputChannel = Signal.make("build");
 	var supervisionScheduled = false;
 	final extensionOutputKinds = Signal.make(new Array<String>());
+	final outputStyleRevision = Signal.make(0);
+	final outputSpans = new Map<String, Array<Null<Array<AnsiSpan>>>>();
 	final extensionOutputView = new Ref<CodeView>();
 	final outputJobs = new OutputJobs();
 	var outputScheduled = false;
@@ -1620,13 +1624,18 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function pollOutput():Void {
 		if (gone) return;
-		for (result in outputJobs.poll()) if (result.key == outputChannel.get() && result.value != null) {
-			var next = result.value;
-			outputState(result.key).value.set(next.text);
-			var kinds = extensionOutputKinds.get(), changed = kinds.length != next.kinds.length;
-			if (!changed) for (i in 0...kinds.length) if (kinds[i] != next.kinds[i]) { changed = true; break; }
-			if (changed) extensionOutputKinds.set(next.kinds);
-			outputKinds.set(result.key, extensionOutputKinds.get());
+		for (result in outputJobs.poll()) if (result.value != null) {
+			var next = result.value, channel = result.key;
+			if (channel != "build" && channel != outputChannel.get()) continue;
+			var previous = outputSpans.get(channel), changedStyle = !AnsiOutput.sameSpans(previous, next.spans);
+			if (changedStyle) { outputSpans.set(channel, next.spans); outputStyleRevision.set(outputStyleRevision.get() + 1); }
+			outputState(channel).value.set(next.text);
+			if (channel != "build") {
+				var kinds = extensionOutputKinds.get(), changed = kinds.length != next.kinds.length;
+				if (!changed) for (i in 0...kinds.length) if (kinds[i] != next.kinds[i]) { changed = true; break; }
+				if (changed) extensionOutputKinds.set(next.kinds);
+				outputKinds.set(channel, extensionOutputKinds.get());
+			}
 		}
 		outputScheduled = outputJobs.busy();
 		if (outputScheduled) ashui.animation.AnimationScheduler.main.after(.016, pollOutput);
@@ -1791,7 +1800,8 @@ class Workbench extends Component<WorkbenchProps> {
 		if (runner.revision == seen)
 			return;
 		seen = runner.revision;
-		consoleText.set(runner.console);
+		outputJobs.request("build", [runner.console], null);
+		if (!outputScheduled) { outputScheduled = true; ashui.animation.AnimationScheduler.main.after(.016, pollOutput); }
 		runState.set(runner.state);
 		if (runner.problems != lastBuild) {
 			lastBuild = runner.problems;
@@ -3006,20 +3016,34 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div class="flex flex-col flex-1 min-h-0 gap-2">
 			<select id="rayde-output-channel" value={outputChannel.get()} size={Sm} class="rayde-control-wide" onChange={value -> { outputChannel.set(value); refreshExtensionOutput(); }}>{items}</select>
 			<for {channel in [outputChannel.get()]}>
-				{channel == "build" ? <code-view id="rayde-console" state={outputState("build")} highlighter={buildOutputSyntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/> : extensionLog()}
+				{channel == "build" ? buildLog() : extensionLog()}
 			</for>
 		</div>;
 	}
 
+	function buildLog():Element {
+		buildOutputSyntax.spans = outputSpans.get("build");
+		var view:CodeView = <code-view id="rayde-console" state={outputState("build")} highlighter={buildOutputSyntax} tokenStyles={true} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		new ashui.reactive.Watch(() -> outputStyleRevision.get(), _ -> {
+			var spans = outputSpans.get("build");
+			if (buildOutputSyntax.spans == spans) return;
+			buildOutputSyntax.spans = spans;
+			view.metrics.syntax = new OutputHighlighter(null, spans);
+			view.expandAll();
+		});
+		return view;
+	}
+
 	function extensionLog():Element {
-		var channel = outputChannel.get(), kinds = extensionOutputKinds.get();
+		var channel = outputChannel.get(), kinds = extensionOutputKinds.get(), spans = outputSpans.get(channel);
 		var syntax = outputSyntax.get(channel);
-		if (syntax == null) { syntax = new OutputHighlighter(kinds); outputSyntax.set(channel, syntax); }
-		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" state={outputState(channel)} highlighter={syntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
-		new ashui.reactive.Watch(() -> extensionOutputKinds.get(), kinds -> {
-			if (syntax.kinds == kinds) return;
-			syntax.kinds = kinds;
-			view.metrics.syntax = new OutputHighlighter(kinds);
+		if (syntax == null) { syntax = new OutputHighlighter(kinds, spans); outputSyntax.set(channel, syntax); }
+		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" state={outputState(channel)} highlighter={syntax} tokenStyles={true} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		new ashui.reactive.Watch(() -> { outputStyleRevision.get(); extensionOutputKinds.get(); }, _ -> {
+			var kinds = extensionOutputKinds.get(), spans = outputSpans.get(channel);
+			if (syntax.kinds == kinds && syntax.spans == spans) return;
+			syntax.kinds = kinds; syntax.spans = spans;
+			view.metrics.syntax = new OutputHighlighter(kinds, spans);
 			view.expandAll();
 		});
 		return view;

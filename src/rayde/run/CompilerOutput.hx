@@ -9,6 +9,7 @@ class CompilerOutput {
 	 * when the message says so; indented lines after one continue its message.
 	 */
 	public static function parse(text:String, cwd:String):Array<Diagnostic> {
+		if (text.indexOf("\x1b") >= 0) { var ansi = new AnsiOutput(); ansi.write(text); text = ansi.snapshot().text; }
 		var out:Array<Diagnostic> = [], at = ~/^(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (.*)$/;
 		for (raw in text.split("\n")) {
 			var line = StringTools.rtrim(raw);

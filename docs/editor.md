@@ -36,6 +36,7 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 ![Signature help with the second argument emphasised](images/editor-signature.png)
 - Problems come from the active language server, the fallback Haxe compiler and the last build. A problem in the Problems list opens its file at its line. Only the visible rows and a small overscan are mounted.
 - Problems decoding, Output log processing and terminal I/O run independently of the UI. Superseded diagnostic requests are cancelled. Hidden Output views release their controls while retaining text and scroll position; reopening shows the latest data. Terminal sessions keep running when the panel closes.
+- Output renders ANSI foreground and background colors (standard, bright, 256-color and RGB), bold, dim, italic, underline, strikethrough and inverse text. Reset sequences restore severity colors. Selection and copying use plain text without escape sequences; cursor-control sequences are ignored.
 - Each editor has a minimap and code folding.
 - Explorer folders load their file rows on first expansion and keep them for subsequent expansions.
 - The build file (`build.hxml`) opens as a form in **Settings > Build**.

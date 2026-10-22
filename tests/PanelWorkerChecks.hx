@@ -38,6 +38,11 @@ class PanelWorkerChecks {
 		until(() -> { formatted = formatted.concat(logs.poll()); return !logs.busy(); }, "Large output normalization did not finish");
 		if (formatted[0].value.kinds.length != 2000 || !StringTools.startsWith(formatted[0].value.text, "line 1000\n"))
 			throw "Output worker did not bound the visible cache";
+		logs.request("ansi", ["\x1b[31mred", "continued\x1b[0m normal"], ["error", "warning"]);
+		var ansi = [];
+		until(() -> { ansi = ansi.concat(logs.poll()); return !logs.busy(); }, "ANSI Output worker did not settle");
+		if (ansi[0].value.text != "red\ncontinued normal" || ansi[0].value.kinds.join(",") != "error,warning"
+			|| ansi[0].value.spans[1][0].style.color != "var(--rayde-ansi-1)") throw "Output worker lost ANSI state or severity";
 		logs.request("stream", ["first"], ["info"]);
 		var delivered = [];
 		// Keep a newer snapshot queued on every poll while still accepting completed work.

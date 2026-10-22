@@ -1677,6 +1677,14 @@ class Snapshots {
 				}
 				@:privateAccess bench.revealExtensionOutput(); settle();
 				shot("output-severities");
+				git.log("\x1b[36mFormatted extension log\x1b[0m plain text", "info");
+				@:privateAccess bench.refreshExtensionOutput();
+				until(() -> log.value.get().indexOf("Formatted extension log plain text") >= 0, "ANSI extension Output worker");
+				var formatted = Lambda.find(log.document.lines, line -> line.text == "Formatted extension log plain text");
+				if (formatted == null || formatted.tokens[0].style == null || formatted.tokens[0].style.color != "var(--rayde-ansi-6)"
+					|| formatted.tokens[formatted.tokens.length - 1].style != null || log.value.get().indexOf("\x1b") >= 0)
+					throw "Extension Output did not apply and reset ANSI formatting";
+
 				// The bounded log can replace text with identical text of another severity.
 				for (_ in 0...1000) git.log("Repeated message", "error");
 				@:privateAccess bench.refreshExtensionOutput(); settle();
@@ -2436,6 +2444,31 @@ class Snapshots {
 				outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
 				if (Math.abs(outputScroll.y.get() - outputY) > 1) throw "Output lost its scroll position";
 				shot("output-restored");
+				var ansi = "Rayzor language server\n" +
+					"\x1b[1;32m✓\x1b[0m Indexed \x1b[36mMain.hx\x1b[0m — \x1b[2m12 ms\x1b[0m\n" +
+					"\x1b[31mred \x1b[32mgreen \x1b[33myellow \x1b[34mblue \x1b[35mmagenta \x1b[36mcyan\x1b[0m\n" +
+					"\x1b[91mbright red \x1b[92mbright green \x1b[94mbright blue\x1b[0m\n" +
+					"\x1b[38;5;208m256-color orange\x1b[0m and \x1b[38;2;145;85;210mRGB purple\x1b[0m\n" +
+					"\x1b[97;44m highlighted background \x1b[0m normal text\n" +
+					"\x1b[1mbold\x1b[22m \x1b[3mitalic\x1b[23m \x1b[4munderline\x1b[24m \x1b[9mstrikethrough\x1b[29m\n" +
+					"Default text after reset";
+				@:privateAccess bench.runner.console = ansi;
+				@:privateAccess bench.runner.revision++;
+				bench.tick();
+				until(() -> state.value.get().indexOf("Default text after reset") >= 0, "ANSI build Output worker");
+				if (state.value.get().indexOf("\x1b") >= 0 || state.document.text != state.value.get()) throw "Output retained raw escape bytes";
+				bench.setPanelHeight(340);
+				outputScroll.scrollTo(0, 0); settle();
+				var colored = false;
+				for (id in Css.query(tree, root, "#rayde-console .ui-code-token")) {
+					var declarations = ashui.css.Identity.of(tree, id).inlineDeclarations();
+					if (declarations != null && declarations.get("color") != null) colored = true;
+				}
+				if (!colored) throw "ANSI Output colors did not reach visible text spans";
+				shot("output-ansi");
+				bench.closePanel(); settle(); bench.showPanel("console"); settle();
+				if (state.value.get().indexOf("\x1b") >= 0 || state.document.lines[1].tokens[0].style == null) throw "Reopening Output lost ANSI formatting";
+
 			});
 
 		for (dark in [true, false])
