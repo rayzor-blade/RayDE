@@ -361,6 +361,7 @@ class Workbench extends Component<WorkbenchProps> {
 	var languagesScheduled = false;
 	var ignoreRules:Null<rayde.files.GitIgnore>;
 	var ignoreRoot = "";
+	var ignoreRevision = -1;
 	var languagePollTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var diagnosticsScheduled = false;
 
@@ -394,6 +395,7 @@ class Workbench extends Component<WorkbenchProps> {
 			active.set(files.indexOf(selected) >= 0 ? selected : files.length == 0 ? "" : files[0]);
 			sessionReady = true;
 			if (active.get() != "" && !isVirtual(active.get())) { restoredTabs.remove(active.get()); check(active.get()); }
+			if (extension != null) { extensionStudio(); revealViews(true); }
 			return;
 		}
 		sessionReady = true;
@@ -408,7 +410,13 @@ class Workbench extends Component<WorkbenchProps> {
 		if (main != null)
 			openFile(main);
 		extensionStudio();
-		// Each view appears where it asked to be; of the views in the sidebar, the first is shown.
+		revealViews(false);
+		if (main != null)
+			active.set(main);
+	}
+
+	/** Each view of an extension appears where it asked to be; of the views in the sidebar, the first is shown. A restored session has its tabs already. */
+	function revealViews(restored:Bool):Void {
 		var revealed = false;
 		for (c in containers)
 			switch c.location {
@@ -422,11 +430,9 @@ class Workbench extends Component<WorkbenchProps> {
 				case "panel":
 					showPanel("ext-" + c.id);
 				case "editor":
-					openFile(containerTab(c));
+					if (!restored) openFile(containerTab(c));
 				case _:
 			}
-		if (main != null)
-			active.set(main);
 	}
 
 	function sessionPath(entry:String):String
@@ -2035,6 +2041,20 @@ class Workbench extends Component<WorkbenchProps> {
 		// A window of its own, not filling the screen, has rounded corners (but Windows's) and, where the system draws no frame, an outline.
 		// They are on a card inside the root, which is the whole of what the window draws and cannot be clipped.
 		var root = <div id="rayde" widthPercent={1} heightPercent={1} class="flex flex-col text-text-primary" onKeyDown={key}>{window}</div>;
+		// Keys go to the node that has the keyboard and bubble up from it, so with nothing focused no shortcut would be heard. The root
+		// takes the keyboard whenever nothing else has it, which is how a window just opened, the Welcome page and a press on bare
+		// space leave it.
+		var keyboard = ashui.input.Interaction.of(root.node).setFocusable(true);
+		var catchKeys:ashui.layout.LayoutTree->Bool = t -> {
+			if (gone || t != root.tree || ashui.input.Focus.of(t) != null) return false;
+			ashui.input.Focus.set(keyboard, false);
+			return false;
+		};
+		ashui.layout.LayoutTree.layoutHooks.push(catchKeys);
+		ashui.reactive.Owner.onCleanup(() -> {
+			for (i in 0...ashui.layout.LayoutTree.layoutHooks.length)
+				if (Reflect.compareMethods(ashui.layout.LayoutTree.layoutHooks[i], catchKeys)) { ashui.layout.LayoutTree.layoutHooks.splice(i, 1); break; }
+		});
 		var identity = ashui.css.Identity.of(window.tree, window.node.id);
 		// A theme's own stylesheet is written under this, so it applies only while the theme is in use.
 		ashui.css.Identity.of(root.tree, root.node.id).bindAttribute("data-theme", Computed.make(() -> Theming.current.get()));
@@ -2292,17 +2312,14 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
-		var files = () -> {
-			var root = tagged(<tree-item value={props.display.cwd} label={props.name} icon={Icons.FOLDER_OPEN_LINE} expanded={folderState(props.display.cwd, true)}>${buildRow()}{folders()}</tree-item>, props.display.cwd);
-			return <context-menu ref={explorerMenu} id="rayde-explorer-menu">
-					<context-menu-trigger id="rayde-explorer-trigger">
-						<div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
-							<tree-view id="rayde-tree" selected={treeSelected} onSelect={openExplorerFile}>${root}</tree-view>
-						</div>
-					</context-menu-trigger>
-					<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
-				</context-menu>;
-		};
+		var files = () -> <context-menu ref={explorerMenu} id="rayde-explorer-menu">
+				<context-menu-trigger id="rayde-explorer-trigger">
+					<explorer-tree root={props.display.cwd} name={props.name} entries={explorerEntries} outside={outsideFolders} head={headRow} icon={fileIcon}
+						ignored={ignoredPath} opened={startsOpen} state={folderState} selected={treeSelected} onSelect={openExplorerFile}
+						onPress={explorerPress} revision={() -> buildRevision.get()}/>
+				</context-menu-trigger>
+				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
+			</context-menu>;
 		var sections:Array<Element> = [new ResizablePanel({id:"rayde-explorer-panel-files", size:explorerFilesSize, minSize:60}, [files()])];
 		sections.push(explorerSection("outline", false, 180).panel("Outline", () ->
 			<explorer-outline display={props.display} languages={languageServers} revision={() -> buildRevision.get() + languageRevision.get()} file={() -> realFile(active.get())} text={file -> buffer(file).get()} onSelect={goTo}/>, []));
@@ -2341,12 +2358,6 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorerSection(id:String, open:Bool, size:Float):ExplorerSection {
 		if (!explorerSections.exists(id)) explorerSections.set(id, new ExplorerSection(id, open, size));
 		return explorerSections.get(id);
-	}
-
-	/** Marks a row of the tree with the path it stands for, so a press on it can be traced to the file. */
-	function tagged(item:Element, path:String):Element {
-		ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-path", path);
-		return item;
 	}
 
 	/** What extensions put at the left of the status bar, in the order they were first set. */
@@ -2395,6 +2406,13 @@ class Workbench extends Component<WorkbenchProps> {
 		if (item.command != null) extensionManager.command(id, item.command, null);
 	}
 
+	/** Whether git ignores a path; the ignore files are read again after each refresh of the Explorer. */
+	function ignoredPath(path:String):Bool {
+		var rules = gitIgnore(), revision = buildRevision.get();
+		if (revision != ignoreRevision) { ignoreRevision = revision; rules.refresh(); }
+		return rules.ignored(path);
+	}
+
 	/** The rules git ignores files by, for the project that is open. */
 	function gitIgnore():rayde.files.GitIgnore {
 		if (ignoreRules == null || ignoreRoot != props.display.cwd) {
@@ -2402,12 +2420,6 @@ class Workbench extends Component<WorkbenchProps> {
 			ignoreRules = new rayde.files.GitIgnore(ignoreRoot);
 		}
 		return ignoreRules;
-	}
-
-	/** Marks a row of the tree whose file or folder git ignores, which the stylesheet mutes. */
-	function untracked(item:Element, path:String):Element {
-		if (gitIgnore().ignored(path)) ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-ignored", "");
-		return item;
 	}
 
 	/** The path of the row of the tree under a point, or null. */
@@ -2708,25 +2720,23 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** The build file in the tree, which opens the form and not the text; for an extension, its config file, which opens its form. */
-	function buildRow():Element {
-		if (themeStudio != null)
-			return tagged(<tree-item value={themeStudio.file} label={haxe.io.Path.withoutDirectory(themeStudio.file)} icon={Icons.PALETTE_LINE}/>, themeStudio.file);
-		if (extension != null)
-			return tagged(<tree-item value={extension.file} label={haxe.io.Path.withoutDirectory(extension.file)} icon={Icons.SETTINGS_3_LINE}/>, extension.file);
+	/** The project's own file, the first row under its folder. */
+	function headRow():Null<{path:String, icon:ashui.svg.SvgDocument}> {
+		if (themeStudio != null) return {path: themeStudio.file, icon: Icons.PALETTE_LINE};
+		if (extension != null) return {path: extension.file, icon: Icons.SETTINGS_3_LINE};
 		var entry = projectEntry();
-		if (entry == null)
-			return <div/>;
-		return tagged(<tree-item value={entry} label={haxe.io.Path.withoutDirectory(entry)} icon={Icons.SETTINGS_3_LINE}/>, entry);
+		return entry == null ? null : {path: entry, icon: Icons.SETTINGS_3_LINE};
 	}
 
 	function projectEntry():Null<String> return props.display.project == null ? props.display.hxml : props.display.project.file;
 
-	function folders():Array<Element> {
-		var entries = folderEntries(props.display.cwd);
-		for (cp in classpaths())
-			if (!FileOps.inside(props.display.cwd, cp.dir)) entries.push(folder(cp.dir, cp.label, true));
-		return entries;
-	}
+	/** The source folders outside the project's own folder, which the Explorer lists after its entries. */
+	function outsideFolders():Array<{dir:String, label:String}>
+		return [for (cp in classpaths()) if (!FileOps.inside(props.display.cwd, cp.dir)) cp];
+
+	/** Whether a folder starts open: the project's source folders do, and what is inside them. */
+	function startsOpen(dir:String):Bool
+		return Lambda.exists(classpaths(), cp -> FileOps.inside(dir, cp.dir));
 
 	/** The project's files with the open ones first, in the order of their tabs. */
 	function recentFiles():Array<String> {
@@ -2759,27 +2769,19 @@ class Workbench extends Component<WorkbenchProps> {
 		return fileIndex.paths;
 	}
 
-	/** The tree items for what is in `dir`: its folders and openable files. */
-	function folderEntries(dir:String):Array<Element> {
-		var names = sys.FileSystem.readDirectory(dir);
+	/** What is in `dir`, folders first, then Haxe files, then the rest, each by name. */
+	function explorerEntries(dir:String):Array<rayde.ui.ExplorerTree.ExplorerEntry> {
+		var names = try sys.FileSystem.readDirectory(dir) catch (_:Dynamic) [];
 		var directories = new Map<String, Bool>();
 		for (name in names) directories.set(name, sys.FileSystem.isDirectory(haxe.io.Path.join([dir, name])));
 		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;
 		names.sort((a, b) -> { var order = rank(a) - rank(b); return order == 0 ? Reflect.compare(a.toLowerCase(), b.toLowerCase()) : order; });
-		var children:Array<Element> = [], sources = classpaths();
+		var entry = projectEntry(), out:Array<rayde.ui.ExplorerTree.ExplorerEntry> = [];
 		for (name in names) {
 			var path = haxe.io.Path.join([dir, name]);
-			if (path == projectEntry()) continue;
-			if (directories.get(name))
-				children.push(folder(path, name, Lambda.exists(sources, cp -> FileOps.inside(path, cp.dir))));
-			else
-				children.push(untracked(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path), path));
+			if (path != entry) out.push({name: name, path: path, directory: directories.get(name)});
 		}
-		return children;
-	}
-
-	function folder(dir:String, label:String, expanded:Bool):Element {
-		return untracked(tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)} load={() -> folderEntries(dir)}/>, dir), dir);
+		return out;
 	}
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */

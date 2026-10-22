@@ -6,7 +6,7 @@ The startup project picker offers recent projects, **Open Existing Project** and
 
 The Explorer lists every file type, including dotfiles, with folders first and Haxe files before other files. Configuration files and other languages open in the editor; supported images open in the previewer. Explorer and tab icons use Remix and a bundled MIT-licensed Devicon language subset; unknown types use the file-code icon.
 
-Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings > Key bindings** edits them; user changes are stored in `.rayde/keybindings.json` as `{"command": ..., "key": ...}` entries, and an empty `key` removes a binding.
+Key bindings follow VS Code. They work from anywhere in the window: the workbench takes the keyboard whenever nothing else has it, such as a window just opened, the Welcome page or after a click on bare space, so Cmd+P and the rest are heard there too. The Explorer's file commands (copy, cut, paste, rename, delete, duplicate) run only while the Explorer has the keyboard. On Linux and Windows read Ctrl for Cmd. **Settings > Key bindings** edits them; user changes are stored in `.rayde/keybindings.json` as `{"command": ..., "key": ...}` entries, and an empty `key` removes a binding.
 
 ## Keys
 

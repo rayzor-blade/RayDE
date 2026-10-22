@@ -2,6 +2,8 @@
 
 The file tree occupies the top pane. Drag the horizontal dividers to resize it and the Outline, Timeline and Dependencies panes. Outline, Timeline and Dependencies have collapsible headers; reopening restores their height. Their state survives switching between Explorer and another sidebar. Focus a divider and use the arrow keys to resize with the keyboard.
 
+The tree mounts only the rows in view, with a few above and below, from a flat list of what is shown; scrolling, opening and closing folders change that list and leave the cost of the screen as it was. A closed folder holds nothing, and its entries are read again when it opens. A file that comes forward is scrolled into view when its folders are open, and the arrow keys, Home, End, Page Up and Page Down move through the rows with Right and Left opening and closing folders and stepping in and out, as in any tree.
+
 Files and folders that git ignores are muted in the tree, as is everything inside an ignored folder. The rules come from the repository's `.git/info/exclude` and the `.gitignore` of each folder above the entry, the last matching pattern deciding, with `!` negation, anchored and directory-only patterns, `*`, `?`, `[...]` and `**`; a file inside an ignored folder cannot be re-included. The `.git` folder is always muted. Whether a file is tracked, and global excludes, are not considered. Outside a repository nothing is muted. An edited `.gitignore` applies to rows built after the edit.
 
 Outline follows the active Haxe buffer, including unsaved edits. Its symbols come from the compiler's module-symbols request and include types, fields, methods, parameters and local variables. Select a symbol to navigate to its declaration. Other file types show an empty-state message.

@@ -575,10 +575,12 @@ class Snapshots {
 					throw "expanding a folder did not load and select its active file";
 				bench.folderState(folder + "/sub").set(false);
 				settle();
+				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 0)
+					throw "a closed folder kept its file rows mounted";
 				bench.folderState(folder + "/sub").set(true);
 				settle();
-				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]')[0] != loaded[0])
-					throw "reopening a folder rebuilt its file rows";
+				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 1)
+					throw "reopening a folder did not show its files again";
 				menuOn("src/Renamed.hx");
 				click("#rayde-explorer-delete");
 				shot("explorer-delete");
@@ -2456,6 +2458,62 @@ class Snapshots {
 				if (bench.active.get() != "") throw "a workspace diagnostic must not navigate to a nonexistent file";
 				shot("workspace-diagnostic");
 			});
+		// Every key an editor keymap gives a command reaches the command it names, with nothing but a freshly opened window to take the keys.
+		scenario(true, "keys", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+			settle();
+			var tree = bench.tree, bindings = @:privateAccess bench.bindings, mac = bindings.mac;
+			if (ashui.input.Focus.of(tree) == null) throw "with nothing focused the workbench must keep the keyboard, or no shortcut is heard";
+			function keyOf(name:String):window.Key {
+				var named:Map<String, window.NamedKey> = ["enter" => Enter, "escape" => Escape, "tab" => Tab, "backspace" => Backspace, "delete" => Delete, "insert" => Insert,
+					"home" => Home, "end" => End, "pageup" => PageUp, "pagedown" => PageDown, "up" => ArrowUp, "down" => ArrowDown, "left" => ArrowLeft, "right" => ArrowRight];
+				if (name == "space") return Character(" ");
+				if (named.exists(name)) return Named(named.get(name));
+				if (~/^f[0-9]+$/.match(name)) return Named((((window.NamedKey.F1 : Int) + Std.parseInt(name.substr(1)) - 1) : window.NamedKey));
+				return Character(name);
+			}
+			function fire(chord:rayde.keys.Chord):Void {
+				var mods = window.Modifiers.State(chord.shift, chord.ctrl, chord.alt, chord.meta, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+				for (state in [window.MouseElementState.Pressed, window.MouseElementState.Released])
+					ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), keyOf(chord.key), None, Standard, state, false, Unavailable), mods);
+			}
+			// Quick open from a window with nothing focused, as the real command, before the commands are replaced.
+			var quick = rayde.keys.Chord.parse("mod+p", mac);
+			fire(quick); settle(10);
+			if (Css.query(tree, bench.node.id, "#rayde-command-list").length == 0) throw "Cmd+P did not open the command center from a window with nothing focused";
+			press(Named(Escape)); settle(10);
+			if (Css.query(tree, bench.node.id, "#rayde-command-list").length != 0) throw "Escape did not close the command center";
+			var ran:Array<String> = [], list:Array<Dynamic> = cast @:privateAccess bench.commandList;
+			for (action in list) { var id:String = action.id; Reflect.setField(action, "run", () -> ran.push(id)); }
+			var ids = [for (action in list) (action.id : String)], failures:Array<String> = [], checked = 0;
+			var rows = Css.query(tree, bench.node.id, "#rayde-files .ui-tree-row");
+			for (map in rayde.keys.Keymaps.available(mac)) {
+				bindings.setPreset(map.id);
+				for (entry in map.keys) {
+					var text = rayde.keys.Keymaps.key(map, entry.command, mac);
+					if (text == null) continue;
+					var chord = rayde.keys.Chord.parse(text, mac), id = entry.command;
+					if (chord == null) { failures.push('${map.id}: "$text" for $id is not a key'); continue; }
+					if (ids.indexOf(id) < 0) { failures.push('${map.id}: $id has the key $text but no command'); continue; }
+					var winner = bindings.commandFor(chord);
+					ran.resize(0); fire(chord); checked++;
+					var file = rayde.keys.Keymaps.fileCommands.indexOf(winner) >= 0;
+					if (file) {
+						if (ran.length != 0) failures.push('${map.id}: $text ran $winner while the Explorer did not have the keyboard');
+						if (rows.length > 0) {
+							var row = ashui.input.Interaction.byId(tree, rows[0]);
+							if (row != null) ashui.input.Focus.set(row, true);
+							ran.resize(0); fire(chord);
+							if (ran.length != 1 || ran[0] != winner) failures.push('${map.id}: $text should run $winner from the Explorer, ran [${ran.join(",")}]');
+							ashui.input.Focus.clear(tree); settle(2);
+						}
+					} else if (ran.length != 1 || ran[0] != winner) failures.push('${map.id}: $text should run $winner, ran [${ran.join(",")}]');
+					if (winner != id) failures.push('${map.id}: $text is bound to both $id and $winner; $winner wins');
+				}
+			}
+			bindings.setPreset("vscode");
+			if (failures.length > 0) throw "key routing: " + failures.join("; ");
+			Sys.println('keys: $checked bindings across ${rayde.keys.Keymaps.available(mac).length} keymaps reach their commands');
+		});
 		for (dark in [true, false])
 			scenario(dark, "panels", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openFile(file); settle();
@@ -2686,7 +2744,7 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		if (!dark && name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") return;
-		var root = copyOf(name == "documents" || name == "lsp" || name == "panels" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
+		var root = copyOf(name == "documents" || name == "lsp" || name == "panels" || name == "keys" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
 		var previousBuiltins = Sys.getEnv("RAYDE_EXTENSIONS");
 		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";

@@ -29,8 +29,8 @@ class ExplorerFileChecks {
 			bench.openProject(); settle();
 			for (name in files) if (Css.query(tree, bench.node.id, '[data-path="$root/src/$name"]').length != 1) throw "Explorer hid " + name;
 			if (Css.query(tree, bench.node.id, '[data-path="$root/.config"]').length != 1) throw "Explorer hid dotfolder";
-			var rows = bench.owner.run(() -> bench.folderEntries(root + "/src"));
-			if (Identity.of(tree, rows[0].node.id).attribute("data-path") != root + "/src/z.HX") throw "Haxe file priority was lost";
+			var rows = bench.explorerEntries(root + "/src");
+			if (rows[0].path != root + "/src/z.HX") throw "Haxe file priority was lost";
 			var before = bench.active.get(); bench.openExplorerFile(root + "/.config");
 			if (bench.active.get() != before) throw "Folder selection opened an editor";
 			for (name in ["a.py", "config.json", ".env", "unknown.custom", "README"]) {

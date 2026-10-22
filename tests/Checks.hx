@@ -810,7 +810,9 @@ class Checks {
 		for (path => value in expected) check(ignore.ignored(root + "/" + path) == value, "gitignore: " + path + (value ? " is ignored" : " is not ignored"));
 		check(!new rayde.files.GitIgnore("/").ignored("/tmp"), "gitignore: nothing is ignored outside a repository");
 		put(".gitignore", "plain.hx\n");
-		check(ignore.ignored(root + "/plain.hx") && !ignore.ignored(root + "/build/a.o"), "gitignore: an edited file is read again");
+		check(!ignore.ignored(root + "/plain.hx"), "gitignore: answers are kept until the next refresh");
+		ignore.refresh();
+		check(ignore.ignored(root + "/plain.hx") && !ignore.ignored(root + "/build/a.o"), "gitignore: an edited file is read again after a refresh");
 		function remove(path:String):Void {
 			if (sys.FileSystem.isDirectory(path)) { for (name in sys.FileSystem.readDirectory(path)) remove(path + "/" + name); sys.FileSystem.deleteDirectory(path); }
 			else sys.FileSystem.deleteFile(path);

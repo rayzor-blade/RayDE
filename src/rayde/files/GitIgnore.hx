@@ -6,7 +6,7 @@ import sys.FileSystem;
 using StringTools;
 
 private typedef Rule = {base:String, pattern:EReg, anchored:Bool, directory:Bool, negated:Bool};
-private typedef Parsed = {stamp:String, rules:Array<Rule>};
+private typedef Parsed = {stamp:String, rules:Array<Rule>, generation:Int};
 
 /**
  * Whether git ignores a path, from the repository's `.git/info/exclude` and the `.gitignore` of each folder above it.
@@ -16,8 +16,10 @@ private typedef Parsed = {stamp:String, rules:Array<Rule>};
 class GitIgnore {
 	final root:String;
 	final parsed = new Map<String, Parsed>();
+	final answers = new Map<String, Bool>();
 	var repository:Null<String>;
 	var searched = false;
+	var generation = 0;
 
 	public function new(root:String) this.root = Path.removeTrailingSlashes(Path.normalize(root));
 
@@ -34,7 +36,21 @@ class GitIgnore {
 		}
 	}
 
+	/** Reads the ignore files again the next time a path is asked about; call it when files may have changed. */
+	public function refresh():Void {
+		generation++;
+		answers.clear();
+	}
+
 	public function ignored(path:String):Bool {
+		var known = answers.get(path);
+		if (known != null) return known;
+		var result = decide(path);
+		answers.set(path, result);
+		return result;
+	}
+
+	function decide(path:String):Bool {
 		var base = top();
 		if (base == null) return false;
 		var full = Path.removeTrailingSlashes(Path.normalize(path));
@@ -71,16 +87,23 @@ class GitIgnore {
 	}
 
 	function rulesOf(file:String, scope:String):Array<Rule> {
-		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) return [];
-		var stat = FileSystem.stat(file), stamp = Std.string(stat.mtime.getTime()) + ":" + stat.size;
 		var known = parsed.get(file);
-		if (known != null && known.stamp == stamp) return known.rules;
+		if (known != null && known.generation == generation) return known.rules;
+		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
+			parsed.set(file, {stamp: "", rules: [], generation: generation});
+			return [];
+		}
+		var stat = FileSystem.stat(file), stamp = Std.string(stat.mtime.getTime()) + ":" + stat.size;
+		if (known != null && known.stamp == stamp) {
+			known.generation = generation;
+			return known.rules;
+		}
 		var rules = [];
 		for (line in sys.io.File.getContent(file).split("\n")) {
 			var rule = parse(line, scope);
 			if (rule != null) rules.push(rule);
 		}
-		parsed.set(file, {stamp: stamp, rules: rules});
+		parsed.set(file, {stamp: stamp, rules: rules, generation: generation});
 		return rules;
 	}
 
