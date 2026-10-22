@@ -1,5 +1,6 @@
 import ashui.app.WindowedApp;
 import ashui.animation.AnimationScheduler;
+import ashui.components.TreeView;
 import ashui.layout.Element;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
@@ -11,6 +12,8 @@ import rayde.ui.Workbench;
 class ExplorerMemoryProbe {
 	static final EXTENSIONS = ["7z", "aac", "adoc", "aiff", "avi", "avif", "bash", "bat", "bib", "bmp", "bz2", "c", "cc", "cer", "cfg", "cjs", "class", "clj", "cljc", "cljs", "cls", "cmd", "coffee", "conf", "config", "cpp", "crt", "cs", "css", "csv", "csx", "cts", "cxx", "dart", "db", "doc", "docx", "editorconfig", "edn", "elm", "erl", "ex", "exs", "f", "f03", "f08", "f90", "f95", "fish", "flac", "for", "fs", "fsi", "fsx", "gemspec", "gif", "go", "gql", "gradle", "graphql", "groovy", "gvy", "gz", "h", "heic", "hh", "hpp", "hrl", "hs", "htm", "html", "hx", "hxml", "hxx", "icns", "ico", "ini", "ipynb", "jar", "java", "jl", "jpe", "jpeg", "jpg", "js", "json", "json5", "jsonc", "jsx", "key", "kt", "kts", "less", "lhs", "litcoffee", "lock", "log", "lua", "m", "m4a", "m4v", "markdown", "mat", "md", "mdown", "mdx", "mid", "midi", "mjs", "mkd", "mkv", "ml", "mli", "mm", "mov", "mp3", "mp4", "mts", "nim", "nims", "nix", "odp", "ods", "odt", "ogg", "otf", "p12", "pdf", "pem", "pfx", "php", "phtml", "pl", "pm", "png", "pod", "ppt", "pptx", "properties", "ps1", "py", "pyi", "pyw", "r", "rake", "rar", "rayext", "rays", "raytheme", "rb", "rmd", "rs", "rst", "rtf", "sass", "sc", "scala", "scss", "sh", "sol", "sql", "sqlite", "sqlite3", "sty", "svelte", "svg", "swift", "tar", "tex", "tgz", "tif", "tiff", "toml", "ts", "tsv", "tsx", "ttf", "txt", "vue", "wav", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xz", "yaml", "yml", "zig", "zip", "zon", "zsh"];
 	static final NAMES = ["dockerfile", "makefile", "license", "package.json", ".env", ".gitignore"];
+
+	static var kept:Array<Dynamic>;
 
 	static function heap():Float return hl.Gc.stats().currentMemory;
 
@@ -33,11 +36,50 @@ class ExplorerMemoryProbe {
 			theme:rayde.ui.Theming.shown(rayde.settings.Appearance.read(root))}, () -> {
 			var app = WindowedApp.current, folders = 0, icons:Dynamic = null;
 			rayde.ui.GpuProgress.attach(app.device, app.tree, () -> app.frames);
-			if (mode == "minimal" || mode == "icons") element = <div widthPercent={1} heightPercent={1} class="bg-background"/>;
+			if (StringTools.startsWith(mode, "sig-")) {
+				var count = 10000, keep:Array<Dynamic> = [], source = ashui.reactive.Signal.make(0);
+				for (i in 0...count) keep.push(switch mode {
+					case "sig-signal": ashui.reactive.Signal.make(i);
+					case "sig-computed": ashui.reactive.Computed.make(() -> source.get() + i);
+					case "sig-watch": new ashui.reactive.Watch(() -> source.get(), v -> {});
+					case _: new ashui.reactive.Watch(() -> source.get() + i, v -> {});
+				});
+				kept = keep;
+				element = <div widthPercent={1} heightPercent={1} class="bg-background"/>;
+				folders = count;
+			} else if (StringTools.startsWith(mode, "prim-")) {
+				var count = 1600, items:Array<Element> = [];
+				for (i in 0...count) {
+					var name = "file" + i + ".hx";
+					var item:Element = switch mode {
+						case "prim-text": new ashui.ui.Text(name, {wrap: false});
+						case "prim-div": new ashui.ui.Div({}, [new ashui.ui.Text(name, {wrap: false})]);
+						case "prim-focus": { var d = new ashui.ui.Div({}, [new ashui.ui.Text(name, {wrap: false})]); ashui.input.Interaction.of(d.node).setFocusable(true).onClick(_ -> {}); d; }
+						case "prim-anim": { var d = new ashui.ui.Div({}, [new ashui.ui.Text(name, {wrap: false})]); ashui.animation.LayoutAnimation.attach(d.node); d; }
+						case "prim-svg": new ashui.ui.Svg(rayde.ui.Icons.HAXE, {width: 16, height: 16});
+						case _: new ashui.ui.Div({}, []);
+					}
+					items.push(item);
+				}
+				element = new ashui.ui.Div({}, items);
+				folders = count;
+			} else if (StringTools.startsWith(mode, "tree-")) {
+				var before = heap(), count = 1600, items:Array<Element> = [];
+				for (i in 0...count) {
+					var name = "file" + i + ".hx";
+					items.push(switch mode {
+						case "tree-plain": <tree-item value={name} label={name}/>;
+						case "tree-icon": <tree-item value={name} label={name} icon={rayde.ui.Icons.HAXE}/>;
+						case _: <tree-item value={name} label={name} icon={rayde.ui.Icons.FOLDER_LINE} load={() -> []}/>;
+					});
+				}
+				element = <div widthPercent={1} heightPercent={1} class="bg-background overflow-auto"><tree-view>{items}</tree-view></div>;
+				folders = count;
+			} else if (mode == "minimal" || mode == "icons") element = <div widthPercent={1} heightPercent={1} class="bg-background"/>;
 			else {
 				bench = new Workbench({display:Display.ofHxml(server, root + "/build.hxml"), name:"RayDE", runtime:"ash", chrome:rayde.ui.WindowChrome.ofApp()});
 				if (mode == "no-explorer") bench.treeWidth.set(48);
-				if (mode == "expanded") folders = expand(bench, root, 0);
+				if (mode == "expanded") folders = expand(bench, haxe.io.Path.removeTrailingSlashes(root), 0);
 				element = bench;
 			}
 			AnimationScheduler.main.after(6, () -> {
