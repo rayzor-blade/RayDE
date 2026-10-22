@@ -835,6 +835,7 @@ class Checks {
 		fileOpsChecks();
 		gitIgnoreChecks();
 		extensionHostChecks();
+		ActivityLogChecks.run();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
 		PanelWorkerChecks.run();

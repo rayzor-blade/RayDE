@@ -12,7 +12,9 @@ hlwgpu=${HLWGPU:-$siblings/hlwgpu}
 hlwindow=${HLWINDOW:-$siblings/hlwindow}
 future=${ASH_FUTURE:-$siblings/ash/haxelib/ash-future}
 simd=${ASH_SIMD:-$siblings/ash/haxelib/ash-simd}
-ash=${ASH:-$(command -v ash || true)}
+# Keep the compiler and staged runtime from the same workspace build; ASH overrides either default.
+ash=${ASH:-$siblings/ash/target/release/ash}
+[ -x "$ash" ] || ash=${ASH:-$(command -v ash || true)}
 
 fail() { echo "$(basename "$0"): $*" >&2; exit 1; }
 [ -x "$ash" ] || fail "put ash on PATH or set ASH"

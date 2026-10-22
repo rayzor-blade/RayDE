@@ -10,6 +10,7 @@ The icon is `assets/rayde-icon.png`, a rounded square on a transparent margin. `
 | Window | `rayde-256.rgba`, embedded and passed as `WindowConfig.icon` | Every run. Windows and Linux windows use it; macOS uses the bundle's. |
 
 - The macOS app bundles the AOT executable, shared Ash runtime and native libraries under `Contents/MacOS`. Running it does not need an installed `ash`. Building the package requires Ash. The Linux and Windows launchers use an external `ash`; `RAYDE_ASH` names it.
+- Build scripts use `ASH` when set, otherwise the sibling workspace's `ash/target/release/ash`, falling back to Ash on PATH. The AOT compiler stages its matching shared runtime. Rebuild the bundle to adopt runtime fixes; replacing source files alone does not update a bundled runtime. Memory probes record runtime hashes for comparisons.
 - Without an argument the macOS app offers recent projects, **Open Existing Project** and **New Project**. Existing entry points include `.hxml`, `haxelib.json`, `rayzor.toml`, `.rayext` and `.raytheme`. New Project creates a Haxe application, Haxe library or Rayzor application in a fresh folder and opens it immediately. It remembers up to 20 entry points in the user settings under `recentProjects.paths`. Linux and Windows launchers open a file dialog.
 - File types registered: Linux `text/x-hxml`, `application/x-rayext`, `application/x-raytheme`.
 - The Windows scripts have not been run on Windows.

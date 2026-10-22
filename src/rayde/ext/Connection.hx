@@ -262,7 +262,7 @@ class Connection {
 
 	function deliver(name:String, data:Dynamic):Void {
 		send({t: "hook", name: name, data: data});
-		note("activity", "event", 'hook $name' + (data == null ? "" : " " + haxe.Json.stringify(data)));
+		note("activity", "event", 'hook $name' + (data == null ? "" : " " + ActivityLog.describe(data)));
 	}
 
 	public function command(id:String, args:Dynamic):Void {
@@ -277,7 +277,7 @@ class Connection {
 			return;
 		}
 		send({t: "command", id: id, args: args});
-		note("activity", "event", 'command $id' + (args == null ? "" : " " + haxe.Json.stringify(args)));
+		note("activity", "event", 'command $id' + (args == null ? "" : " " + ActivityLog.describe(args)));
 	}
 
 	function failed(message:Dynamic):Void {
@@ -310,7 +310,7 @@ class Connection {
 			at = name.lastIndexOf("."),
 			module = name.substr(0, at),
 			fn = name.substr(at + 1);
-		note("activity", "call", name + "(" + [for (a in (call.args : Array<Dynamic>)) haxe.Json.stringify(a)].join(", ") + ")");
+		note("activity", "call", name + " " + ActivityLog.describe(call.args));
 		var group = Reflect.field(mocks, module);
 		if (group == null || !Reflect.hasField(group, fn)) {
 			reply(builtin.exists(module)
@@ -419,6 +419,6 @@ class Connection {
 	function reply(message:Dynamic):Void {
 		send(message);
 		note("activity", "answer",
-			(message.t == "resolve" ? "resolved " : "rejected ") + (message.t == "resolve" ? haxe.Json.stringify(message.value) : message.message));
+			(message.t == "resolve" ? "resolved " : "rejected ") + ActivityLog.describe(message.t == "resolve" ? message.value : message.message));
 	}
 }

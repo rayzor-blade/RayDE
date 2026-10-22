@@ -220,6 +220,7 @@ class Studio {
 	}
 
 	function note(list:Signal<Array<Entry>>, kind:String, text:String, ?at:{file:String, line:Int, col:Int}):Void {
+		if (list == activity) text = ActivityLog.clip(text);
 		var all = list.get().copy();
 		all.push({kind: kind, text: text, time: haxe.Timer.stamp(), file: at == null ? null : at.file, line: at == null ? null : at.line, col: at == null ? null : at.col});
 		if (all.length > MAX_ENTRIES)
@@ -275,7 +276,7 @@ class Studio {
 		if (!connection.running())
 			return;
 		connection.send({t: "event", node: node, event: event, payload: payload});
-		note(activity, "event", '$event on #$node' + (payload == null ? "" : " " + haxe.Json.stringify(payload)));
+		note(activity, "event", '$event on #$node' + (payload == null ? "" : " " + ActivityLog.describe(payload)));
 		activeNow();
 	}
 
