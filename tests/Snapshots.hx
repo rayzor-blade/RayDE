@@ -2388,6 +2388,57 @@ class Snapshots {
 				shot("workspace-diagnostic");
 			});
 		for (dark in [true, false])
+			scenario(dark, "panels", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
+				bench.openFile(file); settle();
+				@:privateAccess bench.diagnosticJobs.cancel(file);
+				bench.problems.set([for (i in 0...200) {file:file, severity:1, message:'Problem $i',
+					range:{start:{line:i % 8, character:0}, end:{line:i % 8, character:1}}}]);
+				bench.showPanel("problems"); settle();
+				var tree = bench.tree, root = bench.node.id;
+				if (Css.query(tree, root, ".rayde-problem").length > 24) throw "Problems mounted the whole diagnostic list";
+				var problemPane = Css.query(tree, root, "#rayde-problems")[0];
+				var problemScroll = ashui.input.Scroll.at(problemPane, tree);
+				problemScroll.scrollTo(0, 1e9); settle();
+				var last = Css.query(tree, root, ".rayde-problem"), lastRow = last[last.length - 1];
+				if (!Lambda.exists(Css.query(tree, lastRow, "text"), id -> ashui.ui.Text.at(id).text() == "Problem 199"))
+					throw "Virtual Problems could not reach the last diagnostic";
+				shot("problems-end");
+				var y = problemScroll.y.get();
+				bench.closePanel(); settle();
+				if (Css.query(tree, root, ".rayde-problem").length != 0) throw "Hidden Problems retained rows";
+				bench.showPanel("problems"); settle();
+				problemScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-problems")[0], tree);
+				if (Math.abs(problemScroll.y.get() - y) > 1) throw "Problems lost its scroll position";
+				last = Css.query(tree, root, ".rayde-problem"); lastRow = last[last.length - 1];
+				var bounds = tree.getScrolledBounds(new ashui.layout.Node(lastRow));
+				ashui.input.Pointer.move(tree, bounds.x + 100, bounds.y + bounds.height / 2);
+				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
+				if (bench.caretLine(file) != 7) throw "Virtual diagnostic click lost its source location";
+
+				@:privateAccess bench.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n"));
+				bench.showPanel("console"); settle();
+				var state = @:privateAccess bench.outputState("build");
+				var outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
+				outputScroll.jumpTo(0, 280); settle();
+				var outputY = outputScroll.y.get();
+				shot("output");
+				bench.closePanel(); settle();
+				if (state.mounted || Css.query(tree, root, "#rayde-console").length != 0) throw "Hidden Output retained its code view";
+				var cached = state.document;
+				for (i in 0...50) @:privateAccess bench.consoleText.set('Latest hidden output $i');
+				settle();
+				if (state.document != cached || state.document.text.indexOf("Output line 1999") < 0) throw "Hidden Output processed intermediate updates";
+				bench.showPanel("console"); settle();
+				if (state.document.text != "Latest hidden output 49") throw "Reopened Output did not catch up";
+				@:privateAccess bench.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n")); settle();
+				outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
+				outputScroll.jumpTo(0, outputY); settle(); bench.closePanel(); settle(); bench.showPanel("console"); settle();
+				outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
+				if (Math.abs(outputScroll.y.get() - outputY) > 1) throw "Output lost its scroll position";
+				shot("output-restored");
+			});
+
+		for (dark in [true, false])
 			scenario(dark, "assist", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
 				bench.openFile(file);
@@ -2541,11 +2592,15 @@ class Snapshots {
 		if (only != null && only != "" && only != name)
 			return;
 		if (!dark && name == "git" && Sys.getEnv("RAYDE_EXTENSION_PROBE") == "1") return;
-		var root = copyOf(name == "documents" || name == "lsp" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
+		var root = copyOf(name == "documents" || name == "lsp" || name == "panels" ? "basic" : name == "explorer" ? "git" : name == "outline" ? "full" : name), server = new CompilerServer();
 		var previousBuiltins = Sys.getEnv("RAYDE_EXTENSIONS");
 		if ((name == "git" || name == "explorer") && Sys.command("python3", ["tests/git_fixture.py", root, "--install"]) != 0)
 			throw "Git snapshot fixture failed";
 		if (name == "extensions") installExtensionsFixture(root);
+		if (name == "panels") {
+			sys.FileSystem.createDirectory(root + "/empty-builtins");
+			Sys.putEnv("RAYDE_EXTENSIONS", root + "/empty-builtins");
+		}
 		if (name == "lsp") {
 			var folder = root + "/.snapshot-builtins/rayzor";
 			sys.FileSystem.createDirectory(folder + "/ext");
@@ -2683,6 +2738,6 @@ class Snapshots {
 		stop();
 		tree.dispose();
 		server.stop();
-		if (name == "lsp") Sys.putEnv("RAYDE_EXTENSIONS", previousBuiltins);
+		if (name == "lsp" || name == "panels") Sys.putEnv("RAYDE_EXTENSIONS", previousBuiltins);
 	}
 }

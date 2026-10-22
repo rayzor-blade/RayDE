@@ -5,6 +5,10 @@ import ashui.components.code.CodeHighlighter;
 /** Extension severities are explicit; build output uses compiler diagnostic prefixes. */
 class OutputHighlighter implements CodeHighlighter {
 	public var kinds:Null<Array<String>>;
+	static final location = ~/^.+?:\d+: (?:characters \d+-\d+|lines \d+-\d+) : /;
+	static final warning = ~/^(?:warning\b|\[warning\])/i;
+	static final error = ~/^(?:error\b|\[error\]|uncaught exception\b|exception:|fatal\b)/i;
+	static final failedExit = ~/^Exited with [1-9]\d*\.$/;
 
 	public function new(?kinds:Array<String>) this.kinds = kinds;
 
@@ -23,12 +27,12 @@ class OutputHighlighter implements CodeHighlighter {
 
 	static function buildKind(line:String, previous:String):String {
 		var text = StringTools.trim(line);
-		if (~/^.+?:\d+: (?:characters \d+-\d+|lines \d+-\d+) : /.match(line))
+		if (location.match(line))
 			return text.indexOf(" : Warning : ") >= 0 ? "warning" : "error";
-		if (~/^(?:warning\b|\[warning\])/i.match(text)) return "warning";
-		if (~/^(?:error\b|\[error\]|uncaught exception\b|exception:|fatal\b)/i.match(text)
+		if (warning.match(text)) return "warning";
+		if (error.match(text)
 			|| text == "The build did not make a program.") return "error";
-		if (~/^Exited with [1-9]\d*\.$/.match(text)) return "error";
+		if (failedExit.match(text)) return "error";
 		if (text == "Exited with 0.") return "success";
 		if (text != "" && (StringTools.startsWith(line, " ") || StringTools.startsWith(line, "\t"))) return previous;
 		return "info";

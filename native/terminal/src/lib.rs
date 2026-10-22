@@ -329,10 +329,14 @@ fn answer_queries(chunk: &[u8], screen: &vt100::Screen, out: &mut Vec<u8>) {
 // ---- The VM's side: sessions by handle, and primitives over them.
 
 /// Open sessions by handle; a closed one leaves its slot empty.
-static SESSIONS: Mutex<Vec<Option<Arc<Session>>>> = Mutex::new(Vec::new());
+enum SessionSlot { Ready(Arc<Session>), Starting, Failed }
+static SESSIONS: Mutex<Vec<Option<SessionSlot>>> = Mutex::new(Vec::new());
 
 fn session(handle: i32) -> Option<Arc<Session>> {
-    lock(&SESSIONS).get(handle as usize).and_then(|s| s.clone())
+    match lock(&SESSIONS).get(handle as usize) {
+        Some(Some(SessionSlot::Ready(s))) => Some(s.clone()),
+        _ => None,
+    }
 }
 
 unsafe fn text<'a>(data: *const vbyte, len: i32) -> Option<&'a str> {
@@ -368,7 +372,7 @@ pub unsafe extern "C" fn term_open(cols: i32, rows: i32, cwd: *const vbyte, cwd_
         match Session::spawn(&program, &args, cwd, cols.clamp(2, 1000) as u16, rows.clamp(1, 500) as u16) {
             Ok(s) => {
                 let mut all = lock(&SESSIONS);
-                all.push(Some(Arc::new(s)));
+                all.push(Some(SessionSlot::Ready(Arc::new(s))));
                 (all.len() - 1) as i32
             }
             Err(_) => -1,
@@ -377,6 +381,59 @@ pub unsafe extern "C" fn term_open(cols: i32, rows: i32, cwd: *const vbyte, cwd_
     .unwrap_or(-1)
 }
 define_prim!(hlp_term_open, term_open, "PiiBiBiBi_i");
+
+fn start_background(cols: u16, rows: u16, cwd: Option<String>, program: String, args: Vec<String>) -> i32 {
+    let handle = {
+        let mut all = lock(&SESSIONS);
+        all.push(Some(SessionSlot::Starting));
+        (all.len() - 1) as i32
+    };
+    let started = thread::Builder::new().name("terminal-start".into()).spawn(move || {
+        let result = catch_unwind(|| Session::spawn(&program, &args, cwd.as_deref(), cols, rows))
+            .unwrap_or_else(|_| Err("Terminal startup panicked".into()));
+        let mut all = lock(&SESSIONS);
+        if !matches!(all.get(handle as usize), Some(Some(SessionSlot::Starting))) {
+            drop(all);
+            if let Ok(session) = result { session.kill(); }
+            return;
+        }
+        all[handle as usize] = Some(match result {
+            Ok(session) => SessionSlot::Ready(Arc::new(session)),
+            Err(_) => SessionSlot::Failed,
+        });
+    });
+    if started.is_err() { lock(&SESSIONS)[handle as usize] = None; return -1; }
+    handle
+}
+
+/// Copies VM strings before a worker creates the PTY and process. Closing its handle cancels publication.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn term_open_background(cols: i32, rows: i32, cwd: *const vbyte, cwd_len: i32, program: *const vbyte, program_len: i32, args: *const vbyte, args_len: i32) -> i32 {
+    catch_unwind(|| {
+        let cwd = unsafe { text(cwd, cwd_len) }.filter(|s| !s.is_empty()).map(str::to_string);
+        let program = unsafe { text(program, program_len) }.filter(|s| !s.is_empty()).map(str::to_string)
+            .unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| if cfg!(windows) { "powershell.exe".into() } else { "/bin/sh".into() }));
+        let args = match unsafe { text(args, args_len) } {
+            Some(a) if !a.is_empty() => a.split('\u{1f}').map(str::to_string).collect(),
+            _ if cfg!(windows) => Vec::new(),
+            _ => vec!["-l".into()],
+        };
+        start_background(cols.clamp(2, 1000) as u16, rows.clamp(1, 500) as u16, cwd, program, args)
+    }).unwrap_or(-1)
+}
+define_prim!(hlp_term_open_background, term_open_background, "PiiBiBiBi_i");
+
+/// 0 while creating the process, 1 ready, -1 failed, -2 closed.
+#[unsafe(no_mangle)]
+pub extern "C" fn term_state(handle: i32) -> i32 {
+    match lock(&SESSIONS).get(handle as usize) {
+        Some(Some(SessionSlot::Starting)) => 0,
+        Some(Some(SessionSlot::Ready(_))) => 1,
+        Some(Some(SessionSlot::Failed)) => -1,
+        _ => -2,
+    }
+}
+define_prim!(hlp_term_state, term_state, "Pi_i");
 
 /// Types `len` bytes at `data` into the session. 1 when written.
 #[unsafe(no_mangle)]
@@ -411,7 +468,7 @@ define_prim!(hlp_term_revision, term_revision, "Pi_i");
 /// -1 while the program runs, else its exit code; -3 for no such session.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn term_exit(handle: i32) -> i32 {
-    catch_unwind(|| session(handle).map_or(-3, |s| s.exit_code())).unwrap_or(-3)
+    catch_unwind(|| session(handle).map_or_else(|| match term_state(handle) { 0 => -1, -1 => 127, _ => -3 }, |s| s.exit_code())).unwrap_or(-3)
 }
 define_prim!(hlp_term_exit, term_exit, "Pi_i");
 
@@ -484,10 +541,8 @@ pub unsafe extern "C" fn term_close(handle: i32) -> i32 {
     catch_unwind(|| {
         let taken = lock(&SESSIONS).get_mut(handle as usize).and_then(|s| s.take());
         match taken {
-            Some(s) => {
-                s.kill();
-                1
-            }
+            Some(SessionSlot::Ready(s)) => { s.kill(); 1 }
+            Some(SessionSlot::Starting | SessionSlot::Failed) => 1,
             None => 0,
         }
     })
@@ -499,6 +554,32 @@ define_prim!(hlp_term_close, term_close, "Pi_i");
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn background_start_failure_and_cancellation() {
+        let handle = start_background(40, 6, None, "/bin/sh".into(), vec!["-c".into(), "printf ready; read value".into()]);
+        assert!(handle >= 0);
+        let end = Instant::now() + Duration::from_secs(3);
+        while term_state(handle) == 0 && Instant::now() < end { thread::sleep(Duration::from_millis(5)); }
+        assert_eq!(term_state(handle), 1);
+        let s = session(handle).expect("a started session");
+        assert!(wait(&s, |text| text.contains("ready")).contains("ready"));
+        unsafe { term_close(handle); }
+        assert_eq!(term_state(handle), -2);
+
+        let failed = start_background(40, 6, None, "/rayde-no-such-shell".into(), vec![]);
+        let end = Instant::now() + Duration::from_secs(3);
+        while term_state(failed) == 0 && Instant::now() < end { thread::sleep(Duration::from_millis(5)); }
+        assert_eq!(term_state(failed), -1);
+        assert_eq!(unsafe { term_exit(failed) }, 127);
+        unsafe { term_close(failed); }
+
+        let cancelled = start_background(40, 6, None, "/bin/sh".into(), vec!["-c".into(), "read value".into()]);
+        unsafe { term_close(cancelled); }
+        thread::sleep(Duration::from_millis(100));
+        assert_eq!(term_state(cancelled), -2);
+        assert!(session(cancelled).is_none(), "a cancelled worker must not publish its process");
+    }
 
     /// Waits until `done` holds of the screen's text, or three seconds pass.
     fn wait(s: &Session, done: impl Fn(&str) -> bool) -> String {

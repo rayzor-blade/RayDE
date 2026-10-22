@@ -2,66 +2,65 @@ package rayde.run;
 
 import rayde.lang.Display;
 
-private typedef Request = {file:String, text:String, args:Array<String>, serial:Int};
-typedef DiagnosticResult = {file:String, text:String, serial:Int, problems:Array<Diagnostic>};
+private typedef Request = {file:String, text:String, args:Array<String>, serial:Int, cwd:String, haxe:String, base:String, payload:Dynamic};
+typedef DiagnosticResult = {file:String, text:String, serial:Int, problems:Array<Diagnostic>, lsp:Bool};
 
-/** One background compiler at a time, independent of the interactive display server's module cache. */
+/** A dedicated worker owns compiler I/O and diagnostic decoding; tick only transfers completed data. */
 class DiagnosticJobs {
 	final display:Display;
-	final queue:Array<Request> = [];
-	final latest = new Map<String, Int>();
-	final config:String;
-	final log:String;
+	final worker = new Worker<Request, DiagnosticResult>(compile);
+	final base:String;
 	var serial = 0;
-	var job:Null<Job>;
-	var current:Request;
 
 	public function new(display:Display) {
 		this.display = display;
-		var base = display.cwd + "/.rayde/diagnostics/" + Std.string(haxe.Timer.stamp()).split(".").join("-");
-		config = base + ".hxml"; log = base + ".log";
+		base = display.cwd + "/.rayde/diagnostics/" + Std.string(haxe.Timer.stamp()).split(".").join("-");
 	}
 
 	public function request(file:String, text:String):Void {
-		var request = {file:file, text:text, args:display.args.copy(), serial:++serial};
-		latest.set(file, serial);
-		for (old in queue.copy()) if (old.file == file) queue.remove(old);
-		queue.push(request);
+		worker.submit(file, {file:file, text:text, args:display.args.copy(), serial:++serial,
+			cwd:display.cwd, haxe:display.server.haxe, base:base, payload:null});
 	}
 
-	public function busy():Bool return job != null || queue.length > 0;
+	public function publish(file:String, text:String, payload:Dynamic):Void {
+		worker.submit(file, {file:file, text:text, args:[], serial:++serial,
+			cwd:display.cwd, haxe:"", base:base, payload:payload});
+	}
+
+	public function busy():Bool return worker.busy();
 
 	public function tick():Array<DiagnosticResult> {
-		var results:Array<DiagnosticResult> = [];
-		if (job != null && !job.running()) {
-			if (latest.get(current.file) == current.serial) {
-				var found = parse(job.read());
-				if (found != null) results.push({file:current.file, text:current.text, serial:current.serial, problems:found});
-			}
-			job = null;
-		}
-		if (job == null && queue.length > 0) {
-			current = queue.shift();
-			var request = haxe.Json.stringify({jsonrpc:"2.0", id:current.serial, method:"display/diagnostics", params:{file:current.file, contents:current.text}});
+		return [for (result in worker.poll()) if (result.value != null) result.value];
+	}
+
+	public function cancel(file:String):Void worker.cancel(file);
+	public function dispose():Void worker.dispose();
+
+	static function compile(request:Request, cancelled:Void->Bool):Null<DiagnosticResult> {
+		if (cancelled()) return null;
+		if (request.payload != null) return {file:request.file, text:request.text, serial:request.serial,
+			problems:rayde.lang.LspProtocol.diagnostics(request.payload), lsp:true};
+		var config = request.base + ".hxml", log = request.base + ".log", job:Job = null;
+		var result:DiagnosticResult = null;
+		try {
+			var rpc = haxe.Json.stringify({jsonrpc:"2.0", id:request.serial, method:"display/diagnostics", params:{file:request.file, contents:request.text}});
 			sys.FileSystem.createDirectory(haxe.io.Path.directory(config));
-			// An hxml keeps large buffers out of the operating system's command-line size limit.
-			sys.io.File.saveContent(config, ["--cwd", display.cwd].concat(current.args).concat(["--no-output", "--display", request]).join("\n") + "\n");
-			job = new Job(display.server.haxe, [config], log);
+			// An hxml keeps unsaved buffers out of the command-line size limit.
+			sys.io.File.saveContent(config, ["--cwd", request.cwd].concat(request.args).concat(["--no-output", "--display", rpc]).join("\n") + "\n");
+			job = new Job(request.haxe, [config], log);
 			job.start();
+			while (!cancelled() && job.running()) Sys.sleep(.02);
+			if (!cancelled()) {
+				var found = parse(job.read());
+				if (found != null) result = {file:request.file, text:request.text, serial:request.serial, problems:found, lsp:false};
+			}
+		} catch (failure:Dynamic) {
+			result = {file:request.file, text:request.text, serial:request.serial,
+				problems:[{file:request.file, range:null, severity:1, message:"Diagnostic worker: " + Std.string(failure)}], lsp:false};
 		}
-		return results;
-	}
-
-	public function cancel(file:String):Void {
-		latest.remove(file);
-		for (request in queue.copy()) if (request.file == file) queue.remove(request);
-	}
-
-	public function dispose():Void {
-		queue.resize(0); latest.clear();
 		if (job != null) job.stop();
-		job = null;
 		for (path in [config, log]) if (sys.FileSystem.exists(path)) sys.FileSystem.deleteFile(path);
+		return result;
 	}
 
 	static function parse(reply:String):Null<Array<Diagnostic>> {

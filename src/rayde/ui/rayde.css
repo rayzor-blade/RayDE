@@ -133,7 +133,7 @@
 #rayde .rayde-settings { min-width: 0; }
 
 /* The bottom panel starts closed; with it closed the handle above it goes too. Its close button sits at the far end of the tab row. */
-#rayde #rayde-rows[data-closed] > .ui-resizable-handle { display: none; }
+#rayde #rayde-rows > .ui-resizable-handle[data-closed] { display: none; }
 #rayde .rayde-panel-button { --ui-button-height: 26px; --ui-button-width: 26px; border-radius: var(--radius-md); corner-shape: squircle; color: var(--text-tertiary); }
 #rayde .rayde-panel-button:hover { color: var(--text-primary); }
 #rayde .rayde-status-item[data-on] { color: var(--text-primary); background: var(--accent-subtle); }

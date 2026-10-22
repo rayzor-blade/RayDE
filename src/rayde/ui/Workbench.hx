@@ -41,6 +41,7 @@ import rayde.lang.LspProtocol;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
 import rayde.run.DiagnosticJobs;
+import rayde.run.OutputJobs;
 import rayde.settings.Appearance;
 import rayde.settings.Store;
 import rayde.theme.JsonLocator;
@@ -308,9 +309,16 @@ class Workbench extends Component<WorkbenchProps> {
 	final extensionRevision = Signal.make(0);
 	final outputChannel = Signal.make("build");
 	var supervisionScheduled = false;
-	final extensionOutput = Signal.make("");
 	final extensionOutputKinds = Signal.make(new Array<String>());
 	final extensionOutputView = new Ref<CodeView>();
+	final outputJobs = new OutputJobs();
+	var outputScheduled = false;
+	var outputRevealChannel:Null<String>;
+	var extensionOutputDirty = true;
+	final outputKinds = new Map<String, Array<String>>();
+	final outputStates = new Map<String, CodeEditorState>();
+	final buildOutputSyntax = new OutputHighlighter();
+	final outputSyntax = new Map<String, OutputHighlighter>();
 
 	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
 	var themeStudio:Null<ThemeStudio>;
@@ -855,7 +863,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Runs `profile` in the project's folder, on the screen of `group` or a new one, and brings it to the front. */
 	function startSession(profile:Profile, ?group:Int):Void {
-		var t = Terminal.open(100, 12, props.display.cwd, profile.program, profile.args);
+		var t = Terminal.open(100, 12, props.display.cwd, profile.program, profile.args, true);
 		if (t == null) {
 			say("Could not start " + profile.name);
 			return;
@@ -1058,7 +1066,8 @@ class Workbench extends Component<WorkbenchProps> {
 			ashui.layout.LayoutTree.flushHooks.remove(hook);
 			var rows = rowsRef.get();
 			if (rows != null)
-				ashui.css.Identity.of(rows.tree, rows.node.id).setAttribute("data-closed", shown ? null : "");
+				for (id in ashui.css.Css.query(rows.tree, rows.node.id, "#rayde-rows > .ui-resizable-handle"))
+					ashui.css.Identity.of(rows.tree, id).setAttribute("data-closed", shown ? null : "");
 		};
 		ashui.layout.LayoutTree.flushHooks.push(hook);
 	}
@@ -1535,7 +1544,10 @@ class Workbench extends Component<WorkbenchProps> {
 			}
 		};
 		extensionManager.onOutput = entry -> {
-			if (outputChannel.get() == "ext:" + entry.installed.id) refreshExtensionOutput();
+			if (outputChannel.get() == "ext:" + entry.installed.id) {
+				extensionOutputDirty = true;
+				if (panelShown.get() && bottom.get() == "console") refreshExtensionOutput();
+			}
 		};
 		refreshExtensionBindings();
 		ashui.animation.AnimationScheduler.main.after(.016, () -> { if (!gone) extensionManager.start(); });
@@ -1593,21 +1605,50 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function refreshExtensionOutput():Void {
-		var entry = extensionManager.find(outputChannel.get().substr(4));
-		var lines:Array<String> = [], kinds:Array<String> = [];
-		if (entry != null) for (i in 0...entry.output.length) {
-			var text = ~/\r\n|\r/g.replace(entry.output[i], "\n");
-			for (line in text.split("\n")) {
-				lines.push(line);
-				kinds.push(entry.outputKinds[i]);
-			}
+		var channel = outputChannel.get();
+		if (channel == "build") return;
+		var kinds = outputKinds.exists(channel) ? outputKinds.get(channel) : [];
+		if (extensionOutputKinds.get() != kinds) extensionOutputKinds.set(kinds);
+		var entry = extensionManager.find(channel.substr(4));
+		outputJobs.request(channel, entry == null ? [] : entry.output, entry == null ? [] : entry.outputKinds);
+		extensionOutputDirty = false;
+		if (!outputScheduled) {
+			outputScheduled = true;
+			ashui.animation.AnimationScheduler.main.after(.016, pollOutput);
 		}
-		extensionOutputKinds.set(kinds);
-		extensionOutput.set(lines.join("\n"));
+	}
+
+	function pollOutput():Void {
+		if (gone) return;
+		for (result in outputJobs.poll()) if (result.key == outputChannel.get() && result.value != null) {
+			var next = result.value;
+			outputState(result.key).value.set(next.text);
+			var kinds = extensionOutputKinds.get(), changed = kinds.length != next.kinds.length;
+			if (!changed) for (i in 0...kinds.length) if (kinds[i] != next.kinds[i]) { changed = true; break; }
+			if (changed) extensionOutputKinds.set(next.kinds);
+			outputKinds.set(result.key, extensionOutputKinds.get());
+		}
+		outputScheduled = outputJobs.busy();
+		if (outputScheduled) ashui.animation.AnimationScheduler.main.after(.016, pollOutput);
+		else if (outputRevealChannel != null) {
+			var reveal = outputRevealChannel == outputChannel.get();
+			outputRevealChannel = null;
+			if (reveal) ashui.animation.AnimationScheduler.main.after(.016, () -> revealExtensionOutput());
+		}
+	}
+
+	function outputState(channel:String):CodeEditorState {
+		var state = outputStates.get(channel);
+		if (state == null) {
+			state = new CodeEditorState(channel == "build" ? consoleText : Signal.make(""));
+			outputStates.set(channel, state);
+		}
+		return state;
 	}
 
 	function revealExtensionOutput(tries = 0):Void {
-		if (gone || bottom.get() != "console" || outputChannel.get() == "build") return;
+		if (gone || !panelShown.get() || bottom.get() != "console" || outputChannel.get() == "build") return;
+		if (outputScheduled) { outputRevealChannel = outputChannel.get(); return; }
 		var view = extensionOutputView.get();
 		var bounds = view == null ? null : view.tree.getBounds(view.node);
 		if (view == null || view.scroll == null || bounds == null || bounds.height <= 0) {
@@ -1770,18 +1811,24 @@ class Workbench extends Component<WorkbenchProps> {
 		if (isVirtual(file) || !StringTools.endsWith(file, ".hx"))
 			return;
 		diagnosticJobs.request(file, buffer(file).get());
-		if (!diagnosticsScheduled) {
-			diagnosticsScheduled = true;
-			ashui.animation.AnimationScheduler.main.after(.03, pollDiagnostics);
-		}
+		wakeDiagnostics();
+	}
+
+	function wakeDiagnostics():Void {
+		if (gone || diagnosticsScheduled) return;
+		diagnosticsScheduled = true;
+		ashui.animation.AnimationScheduler.main.after(.03, pollDiagnostics);
 	}
 
 	function pollDiagnostics():Void {
 		if (gone) return;
 		for (result in diagnosticJobs.tick()) {
 			var source = buffers.get(result.file);
-			if (languageServers.client(result.file) == null && source != null && source.get() == result.text && open.get().indexOf(result.file) >= 0)
-				problems.set([for (p in problems.get()) if (p.file != result.file) p].concat(result.problems));
+			var valid = result.lsp ? languageServers.client(result.file) != null && (source == null || source.get() == result.text)
+				: languageServers.client(result.file) == null && source != null && source.get() == result.text && open.get().indexOf(result.file) >= 0;
+			var current = problems.get();
+			if (valid && !LspProtocol.sameDiagnostics([for (p in current) if (p.file == result.file) p], result.problems))
+				problems.set([for (p in current) if (p.file != result.file) p].concat(result.problems));
 		}
 		diagnosticsScheduled = diagnosticJobs.busy();
 		if (diagnosticsScheduled) ashui.animation.AnimationScheduler.main.after(.03, pollDiagnostics);
@@ -1827,9 +1874,9 @@ class Workbench extends Component<WorkbenchProps> {
 		languageServers.onDiagnostics = value -> {
 			var file = LspProtocol.path(value.uri);
 			if (file == null) return;
-			var next = LspProtocol.diagnostics(value), current = problems.get();
-			if (!LspProtocol.sameDiagnostics([for (p in current) if (p.file == file) p], next))
-				problems.set([for (p in current) if (p.file != file) p].concat(next));
+			var source = buffers.get(file);
+			diagnosticJobs.publish(file, source == null ? null : source.get(), value);
+			wakeDiagnostics();
 		};
 		languageServers.onChanged = () -> {
 			if (gone) return;
@@ -1860,6 +1907,9 @@ class Workbench extends Component<WorkbenchProps> {
 		});
 		new ashui.reactive.Watch(() -> { active.get(); sideView.get(); 0; }, _ -> ashui.core.Memory.collectSoon(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> panelShown.get(), shown -> markPanel(shown));
+		new ashui.reactive.Watch(() -> panelShown.get() && bottom.get() == "console", visible -> {
+			if (visible && extensionOutputDirty) refreshExtensionOutput();
+		});
 		// The controls go grey while another window is in front.
 		new ashui.reactive.Watch(() -> ashui.input.WindowState.active.get(), on -> chrome.focused.set(on));
 		// The terminal starts when its tab is first in view, not when RayDE does.
@@ -1875,6 +1925,8 @@ class Workbench extends Component<WorkbenchProps> {
 			for (syntax in nativeSyntax) if (syntax != null) syntax.dispose();
 			nativeSyntax.clear();
 			diagnosticJobs.dispose();
+			outputJobs.dispose();
+			runner.stop();
 			languageServers.dispose();
 			for (s in sessions)
 				s.terminal.close();
@@ -2936,7 +2988,7 @@ class Workbench extends Component<WorkbenchProps> {
 				</tabs-list>
 				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><if {panelShown.get() && bottom.get() == "problems"}><for {list in [problems.get()]}>${problemsPane(list)}</for></if></tabs-content>
 				<tabs-content value="console" class="flex-1 min-h-0 pt-1">
-					${outputPane()}
+					<if {panelShown.get() && bottom.get() == "console"}>${outputPane()}</if>
 				</tabs-content>
 				<tabs-content value="terminal" class="flex-1 min-h-0 pt-1"><for {g in [terminalGeneration.get()]}>${terminalPane()}</for></tabs-content>
 				<tabs-content value="extension" class="flex-1 min-h-0 pt-1"><studio-panels studio={activeStudio} onOpen={goTo}/></tabs-content>
@@ -2954,17 +3006,19 @@ class Workbench extends Component<WorkbenchProps> {
 		return <div class="flex flex-col flex-1 min-h-0 gap-2">
 			<select id="rayde-output-channel" value={outputChannel.get()} size={Sm} class="rayde-control-wide" onChange={value -> { outputChannel.set(value); refreshExtensionOutput(); }}>{items}</select>
 			<for {channel in [outputChannel.get()]}>
-				{channel == "build" ? <code-view id="rayde-console" value={consoleText} highlighter={new OutputHighlighter()} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/> : extensionLog()}
+				{channel == "build" ? <code-view id="rayde-console" state={outputState("build")} highlighter={buildOutputSyntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/> : extensionLog()}
 			</for>
 		</div>;
 	}
 
 	function extensionLog():Element {
-		var syntax = new OutputHighlighter(extensionOutputKinds.get());
-		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" value={extensionOutput} highlighter={syntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		var channel = outputChannel.get(), kinds = extensionOutputKinds.get();
+		var syntax = outputSyntax.get(channel);
+		if (syntax == null) { syntax = new OutputHighlighter(kinds); outputSyntax.set(channel, syntax); }
+		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" state={outputState(channel)} highlighter={syntax} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
 		new ashui.reactive.Watch(() -> extensionOutputKinds.get(), kinds -> {
+			if (syntax.kinds == kinds) return;
 			syntax.kinds = kinds;
-			// A new grammar invalidates cached lines even when only their severity changed.
 			view.metrics.syntax = new OutputHighlighter(kinds);
 			view.expandAll();
 		});
@@ -3007,7 +3061,7 @@ class Workbench extends Component<WorkbenchProps> {
 		}
 		var id = s.id;
 		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> panelShown.get() && bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision}
-			onExit={code -> say(s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={reservedKey}/>;
+			onExit={code -> say(s.terminal.failedToStart() ? "Could not start " + s.profile.name : s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={reservedKey}/>;
 	}
 
 	/** The terminals running down the right of the pane, a screen's terminals together; the one in front lit. */
@@ -3051,6 +3105,7 @@ class Workbench extends Component<WorkbenchProps> {
 				<dropdown-menu ref={profilesMenu} id="rayde-terminal-profiles">
 					<dropdown-menu-trigger id="rayde-terminal-profiles-trigger" variant={Ghost} size={Icon} class="rayde-panel-button rayde-split"></dropdown-menu-trigger>
 					<dropdown-menu-content>
+						<if {profilesMenu.get() != null && profilesMenu.get().opened.get()}>
 						<dropdown-menu-item id="rayde-menu-new-terminal" shortcut="Ctrl+Shift+`" onSelect={() -> newTerminal()}>New Terminal</dropdown-menu-item>
 						<dropdown-menu-item id="rayde-menu-split-terminal" shortcut={mod + "\\"} onSelect={() -> splitTerminal()}>Split Terminal</dropdown-menu-item>
 						<dropdown-menu-separator/>
@@ -3063,6 +3118,7 @@ class Workbench extends Component<WorkbenchProps> {
 						<dropdown-menu-separator/>
 						<dropdown-menu-item id="rayde-menu-run-task" onSelect={runTaskPicker}>Run Task…</dropdown-menu-item>
 						<dropdown-menu-item id="rayde-menu-configure-tasks" onSelect={configureTasks}>Configure Tasks…</dropdown-menu-item>
+						</if>
 					</dropdown-menu-content>
 				</dropdown-menu>
 			</div>
@@ -3071,19 +3127,36 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** One item for each shell the machine has, with where it is, the default marked. */
-	function profileItems():Array<Element>
-		return [for (p in Profiles.list()) profileItem(p)];
+	function profileItems():Array<Element> {
+		var selected = defaultProfile().name;
+		return [for (p in Profiles.list()) profileItem(p, selected)];
+	}
 
-	function profileItem(p:Profile):Element
-		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.name == defaultProfile().name ? p.name + " (default)" : p.name}</dropdown-menu-item>;
+	function profileItem(p:Profile, selected:String):Element
+		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.name == selected ? p.name + " (default)" : p.name}</dropdown-menu-item>;
 
 	function problemsPane(list:Array<Diagnostic>):Element {
 		var pane = <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">
 			<if {list.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">No problems in the open files.</text></div></if>
-			{[for (p in list) problemRow(p)]}
 		</div>;
 		var scroll = ashui.input.Scroll.attach(pane.node, false, true);
 		if (list.length == problemScrollCount) scroll.y.set(problemScrollY);
+		var capacity = Signal.make(24);
+		var layout = (current:ashui.layout.LayoutTree) -> {
+			if (current != pane.tree) return false;
+			var bounds = current.getBounds(pane.node);
+			var next = bounds == null ? 24 : Std.int(Math.max(24, Math.ceil(bounds.height / 28) + 6));
+			if (capacity.get() == next) return false;
+			capacity.set(next); return true;
+		};
+		ashui.layout.LayoutTree.layoutHooks.push(layout);
+		Owner.onCleanup(() -> ashui.layout.LayoutTree.layoutHooks.remove(layout));
+		var first = Computed.make(() -> Std.int(Math.max(0, Math.min(list.length - 1, Math.floor(scroll.y.get() / 28)) - 3)));
+		var end = Computed.make(() -> Std.int(Math.min(list.length, first.get() + capacity.get())));
+		var visible = Computed.make(() -> list.slice(first.get(), end.get()));
+		pane.appendChild(<div height={Computed.make(() -> first.get() * 28.)} flexShrink={0}/>);
+		pane.appendChild(<for {problem in visible}>${problemRow(problem)}</for>);
+		pane.appendChild(<div height={Computed.make(() -> (list.length - end.get()) * 28.)} flexShrink={0}/>);
 		Owner.onCleanup(() -> { problemScrollY = scroll.y.get(); problemScrollCount = list.length; });
 		return pane;
 	}
@@ -3091,7 +3164,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function problemRow(p:Diagnostic):Element {
 		var located = p.file != null && p.range != null;
 		var location = located ? haxe.io.Path.withoutDirectory(p.file) + " [" + (p.range.start.line + 1) + ", " + (p.range.start.character + 1) + "]" : "Workspace";
-		var row = <div class="rayde-problem flex items-center gap-2 px-2 py-1" onClick={_ -> { if (located) goTo(p.file, p.range.start.line, p.range.start.character); }}>
+		var row = <div class="rayde-problem flex items-center gap-2 px-2 py-1 shrink-0" height={28} onClick={_ -> { if (located) goTo(p.file, p.range.start.line, p.range.start.character); }}>
 			<if {p.severity == 1}><icon document={Icons.CLOSE_CIRCLE_LINE} class="size-4 text-error"/>
 			<else><icon document={Icons.ALERT_LINE} class="size-4 text-warning"/></if>
 			<text class="text-xs flex-1 min-w-0">${p.message.split("\n")[0]}</text>

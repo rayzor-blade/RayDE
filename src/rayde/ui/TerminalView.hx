@@ -85,6 +85,7 @@ class TerminalView extends Component<TerminalViewProps> {
 	var pollTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var exited = false;
 	final exitCode = Signal.make(-1);
+	final launching = Signal.make(false);
 	var gone = false;
 	var root:Element;
 	var anchor:Null<{row:Int, col:Int}> = null;
@@ -97,6 +98,7 @@ class TerminalView extends Component<TerminalViewProps> {
 		root = <div id="rayde-terminal" class="rayde-terminal relative flex-1 min-h-0 overflow-hidden">
 			<canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={paint}/>
 			${probe}
+			<if {launching.get()}><div position={Absolute} left={PAD} top={PAD}><text class="rayde-term-note">Starting terminal…</text></div></if>
 			<div position={Absolute} left={PAD} top={PAD / 2} pointerEvents={PointerEvents.None}>
 				<for {k in [{rows: rowStates.get(), cell: measured.get()}]}>${rowElements(k.rows)}</for>
 			</div>
@@ -200,6 +202,9 @@ class TerminalView extends Component<TerminalViewProps> {
 			return;
 		var now = haxe.Timer.stamp();
 		if (props.shown()) {
+			var pending = props.terminal.starting();
+			launching.set(pending);
+			if (pending) { later(.01); return; }
 			var changed = false;
 			var b = cellWidth == 0 ? null : root.tree.getBounds(root.node);
 			if (b != null && b.width > 0) {

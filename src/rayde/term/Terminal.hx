@@ -45,6 +45,7 @@ class Terminal {
 	public final program:String;
 
 	var closed = false;
+	var pendingInput = "";
 
 	function new(handle:Int, program:String) {
 		this.handle = handle;
@@ -52,9 +53,9 @@ class Terminal {
 	}
 
 	/** Runs `program` (the user's shell when empty) with `args` (a login shell when empty) in `cwd`, on a screen of `cols` by `rows`; null when it could not start. */
-	public static function open(cols:Int, rows:Int, ?cwd:String, ?program:String, ?args:Array<String>):Null<Terminal> {
+	public static function open(cols:Int, rows:Int, ?cwd:String, ?program:String, ?args:Array<String>, background = false):Null<Terminal> {
 		var c = bytes(cwd), p = bytes(program), a = bytes(args == null ? null : args.join("\x1f"));
-		var handle = openNative(cols, rows, c.data, c.length, p.data, p.length, a.data, a.length);
+		var handle = background ? openBackgroundNative(cols, rows, c.data, c.length, p.data, p.length, a.data, a.length) : openNative(cols, rows, c.data, c.length, p.data, p.length, a.data, a.length);
 		return handle < 0 ? null : new Terminal(handle, program == null || program == "" ? "shell" : program);
 	}
 
@@ -67,9 +68,26 @@ class Terminal {
 
 	/** Types `text` into the program, as the keyboard would. */
 	public function write(text:String):Bool {
+		if (closed || text == "") return false;
+		if (starting()) {
+			if (pendingInput.length + text.length > 65536) return false;
+			pendingInput += text;
+			return true;
+		}
 		var b = bytes(text);
 		return !closed && b.length > 0 && writeNative(handle, b.data, b.length) == 1;
 	}
+
+	public function starting():Bool {
+		if (closed) return false;
+		var state = stateNative(handle);
+		if (state == 1 && pendingInput != "") {
+			var input = bytes(pendingInput);
+			if (writeNative(handle, input.data, input.length) == 1) pendingInput = "";
+		} else if (state < 0) pendingInput = "";
+		return state == 0;
+	}
+	public function failedToStart():Bool return !closed && stateNative(handle) == -1;
 
 	public function resize(cols:Int, rows:Int):Void
 		if (!closed)
@@ -170,6 +188,7 @@ class Terminal {
 		if (!closed)
 			closeNative(handle);
 		closed = true;
+		pendingInput = "";
 	}
 
 	@:hlNative("cterm", "term_open") static function openNative(cols:Int, rows:Int, cwd:hl.Bytes, cwdLength:Int, program:hl.Bytes, programLength:Int, args:hl.Bytes, argsLength:Int):Int
@@ -183,6 +202,9 @@ class Terminal {
 
 	@:hlNative("cterm", "term_revision") static function revisionNative(handle:Int):Int
 		return 0;
+
+	@:hlNative("cterm", "term_open_background") static function openBackgroundNative(cols:Int, rows:Int, cwd:hl.Bytes, cwdLength:Int, program:hl.Bytes, programLength:Int, args:hl.Bytes, argsLength:Int):Int return -1;
+	@:hlNative("cterm", "term_state") static function stateNative(handle:Int):Int return -2;
 
 	@:hlNative("cterm", "term_exit") static function exitNative(handle:Int):Int
 		return -3;

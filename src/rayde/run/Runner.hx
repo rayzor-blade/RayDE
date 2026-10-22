@@ -57,7 +57,7 @@ class Runner {
 		building = true;
 		state = "building";
 		append("Building…\n");
-		job = new Job("haxe", ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(display.args).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]));
+		job = new Job("haxe", ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(display.args).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
 		job.start();
 	}
 
@@ -94,7 +94,7 @@ class Runner {
 			}
 			append("Running…\n");
 			state = "running";
-			job = new Job(ash, ["--preset", "application", program()], haxe.io.Path.join([out, "run.log"]));
+			job = new Job(ash, ["--preset", "application", program()], haxe.io.Path.join([out, "run.log"]), null, null, true);
 			job.start();
 			return;
 		}
@@ -104,9 +104,9 @@ class Runner {
 	}
 
 	function append(text:String):Void {
-		revision++;
 		if (text == "")
 			return;
+		revision++;
 		var all = console + text, lines = all.split("\n");
 		console = lines.length > 2000 ? lines.slice(lines.length - 2000).join("\n") : all;
 	}

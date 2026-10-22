@@ -804,6 +804,7 @@ class Checks {
 		extensionHostChecks();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
+		PanelWorkerChecks.run();
 		OutlineChecks.run();
 		LspChecks.run();
 		LocalHistoryChecks.run();

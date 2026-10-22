@@ -79,8 +79,9 @@ class LspProtocol {
 		if (before.length != after.length) return false;
 		for (i in 0...before.length) {
 			var a = before[i], b = after[i];
-			if (a.file != b.file || a.message != b.message || a.severity != b.severity
-				|| a.range.start.line != b.range.start.line || a.range.start.character != b.range.start.character
+			if (a.file != b.file || a.message != b.message || a.severity != b.severity) return false;
+			if (a.range == null || b.range == null) { if (a.range != b.range) return false; else continue; }
+			if (a.range.start.line != b.range.start.line || a.range.start.character != b.range.start.character
 				|| a.range.end.line != b.range.end.line || a.range.end.character != b.range.end.character) return false;
 		}
 		return true;

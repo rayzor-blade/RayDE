@@ -32,6 +32,12 @@ class DiagnosticJobsChecks {
 			if (found.length != 1 || found[0].problems.length == 0) throw "background compiler did not report an unsaved error";
 			jobs.request(file, clean); jobs.tick(); jobs.cancel(file);
 			if (finish().length != 0) throw "closed file received late diagnostics";
+			jobs.publish(file, clean, {uri:rayde.lang.LspProtocol.uri(file), diagnostics:[
+				{range:{start:{line:0,character:1},end:{line:0,character:3}}, message:"from LSP", severity:2}
+			]});
+			found = finish();
+			if (found.length != 1 || !found[0].lsp || found[0].problems[0].message != "from LSP" || found[0].problems[0].severity != 2)
+				throw "Problems worker did not decode LSP diagnostics";
 			if (server.running()) throw "background diagnostics started the interactive compilation server";
 		} catch (failure:Dynamic) { jobs.dispose(); throw failure; }
 		jobs.dispose();
