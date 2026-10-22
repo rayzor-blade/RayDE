@@ -1,13 +1,13 @@
 package rayde.ui;
 
-typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String};
+typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String, ?selected:String};
 
 /** Native path selection, invoked by a worker only after an explicit Welcome action. */
 class ProjectPicker {
 	public static function choose(request:ProjectPickRequest, cancelled:Void->Bool):Null<String> {
 		if (cancelled()) return null;
 		var folder = request.mode != "project", title = folder ? request.mode == "new" ? "Choose a parent folder" : "Open Folder Workspace" : "Open Project";
-		var chosen = switch Sys.systemName() {
+		var chosen = request.selected != null ? request.selected : switch Sys.systemName() {
 			case "Mac": run("/usr/bin/osascript", ["-e", 'on run argv\ntry\nreturn POSIX path of (choose ${folder ? "folder" : "file"} with prompt (item 1 of argv)${folder ? "" : ' of type {"hxml", "json", "toml", "rayext", "raytheme"}'})\non error number -128\nreturn ""\nend try\nend run', "--", title], cancelled);
 			case "Windows":
 				var script = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); Add-Type -AssemblyName System.Windows.Forms; " + (folder

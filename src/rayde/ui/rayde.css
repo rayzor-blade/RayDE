@@ -399,3 +399,7 @@
 @media (prefers-color-scheme: dark) {
 	#rayde .rayde-output { --rayde-ansi-0: #000000; --rayde-ansi-1: #cd3131; --rayde-ansi-2: #0dbc79; --rayde-ansi-3: #e5e510; --rayde-ansi-4: #2472c8; --rayde-ansi-5: #bc3fbc; --rayde-ansi-6: #11a8cd; --rayde-ansi-7: #e5e5e5; --rayde-ansi-8: #666666; --rayde-ansi-9: #f14c4c; --rayde-ansi-10: #23d18b; --rayde-ansi-11: #f5f543; --rayde-ansi-12: #3b8eea; --rayde-ansi-13: #d670d6; --rayde-ansi-14: #29b8db; --rayde-ansi-15: #e5e5e5; }
 }
+
+#rayde-menubar { margin: 0 8px 4px; }
+#rayde-menubar > .ui-menubar { align-self: stretch; border: 0; border-radius: 0; padding: 0; background: transparent; gap: 0; }
+#rayde-menubar .ui-menubar-trigger { padding: 3px 10px; font-size: var(--text-xs); }

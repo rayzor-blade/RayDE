@@ -16,9 +16,11 @@ class WindowChrome {
 
 	#if ashui_window
 	final win:Null<window.Window>;
+	final app:Null<ashui.app.WindowedApp>;
 
 	public function new(?win:window.Window) {
 		this.win = win;
+		app = ashui.app.WindowedApp.current;
 		refresh();
 	}
 
@@ -103,7 +105,6 @@ class WindowChrome {
 		calls.push("close");
 		#if ashui_window
 		if (win != null) {
-			var app = ashui.app.WindowedApp.current;
 			if (app != null)
 				app.quit();
 		}

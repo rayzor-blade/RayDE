@@ -22,22 +22,37 @@ typedef Applied = {fonts:Array<String>, css:Array<String>};
 /** Puts an `Appearance` on the screen: the theme's bundle, its stylesheets and fonts, and light, dark or the system's scheme. */
 class Theming {
 	/** The id of the theme installed now, so a change of scheme alone does not install it again. */
-	static var installed:Null<String>;
+	static final local_installed = new ashui.core.UiContext.Local<Null<String>>(() -> null);
+	static var installed(get, set):Null<String>;
+	static function get_installed():Null<String> return local_installed.value;
+	static function set_installed(value:Null<String>):Null<String> return local_installed.value = value;
 
 	/** The id of the theme in use, which the window carries as `data-theme` so a theme's own stylesheet applies only to it. */
-	public static final current = ashui.reactive.Signal.make("restrained");
+	static final local_current = new ashui.core.UiContext.Local<ashui.reactive.Signal<String>>(() -> ashui.reactive.Signal.make("restrained"));
+	public static var current(get, set):ashui.reactive.Signal<String>;
+	static function get_current():ashui.reactive.Signal<String> return local_current.value;
+	static function set_current(value:ashui.reactive.Signal<String>):ashui.reactive.Signal<String> return local_current.value = value;
 
 	/** Whether the theme in use sets the `sans` role; the window carries it as `data-sans`, and then its text is set in that family. */
-	public static final ownSans = ashui.reactive.Signal.make(false);
+	static final local_ownSans = new ashui.core.UiContext.Local<ashui.reactive.Signal<Bool>>(() -> ashui.reactive.Signal.make(false));
+	public static var ownSans(get, set):ashui.reactive.Signal<Bool>;
+	static function get_ownSans():ashui.reactive.Signal<Bool> return local_ownSans.value;
+	static function set_ownSans(value:ashui.reactive.Signal<Bool>):ashui.reactive.Signal<Bool> return local_ownSans.value = value;
 
 	/** The stylesheets of the theme in use. */
-	static var sheets:Array<Stylesheet> = [];
+	static final local_sheets = new ashui.core.UiContext.Local<Array<Stylesheet>>(() -> []);
+	static var sheets(get, set):Array<Stylesheet>;
+	static function get_sheets():Array<Stylesheet> return local_sheets.value;
+	static function set_sheets(value:Array<Stylesheet>):Array<Stylesheet> return local_sheets.value = value;
 
 	/** The font files registered, by path, with the modification time they had; a face cannot be taken back, so each is registered once per change. */
 	static final registered = new Map<String, Float>();
 
 	/** A theme file shown in place of the chosen theme, as in the Theme Studio: `apply` keeps showing it. */
-	public static var pinned(default, null):Null<ThemeFile>;
+	static final local_pinned = new ashui.core.UiContext.Local<Null<ThemeFile>>(() -> null);
+	public static var pinned(get, set):Null<ThemeFile>;
+	static function get_pinned():Null<ThemeFile> return local_pinned.value;
+	static function set_pinned(value:Null<ThemeFile>):Null<ThemeFile> return local_pinned.value = value;
 
 	static function builtin(id:String):ThemeBundle
 		return switch id {

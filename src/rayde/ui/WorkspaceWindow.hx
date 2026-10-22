@@ -9,7 +9,7 @@ import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.ui.Workbench.WorkbenchProps;
 
-typedef WorkspaceWindowProps = {initial:WorkbenchProps, server:CompilerServer, ?chrome:WindowChrome};
+typedef WorkspaceWindowProps = {initial:WorkbenchProps, server:CompilerServer, ?chrome:WindowChrome, ?openWindow:Null<String>->Void};
 
 /** Replaces workspace owners in the existing window; each workbench releases its own services. */
 class WorkspaceWindow extends Component<WorkspaceWindowProps> {
@@ -66,7 +66,9 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		var chrome = props.chrome ?? new WindowChrome();
 		chrome.title("RayDE" + (workspace.empty == true ? "" : " · " + workspace.name));
 		bench = new Workbench({display:workspace.display, name:workspace.name, runtime:workspace.runtime,
-			extension:workspace.extension, theme:workspace.theme, empty:workspace.empty, chrome:chrome, onWorkspace:open});
+			extension:workspace.extension, theme:workspace.theme, empty:workspace.empty, chrome:chrome, onWorkspace:open,
+			onNewWindow:props.openWindow == null ? null : () -> props.openWindow(null),
+			onNewWorkspace:props.openWindow == null || workspace.empty == true ? null : path -> props.openWindow(path)});
 		bench.openProject();
 		if (!started) {
 			started = true;

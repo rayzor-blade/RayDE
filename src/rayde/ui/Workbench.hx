@@ -86,6 +86,8 @@ typedef WorkbenchProps = {
 	/** A fresh window has no workspace, file index or workspace services. */
 	?empty:Bool,
 	?onWorkspace:String->Void,
+	?onNewWorkspace:String->Void,
+	?onNewWindow:Void->Void,
 	/** The window's controls: the app's window; without one the controls act on nothing and keep their own state, as in a test. */
 	?chrome:WindowChrome
 };
@@ -258,6 +260,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
 	final projectPicker = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
 	var pickingProject = false;
+	var cancelProjectDialog:Null<Void->Void>;
 	final explorerShown:Computed<Bool>;
 	/** The bottom panel's height: 0 while it is closed, which is how it starts. */
 	final problemsHeight = Signal.make(0.);
@@ -1155,6 +1158,10 @@ class Workbench extends Component<WorkbenchProps> {
 		treeWidth.set(explorerShown.get() ? ACTIVITY : ACTIVITY + EXPLORER_WIDTH);
 
 	public function openWorkspace(path:String):Void {
+		if (props.onNewWorkspace != null) {
+			try props.onNewWorkspace(path) catch (error:Dynamic) say(Std.string(error));
+			return;
+		}
 		if (props.onWorkspace == null) { say("Workspace opening requires an editor window"); return; }
 		function open():Void props.onWorkspace(path);
 		if (dirty.get().length > 0) {
@@ -1163,9 +1170,36 @@ class Workbench extends Component<WorkbenchProps> {
 		} else try open() catch (error:Dynamic) say(Std.string(error));
 	}
 
+	/** Defers a window close while edited files need a save decision. */
+	public function mayCloseWindow(close:Void->Void):Bool {
+		if (dirty.get().length == 0) return true;
+		if (prompt.get() == null) prompt.set({title:"Close Window", description:"Save your edited files before closing this window.", action:"Save and Close",
+			accept:_ -> { saveAll(); if (dirty.get().length > 0) throw "Some files could not be saved."; close(); },
+			alternative:"Don't Save", discard:close});
+		return false;
+	}
+
 	function pickProject(mode:String, ?kind:String, ?name:String):Void {
 		if (pickingProject) return;
 		pickingProject = true;
+		#if ashui_window
+		var app = ashui.app.WindowedApp.current;
+		if (app != null && ashui.app.FileDialog.available()) {
+			try cancelProjectDialog = ashui.app.FileDialog.open(app, {
+				title:mode == "new" ? "Choose a parent folder" : mode == "folder" ? "Open Folder Workspace" : "Open Project",
+				folder:mode != "project", directory:props.display.cwd, extensions:["hxml", "json", "toml", "rayext", "raytheme"]
+			}, selected -> {
+				cancelProjectDialog = null;
+				pickingProject = false;
+				if (gone || selected == null) return;
+				if (mode != "new") { openWorkspace(selected); return; }
+				pickingProject = true;
+				projectPicker.submit("pick", {mode:mode, kind:kind, name:name, selected:selected});
+				ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
+			}) catch (error:Dynamic) { pickingProject = false; say(Std.string(error)); }
+			return;
+		}
+		#end
 		projectPicker.submit("pick", {mode:mode, kind:kind, name:name});
 		ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
 	}
@@ -1206,6 +1240,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
 	function commands():Array<CenterAction>
 		return [
+			{id:"newwindow", label:"New Window", icon:Icons.WINDOW_LINE, run:() -> if (props.onNewWindow != null) props.onNewWindow()},
+			{id:"closewindow", label:"Close Window", icon:Icons.CLOSE_LINE, run:() -> chrome.close()},
 			{id:"openfolder", label:"Open Folder…", icon:Icons.FOLDER_OPEN_LINE, run:() -> pickProject("folder")},
 			{id:"openproject", label:"Open Project…", icon:Icons.FILE_CODE_LINE, run:() -> pickProject("project")},
 			{id:"newproject", label:"New Project…", icon:Icons.FOLDER_ADD_LINE, run:newProject},
@@ -1273,7 +1309,64 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
-		].concat(contributedCommands()).filter(action -> props.empty != true || ["openfolder", "openproject", "newproject", "recentprojects", "commands", "settings", "colorscheme", "keybindings", "keymap", "minimize", "fullscreen", "maximize", "explorer"].indexOf(action.id) >= 0);
+		].concat(contributedCommands()).filter(action -> props.empty != true || ["newwindow", "closewindow", "openfolder", "openproject", "newproject", "recentprojects", "commands", "settings", "colorscheme", "keybindings", "keymap", "minimize", "fullscreen", "maximize", "explorer"].indexOf(action.id) >= 0);
+
+	function desktopMenuBar():Element {
+		#if ashui_window
+		if (Sys.systemName() != "Mac" || Sys.getEnv("RAYDE_MENU_BAR") == "1") return new DesktopMenus({groups:menuGroups});
+		#end
+		return <div/>;
+	}
+
+	#if ashui_window
+	final menuGroups = Signal.make(([]:Array<ashui.app.ApplicationMenu.MenuGroup>));
+
+	function desktopMenus():Array<ashui.app.ApplicationMenu.MenuGroup> {
+		var labels = ["save" => "Save", "close" => "Close Tab", "find" => "Find", "replace" => "Replace",
+			"quickopen" => "Go to File…", "gotoline" => "Go to Line…", "definition" => "Go to Definition",
+			"run" => "Run Project", "stop" => "Stop", "runtask" => "Run Task…", "build" => "Build Settings",
+			"terminal" => "Toggle Terminal", "newterminal" => "New Terminal", "splitterminal" => "Split Terminal",
+			"panel" => "Toggle Panel", "problems" => "Show Problems", "output" => "Show Output", "extensions" => "Show Extensions"];
+		function item(id:String, ?label:String):ashui.app.ApplicationMenu.MenuItem {
+			var command = Lambda.find(commandList, c -> c.id == id), chord = bindings.of(id);
+			return {label:label != null ? label : command == null ? labels.get(id) : command.label,
+				enabled:command != null, shortcut:bindings.label(id),
+				key:chord == null ? null : {key:chord.key, meta:chord.meta, ctrl:chord.ctrl, alt:chord.alt, shift:chord.shift},
+				run:command == null ? null : command.run};
+		}
+		function edit(id:String, label:String, key:String, shift = false):ashui.app.ApplicationMenu.MenuItem {
+			var mac = Sys.systemName() == "Mac";
+			return {label:label, shortcut:(mac ? "⌘" : "Ctrl+") + (shift ? (mac ? "⇧" : "Shift+") : "") + key.toUpperCase(),
+				key:{key:key, meta:mac, ctrl:!mac, alt:false, shift:shift}, run:() -> ashui.input.Keyboard.edit(tree, id)};
+		}
+		var separator:ashui.app.ApplicationMenu.MenuItem = {separator:true};
+		var files = [item("newwindow"), item("newproject"), separator, item("openfolder"), item("openproject"), item("recentprojects"), separator,
+			item("save"), {label:"Save All", enabled:dirty.get().length > 0, run:saveAll}, separator, item("close"), item("closewindow")];
+		if (Sys.systemName() != "Mac") files.push({label:"Exit", run:ProjectWindows.quit});
+		var windows = [item("minimize"), item("maximize"), item("fullscreen"), separator];
+		for (app in ashui.app.WindowedApp.windows()) windows.push({label:app.window.title(), run:() -> app.window.focus()});
+		return [
+			{label:"File", items:files},
+			{label:"Edit", items:[edit("undo","Undo","z"), edit("redo","Redo","z",true), separator,
+				edit("cut","Cut","x"), edit("copy","Copy","c"), edit("paste","Paste","v"), separator, edit("selectall","Select All","a"), separator,
+				item("find"), item("replace"), separator, item("settings")]},
+			{label:"View", items:[item("commands"), item("explorer"), item("panel"), separator, item("problems"), item("output"), item("extensions"), item("fullscreen")]},
+			{label:"Go", items:[item("quickopen"), item("gotoline"), item("definition")]},
+			{label:"Run", items:[item("run"), item("stop"), item("runtask"), item("build")]},
+			{label:"Terminal", items:[item("terminal"), item("newterminal"), item("splitterminal")]},
+			{label:"Window", items:windows},
+			{label:"Help", items:[item("commands", "Show All Commands"), item("keybindings")]}
+		];
+	}
+
+	function installDesktopMenus():Void {
+		var menu = new ashui.app.ApplicationMenu("RayDE", ProjectWindows.quit);
+		new ashui.reactive.Watch(() -> {
+			active.get(); dirty.get(); bindingsRevision.get(); ashui.app.WindowedApp.windowRevision.get(); ashui.input.WindowState.active.get();
+			return 0;
+		}, _ -> { var groups = desktopMenus(); menuGroups.set(groups); menu.update(groups); }, (_, _) -> false);
+	}
+	#end
 
 	/** Namespaced bindings let extensions declare the same local command id. */
 	static function extensionKey(id:String, command:String):String return Manager.commandKey(id, command);
@@ -2036,6 +2129,9 @@ class Workbench extends Component<WorkbenchProps> {
 		startExtensions();
 		containers = makeContainers();
 		commandList = commands();
+		#if ashui_window
+		installDesktopMenus();
+		#end
 		refreshFileIndex();
 		refreshShortcuts();
 		if (props.empty != true) loadRecent();
@@ -2064,6 +2160,8 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			if (cancelProjectDialog != null) cancelProjectDialog();
+			cancelProjectDialog = null;
 			projectPicker.dispose();
 			if (languagePollTimer != null) languagePollTimer.cancel();
 			languagePollTimer = null;
@@ -2097,6 +2195,7 @@ class Workbench extends Component<WorkbenchProps> {
 		}, _ -> keepSelection(), (_, _) -> false);
 		var window = <div id="rayde-window" widthPercent={1} heightPercent={1} class="flex flex-col bg-background text-text-primary relative">
 			${titleBar()}
+			${desktopMenuBar()}
 			<div class="flex flex-1 min-h-0 px-2">
 				<for {revision in [layoutRevision.get()]}>${columns()}</for>
 			</div>

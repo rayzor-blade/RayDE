@@ -22,6 +22,8 @@ typedef PromptRequest = {
 	?check:String->Null<String>,
 	/** Whether the confirming button is in the destructive style. */
 	?destructive:Bool,
+	?alternative:String,
+	?discard:Void->Void,
 	/** Does it; an exception's text is shown in the prompt, which stays open. */
 	accept:String->Void
 };
@@ -64,6 +66,7 @@ class Prompt extends Component<PromptProps> {
 				<for {r in [props.request.get()]}>${body(r)}</for>
 				<dialog-footer>
 					<dialog-close id="rayde-prompt-cancel">Cancel</dialog-close>
+					<for {r in [props.request.get()]}><if {r != null && r.discard != null}><button id="rayde-prompt-discard" onClick={_ -> { r.discard(); props.request.set(null); }}>${r.alternative}</button></if></for>
 					<for {r in [props.request.get()]}>${confirm(r)}</for>
 				</dialog-footer>
 			</dialog-content>

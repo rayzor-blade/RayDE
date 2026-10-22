@@ -9,7 +9,10 @@ typedef InstalledTheme = {file:ThemeFile, scope:String, path:String};
  * it is safe either way. A theme is installed by putting it there, which `install` does from a file or a folder.
  */
 class Themes {
-	static var found:Array<InstalledTheme> = [];
+	static final local = new ashui.core.UiContext.Local(() -> new Array<InstalledTheme>());
+	static var found(get, set):Array<InstalledTheme>;
+	static function get_found() return local.value;
+	static function set_found(value:Array<InstalledTheme>) return local.value = value;
 
 	/** The folder a theme is installed into, for every project. */
 	public static function userDir():Null<String> {

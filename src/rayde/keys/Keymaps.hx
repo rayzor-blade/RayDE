@@ -20,7 +20,7 @@ class Keymaps {
 
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
-		"quickopen", "commands", "gotoline", "find", "replace", "findnext", "findprevious", "run", "stop", "save", "close", "definition", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
+		"newwindow", "closewindow", "quickopen", "commands", "gotoline", "find", "replace", "findnext", "findprevious", "run", "stop", "save", "close", "definition", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
 		"splitterminal", "settings", "minimize", "fullscreen", "togglebreakpoint", "pause", "stepover", "stepinto", "stepout", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
 	];
 
@@ -46,7 +46,7 @@ class Keymaps {
 			note: "RayDE's own: quick open, the command palette and the panel toggles as in VS Code.",
 			platform: "",
 			keys: [
-				k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("find", "mod+f"), k("replace", "ctrl+h", "alt+cmd+f"), k("findnext", "f3", "cmd+g"), k("findprevious", "shift+f3", "shift+cmd+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
+				k("newwindow", "mod+shift+n"), k("closewindow", "mod+shift+w"), k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("find", "mod+f"), k("replace", "ctrl+h", "alt+cmd+f"), k("findnext", "f3", "cmd+g"), k("findprevious", "shift+f3", "shift+cmd+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("suggest", "ctrl+space"), k("parameterhints", "mod+shift+space"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
 				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,"),
 				k("minimize", "", "cmd+m"), k("fullscreen", "alt+shift+enter", "ctrl+cmd+f"), k("togglebreakpoint", "f9"), k("pause", "f6"), k("stepover", "f10"),
