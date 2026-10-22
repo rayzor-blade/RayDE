@@ -38,10 +38,12 @@ while True:
     params = message.get("params") or {}
     identifier = message.get("id")
     if method == "initialize":
+        record("initialize " + json.dumps(params.get("capabilities", {}), sort_keys=True))
         send({"id": identifier, "result": {"capabilities": {
             "textDocumentSync": {"openClose": True, "change": int(os.environ.get("LSP_SYNC_KIND", "1")), "save": {"includeText": True}},
             "hoverProvider": True, "completionProvider": {}, "definitionProvider": True,
-            "documentSymbolProvider": True, "signatureHelpProvider": {}}}})
+            "documentSymbolProvider": True, "signatureHelpProvider": {},
+            "experimental": {"analysisStatusProvider": os.environ.get("LSP_ANALYSIS_STATUS") == "1"}}}})
     elif method == "textDocument/didOpen":
         doc = params["textDocument"]
         documents[doc["uri"]] = doc
@@ -66,6 +68,10 @@ while True:
         cancelled.append(params["id"])
     elif method == "test/state":
         send({"id": identifier, "result": {"pid": os.getpid(), "documents": documents, "cancelled": cancelled}})
+    elif method == "test/notify":
+        for notification in params.get("notifications", []):
+            send(notification)
+        send({"id": identifier, "result": True})
     elif method == "test/deferred":
         deferred.append(identifier)
     elif method == "test/reverse":
@@ -106,6 +112,8 @@ while True:
               "start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 10}}}})
     elif method == "shutdown":
         record("shutdown")
+        send({"method": "$/progress", "params": {"token": "late-shutdown", "value": {"kind": "begin", "title": "Late work"}}})
+        send({"method": "rayzor/indexProgress", "params": {"scope": "workspace", "phase": "scanning", "subject": "late.Subject"}})
         send({"id": identifier, "result": None})
     elif method == "exit":
         record("exit")

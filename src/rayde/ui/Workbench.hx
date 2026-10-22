@@ -38,6 +38,7 @@ import rayde.keys.KeyBindings;
 import rayde.keys.Keymaps;
 import rayde.lang.Display;
 import rayde.lang.LanguageServers;
+import rayde.lang.LanguageServers.LanguageServerStatus;
 import rayde.lang.LspProtocol;
 import rayde.run.LibraryManager;
 import rayde.run.Runner;
@@ -1942,6 +1943,7 @@ class Workbench extends Component<WorkbenchProps> {
 		languageServers.onWake = () -> wakeLanguages();
 		languageServers.onStatus = () -> { if (!gone) languageStatusRevision.set(languageStatusRevision.get() + 1); };
 		languageServers.onDocumentActivity = file -> { if (!gone && file == active.get()) languageActivityRevision.set(languageActivityRevision.get() + 1); };
+		languageServers.onProgress = () -> { if (!gone) languageActivityRevision.set(languageActivityRevision.get() + 1); };
 		languageServers.onDiagnostics = value -> {
 			var file = LspProtocol.path(value.uri);
 			if (file == null) return;
@@ -3354,31 +3356,32 @@ class Workbench extends Component<WorkbenchProps> {
 			</tooltip>
 		</div>;
 
-	function languageStatus():Null<{id:String, owner:String, name:String, state:String, indexing:Bool}> {
+	function languageStatus():Null<LanguageServerStatus> {
 		languageStatusRevision.get(); languageRevision.get();
 		return languageServers.status(active.get());
 	}
 
-	function languageServerItem(server:{id:String, owner:String, name:String, state:String, indexing:Bool}):Element {
+	function languageServerItem(server:LanguageServerStatus):Element {
 		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == server.owner);
 		var icon = extension == null || extension.connection.manifest == null ? Icons.CODE_S_SLASH_LINE : ViewIcons.of(extension.connection.manifest);
 		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
 		if (!running) icon = ViewIcons.inactive(icon);
-		var indexing = Computed.make(() -> {
+		var activity = Computed.make(() -> {
 			languageActivityRevision.get();
 			var current = languageServers.status(active.get());
-			return current != null && current.id == server.id && current.indexing;
+			return current == null || current.id != server.id ? null : current.activity != null ? current.activity : current.indexing ? "indexing " + haxe.io.Path.withoutDirectory(active.get()) : null;
 		});
-		var status = Computed.make(() -> indexing.get() ? "indexing " + haxe.io.Path.withoutDirectory(active.get()) : server.state == "idle" ? "not started" : server.state);
+		var indexing = Computed.make(() -> activity.get() != null);
+		var status = Computed.make(() -> activity.get() ?? (server.state == "idle" ? "not started" : server.state));
 		var description = Computed.make(() -> server.name + " — " + status.get());
-		var label = server.name + (server.state == "ready" ? "" : " · " + (server.state == "idle" ? "not started" : server.state));
+		var label = Computed.make(() -> server.name + (status.get() == "ready" ? "" : " · " + status.get()));
 		var picture:Element = <icon document={icon} class="size-3.5 rayde-lsp-icon"/>;
 		ashui.css.Identity.of(picture.tree, picture.node.id).bindBooleanAttribute("data-indexing", indexing);
 		if (!running) ashui.css.Identity.of(picture.tree, picture.node.id).addClasses(["rayde-lsp-inactive"]);
 		else if (server.state == "starting" || server.state == "restarting") ashui.css.Identity.of(picture.tree, picture.node.id).addClasses(["rayde-lsp-working"]);
 		return <tooltip id="rayde-lsp-tooltip" label={description} side="top"><dropdown-menu side="top" id="rayde-lsp-menu">
 			<dropdown-menu-trigger id="rayde-lsp-status" variant={Ghost} class="rayde-status-item rayde-lsp-status">
-				{picture}<text>{label}</text>
+				{picture}<text id="rayde-lsp-label" class="rayde-lsp-label">${label}</text>
 			</dropdown-menu-trigger>
 			<dropdown-menu-content>
 				<dropdown-menu-label><text>${description}</text></dropdown-menu-label>

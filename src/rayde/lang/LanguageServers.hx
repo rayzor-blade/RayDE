@@ -1,12 +1,14 @@
 package rayde.lang;
 
 private typedef Registration = {id:String, name:String, owner:String, languages:Array<String>, extensions:Array<String>, client:LspClient};
+typedef LanguageServerStatus = {id:String, owner:String, name:String, state:String, indexing:Bool, activity:Null<String>};
 
 /** Extensions own registrations; the workspace owns processes, documents and asynchronous requests. */
 class LanguageServers {
 	public var onChanged:Void->Void = () -> {};
 	public var onStatus:Void->Void = () -> {};
 	public var onDocumentActivity:String->Void = _ -> {};
+	public var onProgress:Void->Void = () -> {};
 	public var onWake:Void->Void = () -> {};
 	public var onDiagnostics:Dynamic->Void = _ -> {};
 	final root:String;
@@ -52,6 +54,7 @@ class LanguageServers {
 		client.onReady = onChanged;
 		client.onStateChanged = () -> onStatus();
 		client.onDocumentActivity = file -> onDocumentActivity(file);
+		client.onProgress = () -> onProgress();
 		client.onWake = onWake;
 		entries.push({id:id, name:Std.isOfType(definition.name, String) ? definition.name : id, owner:owner, languages:languages, extensions:[for (ext in extensions) ext.toLowerCase()], client:client});
 		onChanged();
@@ -84,10 +87,10 @@ class LanguageServers {
 		var entry = registration(file);
 		return entry == null ? null : entry.languages[0];
 	}
-	public function status(file:String):Null<{id:String, owner:String, name:String, state:String, indexing:Bool}> {
+	public function status(file:String):Null<LanguageServerStatus> {
 		var entry = registration(file);
 		if (entry == null && entries.length > 0) entry = entries[0];
-		return entry == null ? null : {id:entry.id, owner:entry.owner, name:entry.name, state:entry.client.state, indexing:entry.client.indexing(file)};
+		return entry == null ? null : {id:entry.id, owner:entry.owner, name:entry.name, state:entry.client.state, indexing:entry.client.indexing(file), activity:entry.client.activity()};
 	}
 	public function control(id:String, action:String):Void {
 		var entry = Lambda.find(entries, e -> e.id == id);

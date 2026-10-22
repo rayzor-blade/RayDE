@@ -1,6 +1,7 @@
 package rayde.lang;
 
 private typedef Document = {language:String, text:String, version:Int, sent:Int, sentText:String, analyzed:Int};
+private typedef Progress = {label:String, order:Int};
 private typedef Pending = {done:Dynamic->Void, deadline:Float, scope:String};
 
 /** A workspace session, independent of editor views. Failure of a request leaves the process alive. */
@@ -15,8 +16,13 @@ class LspClient {
 	public var onWake:Void->Void = () -> {};
 	public var onStateChanged:Void->Void = () -> {};
 	public var onDocumentActivity:String->Void = _ -> {};
+	public var onProgress:Void->Void = () -> {};
 	final documents = new Map<String, Document>();
 	final pending = new Map<Int, Pending>();
+	final progress = new Map<String, Progress>();
+	final workFields = new Map<String, {title:String, message:String, percentage:Null<Float>}>();
+	var progressOrder = 0;
+	var progressChanged = false;
 	var transport:Null<LspTransport>;
 	var nextId = 0;
 	var attempts:Array<Float> = [];
@@ -50,9 +56,11 @@ class LspClient {
 		if (doc == null) { documents.set(file, {language:language, text:text, version:1, sent:0, sentText:"", analyzed:0}); dirty = true; }
 		else if (doc.text != text) {
 			doc.text = text; doc.version++; dirty = true;
+			setProgress("document:" + file, null);
 			cancelFile(file);
 		}
 		if (config.diagnosticProgress == true && changed && !waiting) onDocumentActivity(file);
+		publishProgress();
 		if (doc == null || doc.sent != doc.version) onWake();
 	}
 
@@ -61,8 +69,11 @@ class LspClient {
 		if (doc == null) return;
 		if (doc.sent > 0 && state == "ready") notify("textDocument/didClose", {textDocument:{uri:LspProtocol.uri(file)}});
 		documents.remove(file);
+		setProgress("document:" + file, null);
+		if (!documents.keys().hasNext()) clearProgress();
 		if (config.diagnosticProgress == true && doc.analyzed < doc.version) onDocumentActivity(file);
 		cancelFile(file);
+		publishProgress();
 		onWake();
 	}
 
@@ -71,6 +82,30 @@ class LspClient {
 		if (state != "ready" || config.diagnosticProgress != true) return false;
 		var doc = documents.get(file);
 		return doc != null && doc.analyzed < doc.version;
+	}
+
+	/** Only live progress is retained; the most recently reported task is shown. */
+	public function activity():Null<String> {
+		var latest:Null<Progress> = null;
+		for (value in progress) if (latest == null || value.order > latest.order) latest = value;
+		return latest == null ? null : latest.label;
+	}
+
+	function setProgress(key:String, label:Null<String>):Void {
+		var previous = activity();
+		if (label == null) progress.remove(key);
+		else if (!progress.exists(key) || progress.get(key).label != label)
+			progress.set(key, {label:label, order:++progressOrder});
+		if (previous != activity()) progressChanged = true;
+	}
+
+	function clearProgress():Void {
+		if (progress.keys().hasNext()) { progress.clear(); progressChanged = true; }
+		workFields.clear();
+	}
+
+	function publishProgress():Void {
+		if (progressChanged) { progressChanged = false; onProgress(); }
 	}
 
 	public function files():Array<String> return [for (file in documents.keys()) file];
@@ -149,7 +184,7 @@ class LspClient {
 			clientInfo:{name:"RayDE", version:"0.1.0"},
 			workspaceFolders:[{uri:LspProtocol.uri(root), name:haxe.io.Path.withoutDirectory(root)}],
 			capabilities:{general:{positionEncodings:["utf-16"]},
-				workspace:{configuration:true}, textDocument:{
+				window:{workDoneProgress:true}, workspace:{configuration:true}, experimental:{rayzorIndexProgress:true}, textDocument:{
 					synchronization:{didSave:true}, publishDiagnostics:{versionSupport:true},
 					completion:{completionItem:{snippetSupport:false}}, hover:{contentFormat:["markdown", "plaintext"]},
 					documentSymbol:{hierarchicalDocumentSymbolSupport:true}, signatureHelp:{signatureInformation:{parameterInformation:{labelOffsetSupport:true}}}}},
@@ -174,6 +209,7 @@ class LspClient {
 	}
 
 	public function tick():Void {
+		publishProgress();
 		if (!needsPolling()) return;
 		var now = haxe.Timer.stamp();
 		if (state == "closing") {
@@ -189,6 +225,7 @@ class LspClient {
 			onLog("warning", "Language server request timed out");
 		}
 		if (state == "ready") flush();
+		publishProgress();
 	}
 
 	public function pollDelay():Float {
@@ -226,12 +263,14 @@ class LspClient {
 				}
 				if (!transport.send(reply)) fail("Language server input queue is unavailable");
 			} else switch (message.method:String) {
+				case "$/progress": workProgress(params);
+				case "rayzor/analysisStatus" | "rayzor/indexProgress": rayzorProgress(message.method, params);
 				case "textDocument/publishDiagnostics":
 					var file = LspProtocol.path(params.uri), doc = file == null ? null : documents.get(file);
 					if (doc != null && doc.sent == doc.version && (params.version == null || params.version == doc.version)) {
 						var waiting = indexing(file);
-						doc.analyzed = doc.version;
-						if (waiting) onDocumentActivity(file);
+						if (capabilities.experimental == null || capabilities.experimental.analysisStatusProvider != true) doc.analyzed = doc.version;
+						if (waiting != indexing(file)) onDocumentActivity(file);
 						onDiagnostics(params);
 					}
 				case "window/logMessage" | "window/showMessage": onLog(params.type == 1 ? "error" : params.type == 2 ? "warning" : "info", params.message);
@@ -246,6 +285,43 @@ class LspClient {
 		}
 	}
 
+	function workProgress(params:Dynamic):Void {
+		if (state != "ready" || params == null || params.token == null || params.value == null) return;
+		var key = "work:" + haxe.Json.stringify(params.token), value:Dynamic = params.value;
+		if (value.kind == "end") { setProgress(key, null); workFields.remove(key); return; }
+		if (value.kind != "begin" && value.kind != "report") return;
+		var previous = progress.get(key);
+		if (value.kind == "report" && previous == null) return;
+		// Preserve omitted fields in reports, without retaining prior messages.
+		if (value.kind == "begin") {
+			if (!Std.isOfType(value.title, String)) return;
+			workFields.set(key, {title:value.title, message:"", percentage:null});
+		}
+		var fields = workFields.get(key);
+		if (fields == null) return;
+		if (Std.isOfType(value.message, String)) fields.message = value.message;
+		if (Std.isOfType(value.percentage, Int) || Std.isOfType(value.percentage, Float)) fields.percentage = Math.max(0, Math.min(100, value.percentage));
+		setProgress(key, fields.title + (fields.message == "" ? "" : ": " + fields.message) + (fields.percentage == null ? "" : ' (${Math.floor(fields.percentage)}%)'));
+	}
+
+	function rayzorProgress(method:String, params:Dynamic):Void {
+		if (state != "ready" || params == null) return;
+		var workspace = params.scope == "workspace";
+		var file = Std.isOfType(params.uri, String) ? LspProtocol.path(params.uri) : null;
+		var doc = file == null ? null : documents.get(file);
+		if (!workspace && (doc == null || doc.sent != doc.version || (params.version != null && params.version != doc.version))) return;
+		var key = workspace ? "rayzor:workspace" : "document:" + file;
+		if (params.state == "ready" || params.state == "finished") {
+			setProgress(key, null);
+			if (!workspace) { var waiting = indexing(file); doc.analyzed = doc.version; if (waiting) onDocumentActivity(file); }
+			return;
+		}
+		var subject:String = Std.isOfType(params.subject, String) && params.subject != "" ? params.subject : file == null ? "workspace" : haxe.io.Path.withoutDirectory(file);
+		var phase = params.phase == "scanning" ? "scanning" : method == "rayzor/analysisStatus" ? "checking" : "indexing";
+		var count = Std.isOfType(params.completed, Int) && params.completed >= 0 ? ' (${params.completed}' + (Std.isOfType(params.total, Int) && params.total > 0 ? '/${params.total}' : "") + ")" : "";
+		setProgress(key, phase + " " + subject + count);
+	}
+
 	function configuration(section:Null<String>):Dynamic {
 		var value:Dynamic = config.settings == null ? {} : config.settings;
 		if (section != null && section != "") for (part in section.split(".")) value = value == null ? null : Reflect.field(value, part);
@@ -255,6 +331,7 @@ class LspClient {
 	function fail(error:String):Void {
 		if (state == "closing") { forceClose(); return; }
 		if (disposed) return;
+		clearProgress(); publishProgress();
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "restarting";
 		for (doc in documents) { doc.sent = 0; doc.sentText = ""; doc.analyzed = 0; }
@@ -284,6 +361,7 @@ class LspClient {
 	/** Graceful shutdown is polled; it never waits for the server on the caller's thread. */
 	public function stopSession():Void {
 		resumeAfterClose = false;
+		clearProgress(); publishProgress();
 		if (state == "closing") return;
 		pending.clear();
 		if (state == "ready" && transport != null) {
@@ -304,6 +382,7 @@ class LspClient {
 	}
 
 	function forceClose():Void {
+		clearProgress(); publishProgress();
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "stopped"; pending.clear();
 		if (resumeAfterClose && !disposed) { resumeAfterClose = false; startSession(); }

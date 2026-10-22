@@ -49,6 +49,7 @@ class LspChecks {
 		check(servers.status(file).indexing && diagnostics.length == 0, "Stale diagnostics do not finish active-file analysis");
 		query(servers, client, "test/diagnostics", {uri:LspProtocol.uri(file)});
 		check(!servers.status(file).indexing && diagnostics.length == 1, "Empty current diagnostics finish analysis");
+		progressChecks(servers, client, file);
 		diagnostics.resize(0);
 		var activity = 0; servers.onDocumentActivity = _ -> activity++;
 		servers.sync(file, "class A {} λ😀");
@@ -93,8 +94,10 @@ class LspChecks {
 		check((current.cancelled:Array<Int>).indexOf(cancelled) >= 0, "LSP sends cancellation to server");
 		check(query(servers, client, "test/error") == null, "Request errors resolve without dropping the server");
 		check(query(servers, client, "test/state").pid == pid, "Request errors preserve server process");
+		query(servers, client, "test/notify", {notifications:[{method:"$/progress", params:{token:"closing", value:{kind:"begin", title:"Scanning", message:"models.Pending"}}}]});
 		var beforeClose = logs.length;
 		servers.retain([]);
+		check(client.activity() == null, "Closing the last code tab releases progress without leaving a status animation");
 		check(!servers.busy() && client.state == "ready", "Closing every document pauses polling without stopping the server");
 		var closeDeadline = haxe.Timer.stamp() + 5;
 		while (sys.io.File.getContent(events).indexOf("close " + LspProtocol.uri(file)) < 0 && haxe.Timer.stamp() < closeDeadline) Sys.sleep(.005);
@@ -116,8 +119,12 @@ class LspChecks {
 		until(servers, () -> client.state == "ready");
 		current = query(servers, client, "test/state");
 		check(current.pid != pid && Reflect.field(current.documents, LspProtocol.uri(file)).text == "replayed after crash", "Server crash restarts and replays current documents");
+		query(servers, client, "test/notify", {notifications:[{method:"$/progress", params:{token:"stopping", value:{kind:"begin", title:"Indexing"}}}]});
+		servers.onProgress = () -> check(client.activity() == null, "Late shutdown progress cannot restart the status animation");
 		servers.control("fixture", "stop");
+		check(client.activity() == null, "Stopping a server clears its reported activity immediately");
 		until(servers, () -> client.state == "stopped");
+		servers.onProgress = () -> {};
 		check(servers.client(file) == null && servers.status(file).state == "stopped" && !servers.status(file).indexing && !servers.busy(), "Stop exposes stopped registration without polling or automatic relaunch");
 		servers.sync(file, "edited while stopped");
 		for (_ in 0...5) servers.tick();
@@ -151,6 +158,17 @@ class LspChecks {
 		incremental.sync(file, "replaced");
 		check(Reflect.field(query(incremental, inc, "test/state").documents, LspProtocol.uri(file)).text == "replaced", "Incremental synchronization uses a UTF-16 full replacement range");
 		incremental.release("incremental"); until(incremental, () -> !incremental.busy());
+		var phased = new LanguageServers(root);
+		phased.register("phased", {id:"phased", diagnosticProgress:true, languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3",
+			args:[root + "tests/lsp_server_fixture.py", events], env:{LSP_ANALYSIS_STATUS:"1"}}}, (_, _) -> {});
+		phased.sync(file, "class A {}");
+		var phasedClient = phased.client(file);
+		until(phased, () -> phasedClient.state == "ready");
+		query(phased, phasedClient, "test/diagnostics", {uri:LspProtocol.uri(file)});
+		check(phased.status(file).indexing, "Rayzor remains busy while building the editor index after diagnostics");
+		query(phased, phasedClient, "test/notify", {notifications:[{method:"rayzor/analysisStatus", params:{uri:LspProtocol.uri(file), version:1, state:"ready"}}]});
+		check(!phased.status(file).indexing, "Rayzor ready ends activity after the editor index completes");
+		phased.release("phased"); until(phased, () -> !phased.busy());
 		extensionChecks(root);
 		var failed = new LanguageServers(root);
 		failed.register("broken", {id:"broken", languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"rayde-nonexistent-lsp-fixture", args:[]}}, (_, _) -> {});
@@ -161,6 +179,36 @@ class LspChecks {
 		var rayzor = Sys.getEnv("RAYDE_RAYZOR_LSP");
 		if (rayzor != null && rayzor != "") realServer(root, rayzor);
 		Sys.println("LSP checks passed");
+	}
+
+	static function progressChecks(servers:LanguageServers, client:LspClient, file:String):Void {
+		function notify(method:String, params:Dynamic):Void query(servers, client, "test/notify", {notifications:[{method:method, params:params}]});
+		var changes = 0;
+		servers.onProgress = () -> changes++;
+		notify("$/progress", {token:7, value:{kind:"begin", title:"Indexing", message:"models.Thing", percentage:10}});
+		check(servers.status(file).activity == "Indexing: models.Thing (10%)", "Work-done progress exposes the current subject and percentage");
+		notify("$/progress", {token:7, value:{kind:"report", percentage:20}});
+		check(servers.status(file).activity == "Indexing: models.Thing (20%)", "Partial progress reports preserve omitted title and message");
+		var count = changes;
+		notify("$/progress", {token:7, value:{kind:"report", percentage:20}});
+		check(changes == count, "Repeated progress does not invalidate the status UI");
+		notify("$/progress", {token:"7", value:{kind:"begin", title:"Scanning", message:"other.Namespace"}});
+		notify("$/progress", {token:"7", value:{kind:"end"}});
+		check(servers.status(file).activity == "Indexing: models.Thing (20%)", "Ending one task restores another; numeric and string tokens stay distinct");
+		notify("$/progress", {token:7, value:{kind:"end"}});
+		notify("$/progress", {token:99, value:{items:["partial result"]}});
+		check(servers.status(file).activity == null, "Finished tasks and partial-result payloads leave no status activity");
+		notify("rayzor/indexProgress", {uri:LspProtocol.uri(file), version:0, phase:"types", subject:"stale.A", completed:1, total:10});
+		check(servers.status(file).activity == null, "Stale Rayzor progress is ignored");
+		notify("rayzor/indexProgress", {uri:LspProtocol.uri(file), version:1, phase:"types", subject:"models.Thing", completed:128, total:256});
+		check(servers.status(file).activity == "indexing models.Thing (128/256)", "Rayzor type progress names its qualified class");
+		notify("rayzor/analysisStatus", {uri:LspProtocol.uri(file), version:1, state:"ready"});
+		check(servers.status(file).activity == null, "Rayzor analysis ready clears its subject");
+		notify("rayzor/indexProgress", {scope:"workspace", phase:"scanning", subject:"models.Other", completed:3});
+		check(servers.status(file).activity == "scanning models.Other (3)", "Workspace scanning is visible independently of the active document");
+		notify("rayzor/indexProgress", {scope:"workspace", state:"ready", completed:4});
+		check(servers.status(file).activity == null, "Workspace completion removes its activity");
+		servers.onProgress = () -> {};
 	}
 
 	static function realServer(base:String, command:String):Void {
@@ -183,7 +231,8 @@ class LspChecks {
 			until(servers, () -> answered == 32, 22);
 			for (hover in hovers) check(hover != null && LspProtocol.documentation(hover.contents).indexOf("function add") >= 0, "Real Rayzor answers concurrent hover requests with semantic results");
 			check(client.state == "ready", "Real Rayzor remains connected after document request");
-			check(!servers.status(file).indexing, "Real Rayzor diagnostics finish active-document analysis");
+			until(servers, () -> !servers.status(file).indexing, 20);
+			check(!servers.status(file).indexing, "Real Rayzor finishes active-document analysis and editor indexing");
 			servers.retain([]);
 			var diagnostics = query(servers, client, "rayde/unsupportedProbe");
 			check(client.state == "ready", "Real Rayzor remains connected after document close and unknown request");
