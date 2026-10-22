@@ -63,6 +63,14 @@ class ProjectChecks {
 		sys.io.File.saveContent(entries[2], "[project]\nname='delegated'\nhxml='config/editor.hxml'\n");
 		rayzor = ProjectFile.read(entries[2]);
 		check(rayzor.root == haxe.io.Path.directory(entries[2]) && rayzor.hxml == rayzor.root + "/config/editor.hxml" && rayzor.args[0] == "--cwd", "Delegated HXML lost workspace root or compiler working directory");
+		check(!rayzor.runnable, "An HXML-only Rayzor manifest offers Run without a source entry");
+		sys.io.File.saveContent(entries[2], "[project]\nname='no-paths'\n");
+		check(ProjectFile.read(entries[2]).args.length == 0, "Rayzor manifest inferred an undeclared src directory");
+		sys.io.File.saveContent(entries[2], "[workspace]\nmembers=[]\n[project]\nentry='src/Main.hx'\n[build]\nclass-paths=['src']\n");
+		var workspace = ProjectFile.read(entries[2]);
+		check(!workspace.runnable && workspace.main == null && workspace.args.length == 0, "Workspace did not take precedence over project/build fields");
+		sys.io.File.saveContent(entries[2], "[workspace]\n");
+		rejects(() -> ProjectFile.read(entries[2]), "Workspace without required members array was accepted");
 		sys.io.File.saveContent(entries[2], "[project\nname=no");
 		rejects(() -> ProjectFile.read(entries[2]), "Malformed TOML was accepted");
 		sys.io.File.saveContent(entries[1], "{broken");

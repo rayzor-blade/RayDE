@@ -24,7 +24,7 @@ class RayzorSamplesChecks {
 			var before = File.getContent(path), project = ProjectFile.read(path), manifest = new RayzorFile(path);
 			check(project.root == Path.directory(path) && project.kind == "rayzor", "Lost manifest root or project kind");
 			var entry = manifest.text(["project", "entry"]), hxml = manifest.text(["project", "hxml"]);
-			check(project.runnable == (!manifest.workspace() && (entry != "" || hxml != "")), "Wrong Run availability for library/workspace/application");
+			check(project.runnable == (!manifest.workspace() && entry != ""), "Wrong Run availability for library/workspace/application");
 			if (entry != "" && hxml == "") {
 				var full = Path.normalize(Path.isAbsolute(entry) ? entry : Path.join([project.root, entry]));
 				var expected:Null<String> = null;

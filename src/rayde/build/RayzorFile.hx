@@ -17,6 +17,10 @@ class RayzorFile {
 		var bytes = Bytes.ofString(source());
 		data = unpack(parseNative(bytes.getData(), bytes.length)).value;
 		if (value(["project"]) == null && value(["workspace"]) == null) throw "rayzor.toml needs a [project] or [workspace] section";
+		if (workspace()) {
+			if (value(["workspace", "members"]) == null) throw "workspace.members must be an array of strings";
+			strings(["workspace", "members"]);
+		}
 	}
 
 	public function value(path:Array<String>):Dynamic {

@@ -58,32 +58,32 @@ class RayzorSettings extends Component<RayzorSettingsProps> {
 			var cards:Array<Element> = [];
 			if (file.workspace()) {
 				cards.push(card("workspace", "Workspace", "Member project directories, relative to this manifest.", list(["workspace", "members"], "Member directory")));
-				cards.push(card("cache", "Shared cache", "Cache configuration shared by workspace members.", [
+				cards.push(card("cache", "Shared cache", "Shared cache configuration stored for Rayzor workspace loaders.", [
 					textField(["workspace", "cache", "dir"], "Directory", "Relative to the workspace root", ".rayzor/cache")
 				]));
 			} else {
 				cards.push(card("project", "Project", "Project identity and entry point.", [
 					textField(["project", "name"], "Name", "Project name", "my-app"),
 					textField(["project", "version"], "Version", "Project version", "0.1.0"),
-					textField(["project", "entry"], "Entry point", "Haxe source file, relative to the project root", "src/Main.hx"),
-					textField(["project", "hxml"], "HXML file", "Optional: delegate compiler configuration to this file", "build.hxml")
+					textField(["project", "entry"], "Entry point", "Source file for rayzor run; omit for a library", "src/Main.hx"),
+					textField(["project", "hxml"], "Build HXML", "rayzor build delegates to this file; Run still needs an entry point", "build.hxml")
 				]));
-				cards.push(card("target", "Build", "Rayzor compilation and output settings.", [
-					choice(["build", "target"], "Target", "Build target", "Rayzor default", ["native", "jit", "bundle"]),
+				cards.push(card("target", "Build", "Output is used by rayzor build, bundle and AOT. The current CLI does not apply the stored target, optimization or preset fields.", [
+					textField(["build", "target"], "Stored target", "Target selection currently uses CLI flags", ""),
 					textField(["build", "output"], "Output", "Output path, relative to the project root", "build/my-app"),
-					choice(["build", "opt-level"], "Optimization", "MIR optimization level", "2 (default)", ["0", "1", "2", "3"], true),
-					choice(["build", "preset"], "JIT preset", "Custom [tier] settings take precedence", "application (default)", ["script", "application", "server", "benchmark", "development", "embedded"])
+					choice(["build", "opt-level"], "Stored optimization", "Manifest optimization value", "2 (manifest default)", ["0", "1", "2", "3"], true),
+					choice(["build", "preset"], "Stored preset", "Run uses CLI --preset or the [tier] table", "application (manifest default)", ["script", "application", "server", "benchmark", "development", "embedded"])
 				]));
-				if (file.text(["project", "hxml"]) != "") cards.push(<text class="text-xs text-text-secondary">Compiler inputs come from the HXML file. Class paths and defines below are retained in the manifest.</text>);
-				cards.push(card("paths", "Class paths", "Source directories searched in order. If omitted, RayDE uses src when present, otherwise the project root.", list(["build", "class-paths"], "Source directory")));
+				if (file.text(["project", "hxml"]) != "") cards.push(<text class="text-xs text-text-secondary">HXML configures rayzor build and RayDE's Haxe editor fallback. Native Run still reads the entry point and manifest class paths.</text>);
+				cards.push(card("paths", "Class paths", "Source directories searched in declaration order, relative to the manifest. Omitted class paths add no source directories.", list(["build", "class-paths"], "Source directory")));
 				cards.push(card("defines", "Defines", "Compile-time flags. An empty value creates a boolean flag; a supplied value is a string.", defines()));
-				cards.push(card("cache", "Cache", "Rayzor's incremental compilation cache.", [
+				cards.push(card("cache", "Stored cache options", "The current CLI uses --no-cache and --cache-dir instead of these manifest values.", [
 					boolean(["cache", "enabled"], "Enabled", "Reuse cached compilation data", true),
 					textField(["cache", "dir"], "Directory", "Relative to the project root", ".rayzor/cache")
 				]));
 				cards.push(card("native-libs", "Native libraries", "Dynamic library paths relative to the project root.", list(["build", "native-libs"], "Library path")));
 				cards.push(card("resources", "Resources", "Resources to embed: file@name, or a file path used as its name.", list(["build", "resources"], "assets/file@name")));
-				cards.push(card("bundle", "Bundle", "Options used when creating a Rayzor bundle.", [
+				cards.push(card("bundle", "Stored bundle options", "The current bundle command uses --strip and --no-compress instead of these manifest values.", [
 					boolean(["bundle", "compress"], "Compression", "Compress with zstd", null),
 					boolean(["bundle", "strip"], "Tree shaking", "Remove unused code", null)
 				]));

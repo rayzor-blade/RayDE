@@ -56,6 +56,13 @@ class ProjectFile {
 		var bytes = haxe.io.Bytes.ofString(source), data = unpack(tomlNative(bytes.getData(), bytes.length)).value;
 		project.kind = "rayzor"; project.runtime = "rayzor";
 		if (data.project == null && data.workspace == null) throw "rayzor.toml needs a [project] or [workspace] section";
+		if (data.workspace != null) {
+			var members:Dynamic = data.workspace.members;
+			if (!Std.isOfType(members, Array)) throw "workspace.members must be an array of strings";
+			for (member in (members:Array<Dynamic>)) if (!Std.isOfType(member, String)) throw "workspace.members must contain strings";
+			project.runnable = false;
+			return project;
+		}
 		if (data.project != null) project.name = optionalString(data.project, "name") ?? project.name;
 		var delegated = data.project == null ? null : optionalString(data.project, "hxml");
 		if (delegated != null) {
@@ -63,10 +70,10 @@ class ProjectFile {
 			project.args = ["--cwd", Path.directory(project.hxml)].concat(Hxml.read(project.hxml));
 		} else {
 			var paths:Dynamic = data.build == null ? null : Reflect.field(data.build, "class-paths");
-			if (paths == null) paths = [FileSystem.exists(project.root + "/src") ? "src" : "."];
+			if (paths == null) paths = [];
 			if (!Std.isOfType(paths, Array)) throw "build.class-paths must be an array of strings";
 			for (path in (paths:Array<Dynamic>)) {
-				if (!Std.isOfType(path, String) || path == "") throw "build.class-paths must contain nonempty strings";
+				if (!Std.isOfType(path, String)) throw "build.class-paths must contain strings";
 				project.args = project.args.concat(["-cp", path]);
 			}
 			if (data.build != null && data.build.defines != null) for (define in Reflect.fields(data.build.defines)) {
@@ -75,9 +82,11 @@ class ProjectFile {
 			}
 		}
 		var entry = data.project == null ? null : optionalString(data.project, "entry");
-		project.runnable = data.project != null && (entry != null || delegated != null);
+		project.runnable = entry != null;
 		if (entry != null) {
 			project.main = Path.normalize(Path.isAbsolute(entry) ? entry : Path.join([project.root, entry]));
+			if (delegated != null) return project;
+			// Rayzor compiles the entry file directly; -main is for Haxe editor requests.
 			var module:Null<String> = null;
 			for (i in 0...project.args.length - 1) if (project.args[i] == "-cp") {
 				var cp = project.args[i + 1];

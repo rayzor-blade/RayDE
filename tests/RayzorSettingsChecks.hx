@@ -72,7 +72,7 @@ class RayzorSettingsChecks {
 			} else {
 				type("#rayde-rayzor-project-name", "My app λ");
 				check(read().text(["project", "name"]) == "My app λ" && display.project.name == "My app λ", "Project name was not written and reloaded");
-				click("#rayde-rayzor-build-target"); press(Named(End)); press(Named(Enter));
+				type("#rayde-rayzor-build-target", "bundle");
 				check(read().text(["build", "target"]) == "bundle", "Target selection did not save");
 				click("#rayde-rayzor-build-opt-level"); press(Named(End)); press(Named(Enter));
 				check(read().value(["build", "opt-level"]) == 3, "Optimization was not saved as a number");
