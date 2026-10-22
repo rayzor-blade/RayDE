@@ -103,7 +103,16 @@ bash -e -c 'source scripts/deps.sh; haxe "${ui_args[@]}" -D ashui_window -cp tes
 WELCOME_MEMORY_OUT=mixed-workspace WELCOME_MEMORY_MODES=mixed MEMORY_PROBE_KEEP_HOME=1 MEMORY_PROBE_EXTENSIONS="$PWD/extensions" MEMORY_PROBE_CHILDREN=1 MEMORY_PROBE_DUMP=1 RAYZOR_LSP="$PWD/bin/rayzor" ASHUI_WINDOW_SECONDS=1200 python3 tests/memory_probe.py bin/mixed-workspace-memory
 ```
 
-The sampler records RayDE and direct child footprints separately. `MEMORY_PROBE_KEEP_HOME=1` uses your installed settings; omit it for an isolated profile. `MEMORY_PROBE_EXTENSIONS` selects the extension directory. The probe reports requested, returned and non-null LSP answers alongside documents still indexing: draining requests can include timeouts and does not prove indexing completed. Final checkpoints wait 30 seconds with all tabs closed, collect again, then stop the LSP and collect once more. Compare live UI counts, heap censuses and graphics mappings with the baseline before attributing the remaining footprint to closed tabs.
+The sampler records RayDE and direct child footprints separately. `MEMORY_PROBE_KEEP_HOME=1` uses your installed settings; omit it for an isolated profile. `MEMORY_PROBE_EXTENSIONS` selects the extension directory. The probe reports requested, returned and non-null LSP answers alongside documents still indexing: draining requests can include timeouts and does not prove indexing completed. With all tabs open, it switches from the last SVG back to code and then restores the SVG, reporting token widget counts and the image atlas separately. Final checkpoints wait 30 seconds with all tabs closed, collect again, then stop the LSP and collect once more. Compare live UI counts, heap censuses and graphics mappings with the baseline before attributing the remaining footprint to closed tabs.
+
+`EditorMemoryProbe` isolates the mounted editor from other tabs, extension VMs and language servers. Its variants are `full`, `no-minimap` and `plain`; `EDITOR_MEMORY_FILE` selects a source file without editing it. Build it with the shared UI arguments and run:
+
+```sh
+bash -e -c 'source scripts/deps.sh; haxe "${ui_args[@]}" -D ashui_window -cp tests -main EditorMemoryProbe -hl bin/editor-memory.hl; "$ash" --build bin/editor-memory bin/editor-memory.hl'
+WELCOME_MEMORY_OUT=editor-memory-results WELCOME_MEMORY_MODES=full,no-minimap,plain ASHUI_WINDOW_SECONDS=180 MEMORY_PROBE_DUMP=1 python3 tests/memory_probe.py bin/editor-memory
+```
+
+The records separate row/token nodes, canvas CPU/GPU storage, occupied GC blocks and process footprint before mounting, while active and after unmounting. Ashui's `EditorTokenPixels` fixture compares horizontal culling with full-row rendering in both schemes, including Unicode caret positions and widget reuse during a small pan.
 
 `LspMemoryProbe` compares the same offscreen editor workload with LSP disabled, a framed fixture server, and the packaged Rayzor binary. It measures opening tabs, idle polling, switches, edits, completions, hovers and closure without PNG readbacks. Compile it with the shared UI arguments, then run the sampler:
 

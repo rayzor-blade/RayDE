@@ -73,7 +73,7 @@ class MixedWorkspaceMemoryProbe {
 				var pending = 0; for (entry in bench.languageServers.entries) pending += count(entry.client.pending.iterator()); return pending;
 			}
 			function sample(name:String):Void {
-				var canvases = 0, canvasCpu = 0, canvasGpu = 0, editors = 0, watches = 0, owners = 0, textures = 0, staging = 0, color = 0;
+				var canvases = 0, canvasCpu = 0, canvasGpu = 0, editors = 0, watches = 0, owners = 0, textures = 0, staging = 0, color = 0, imageAtlas = 0;
 				@:privateAccess for (canvas in ashui.ui.Canvas.bySlot) { canvases++; canvasGpu += canvas.painter.rows * 2048 * 16; if (canvas.painter.bytes != null) canvasCpu += canvas.painter.bytes.length; }
 				for (owner => component in ashui.ui.Component.hosts) if (!owner.disposed) { owners++; if (Std.isOfType(component, ashui.components.CodeEditor)) editors++; }
 				for (watch in ashui.reactive.Watch.bySlot) if (watch != null) watches++;
@@ -83,7 +83,7 @@ class MixedWorkspaceMemoryProbe {
 					for (target in [renderer.frameLayer, renderer.rows, renderer.shadow]) if (target != null) textures += target.width * target.height * 4;
 					for (atlas in [renderer.atlas, renderer.colorAtlas]) if (atlas != null) { textures += atlas.textureWidth * atlas.textureHeight * atlas.bytesPerPixel; staging += atlas.pixels.length; }
 					if (renderer.colorAtlas != null) color = renderer.colorAtlas.textureWidth * renderer.colorAtlas.textureHeight * renderer.colorAtlas.bytesPerPixel;
-					if (renderer.imageAtlas != null) textures += renderer.imageAtlas.size * renderer.imageAtlas.size * 4;
+					if (renderer.imageAtlas != null) { imageAtlas = renderer.imageAtlas.size * renderer.imageAtlas.size * 4; textures += imageAtlas; }
 					textures += renderer.recordRows * 2048 * 16;
 				}
 				var servers:Array<Dynamic> = [];
@@ -100,7 +100,8 @@ class MixedWorkspaceMemoryProbe {
 				var heap = hl.Gc.stats();
 				Sys.println("welcome-memory:" + haxe.Json.stringify({mode:name, workspace:root, build:root + "/build.hxml", tabs:bench.open.get().copy(), dirty:bench.dirty.get().copy(),
 					nodes:app.tree.order().length, editors:editors, owners:owners, watches:watches, canvases:canvases, canvasCpuBytes:canvasCpu, canvasGpuBytes:canvasGpu,
-					gcHeapBytes:heap.currentMemory, totalAllocatedBytes:heap.totalAllocated, knownRendererTextureBytes:textures, atlasStagingBytes:staging, colorAtlasBytes:color,
+					gcHeapBytes:heap.currentMemory, totalAllocatedBytes:heap.totalAllocated, knownRendererTextureBytes:textures, atlasStagingBytes:staging, colorAtlasBytes:color, imageAtlasBytes:imageAtlas,
+					editorRows:Css.query(app.tree,bench.node.id,".ui-code-line").length, editorTokens:Css.query(app.tree,bench.node.id,".ui-code-token").length, problems:bench.problems.get().length,
 					buffers:count(bench.buffers.iterator()), documents:count(bench.documents.iterator()), editorRefs:count(bench.editorRefs.iterator()), syntax:count(bench.nativeSyntax.iterator()), images:count(bench.imageViews.iterator()),
 					ownedSvgDocuments:count(rayde.ui.SvgDocuments.owned.iterator()), lsp:servers, lspRequests:requests, lspReplies:replies, lspAnswers:answers, parts:parts,
 					vmHeaps:[for (key => value in vms) {extension:key, stats:value}]})); Sys.stdout().flush();
@@ -141,6 +142,9 @@ class MixedWorkspaceMemoryProbe {
 			for (file in images.concat(vectors)) step("open-image:" + file, () -> { bench.openFile(file); rememberWritten(); ledger.push({kind:"image", file:file}); },
 				() -> { if (Css.query(app.tree, bench.node.id, "#rayde-image-error").length > 0) throw "Image preview failed: " + file; return Css.query(app.tree, bench.node.id, "#rayde-image-surface").length > 0; }, .7);
 			checkpoint("all-open");
+			step("all-open-code-active", () -> bench.active.set(haxeFiles[haxeFiles.length-1]), () -> bench.editorFor(haxeFiles[haxeFiles.length-1]) != null, 5, true);
+			step("all-open-code-collected", collect, () -> true, 3, true);
+			step("all-open-image-restored", () -> bench.active.set(vectors[vectors.length-1]), () -> Css.query(app.tree,bench.node.id,"#rayde-image-surface").length > 0, 2, true);
 			for (kind in ["markdown", "haxe", "sidebar", "graph", "image"]) {
 				if (kind == "sidebar") step("git-sidebar-closed", () -> bench.sideView.set("explorer"), () -> Css.query(app.tree, bench.node.id, "#git-scm").length == 0, 2, true);
 				else {

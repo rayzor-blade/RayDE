@@ -61,7 +61,7 @@ PNG, JPEG (`.jpg`, `.jpe`, `.jpeg`), BMP, GIF, ICO, WebP, AVIF and SVG files ope
 
 SVG tabs can switch between preview and source using the toolbar. The preview uses unsaved edits, and switching preserves undo history. The Explorer context menu also offers **Open Preview** and **Open in Editor** for SVG files.
 
-Inactive image tabs release their decoded pixels and vector documents, retaining only navigation state. BMP, GIF, ICO and AVIF decoding runs on a background worker; closing or hiding a preview cancels its pending result.
+Inactive image tabs release their decoded pixels, vector documents and cached GPU image entries, retaining only navigation state. The atlas repacks for the remaining images instead of keeping its largest texture after previews close. BMP, GIF, ICO and AVIF decoding runs on a background worker; closing or hiding a preview cancels its pending result.
 
 ## Settings
 

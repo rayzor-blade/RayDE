@@ -18,7 +18,6 @@ class SvgDocuments {
 		var entry = owned.get(doc.id);
 		if (entry == null || --entry.uses > 0) return;
 		owned.remove(doc.id);
-		@:privateAccess SvgDocument.byMarkup.remove(doc.markup);
-		@:privateAccess SvgDocument.byId.remove(doc.id);
+		doc.dispose();
 	}
 }
