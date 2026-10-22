@@ -44,7 +44,7 @@ class Display {
 	public var args(default, null):Array<String>;
 
 	/** The build file this was read from, when it was read from one. */
-	public final hxml:Null<String>;
+	public var hxml(default, null):Null<String>;
 	public var project(default, null):Null<rayde.project.ProjectFile>;
 
 	var id = 0;
@@ -62,7 +62,7 @@ class Display {
 
 	/** Reads the build file again, so requests use what it says now. Nothing happens for a project not read from one. */
 	public function reload():Void
-		if (project != null) { project = rayde.project.ProjectFile.read(project.file); args = project.args; }
+		if (project != null) { project = rayde.project.ProjectFile.read(project.file); args = project.args; hxml = project.hxml; }
 		else if (hxml != null)
 			args = Hxml.read(hxml);
 

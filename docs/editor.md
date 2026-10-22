@@ -4,7 +4,7 @@ The built-in [Rayzor language server](languages.md) provides Haxe services over 
 
 Launching without arguments opens Welcome with Explorer collapsed. **Open Folder** opens any folder as a workspace, including non-Haxe projects; it needs no project descriptor and supplies no Haxe build or runtime. **Open Project** accepts `.hxml`, `haxelib.json`, `rayzor.toml`, extensions and themes. Recent projects and folders open directly from Welcome. Selections replace the workspace in the same window; edited files require **Save and Open** or Cancel. Native path dialogs run on a worker and appear only after an opening action.
 
-**New Project** offers a Haxe application, Haxe library or Rayzor application template, then asks for a name and parent folder; existing folders are never overwritten. Library manifests supply source paths, dependencies and `extraParams.hxml`. Rayzor manifests supply source paths, defines and the entry point, or delegate to an HXML file. Rayzor projects run with `rayzor run`; libraries without an application entry point omit Run. Manifests open as code in the Explorer; the Build settings form edits HXML files.
+**New Project** offers a Haxe application, Haxe library or Rayzor application template, then asks for a name and parent folder; existing folders are never overwritten. Library manifests supply source paths, dependencies and `extraParams.hxml`. Rayzor manifests supply source paths, defines and the entry point, or delegate to an HXML file. Rayzor projects run with `rayzor run`; libraries without an application entry point omit Run. The active HXML or Rayzor manifest opens **Settings > Build** from the Explorer. Library manifests open as code.
 
 The Explorer lists every file type, including dotfiles, with folders first and Haxe files before other files. Configuration files and other languages open in the editor; supported images open in the previewer. Explorer and tab icons use Remix and a bundled MIT-licensed Devicon language subset; unknown types use the file-code icon.
 
@@ -52,6 +52,7 @@ Only the active code tab mounts an editor. Inactive tabs keep text, undo/redo, s
 - Each editor has a minimap and code folding.
 - Explorer folders load their file rows on first expansion and keep them for subsequent expansions.
 - The build file (`build.hxml`) opens as a form in **Settings > Build**.
+- Rayzor projects have a `rayzor.toml` form for project metadata, entry point, HXML delegation, build target, output, optimization, JIT preset, class paths, defines, cache, native libraries, resources and bundle options. Workspace manifests offer member directories and their shared cache directory. Text fields save on Enter; other controls save immediately. Comments and unmanaged fields are preserved. **Edit as Text** opens the source for dependencies, WebAssembly hosts and custom tier configuration; save source edits before using the form, and use **Reload** to refresh it after external changes.
 
 Find and Replace use Ashui's compact floating glass panel. Enter/Shift+Enter in Find navigate matches; Enter in Replace replaces one, and Cmd+Enter/Ctrl+Enter replaces all. Replace All uses one undo operation within the editor's history limits. Escape closes the panel. The command palette and key-binding settings also expose **Find**, **Replace**, **Find Next** and **Find Previous**.
 

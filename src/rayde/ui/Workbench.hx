@@ -489,6 +489,14 @@ class Workbench extends Component<WorkbenchProps> {
 	public function openBuild():Void
 		openSettings("build");
 
+	function rayzorManifest():Null<String>
+		return props.display.project != null && props.display.project.kind == "rayzor" ? props.display.project.file : null;
+
+	function beforeBuildChange():Void {
+		var file = rayzorManifest();
+		if (file != null && dirty.get().indexOf(file) >= 0) throw "Save the changes in rayzor.toml before editing its settings.";
+	}
+
 	/** The size of the element a selector finds, for tests. */
 	public function boundsOf(selector:String):Null<ashui.layout.Bounds> {
 		var found = ashui.css.Css.query(tree, this.node.id, selector);
@@ -520,6 +528,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What the form wrote to the build file is now the project's: the compiler reads it, the Explorer and the problems follow it. */
 	public function buildChanged():Void {
 		props.display.reload();
+		var manifest = rayzorManifest();
+		if (manifest != null && buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0)
+			buffers.get(manifest).set(sys.io.File.getContent(manifest));
 		buildRevision.set(buildRevision.get() + 1);
 		for (file in open.get())
 			if (file != SETTINGS)
@@ -625,7 +636,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (!sys.FileSystem.exists(path) || sys.FileSystem.isDirectory(path)) return;
 		if (Manifest.isManifest(path)) openSettings("extension");
 		else if (ThemeFile.isThemeFile(path)) openThemeStudio();
-		else if (path == props.display.hxml) openBuild();
+		else if (path == props.display.hxml || path == rayzorManifest()) openBuild();
 		else openFile(path);
 	}
 
@@ -2537,6 +2548,8 @@ class Workbench extends Component<WorkbenchProps> {
 		var contributed = contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
 			items.push(menuItem("Open", null, () -> openExplorerFile(path)));
+		if (!folder && path == rayzorManifest())
+			items.push(menuItem("Edit as Text", null, () -> openFile(path), true, Icons.CODE_S_SLASH_LINE));
 		if (!folder && ImagePreview.isSvg(path)) {
 			items.push(menuItem("Open Preview", null, () -> { imageTextMode(path).set(false); openFile(path); }, true, Icons.IMAGE_LINE));
 			items.push(menuItem("Open in Editor", null, () -> { imageTextMode(path).set(true); openFile(path); }, true, Icons.CODE_S_SLASH_LINE));
@@ -2958,7 +2971,7 @@ class Workbench extends Component<WorkbenchProps> {
 		}
 		if (file == SETTINGS)
 			return <tabs-content value={file} class="flex-1 min-h-0">
-				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} terminal={terminalSettings} appearance={appearance} bindings={bindings}
+				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} rayzor={rayzorManifest()} onEditBuildText={() -> openFile(rayzorManifest())} beforeBuildChange={beforeBuildChange} terminal={terminalSettings} appearance={appearance} bindings={bindings}
 					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
 					onAppearanceChanged={() -> {
 						windowStyle.set(WindowControls.styleFor(appearance.windowControls));

@@ -23,6 +23,12 @@ pub unsafe extern "C" fn project_toml(data:*const vbyte, len:i32) -> *mut vbyte 
 define_prim!(hlp_project_toml, project_toml, "PBi_B");
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn project_toml_edit(data:*const vbyte, len:i32) -> *mut vbyte {
+    catch_unwind(|| unsafe { text(data,len) }.map_or(ptr::null_mut(), |s| packed_text(&super::project::edit(s).to_string()))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_project_toml_edit, project_toml_edit, "PBi_B");
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn project_directory(data:*const vbyte, len:i32) -> *mut vbyte {
     catch_unwind(|| unsafe { text(data,len) }.map_or(ptr::null_mut(), |s| packed_text(&super::project::create_directory(s).to_string()))).unwrap_or(ptr::null_mut())
 }
