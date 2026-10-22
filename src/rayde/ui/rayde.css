@@ -306,50 +306,50 @@
 #rayde .rayde-scheme-toggle > .ui-toggle { width: 64px; }
 #rayde .rayde-scheme-toggle > .ui-toggle[data-state="on"] { background: var(--accent-subtle); border-color: var(--primary); color: var(--text-primary); }
 #rayde[data-sans] { font-family: var(--font-sans); }
-#rayde .rayde-markdown { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 840px; width: 100%; align-self: center; min-width: 0; flex-shrink: 0; color: var(--text-primary); }
-#rayde .rayde-md-paragraph, #rayde .rayde-md-heading, #rayde .rayde-md-table-cell { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; min-width: 0; flex-shrink: 0; }
-#rayde .rayde-md-word { font-size: 16px; line-height: 26px; }
-#rayde .rayde-md-heading { margin-top: 12px; font-weight: 600; }
-#rayde .rayde-md-h1 { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-#rayde .rayde-md-h1 .rayde-md-word { font-size: 30px; line-height: 40px; }
-#rayde .rayde-md-h2 .rayde-md-word { font-size: 24px; line-height: 34px; }
-#rayde .rayde-md-h3 .rayde-md-word { font-size: 20px; line-height: 30px; }
-#rayde .rayde-md-strong, #rayde .rayde-md-table-head { font-weight: 600; }
-#rayde .rayde-md-em { font-style: italic; }
-#rayde .rayde-md-strike { text-decoration: line-through; }
-#rayde .rayde-md-inline-code { font-family: var(--font-mono); font-size: 14px; border-radius: 4px; background: var(--surface-elevated); padding-left: 4px; padding-right: 4px; }
-#rayde .rayde-md-link { color: var(--text-link); text-decoration: underline; cursor: pointer; }
-#rayde .rayde-md-task { display: flex; padding-right: 8px; flex-shrink: 0; }
-#rayde .rayde-md-task input.ui-checkbox:disabled { opacity: 1; cursor: default; }
-#rayde .rayde-md-code { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-elevated); min-width: 0; flex-shrink: 0; }
-#rayde .rayde-md-code > text { font-size: 12px; color: var(--text-secondary); }
-#rayde .rayde-md-quote { display: flex; flex-direction: column; gap: 8px; border-left: 3px solid var(--border); padding-left: 16px; color: var(--text-secondary); flex-shrink: 0; }
-#rayde .rayde-md-list, #rayde .rayde-md-list-content, #rayde .rayde-md-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex-shrink: 0; }
-#rayde .rayde-md-list { padding-left: 8px; }
-#rayde .rayde-md-list-row { display: flex; gap: 10px; align-items: baseline; flex-shrink: 0; }
-#rayde .rayde-md-list-content { flex: 1; }
-#rayde .rayde-md-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; flex-shrink: 0; }
-#rayde .rayde-md-table-row { display: flex; flex-direction: row; flex-shrink: 0; border-bottom: 1px solid var(--border); }
-#rayde .rayde-md-table-cell { flex: 1; padding: 8px 12px; border-right: 1px solid var(--border); }
-#rayde .rayde-md-table-head { background: var(--surface-elevated); }
-#rayde .rayde-md-drawing { display: flex; justify-content: center; padding: 16px; border: 1px solid var(--border); border-radius: 10px; overflow: auto; flex-shrink: 0; min-width: 0; }
-#rayde .rayde-md-math-inline { display: flex; align-self: center; padding: 0 3px; flex-shrink: 0; }
-#rayde .rayde-md-break { width: 100%; height: 0; flex-shrink: 0; }
-#rayde .rayde-md-rule { height: 1px; background: var(--border); flex-shrink: 0; }
-#rayde .rayde-md-footnote { font-size: 13px; color: var(--text-secondary); }
-#rayde .rayde-md-error { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--error); flex-shrink: 0; }
-#rayde .rayde-md-image-alt { color: var(--text-secondary); }
-#rayde .rayde-md-image { position: relative; flex-shrink: 0; }
-#rayde .rayde-md-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; flex-shrink: 0; }
-#rayde .rayde-md-small, #rayde .rayde-md-sub, #rayde .rayde-md-sup { font-size: 12px; }
-#rayde .rayde-md-sup { transform: translateY(-5px); }
-#rayde .rayde-md-sub { transform: translateY(3px); }
-#rayde .rayde-md-mark { background: var(--accent-subtle); }
-#rayde .rayde-md-underline { text-decoration: underline; }
-#rayde .rayde-md-diagram { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex-shrink: 0; min-width: 0; }
-#rayde .rayde-md-diagram-tools { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-#rayde .rayde-md-diagram-tools > text { flex: 1; font-size: 12px; color: var(--text-secondary); }
-#rayde .rayde-md-diagram-viewport { position: relative; height: 300px; overflow: hidden; flex-shrink: 0; min-width: 0; }
+.rayde-markdown { display: flex; flex-direction: column; gap: 16px; padding: 28px 32px; max-width: 840px; width: 100%; align-self: center; min-width: 0; flex-shrink: 0; color: var(--text-primary); }
+.rayde-md-paragraph, .rayde-md-heading, .rayde-md-table-cell { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; min-width: 0; flex-shrink: 0; }
+.rayde-md-word { font-size: 16px; line-height: 26px; }
+.rayde-md-heading { margin-top: 12px; font-weight: 600; }
+.rayde-md-h1 { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.rayde-md-h1 .rayde-md-word { font-size: 30px; line-height: 40px; }
+.rayde-md-h2 .rayde-md-word { font-size: 24px; line-height: 34px; }
+.rayde-md-h3 .rayde-md-word { font-size: 20px; line-height: 30px; }
+.rayde-md-strong, .rayde-md-table-head { font-weight: 600; }
+.rayde-md-em { font-style: italic; }
+.rayde-md-strike { text-decoration: line-through; }
+.rayde-md-inline-code { font-family: var(--font-mono); font-size: 14px; border-radius: 4px; background: var(--surface-elevated); padding-left: 4px; padding-right: 4px; }
+.rayde-md-link { color: var(--text-link); text-decoration: underline; cursor: pointer; }
+.rayde-md-task { display: flex; padding-right: 8px; flex-shrink: 0; }
+.rayde-md-task input.ui-checkbox:disabled { opacity: 1; cursor: default; }
+.rayde-md-code { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-elevated); min-width: 0; flex-shrink: 0; }
+.rayde-md-code > text { font-size: 12px; color: var(--text-secondary); }
+.rayde-md-quote { display: flex; flex-direction: column; gap: 8px; border-left: 3px solid var(--border); padding-left: 16px; color: var(--text-secondary); flex-shrink: 0; }
+.rayde-md-list, .rayde-md-list-content, .rayde-md-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex-shrink: 0; }
+.rayde-md-list { padding-left: 8px; }
+.rayde-md-list-row { display: flex; gap: 10px; align-items: baseline; flex-shrink: 0; }
+.rayde-md-list-content { flex: 1; }
+.rayde-md-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; flex-shrink: 0; }
+.rayde-md-table-row { display: flex; flex-direction: row; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.rayde-md-table-cell { flex: 1; padding: 8px 12px; border-right: 1px solid var(--border); }
+.rayde-md-table-head { background: var(--surface-elevated); }
+.rayde-md-drawing { display: flex; justify-content: center; padding: 16px; border: 1px solid var(--border); border-radius: 10px; overflow: auto; flex-shrink: 0; min-width: 0; }
+.rayde-md-math-inline { display: flex; align-self: center; padding: 0 3px; flex-shrink: 0; }
+.rayde-md-break { width: 100%; height: 0; flex-shrink: 0; }
+.rayde-md-rule { height: 1px; background: var(--border); flex-shrink: 0; }
+.rayde-md-footnote { font-size: 13px; color: var(--text-secondary); }
+.rayde-md-error { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--error); flex-shrink: 0; }
+.rayde-md-image-alt { color: var(--text-secondary); }
+.rayde-md-image { position: relative; flex-shrink: 0; }
+.rayde-md-group { display: flex; flex-direction: column; gap: 16px; min-width: 0; flex-shrink: 0; }
+.rayde-md-small, .rayde-md-sub, .rayde-md-sup { font-size: 12px; }
+.rayde-md-sup { transform: translateY(-5px); }
+.rayde-md-sub { transform: translateY(3px); }
+.rayde-md-mark { background: var(--accent-subtle); }
+.rayde-md-underline { text-decoration: underline; }
+.rayde-md-diagram { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; flex-shrink: 0; min-width: 0; }
+.rayde-md-diagram-tools { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.rayde-md-diagram-tools > text { flex: 1; font-size: 12px; color: var(--text-secondary); }
+.rayde-md-diagram-viewport { position: relative; height: 300px; overflow: hidden; flex-shrink: 0; min-width: 0; }
 
 /* Explorer sections use the native collapse and split-panel interactions. */
 #rayde #rayde-explorer-sections > .ui-resizable-handle { height: 4px; flex-shrink: 0; }
@@ -382,10 +382,10 @@
 
 /* Documentation fragments share Markdown layout; the hint body owns scrolling. */
 .rayde-hover-docs { display: flex; flex-direction: column; gap: 8px; width: 410px; max-width: 100%; min-width: 0; }
-#rayde .rayde-hover-markdown { padding: 0; gap: 8px; max-width: 100%; align-self: stretch; }
-#rayde .rayde-hover-markdown .rayde-md-word { font-size: 13px; line-height: 20px; }
-#rayde .rayde-hover-markdown .rayde-md-code { padding: 8px; gap: 0; border-radius: 5px; overflow: auto; }
-#rayde .rayde-hover-markdown .rayde-md-code > .ui-code-hint-line { flex-shrink: 0; }
+.rayde-hover-markdown { padding: 0; gap: 8px; max-width: 100%; align-self: stretch; }
+.rayde-hover-markdown .rayde-md-word { font-size: 13px; line-height: 20px; }
+.rayde-hover-markdown .rayde-md-code { padding: 8px; gap: 0; border-radius: 5px; overflow: auto; }
+.rayde-hover-markdown .rayde-md-code > .ui-code-hint-line { flex-shrink: 0; }
 #rayde #rayde-lsp-tooltip, #rayde #rayde-lsp-menu { align-self: center; align-items: center; }
 #rayde .rayde-lsp-status { font-size: var(--text-xs); min-height: 0; height: 20px; padding: 0 6px; }
 #rayde .rayde-lsp-label { max-width: 340px; white-space: nowrap; overflow: hidden; }

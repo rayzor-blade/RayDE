@@ -27,6 +27,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "hover-layout") {
+			HoverLayoutChecks.main();
+			return;
+		}
 		if (Sys.getEnv("SNAPSHOT_ONLY") == "rayzor-samples") {
 			RayzorSampleViews.main();
 			return;
