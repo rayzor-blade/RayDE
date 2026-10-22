@@ -11,7 +11,7 @@ private typedef Parsed = {stamp:String, rules:Array<Rule>};
 /**
  * Whether git ignores a path, from the repository's `.git/info/exclude` and the `.gitignore` of each folder above it.
  * The last pattern that matches decides, and nothing inside an ignored folder can be brought back. Whether a file
- * is tracked is not considered, and neither are the user's global excludes.
+ * is tracked is not considered, and neither are the user's global excludes. A `.git` folder always counts as ignored.
  */
 class GitIgnore {
 	final root:String;
@@ -42,6 +42,7 @@ class GitIgnore {
 		var parts = full.substr(base.length + 1).split("/"), at = "";
 		for (i in 0...parts.length) {
 			at = at == "" ? parts[i] : at + "/" + parts[i];
+			if (parts[i] == ".git") return true;
 			var directory = i < parts.length - 1 || FileSystem.isDirectory(full);
 			if (matches(base, at, directory)) return true;
 		}

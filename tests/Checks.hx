@@ -806,7 +806,7 @@ class Checks {
 		var expected = ["build" => true, "build/a.o" => true, "app.log" => true, "keep.log" => false, "src/x.log" => true, "top-only.txt" => true, "src/top-only.txt" => false,
 			"out/deep/a.bin" => true, "out/a.bin" => true, "out/deep/a.txt" => false, "a.c" => true, "foo-bar" => true, "fooxxbar" => false, "docs/api" => true,
 			"docs/api/index.html" => true, "docs/guide.md" => false, "#hash" => true, "excluded.txt" => true, "src/a.tmp" => true, "src/important.tmp" => false,
-			"src/keep/this.txt" => false, "src/keep/other.txt" => true, "src/nested/b.tmp" => true, "a.tmp" => false, "plain.hx" => false, ".gitignore" => false, "src" => false];
+			"src/keep/this.txt" => false, "src/keep/other.txt" => true, "src/nested/b.tmp" => true, "a.tmp" => false, "plain.hx" => false, ".gitignore" => false, "src" => false, ".git" => true, ".git/info/exclude" => true];
 		for (path => value in expected) check(ignore.ignored(root + "/" + path) == value, "gitignore: " + path + (value ? " is ignored" : " is not ignored"));
 		check(!new rayde.files.GitIgnore("/").ignored("/tmp"), "gitignore: nothing is ignored outside a repository");
 		put(".gitignore", "plain.hx\n");
