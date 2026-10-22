@@ -271,6 +271,12 @@ class Snapshots {
 				function says(word:String):Bool return studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
 				until(() -> { if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get()); return says("Prepare extension runtime 1"); }, "file Timeline to search bounded pages for the initial commit");
 				shot("timeline");
+				click("#git-timeline .ui-button");
+				until(() -> has("#git-timeline-files .ui-button"), "the Timeline's selected commit to list its changed files");
+				click("#git-timeline-files .ui-button");
+				until(() -> StringTools.startsWith(bench.active.get(), Workbench.TAB) && bench.boundsOf("#git-diff-view") != null, "a Timeline commit file to open its change as a diff tab");
+				settle(30); shot("timeline-diff");
+				bench.closeFile(bench.active.get());
 				click("#rayde-explorer-toggle-dependencies");
 				until(() -> has("#rayde-dependencies-tree"), "Dependencies empty build");
 				// Resolve a declared library through the isolated haxelib command, with lazy source rows.
@@ -1417,13 +1423,28 @@ class Snapshots {
 					if (!says(label)) throw 'missing SCM content $label';
 				shot("scm-ready");
 				scroll("#git-scm-working-files", 150);
-				click("#git-scm-changes .ui-button");
-				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM filename row to open its full path in the editor");
+				click("#git-scm-changes .git-open-file .ui-button");
+				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM row's Open file button to open its full path in the editor");
 				var sourceDocument = bench.editorFor(bench.active.get()).document;
 				var retainedHeader = Css.query(tree, bench.node.id, "#rayde-tab-modified-txt")[0];
 				var sourcePath = bench.active.get();
+				click("#git-scm-changes > div > div > .ui-button");
+				until(() -> StringTools.startsWith(bench.active.get(), Workbench.TAB) && control("git-diff-view") != null, "an SCM filename row to open its change as a diff tab");
+				until(() -> @:privateAccess control("git-diff-view").diff != null && @:privateAccess control("git-diff-view").diff.changeCount.get() == 1, "the working change of modified.txt to be compared");
+				settle(20); shot("scm-diff");
+				var diffTab = bench.active.get();
+				bench.closeFile(diffTab); bench.active.set(sourcePath);
 				until(() -> says("Fixture"), "the sidebar history to finish loading");
 				until(() -> within("git-scm-commit-files", "history.txt"), "the selected sidebar commit's changed files");
+				function diffOf(selector:String, label:String, name:String):Void {
+					click(selector);
+					until(() -> StringTools.startsWith(bench.active.get(), Workbench.TAB) && control("git-diff-view") != null && @:privateAccess control("git-diff-view").diff != null && !@:privateAccess control("git-diff-view").diff.comparing.get(), label);
+					settle(20); shot(name);
+					var tab = bench.active.get(); bench.closeFile(tab); bench.active.set(sourcePath);
+				}
+				diffOf("#git-scm-staged > div > div > .ui-button", "a staged file to open its change against HEAD", "scm-diff-staged");
+				diffOf("#git-scm-untracked > div > div > .ui-button", "an untracked file to open as all added", "scm-diff-untracked");
+				diffOf("#git-scm-commit-files .ui-button", "a commit's file to open its change against the first parent", "scm-diff-commit");
 				var previousScene = @:privateAccess control("git-scm-canvas").scene.get();
 				git.connection.hook("active.changed", {path:sourcePath}); settle(30);
 				if ((@:privateAccess control("git-scm-canvas").scene.get()) != previousScene) throw "tab switches refreshed unchanged Git history";

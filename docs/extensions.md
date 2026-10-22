@@ -264,6 +264,8 @@ var branch = signal('all');
 
 `ui-menu` is Ashui's native DropdownMenu with an icon-sized chevron trigger. It takes `tooltip`, `disabled` and `options` (`{value, label, disabled?}`), and emits `select` with `{value}`. Its keyboard navigation, focus restoration and dismissal use the native component.
 
+`code-diff` is Ashui's CodeDiff: two texts compared. It takes `original` and `modified` strings, `language` (`haxe`, `json`, `rust`, `typescript`, `javascript`, `css`, `python`, `lua` or `plain`), `layout` (`inline` or `split`) and `navigation` (a bar with the change count and previous/next buttons, fixed once mounted). All but `navigation` can be signals. It is read-only and fills its parent.
+
 `canvas-kit` retains a serializable drawing scene and runs Ashui CanvasKit in the editor:
 
 ```haxe

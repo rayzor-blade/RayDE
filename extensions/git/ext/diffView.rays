@@ -1,0 +1,70 @@
+import rayde.workspace.root;
+import rayde.workspace.readFile;
+import rayde.workspace.openFile;
+import rayde.window.focusView;
+import gitNative.blobText;
+import report.report;
+
+var tabs = [];
+
+function basename(path) { return path.substr(path.lastIndexOf('/') + 1); }
+
+function languageOf(path) {
+  var dot = path.lastIndexOf('.');
+  var ext = dot < 0 ? '' : path.substr(dot + 1).toLowerCase();
+  return ext == 'hx' || ext == 'rays' || ext == 'hxx' ? 'haxe' : ext == 'json' || ext == 'rayext' ? 'json' : ext == 'rs' ? 'rust' : ext == 'ts' || ext == 'tsx' ? 'typescript' : ext == 'js' || ext == 'jsx' ? 'javascript' : ext == 'css' ? 'css' : ext == 'py' ? 'python' : ext == 'lua' ? 'lua' : 'plain';
+}
+
+function lines(text) { return text.split('\r\n').join('\n'); }
+
+/** One side of a diff: a blob of the repository, or the working file as the editor holds it. */
+function side(repository, spec, path) {
+  if (spec == null) return {text: '', binary: false};
+  if (spec == 'workdir') {
+    try { return {text: lines(await readFile(path)), binary: false}; } catch (failure) { return {text: '', binary: false}; }
+  }
+  var blob = blobText(repository, spec);
+  return {text: lines(blob.text), binary: blob.binary};
+}
+
+function Diff(props) {
+  var layout = signal('split');
+  onCleanup(() -> { tabs = tabs.filter(tab -> tab.key != props.id); });
+  return <div id="git-diff" class="flex flex-col flex-1 min-h-0 min-w-0">
+    <div class="flex items-center gap-2 px-4 py-2 border-b shrink-0">
+      <span id="git-diff-title" class="text-sm text-text-secondary flex-1 truncate">{props.title}</span>
+      <ui-button id="git-diff-layout" size="icon" variant="ghost" tooltip="Switch between side by side and inline" onClick={() -> layout.value = layout.value == 'split' ? 'inline' : 'split'}><ui-icon name="layout-columns"/></ui-button>
+      <if {props.openable}><ui-button id="git-diff-file" size="icon" variant="ghost" tooltip="Open file" onClick={() -> openFile(props.path)}><ui-icon name="code"/></ui-button></if>
+    </div>
+    <if {props.note.value != ''}><p id="git-diff-note" class="p-6 text-text-secondary">{props.note}</p>
+    <else><code-diff id="git-diff-view" original={props.original} modified={props.modified} language={props.language} layout={layout} navigation={true}/></if>
+  </div>;
+}
+
+/**
+  Opens a tab comparing two versions of `path`. A spec is a blob of the repository (`HEAD:path`, `:path` for the index,
+  `<commit>:path`), `workdir` for the working file, or null for no file. The same comparison reuses its tab.
+*/
+function showDiff(title, path, before, after, openable = true) {
+  var repository = await root();
+  var key = title + '\u0000' + path;
+  for (tab in tabs) if (tab.key == key) {
+    tab.original.value = '';
+    refill(tab, repository, before, after, path);
+    await focusView(tab.root);
+    return;
+  }
+  var tab = {key: key, original: signal(''), modified: signal(''), note: signal(''), root: 0};
+  tabs.push(tab);
+  tab.root = mount(() -> <Diff id={key} title={title} path={path} openable={openable} original={tab.original} modified={tab.modified} note={tab.note} language={languageOf(path)}/>, 'tab:' + basename(path) + ' (' + title + ')');
+  refill(tab, repository, before, after, path);
+}
+
+function refill(tab, repository, before, after, path) {
+  try {
+    var left = side(repository, before, path), right = side(repository, after, path);
+    tab.note.value = left.binary || right.binary ? 'Binary file not shown' : '';
+    tab.original.value = left.text;
+    tab.modified.value = right.text;
+  } catch (failure) { tab.note.value = 'Diff unavailable'; report(failure); }
+}

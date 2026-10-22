@@ -5,6 +5,7 @@ import ashui.canvaskit.CanvasKit;
 import ashui.canvaskit.Selection2D;
 import ashui.canvaskit.Viewport2D;
 import ashui.components.Button;
+import ashui.components.CodeDiff;
 import ashui.components.Icon;
 import ashui.components.Select;
 import ashui.components.Tooltip;
@@ -60,11 +61,17 @@ class BridgeControl {
 	final markdownDocument = Signal.make((null:Dynamic));
 	final markdownVisible = Signal.make(true);
 	var markdown:MarkdownView;
+	final diffOriginal = Signal.make("");
+	final diffModified = Signal.make("");
+	final diffLanguage = Signal.make("plain");
+	final diffLayout = Signal.make((Inline:CodeDiffLayout));
+	var diffNavigation = false;
+	var diff:Null<CodeDiff>;
 	final image:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	final markdownState:Dynamic;
 
 	public static function supported(tag:String):Bool
-		return tag == "markdown-view" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
+		return tag == "markdown-view" || tag == "code-diff" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
 
 	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}) {
 		this.tree = tree;
@@ -105,11 +112,15 @@ class BridgeControl {
 			node.set(Prop.FlexDirection, Column);
 			node.set(Prop.FlexShrink, (0:Single));
 		}
+		else if (kind == "code-diff") {
+			node.set(Prop.FlexDirection, Column);
+			node.set(Prop.FlexGrow, (1:Single));
+		}
 		else if (kind == "ui-icon") {
 			node.set(Prop.Width, (16:Single)); node.set(Prop.Height, (16:Single));
 			node.set(Prop.FlexShrink, (0:Single));
 		}
-		else if (kind != "canvas-kit" && kind != "markdown-view") node.set(Prop.Height, (32:Single));
+		else if (kind != "canvas-kit" && kind != "markdown-view" && kind != "code-diff") node.set(Prop.Height, (32:Single));
 	}
 
 	function buildCanvas():Void {
@@ -218,6 +229,16 @@ class BridgeControl {
 			case "document" if (kind == "markdown-view"):
 				markdownSource = data;
 				markdownDocument.set(data == null ? null : Std.isOfType(data, String) ? haxe.Json.parse(data) : data); return true;
+			case "original" if (kind == "code-diff"): diffOriginal.set(data == null ? "" : Std.string(data)); return true;
+			case "modified" if (kind == "code-diff"): diffModified.set(data == null ? "" : Std.string(data)); return true;
+			case "language" if (kind == "code-diff"): diffLanguage.set(data == null ? "plain" : Std.string(data)); return true;
+			case "layout" if (kind == "code-diff"):
+				var mode = data == null ? "inline" : Std.string(data);
+				if (["inline", "split"].indexOf(mode) < 0) throw "Unknown diff layout";
+				diffLayout.set(mode); return true;
+			case "navigation" if (kind == "code-diff"):
+				if (diff != null && (data == true) != diffNavigation) throw "Diff navigation is fixed while mounted";
+				diffNavigation = data == true; return true;
 			case "navigation" if (kind == "canvas-kit"):
 				var mode = data == null ? "canvas" : Std.string(data);
 				if (["canvas", "scroll"].indexOf(mode) < 0) throw "Unknown canvas navigation";
@@ -301,6 +322,14 @@ class BridgeControl {
 			if (markdown == null) scope.run(() -> {
 				markdown = new MarkdownView(markdownDocument, emit, markdownVisible, image, markdownState, () -> markdownSource);
 				tree.addChild(node.id, markdown.node.id);
+			});
+			return;
+		}
+		if (kind == "code-diff") {
+			if (diff == null) scope.run(() -> {
+				diff = new CodeDiff({original:diffOriginal, modified:diffModified, language:diffLanguage, layout:diffLayout, navigation:diffNavigation});
+				fill(diff);
+				tree.addChild(node.id, diff.node.id);
 			});
 			return;
 		}

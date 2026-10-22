@@ -80,6 +80,8 @@ class ViewIcons {
 		"pull" => Icons.ARROW_DOWN_LINE,
 		"push" => Icons.ARROW_UP_LINE,
 		"focus" => Icons.FOCUS_3_LINE,
+		"layout-columns" => Icons.LAYOUT_COLUMN_LINE,
+		"layout-rows" => Icons.LAYOUT_ROW_LINE,
 		"filter-off" => Icons.FILTER_OFF_LINE,
 		"pin" => Icons.PUSHPIN_LINE,
 		"lock" => Icons.LOCK_LINE,

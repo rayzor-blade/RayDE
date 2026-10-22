@@ -7,6 +7,7 @@ import gitNative.openHistory;
 import gitNative.remoteOperation;
 import historyGraph.compactScene;
 import commitFiles.selection;
+import diffView.showDiff;
 import commitFiles.Files;
 import report.report;
 
@@ -121,6 +122,17 @@ function open(path) {
   if (snapshot != null && snapshot.workdir != null) await openFile(snapshot.workdir + path);
 }
 
+/** A changed file opens as its diff: staged against HEAD, changes against the index, untracked against nothing. Conflicts open the file. */
+function openEntry(group, entry) {
+  var snapshot = state.value;
+  if (snapshot == null || snapshot.workdir == null) return;
+  var full = snapshot.workdir + entry.path, old = entry.renamedFrom == null || entry.renamedFrom == '' ? entry.path : entry.renamedFrom;
+  if (group == 'conflicts') { open(entry.path); return; }
+  if (group == 'staged') showDiff('Staged', full, entry.badge == 'A' ? null : 'HEAD:' + old, entry.badge == 'D' ? null : ':' + entry.path, entry.badge != 'D');
+  else if (group == 'untracked') showDiff('Untracked', full, null, 'workdir');
+  else showDiff('Changes', full, ':' + old, entry.badge == 'D' ? null : 'workdir', entry.badge != 'D');
+}
+
 function Sidebar(props) {
   return <div id="git-scm" class="flex flex-col flex-1 min-h-0 min-w-0">
     <div class="flex items-center gap-1 px-3 py-2 border-b shrink-0">
@@ -149,13 +161,16 @@ function Sidebar(props) {
             <span class="text-xs text-text-secondary">{group.items.length}</span>
           </div>
           <for {entry in group.items}>
-            <ui-button variant="ghost" class="w-full" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> open(entry.path)}>
-              <div class="flex items-center gap-2 w-full min-w-0 px-1">
-                <span class="text-sm truncate min-w-0">{entry.name}</span>
-                <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
-                <span class={entry.badge == '!' ? 'text-xs text-error' : entry.badge == 'U' || entry.badge == 'A' ? 'text-xs text-success' : 'text-xs text-warning'}>{entry.badge}</span>
-              </div>
-            </ui-button>
+            <div class="flex items-center min-w-0 w-full">
+              <ui-button variant="ghost" class="flex-1 min-w-0" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> openEntry(group.id, entry)}>
+                <div class="flex items-center gap-2 w-full min-w-0 px-1">
+                  <span class="text-sm truncate min-w-0">{entry.name}</span>
+                  <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
+                  <span class={entry.badge == '!' ? 'text-xs text-error' : entry.badge == 'U' || entry.badge == 'A' ? 'text-xs text-success' : 'text-xs text-warning'}>{entry.badge}</span>
+                </div>
+              </ui-button>
+              <ui-button size="icon" variant="ghost" class="git-open-file w-6 shrink-0" height={24} tooltip="Open file" onClick={() -> open(entry.path)}><ui-icon name="code"/></ui-button>
+            </div>
           </for>
           <if {group.items.length == 0}><span class="px-4 text-xs text-text-tertiary">No files</span></if>
         </div>

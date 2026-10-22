@@ -106,6 +106,7 @@ import gitNative.repositoryStatus;
 import gitNative.remoteOperation;
 import gitNative.commitChanges;
 import gitNative.openFileHistory;
+import gitNative.blobText;
 function emit(value) { trace('@result:' + stringify(value)); }
 function text(snapshot) {
   for (part in [snapshot.staged, snapshot.changes])
@@ -356,6 +357,19 @@ emit({commits:commits, error:error, absent:absent, empty:empty});
         assert result["absent"] == {"commits":[], "done":True}, result
         assert result["empty"] == {"commits":[], "done":True}, result
         assert "closed" in result["error"], result
+        write(changes, "image.bin", b"\x00\x01\x02binary")
+        git(changes, "add", "image.bin")
+        write(changes, "after.txt", "retained content\n" * 10 + "edited in the index\n")
+        git(changes, "add", "after.txt")
+        result = host.run(PREAMBLE + """
+emit({parent:blobText(REPO,'HEAD^1:before.txt'), head:blobText(REPO,'HEAD:after.txt'), index:blobText(REPO,':after.txt'),
+  missing:blobText(REPO,'HEAD:no-such.txt'), binary:blobText(REPO,':image.bin'), empty:blobText(REPO,'HEAD^1:nested/added.txt')});
+""".replace("REPO", json.dumps(str(changes))))
+        assert result["parent"] == {"text":"retained content\n" * 10, "binary":False}, result
+        assert result["head"]["text"] == "retained content\n" * 10, result
+        assert result["index"]["text"].endswith("edited in the index\n"), result
+        assert result["missing"] == {"text":"", "binary":False}, result
+        assert result["binary"]["binary"] is True, result
     print("git commit files: root, modification, first-parent merge, rename, deletion, invalid revision recovery and metadata filtering", flush=True)
     git(history, "checkout", "--detach", "HEAD~2")
     with Host() as host:

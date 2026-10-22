@@ -46,6 +46,8 @@ native "git2" {
   // Only this borrowed prefix is read; hunk storage is never allocated by script.
   struct Hunk { oldStart:Int32; oldLines:Int32; newStart:Int32; newLines:Int32; headerLength:SizeT; }
   struct Line { origin:UInt8; oldLine:Int32; newLine:Int32; lines:Int32; length:SizeT; offset:Int64; content:Ptr; }
+  // The borrowed prefix of an index entry up to its object id.
+  struct IndexEntry { ctime:Int32; ctimeNanos:UInt32; mtime:Int32; mtimeNanos:UInt32; dev:UInt32; ino:UInt32; mode:UInt32; uid:UInt32; gid:UInt32; size:UInt32; id:Oid; }
   struct StatusEntry { flags:UInt32; headToIndex:Ptr<Delta>; indexToWorkdir:Ptr<Delta>; }
   struct StatusOptions { version:UInt32; show:Int32; flags:UInt32; pathspec:StrArray; baseline:Ptr; renameThreshold:UInt16; }
   struct DiffOptions {
@@ -78,6 +80,12 @@ native "git2" {
   function git_status_list_free(status:StatusList):Void;
   @:owner(repository) @:blocking function git_revparse_single(out:Out<Tree>, repository:Repository, spec:CString):Int32;
   function git_object_free(tree:Tree):Void;
+  @:owner(repository) @:blocking function git_repository_index(out:Out<Index>, repository:Repository):Int32;
+  @:owner(index) function git_index_get_bypath(index:Index, path:CString, stage:Int32):IndexEntry;
+  @:owner(repository) @:blocking function git_blob_lookup(out:Out<Tree>, repository:Repository, id:Oid):Int32;
+  function git_blob_rawsize(blob:Tree):Int64;
+  function git_blob_is_binary(blob:Tree):Int32;
+  @:owner(blob) function git_blob_rawcontent(blob:Tree):Ptr;
   function git_diff_options_init(options:DiffOptions, version:UInt32):Int32;
   @:owner(repository) @:blocking function git_diff_index_to_workdir(out:Out<Diff>, repository:Repository, index:Ptr, options:DiffOptions):Int32;
   @:owner(repository) @:blocking function git_diff_tree_to_index(out:Out<Diff>, repository:Repository, tree:Tree, index:Ptr, options:DiffOptions):Int32;
@@ -605,4 +613,34 @@ function openFileHistory(path, file) {
     } catch (error) { close(); throw error; }
   }
   return {next:next, close:close};
+}
+
+/** Looks a spec up as an object; `:path` is the index's blob, which revparse does not implement. */
+function findBlob(out, repository, spec) {
+  if (spec.substr(0, 1) != ':') return git_revparse_single(out, repository, spec);
+  var slot = Out(Index);
+  check(git_repository_index(slot, repository), 'open index');
+  var index = slot.value, code = -3;
+  try {
+    var entry = git_index_get_bypath(index, spec.substr(1), 0);
+    if (entry != null) code = git_blob_lookup(out, repository, entry.id);
+  } catch (failure) { index.close(); throw failure; }
+  index.close();
+  return code;
+}
+
+/** The text of the blob a revision spec names: `HEAD:path`, `:path` for the index, `<id>:path`. Missing is an empty text; a binary blob has no text. */
+function blobText(path, spec) {
+  return withRepository(path, repository -> {
+    var out = Out(Tree);
+    if (findBlob(out, repository, spec) < 0) return {text: '', binary: false};
+    var blob = out.value, text = '', binary = false;
+    try {
+      var size = git_blob_rawsize(blob);
+      if (git_blob_is_binary(blob) != 0) binary = true;
+      else if (size > 0) text = Bytes(git_blob_rawcontent(blob), size).toString();
+    } catch (failure) { binary = true; text = ''; }
+    blob.close();
+    return {text: text, binary: binary};
+  });
 }

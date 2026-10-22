@@ -1,5 +1,6 @@
 import gitNative.commitChanges;
 import rayde.workspace.root;
+import diffView.showDiff;
 import report.report;
 
 /** A view-owned selection; late reads cannot replace a newer commit's files. */
@@ -13,7 +14,7 @@ function selection(path) {
       var entries = commitChanges(path == null ? await root() : path, id), rows = [];
       for (entry in entries) {
         var split = entry.path.lastIndexOf('/');
-        rows.push({path:entry.path, name:split < 0 ? entry.path : entry.path.substr(split+1),
+        rows.push({id:id, status:entry.status, oldPath:entry.oldPath, path:entry.path, name:split < 0 ? entry.path : entry.path.substr(split+1),
           directory:split < 0 ? '' : entry.path.substr(0,split),
           renamedFrom:entry.status == 4 ? entry.oldPath : '',
           badge:entry.status == 1 ? 'A' : entry.status == 2 ? 'D' : entry.status == 4 ? 'R' : entry.status == 5 ? 'C' : entry.status == 8 ? 'T' : 'M'});
@@ -27,6 +28,13 @@ function selection(path) {
   return {files:files, busy:busy, error:error, choose:choose};
 }
 
+/** A commit's change to one file, against the commit's first parent; a root commit has none. */
+function showCommitFile(entry) {
+  var added = entry.status == 1, removed = entry.status == 2;
+  var old = entry.oldPath == null || entry.oldPath == '' ? entry.path : entry.oldPath;
+  showDiff(entry.id.substr(0, 7), entry.path, added ? null : entry.id + '^1:' + old, removed ? null : entry.id + ':' + entry.path, false);
+}
+
 function Files(props) {
   var state = props.state;
   return <div id={props.id} class="flex flex-col gap-1 min-w-0">
@@ -36,11 +44,13 @@ function Files(props) {
     <else>
       <for {entry in state.files}>
         <div class="flex flex-col min-w-0 px-3 py-1">
-          <div class="flex items-center gap-2 min-w-0">
+          <ui-button variant="ghost" class="w-full" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> showCommitFile(entry)}>
+          <div class="flex items-center gap-2 min-w-0 w-full">
             <span class="text-sm truncate min-w-0">{entry.name}</span>
             <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
             <span class={entry.badge == 'A' ? 'text-xs text-success' : entry.badge == 'D' ? 'text-xs text-error' : 'text-xs text-warning'}>{entry.badge}</span>
           </div>
+          </ui-button>
           <if {entry.renamedFrom != ''}><span class="text-xs text-text-secondary truncate">from {entry.renamedFrom}</span></if>
         </div>
       </for>
