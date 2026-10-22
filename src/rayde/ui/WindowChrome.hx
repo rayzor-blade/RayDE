@@ -43,6 +43,12 @@ class WindowChrome {
 		#end
 	}
 
+	public function title(value:String):Void {
+		#if ashui_window
+		if (win != null) win.setTitle(value);
+		#end
+	}
+
 	/** Reads the window's state again. */
 	public function refresh():Void {
 		#if ashui_window

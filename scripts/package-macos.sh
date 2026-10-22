@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a self-contained AOT RayDE.app with its runtime, extensions and Dock icon.
 #   scripts/package-macos.sh [folder]      the app goes in the folder, bin by default
-# Without a project argument, the bundled executable opens a project picker.
+# Without a workspace argument, the bundled executable opens Welcome.
 set -euo pipefail
 source "$(dirname "$0")/deps.sh"
 out=${1:-$here/bin}

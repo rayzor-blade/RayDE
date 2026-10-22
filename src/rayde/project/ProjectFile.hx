@@ -17,7 +17,7 @@ class ProjectFile {
 	public var args(default, null):Array<String> = [];
 	public var runnable(default, null) = true;
 
-	function new(file:String) { this.file = file; root = Path.directory(file); name = Path.withoutDirectory(root); }
+	function new(file:String, folder = false) { this.file = file; root = folder ? file : Path.directory(file); name = Path.withoutDirectory(root); if (name == "") name = root; }
 
 	public static function supported(file:String):Bool {
 		var name = Path.withoutDirectory(file).toLowerCase();
@@ -26,7 +26,12 @@ class ProjectFile {
 
 	public static function read(file:String):ProjectFile {
 		file = FileSystem.fullPath(file);
-		if (!supported(file) || FileSystem.isDirectory(file)) throw "Choose an .hxml, haxelib.json or rayzor.toml project file";
+		if (FileSystem.isDirectory(file)) {
+			var workspace = new ProjectFile(file, true);
+			workspace.kind = "folder"; workspace.runtime = ""; workspace.runnable = false;
+			return workspace;
+		}
+		if (!supported(file)) throw "Choose a folder, .hxml, haxelib.json or rayzor.toml project file";
 		var project = new ProjectFile(file), name = Path.withoutDirectory(file).toLowerCase();
 		if (StringTools.endsWith(name, ".hxml")) {
 			project.kind = "hxml"; project.hxml = file; project.args = Hxml.read(file);

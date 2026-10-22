@@ -1,6 +1,6 @@
 package rayde.settings;
 
-/** User-wide project entry points, newest first; file contents are never cached. */
+/** User-wide project entries and folder workspaces, newest first; contents are never cached. */
 class RecentProjects {
 	static inline var LIMIT = 20;
 
@@ -11,7 +11,7 @@ class RecentProjects {
 			if (!Std.isOfType(entry, String)) continue;
 			var file:String = entry;
 			try {
-				if (haxe.io.Path.isAbsolute(file) && sys.FileSystem.exists(file) && !sys.FileSystem.isDirectory(file) && result.indexOf(file) < 0)
+				if (haxe.io.Path.isAbsolute(file) && sys.FileSystem.exists(file) && result.indexOf(file) < 0)
 					result.push(file);
 			} catch (_:Dynamic) {}
 			if (result.length == LIMIT) break;
@@ -22,7 +22,7 @@ class RecentProjects {
 	public static function remember(file:String, ?home:String):Void {
 		try {
 			file = sys.FileSystem.fullPath(file);
-			if (!sys.FileSystem.exists(file) || sys.FileSystem.isDirectory(file)) return;
+			if (!sys.FileSystem.exists(file)) return;
 			var previous = paths(home); previous.remove(file); previous.unshift(file);
 			Store.save(home ?? Extensions.home(), "recentProjects", {paths:previous.slice(0, LIMIT)});
 		} catch (_:Dynamic) {}

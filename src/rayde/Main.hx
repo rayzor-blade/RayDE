@@ -1,44 +1,20 @@
 package rayde;
 
 import ashui.app.WindowedApp;
-import rayde.settings.Appearance;
 import rayde.ui.Theming;
-import rayde.ext.Manifest;
 import rayde.lang.CompilerServer;
-import rayde.lang.Display;
-import rayde.theme.ThemeFile;
-import rayde.ui.Workbench;
+import rayde.ui.WorkspaceWindow;
 
-/** Opens a project entry, extension or theme in the workbench; the macOS bundle offers project creation without arguments. */
+/** Starts on Welcome, or opens a folder, project entry, extension or theme supplied on the command line. */
 class Main {
 	static function main():Void {
 		var args = Sys.args();
-		if (args.length == 0 && Sys.systemName() == "Mac" && sys.FileSystem.exists(haxe.io.Path.directory(Sys.programPath()) + "/../Info.plist")) {
-			var chosen = rayde.ui.ProjectPicker.pick();
-			if (chosen == null) return;
-			args = [chosen];
-		}
-		if (args.length == 0) {
-			Sys.println("usage: rayde <build.hxml | haxelib.json | rayzor.toml | name.rayext | name.raytheme>");
-			Sys.exit(1);
-		}
-		var root = haxe.io.Path.directory(sys.FileSystem.fullPath(args[0]));
-		var extension = Manifest.isManifest(args[0]) ? Manifest.read(args[0]) : null;
-		var theme = ThemeFile.isThemeFile(args[0]) ? ThemeFile.read(sys.FileSystem.fullPath(args[0])) : null;
-		rayde.theme.Themes.scan(root);
-		var appearance = Appearance.read(root);
-		// A theme project shows the theme as the file says it, in place of the chosen one.
-		if (theme != null)
-			Theming.pin(theme, appearance);
-		else
-			Theming.apply(appearance);
+		var server = new CompilerServer(), workspace = WorkspaceWindow.describe(server, args.length == 0 ? null : args[0]);
+		var appearance = WorkspaceWindow.applyAppearance(workspace);
 		rayde.ui.Style.use();
-		// An extension is not built by the Haxe compiler: its display has no build file, and the server never starts.
-		var server = new CompilerServer(), display = extension != null || theme != null ? new Display(server, root, []) : Display.ofProject(server, args[0]);
-		rayde.settings.RecentProjects.remember(args[0]);
-		var name = extension != null ? extension.name : theme != null ? theme.name : display.project.name;
+		if (args.length > 0) rayde.settings.RecentProjects.remember(args[0]);
 		WindowedApp.run({
-			title: "RayDE · " + name,
+			title: workspace.empty == true ? "RayDE" : "RayDE · " + workspace.name,
 			width: 1280,
 			height: 800,
 			minWidth: 800,
@@ -53,19 +29,7 @@ class Main {
 		}, () -> {
 			var app = WindowedApp.current;
 			rayde.ui.GpuProgress.attach(app.device, app.tree, () -> app.frames);
-			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : display.project == null ? "ash" : display.project.runtime, extension: extension, theme: theme, chrome: rayde.ui.WindowChrome.ofApp()});
-			bench.openProject();
-			// RAYDE_PANEL=terminal (or problems, console) opens the bottom panel on that tab at launch, for scripted runs.
-			var tab = Sys.getEnv("RAYDE_PANEL");
-			if (tab == "terminal")
-				bench.toggleTerminal();
-			else if (tab != null && tab != "")
-				bench.showPanel(tab);
-			// RAYDE_SETTINGS=appearance (or build, libraries, terminal, keys, extensions) opens the Settings page on that section.
-			var section = Sys.getEnv("RAYDE_SETTINGS");
-			if (section != null && section != "")
-				bench.openSettings(section);
-			return bench;
+			return new WorkspaceWindow({initial:workspace, server:server, chrome:rayde.ui.WindowChrome.ofApp()});
 		});
 		server.stop();
 	}

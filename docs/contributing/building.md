@@ -1,6 +1,8 @@
 # Building and running
 
 ```sh
+scripts/rayde.sh                        # Welcome, with opening and creation choices
+scripts/rayde.sh path/to/workspace       # any folder, including non-Haxe projects
 scripts/rayde.sh path/to/build.hxml      # open a Haxe project; Run builds it and runs it on ash
 scripts/rayde.sh path/to/name.rayext     # open an extension project
 scripts/rayde.sh path/to/name.raytheme   # open a theme project

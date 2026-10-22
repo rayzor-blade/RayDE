@@ -14,7 +14,9 @@ class RecentProjectsChecks {
 		if (RecentProjects.paths(home).join(",") != first + "," + second) throw "Recent projects lost recency, deduplication, spaces or Unicode";
 		if (Store.section(home, "appearance").theme != "test" || RecentProjects.paths(other).length != 0) throw "Project history overwrote settings or crossed users";
 		Store.save(home, "recentProjects", {paths:([first, root, "relative.hxml", root + "/missing.hxml", null, 12, first, second]:Array<Dynamic>)});
-		if (RecentProjects.paths(home).join(",") != first + "," + second) throw "Recent projects accepted malformed, missing or directory entries";
+		if (RecentProjects.paths(home).join(",") != first + "," + root + "," + second) throw "Recent workspaces lost folders or accepted malformed or missing entries";
+		RecentProjects.remember(root, home);
+		if (RecentProjects.paths(home)[0] != root) throw "Folder workspaces do not retain recency";
 		for (i in 0...25) {
 			var file = root + '/project$i.hxml'; sys.io.File.saveContent(file, ""); RecentProjects.remember(file, home);
 		}

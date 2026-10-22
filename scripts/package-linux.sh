@@ -19,19 +19,10 @@ install -m 644 packaging/linux/rayde.desktop "$prefix/share/applications/rayde.d
 install -m 644 packaging/linux/rayde-mime.xml "$prefix/share/mime/packages/rayde.xml"
 cat > "$prefix/bin/rayde" <<'LAUNCH'
 #!/bin/sh
-# Starts RayDE on ash: a project given on the command line, else one chosen in a dialog when there is one.
+# Starts RayDE on Welcome, or a workspace supplied on the command line.
 lib=$(cd "$(dirname "$(readlink -f "$0")")/../lib/rayde" && pwd)
 ash=${RAYDE_ASH:-$(command -v ash 2>/dev/null || echo "$HOME/.ash/bin/ash")}
 [ -x "$ash" ] || { echo "rayde: ash was not found; install it or set RAYDE_ASH" >&2; exit 1; }
-if [ $# -eq 0 ]; then
-  if command -v zenity >/dev/null 2>&1; then
-    project=$(zenity --file-selection --title="Open a project (.hxml, haxelib.json or rayzor.toml)" 2>/dev/null) || exit 0
-    set -- "$project"
-  elif command -v kdialog >/dev/null 2>&1; then
-    project=$(kdialog --getopenfilename . "*.hxml *.json *.toml *.rayext *.raytheme" 2>/dev/null) || exit 0
-    set -- "$project"
-  fi
-fi
 export RAYDE_EXTENSIONS="$(cd "$lib/../../share/rayde/extensions" && pwd)"
 exec "$ash" --preset application "$lib/rayde.hl" "$@"
 LAUNCH

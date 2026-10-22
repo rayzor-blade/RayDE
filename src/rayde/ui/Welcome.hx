@@ -12,6 +12,13 @@ typedef WelcomeProps = {
 	name:String,
 	runtime:String,
 	root:String,
+	?empty:Bool,
+	?folder:Bool,
+	projects:Array<String>,
+	onProject:String->Void,
+	onOpenFolder:Void->Void,
+	onOpenProject:Void->Void,
+	onNewProject:Void->Void,
 	/** The build file, compiler version, source folders and indexed file count. */
 	build:String,
 	haxe:String,
@@ -31,15 +38,14 @@ typedef WelcomeProps = {
 
 /**
  * What the editor shows with nothing open, in place of the tab strip: where
- * the project stands and the ways to start. It opens the main class, searches
- * the files, lists the commands and runs the project, each beside its keys, and
- * lists the files opened last. Everything on it comes from the project itself.
+ * to open a workspace, or where the current project stands. Recent workspace
+ * paths and recent files stay separate from editor and preview instances.
  */
 class Welcome extends Component<WelcomeProps> {
 	function render():Element {
 		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl";
-		return <div id="rayde-welcome" class="rayde-welcome flex flex-1 min-h-0 items-center justify-center overflow-auto">
-			<div class="flex flex-col gap-7 px-10 py-6" width={900}>
+		return <div id="rayde-welcome" class="rayde-welcome flex flex-col flex-1 min-h-0 items-center overflow-auto">
+			<div class="flex flex-col gap-7 px-10 py-6 max-w-full my-auto shrink-0" width={900}>
 				<div class="flex flex-col gap-3">
 					<for {dark in [darkScheme()]}>${wordmark(dark)}</for>
 					<text class="text-sm text-text-secondary">Haxe Integrated Development Environment</text>
@@ -49,21 +55,27 @@ class Welcome extends Component<WelcomeProps> {
 						<div class="flex flex-col gap-2">
 							<text class="rayde-section">Start</text>
 							<div class="flex flex-col gap-1">
+								${action("welcome-open-folder", Icons.FOLDER_OPEN_LINE, "Open Folder…", "Open any folder as a workspace", [], props.onOpenFolder)}
+								${action("welcome-open-project", Icons.FILE_CODE_LINE, "Open Project…", "Open a build file or project manifest", [], props.onOpenProject)}
+								${action("welcome-new-project", Icons.FOLDER_ADD_LINE, "New Project…", "Create a project from a template", [], props.onNewProject)}
 								<if {props.main != null}>${action("welcome-main", Icons.HAXE, "Open " + haxe.io.Path.withoutDirectory(props.main), "The project's main class", [], () -> props.onOpen(props.main))}</if>
-								${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", [mod, "P"], props.onFiles)}
+								<if {props.empty != true}>${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", [mod, "P"], props.onFiles)}</if>
 								${action("welcome-commands", Icons.COMMAND_LINE, "Show all commands", "Run, save, close, go to line and the rest", ["⇧", mod, "P"], props.onCommands)}
 								<if {props.canRun != false}>${action("welcome-run", Icons.PLAY_FILL, "Run the project", "Build " + props.build + " and run it on " + props.runtime, ["F5"], props.onRun)}</if>
-								${action("welcome-build", Icons.SETTINGS_3_LINE, "Configure the build", "Target, main class, class paths, libraries, defines", [], props.onBuild)}
+								<if {props.build != ""}>${action("welcome-build", Icons.SETTINGS_3_LINE, "Configure the build", "Target, main class, class paths, libraries, defines", [], props.onBuild)}</if>
 							</div>
 						</div>
-						<div class="flex flex-col gap-2">
+						<if {props.empty != true}><div class="flex flex-col gap-2">
 							<text class="rayde-section">Recent</text>
 							<for {list in [props.recent.get()]}>${recent(list)}</for>
-						</div>
+						</div></if>
 					</div>
 					<div class="flex flex-col gap-2 shrink-0" width={310}>
-						<text class="rayde-section">Project</text>
-						${projectCard()}
+						<if {props.empty == true}>
+							<text class="rayde-section">Recent workspaces</text>
+							<if {props.projects.length == 0}><text class="text-sm text-text-tertiary px-2 py-1">Projects and folders you open appear here.</text>
+							<else><div id="welcome-projects" class="flex flex-col gap-1 overflow-auto" maxHeight={360}>{[for (path in props.projects) projectRow(path)]}</div></if>
+						<else><text class="rayde-section">${props.folder == true ? "Workspace" : "Project"}</text>${projectCard()}</if>
 					</div>
 				</div>
 			</div>
@@ -104,9 +116,19 @@ class Welcome extends Component<WelcomeProps> {
 	function recentRow(path:String):Element {
 		var root = haxe.io.Path.addTrailingSlash(props.root), relative = StringTools.startsWith(path, root) ? path.substr(root.length) : path;
 		return <div id={"welcome-recent-" + ~/[^A-Za-z0-9]+/g.replace(relative, "-")} class="rayde-action flex items-center gap-3 px-2 cursor-pointer" height={36} onClick={_ -> props.onOpen(path)}>
-			<icon document={Icons.HAXE} class="size-4 shrink-0"/>
+			<icon document={FileIcons.of(path)} class="size-4 shrink-0"/>
 			<text class="text-sm shrink-0">${haxe.io.Path.withoutDirectory(path)}</text>
 			<text class="text-xs text-text-tertiary">${haxe.io.Path.directory(relative)}</text>
+		</div>;
+	}
+
+	function projectRow(path:String):Element {
+		var folder = sys.FileSystem.isDirectory(path), root = folder ? path : haxe.io.Path.directory(path);
+		return <div id={"welcome-project-" + props.projects.indexOf(path)} class="rayde-action flex items-center gap-3 px-2 py-2 cursor-pointer shrink-0" onClick={_ -> props.onProject(path)}>
+			<icon document={folder ? Icons.FOLDER_OPEN_LINE : Icons.FILE_CODE_LINE} class="size-4 shrink-0"/>
+			<div class="flex flex-col flex-1 min-w-0"><text class="text-sm">${haxe.io.Path.withoutDirectory(root)}</text>
+				<text class="text-xs text-text-tertiary">${folder ? "Folder workspace" : haxe.io.Path.withoutDirectory(path)}</text>
+				<text class="text-xs text-text-tertiary">${shortPath(root)}</text></div>
 		</div>;
 	}
 
@@ -121,10 +143,8 @@ class Welcome extends Component<WelcomeProps> {
 				</div>
 			</div>
 			<div class="flex flex-col gap-2">
-				${fact("Runtime", props.runtime)}
-				${fact("Compiler", props.haxe)}
-				${fact("Build file", props.build)}
-				${fact("Source", props.sources.join(", "))}
+				<if {props.folder != true}>${fact("Runtime", props.runtime)}${fact("Compiler", props.haxe)}
+					${fact("Build file", props.build)}${fact("Source", props.sources.join(", "))}</if>
 				<for {count in [props.files()]}>${fact("Files", count + (count == 1 ? " file" : " files"))}</for>
 				<for {list in [props.problems.get()]}>${problems(list)}</for>
 			</div>

@@ -83,6 +83,9 @@ typedef WorkbenchProps = {
 	?extension:Manifest,
 	/** The theme this project is, when it was opened from a `.raytheme`. */
 	?theme:ThemeFile,
+	/** A fresh window has no workspace, file index or workspace services. */
+	?empty:Bool,
+	?onWorkspace:String->Void,
 	/** The window's controls: the app's window; without one the controls act on nothing and keep their own state, as in a test. */
 	?chrome:WindowChrome
 };
@@ -253,6 +256,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final buildRevision = Signal.make(0);
 	/** The side panel's width, activity bar included. */
 	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
+	final projectPicker = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
+	var pickingProject = false;
 	final explorerShown:Computed<Bool>;
 	/** The bottom panel's height: 0 while it is closed, which is how it starts. */
 	final problemsHeight = Signal.make(0.);
@@ -373,6 +378,7 @@ class Workbench extends Component<WorkbenchProps> {
 	var lastBuild:Null<Array<Diagnostic>>;
 
 	public function new(props:WorkbenchProps) {
+		if (props.empty == true) treeWidth.set(ACTIVITY);
 		localHistory = new LocalHistory(props.display.cwd);
 		localHistory.changed = () -> historyRevision.set(historyRevision.get() + 1);
 		localHistory.failed = message -> ashui.animation.AnimationScheduler.main.after(.01, () -> { if (!gone) say(message); });
@@ -383,6 +389,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens what a project opens with: for an extension, its main script, with its view shown where the config puts it. */
 	public function openProject():Void {
+		if (props.empty == true) return;
 		if (sessionReady) return;
 		workspaceSession = new WorkspaceSession(props.display.cwd, projectEntry() ?? (extension != null ? extension.file : themeStudio != null ? themeStudio.file : props.display.cwd));
 		var saved = workspaceSession.read();
@@ -1136,6 +1143,48 @@ class Workbench extends Component<WorkbenchProps> {
 	function toggleExplorer():Void
 		treeWidth.set(explorerShown.get() ? ACTIVITY : ACTIVITY + EXPLORER_WIDTH);
 
+	public function openWorkspace(path:String):Void {
+		if (props.onWorkspace == null) { say("Workspace opening requires an editor window"); return; }
+		function open():Void props.onWorkspace(path);
+		if (dirty.get().length > 0) {
+			prompt.set({title:"Open another workspace", description:"Save your edited files before switching workspaces.", action:"Save and Open",
+				accept:_ -> { saveAll(); open(); }});
+		} else try open() catch (error:Dynamic) say(Std.string(error));
+	}
+
+	function pickProject(mode:String, ?kind:String, ?name:String):Void {
+		if (pickingProject) return;
+		pickingProject = true;
+		projectPicker.submit("pick", {mode:mode, kind:kind, name:name});
+		ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
+	}
+
+	function pollProjectPicker():Void {
+		if (gone) return;
+		for (result in projectPicker.poll()) {
+			pickingProject = false;
+			if (result.error != null) say(result.error);
+			else if (result.value != null) openWorkspace(result.value);
+		}
+		if (pickingProject) ashui.animation.AnimationScheduler.main.after(.05, pollProjectPicker);
+	}
+
+	function newProject():Void {
+		openPicker("Choose a project template", [for (kind in ["hxml", "haxelib", "rayzor"]) {
+			id:kind, label:kind == "hxml" ? "Haxe application" : kind == "haxelib" ? "Haxe library" : "Rayzor application", icon:Icons.FOLDER_ADD_LINE,
+			run:() -> prompt.set({title:"New Project", description:"Choose a name, then select the parent folder for the new project.", action:"Choose Location…",
+				hasInput:true, value:"my-project", placeholder:"Project name",
+				check:name -> rayde.project.ProjectFile.validName(name) ? null : "Start with a letter; use letters, numbers, hyphens or underscores (up to 64 characters).",
+				accept:name -> pickProject("new", kind, name)})
+		}]);
+	}
+
+	function recentProjects():Void {
+		openPicker("Open a recent project or folder", [for (path in rayde.settings.RecentProjects.paths()) {
+			id:path, label:haxe.io.Path.withoutDirectory(path), shortcut:haxe.io.Path.directory(path), icon:Icons.FOLDER_OPEN_LINE, run:() -> openWorkspace(path)
+		}]);
+	}
+
 	/** Moves the cursor of the file in front to `line` (from 1). */
 	function goToLine(line:Int):Void {
 		var file = active.get();
@@ -1146,6 +1195,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
 	function commands():Array<CenterAction>
 		return [
+			{id:"openfolder", label:"Open Folder…", icon:Icons.FOLDER_OPEN_LINE, run:() -> pickProject("folder")},
+			{id:"openproject", label:"Open Project…", icon:Icons.FILE_CODE_LINE, run:() -> pickProject("project")},
+			{id:"newproject", label:"New Project…", icon:Icons.FOLDER_ADD_LINE, run:newProject},
+			{id:"recentprojects", label:"Open Recent Workspace…", icon:Icons.HISTORY_LINE, run:recentProjects},
 			{id: "quickopen", label: "Go to File...", icon: Icons.SEARCH_LINE, run: () -> openCenter()},
 			{id: "commands", label: "Show All Commands", icon: Icons.CODE_BOX_LINE, run: () -> openCenter(">")},
 			{id: "gotoline", label: "Go to Line...", icon: Icons.ARROW_RIGHT_LINE, run: () -> openCenter(":")},
@@ -1209,7 +1262,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
-		].concat(contributedCommands());
+		].concat(contributedCommands()).filter(action -> props.empty != true || ["openfolder", "openproject", "newproject", "recentprojects", "commands", "settings", "colorscheme", "keybindings", "keymap", "minimize", "fullscreen", "maximize", "explorer"].indexOf(action.id) >= 0);
 
 	/** Namespaced bindings let extensions declare the same local command id. */
 	static function extensionKey(id:String, command:String):String return Manager.commandKey(id, command);
@@ -1576,6 +1629,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function startExtensions():Void {
 		extensionManager = new Manager(props.display.cwd, {builtins: Extensions.builtins(), user: haxe.io.Path.join([Extensions.home(), ".rayde", "extensions"]),
 			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
+		if (props.empty == true) return;
 		extensionManager.onDiscover = entry -> {
 			var m = entry.connection.manifest, dev = entry.installed.scope == "Development";
 			if (dev) { entry.connection.source = () -> buffer(entry.connection.file).get(); entry.connection.useMocks = true; }
@@ -1827,6 +1881,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
+		if (props.empty == true || props.display.project != null && !props.display.project.runnable && !isExtension(active.get())) return;
 		// Run is Continue while the extension is stopped.
 		var d = debugger();
 		if (d != null && d.stopped.get() != null) {
@@ -1972,7 +2027,7 @@ class Workbench extends Component<WorkbenchProps> {
 		commandList = commands();
 		refreshFileIndex();
 		refreshShortcuts();
-		loadRecent();
+		if (props.empty != true) loadRecent();
 		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> releaseClosedDocuments(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> problemsHeight.get(), h -> if (h > 40) panelHeight = h);
 		new ashui.reactive.Watch(() -> { open.get(); active.get(); 0; }, _ -> {
@@ -1998,6 +2053,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			projectPicker.dispose();
 			if (languagePollTimer != null) languagePollTimer.cancel();
 			languagePollTimer = null;
 			languagesScheduled = false;
@@ -2314,6 +2370,10 @@ class Workbench extends Component<WorkbenchProps> {
 	function explorer(shown:Bool):Element {
 		if (!shown)
 			return <div/>;
+		if (props.empty == true) return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 gap-3 p-3">
+			<text class="rayde-heading">Explorer</text><text class="text-sm text-text-secondary">No folder open</text>
+			<button id="rayde-empty-open-folder" onClick={_ -> pickProject("folder")}>Open Folder…</button>
+		</div>;
 		var files = () -> <context-menu ref={explorerMenu} id="rayde-explorer-menu">
 				<context-menu-trigger id="rayde-explorer-trigger">
 					<explorer-tree root={props.display.cwd} name={props.name} entries={explorerEntries} outside={outsideFolders} head={headRow} icon={fileIcon}
@@ -2706,6 +2766,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The project's source folders as the build names them: the label as written, and the folder in full. */
 	function classpaths():Array<{label:String, dir:String}> {
+		if (props.display.project != null && props.display.project.kind == "folder") return [{label:".", dir:props.display.cwd}];
 		if (themeStudio != null)
 			return [{label: haxe.io.Path.withoutDirectory(props.display.cwd), dir: props.display.cwd}];
 		if (extension != null)
@@ -2730,7 +2791,7 @@ class Workbench extends Component<WorkbenchProps> {
 		return entry == null ? null : {path: entry, icon: Icons.SETTINGS_3_LINE};
 	}
 
-	function projectEntry():Null<String> return props.display.project == null ? props.display.hxml : props.display.project.file;
+	function projectEntry():Null<String> return props.display.project == null ? props.display.hxml : props.display.project.kind == "folder" ? null : props.display.project.file;
 
 	/** The source folders outside the project's own folder, which the Explorer lists after its entries. */
 	function outsideFolders():Array<{dir:String, label:String}>
@@ -2749,6 +2810,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function refreshFileIndex():Void {
+		if (props.empty == true) return;
 		fileIndex.refresh([for (cp in classpaths()) cp.dir]);
 		if (fileIndexScheduled || gone) return;
 		fileIndexScheduled = true;
@@ -2839,7 +2901,9 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function welcome():Element
 		return <welcome name={props.name} runtime={runtime()} root={props.display.cwd}
-			build={projectEntry() == null ? "build.hxml" : haxe.io.Path.withoutDirectory(projectEntry())} haxe={compilerVersion()} canRun={props.display.project == null || props.display.project.runnable}
+			empty={props.empty == true} folder={props.display.project != null && props.display.project.kind == "folder"}
+			projects={rayde.settings.RecentProjects.paths()} onProject={openWorkspace} onOpenFolder={() -> pickProject("folder")} onOpenProject={() -> pickProject("project")} onNewProject={newProject}
+			build={projectEntry() == null ? "" : haxe.io.Path.withoutDirectory(projectEntry())} haxe={props.empty == true || runtime() == "" ? "" : compilerVersion()} canRun={props.empty != true && (props.display.project == null || props.display.project.runnable)}
 			sources={[for (cp in classpaths()) cp.label]} files={() -> projectFiles().length} main={mainFile()} recent={recent} problems={problems}
 			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run} onBuild={openBuild}/>;
 
@@ -3351,9 +3415,9 @@ class Workbench extends Component<WorkbenchProps> {
 			<for {on in [panelShown.get()]}>${panelItem(on)}</for>
 			<for {server in [languageStatus()]}><if {server != null}>${languageServerItem(server)}</if></for>
 			<for {name in [LanguageNames.of(realFile(active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>
-			<tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
+			<if {runtime() != ""}><tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
 				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
-			</tooltip>
+			</tooltip></if>
 		</div>;
 
 	function languageStatus():Null<LanguageServerStatus> {
@@ -3429,7 +3493,7 @@ class Workbench extends Component<WorkbenchProps> {
 	 * show hints between lines; until then it sits here.
 	 */
 	function runStatus(state:String):Element {
-		if (props.display.project != null && !props.display.project.runnable) return <div/>;
+		if (props.empty == true || props.display.project != null && !props.display.project.runnable) return <div/>;
 		var active = state == "building" || state == "running";
 		return <div class="flex items-center gap-2">
 			<if {state == "building"}><text class="text-text-tertiary">Building</text></if>

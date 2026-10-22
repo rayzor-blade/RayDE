@@ -109,6 +109,7 @@ class Theming {
 
 	/** Goes back to the chosen theme. */
 	public static function unpin(a:Appearance):Void {
+		if (pinned == null) { apply(a); return; }
 		pinned = null;
 		installed = null;
 		apply(a);

@@ -1,5 +1,7 @@
 # Explorer views
 
+Use **Open Folder** on Welcome to browse any workspace folder without a Haxe project file. A fresh editor starts with Explorer collapsed; expanding it offers Open Folder until a workspace is selected. **Open Project** selects a build file or manifest instead. Both choices are also in the command center, along with recent workspaces.
+
 The file tree occupies the top pane. Drag the horizontal dividers to resize it and the Outline, Timeline and Dependencies panes. Outline, Timeline and Dependencies have collapsible headers; reopening restores their height. Their state survives switching between Explorer and another sidebar. Focus a divider and use the arrow keys to resize with the keyboard.
 
 The tree mounts only the rows in view, with a few above and below, from a flat list of what is shown; scrolling, opening and closing folders change that list and leave the cost of the screen as it was. A closed folder holds nothing, and its entries are read again when it opens. A file that comes forward is scrolled into view when its folders are open, and the arrow keys, Home, End, Page Up and Page Down move through the rows with Right and Left opening and closing folders and stepping in and out, as in any tree.

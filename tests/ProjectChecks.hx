@@ -16,6 +16,12 @@ class ProjectChecks {
 		sys.FileSystem.createDirectory(root);
 		var entries = [for (kind in ["hxml", "haxelib", "rayzor"]) ProjectFile.create(root, "test-" + kind, kind)];
 		var server = new CompilerServer();
+		var folder = Display.ofProject(server, root);
+		check(folder.cwd == root && folder.project.file == root && folder.project.kind == "folder", "Folder workspace lost its root or identity");
+		check(folder.hxml == null && folder.args.length == 0 && !folder.project.runnable && folder.project.runtime == "", "Folder workspace assumes a Haxe build or runtime");
+		sys.io.File.saveContent(root + "/build.hxml", "this is not a valid build\n");
+		folder.reload();
+		check(folder.hxml == null && folder.args.length == 0, "Folder workspace inferred a descriptor instead of retaining folder mode");
 		for (entry in entries) {
 			var project = ProjectFile.read(entry), display = Display.ofProject(server, entry);
 			check(display.cwd == haxe.io.Path.directory(entry) && display.project.file == entry, "Project entry lost workspace identity");
