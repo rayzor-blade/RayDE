@@ -4,6 +4,8 @@ The built-in [Rayzor language server](languages.md) provides Haxe services over 
 
 The startup project picker offers recent projects, **Open Existing Project** and **New Project**. Open an `.hxml` build, `haxelib.json` library or `rayzor.toml` project. New Project creates a Haxe application, Haxe library or Rayzor application inside a new folder; existing folders are never overwritten. Library manifests supply source paths, dependencies and `extraParams.hxml`. Rayzor manifests supply source paths, defines and the entry point, or delegate to an HXML file. Rayzor projects run with `rayzor run`; libraries without an application entry point omit Run. Manifests open as code in the Explorer; the Build settings form edits HXML files.
 
+The Explorer lists every file type, including dotfiles, with folders first and Haxe files before other files. Configuration files and other languages open in the editor; supported images open in the previewer. Explorer and tab icons use Remix and a bundled MIT-licensed Devicon language subset; unknown types use the file-code icon.
+
 Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings > Key bindings** edits them; user changes are stored in `.rayde/keybindings.json` as `{"command": ..., "key": ...}` entries, and an empty `key` removes a binding.
 
 ## Keys

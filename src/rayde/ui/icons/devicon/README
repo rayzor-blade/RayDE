@@ -1,0 +1,10 @@
+Language icons from Devicon v2.17.0:
+https://github.com/devicons/devicon/tree/54cfe13ac10eaa1ef817a343ab0a9437eb3c2e08
+
+Files are icons/<language>/<language>-original.svg, except GraphQL and
+Objective-C, which use -plain.svg. Local filenames carry a devicon- prefix.
+Rust, LaTeX, Solidity and CoffeeScript use currentColor for theme contrast.
+Other artwork is unchanged.
+
+MIT license: assets/notices/devicon-LICENSE, included in packaged notices/icons.
+Language and product marks identify file types; they do not imply endorsement.

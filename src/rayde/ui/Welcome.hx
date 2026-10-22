@@ -12,7 +12,7 @@ typedef WelcomeProps = {
 	name:String,
 	runtime:String,
 	root:String,
-	/** The build file, the compiler's version, the source folders as the build names them, and how many Haxe files they hold. */
+	/** The build file, compiler version, source folders and indexed file count. */
 	build:String,
 	haxe:String,
 	sources:Array<String>,
@@ -125,7 +125,7 @@ class Welcome extends Component<WelcomeProps> {
 				${fact("Compiler", props.haxe)}
 				${fact("Build file", props.build)}
 				${fact("Source", props.sources.join(", "))}
-				<for {count in [props.files()]}>${fact("Files", count + (count == 1 ? " Haxe file" : " Haxe files"))}</for>
+				<for {count in [props.files()]}>${fact("Files", count + (count == 1 ? " file" : " files"))}</for>
 				<for {list in [props.problems.get()]}>${problems(list)}</for>
 			</div>
 		</div>;

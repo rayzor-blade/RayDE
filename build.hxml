@@ -2,9 +2,15 @@
 
 -L hashlink
 -L ash-simd
+-L ash-future
+-L hlwgpu
+-L hlwindow
 
 --class-path ../ashui/haxe
 --class-path ../ashui/components/haxe
+--class-path ../ashui/icons/haxe
+--class-path ../ashui/canvaskit/haxe
+--class-path ../ashui/media/haxe
 
 -D ash_simd
 -D ashui_scene_stencil

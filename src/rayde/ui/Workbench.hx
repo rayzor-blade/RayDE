@@ -603,14 +603,13 @@ class Workbench extends Component<WorkbenchProps> {
 	static function isMarkdown(path:String):Bool
 		return ["md", "markdown", "mdown", "mkd"].indexOf(haxe.io.Path.extension(path).toLowerCase()) >= 0;
 
-	/** Files the workbench opens from the Explorer and the source-folder file index. */
-	function isSource(path:String):Bool {
-		if (languageServers != null && languageServers.client(path) != null) return true;
-		if (path.endsWith(".hx") || path.endsWith(".rays") || isMarkdown(path) || ImagePreview.supports(path))
-			return true;
-		if (themeStudio != null)
-			return path.endsWith(".css") || path.endsWith(".json") || path.endsWith(".md");
-		return extension != null && (path.endsWith(".json") || path.endsWith(".svg") || path.endsWith(".css") || path.endsWith(".md"));
+	/** Folder selections only expand the tree; every file can be opened. */
+	function openExplorerFile(path:String):Void {
+		if (!sys.FileSystem.exists(path) || sys.FileSystem.isDirectory(path)) return;
+		if (Manifest.isManifest(path)) openSettings("extension");
+		else if (ThemeFile.isThemeFile(path)) openThemeStudio();
+		else if (path == props.display.hxml) openBuild();
+		else openFile(path);
 	}
 
 	/** The file of the build's main class, when the build names one and a source folder has it; for an extension, its main script. */
@@ -2294,7 +2293,7 @@ class Workbench extends Component<WorkbenchProps> {
 			return <context-menu ref={explorerMenu} id="rayde-explorer-menu">
 					<context-menu-trigger id="rayde-explorer-trigger">
 						<div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pr-2 pb-2" onPointerDown={explorerPress}>
-							<tree-view id="rayde-tree" selected={treeSelected} onSelect={v -> if (Manifest.isManifest(v)) openSettings("extension") else if (ThemeFile.isThemeFile(v)) openThemeStudio() else if (isSource(v)) openFile(v) else if (v == props.display.hxml) openBuild()}>${root}</tree-view>
+							<tree-view id="rayde-tree" selected={treeSelected} onSelect={openExplorerFile}>${root}</tree-view>
 						</div>
 					</context-menu-trigger>
 					<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
@@ -2398,7 +2397,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var items:Array<Element> = [];
 		var contributed = contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
-			items.push(menuItem("Open", null, () -> if (isSource(path)) openFile(path) else if (ThemeFile.isThemeFile(path)) openThemeStudio() else if (Manifest.isManifest(path)) openSettings("extension")));
+			items.push(menuItem("Open", null, () -> openExplorerFile(path)));
 		if (!folder && ImagePreview.isSvg(path)) {
 			items.push(menuItem("Open Preview", null, () -> { imageTextMode(path).set(false); openFile(path); }, true, Icons.IMAGE_LINE));
 			items.push(menuItem("Open in Editor", null, () -> { imageTextMode(path).set(true); openFile(path); }, true, Icons.CODE_S_SLASH_LINE));
@@ -2692,22 +2691,23 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Openable files from the most recent worker snapshot. */
 	function projectFiles():Array<String> {
 		fileIndexRevision.get();
-		return [for (path in fileIndex.paths) if (isSource(path)) path];
+		return fileIndex.paths;
 	}
 
 	/** The tree items for what is in `dir`: its folders and openable files. */
 	function folderEntries(dir:String):Array<Element> {
 		var names = sys.FileSystem.readDirectory(dir);
-		names.sort(Reflect.compare);
+		var directories = new Map<String, Bool>();
+		for (name in names) directories.set(name, sys.FileSystem.isDirectory(haxe.io.Path.join([dir, name])));
+		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;
+		names.sort((a, b) -> { var order = rank(a) - rank(b); return order == 0 ? Reflect.compare(a.toLowerCase(), b.toLowerCase()) : order; });
 		var children:Array<Element> = [], sources = classpaths();
 		for (name in names) {
 			var path = haxe.io.Path.join([dir, name]);
 			if (path == projectEntry()) continue;
-			if (name.startsWith("."))
-				continue;
-			if (sys.FileSystem.isDirectory(path))
+			if (directories.get(name))
 				children.push(folder(path, name, Lambda.exists(sources, cp -> FileOps.inside(path, cp.dir))));
-			else if (isSource(path))
+			else
 				children.push(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path));
 		}
 		return children;
@@ -2743,7 +2743,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The icon a file has in the Explorer and on its tab. */
 	function fileIcon(file:String):ashui.svg.SvgDocument
-		return StringTools.endsWith(file, ".hx") ? Icons.HAXE : isExtension(file) ? Icons.PUZZLE_LINE : Manifest.isManifest(file) ? Icons.SETTINGS_3_LINE : isMarkdown(file) ? Icons.MARKDOWN_LINE : ImagePreview.supports(file) ? Icons.IMAGE_LINE : Icons.BRACES_LINE;
+		return FileIcons.of(file);
 
 	function tabStrip(has:Bool):Element {
 		if (!has)

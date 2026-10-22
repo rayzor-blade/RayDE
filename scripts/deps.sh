@@ -55,6 +55,8 @@ stage_natives() {
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/rayscript.hdll" "$out/rayscript.hdll"
   mkdir -p "$out/notices/syntax-markdown"
   cp "$here/native/rayscript/notices/"* "$out/notices/syntax-markdown/"
+  mkdir -p "$out/notices/icons"
+  cp "$here/assets/notices/"* "$out/notices/icons/"
   stage_rayzor "$out"
 }
 
