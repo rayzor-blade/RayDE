@@ -31,7 +31,7 @@ function Diff(props) {
   var layout = signal('split');
   onCleanup(() -> { tabs = tabs.filter(tab -> tab.key != props.id); });
   return <div id="git-diff" class="flex flex-col flex-1 min-h-0 min-w-0">
-    <div class="flex items-center gap-2 px-4 py-2 border-b shrink-0">
+    <div class="flex items-center gap-2 px-4 py-2 shrink-0">
       <span id="git-diff-title" class="text-sm text-text-secondary flex-1 truncate">{props.title}</span>
       <ui-button id="git-diff-layout" size="icon" variant="ghost" tooltip="Switch between side by side and inline" onClick={() -> layout.value = layout.value == 'split' ? 'inline' : 'split'}><ui-icon name="layout-columns"/></ui-button>
       <if {props.openable}><ui-button id="git-diff-file" size="icon" variant="ghost" tooltip="Open file" onClick={() -> openFile(props.path)}><ui-icon name="code"/></ui-button></if>
