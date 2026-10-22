@@ -93,10 +93,24 @@ class LspChecks {
 		check((current.cancelled:Array<Int>).indexOf(cancelled) >= 0, "LSP sends cancellation to server");
 		check(query(servers, client, "test/error") == null, "Request errors resolve without dropping the server");
 		check(query(servers, client, "test/state").pid == pid, "Request errors preserve server process");
+		var beforeClose = logs.length;
 		servers.retain([]);
+		check(!servers.busy() && client.state == "ready", "Closing every document pauses polling without stopping the server");
+		var closeDeadline = haxe.Timer.stamp() + 5;
+		while (sys.io.File.getContent(events).indexOf("close " + LspProtocol.uri(file)) < 0 && haxe.Timer.stamp() < closeDeadline) Sys.sleep(.005);
+		check(sys.io.File.getContent(events).indexOf("close " + LspProtocol.uri(file)) >= 0, "Document close reaches the server without polling");
+		for (_ in 0...20) { servers.tick(); client.tick(); Sys.sleep(.005); }
+		check(logs.length == beforeClose, "Documentless ticks do not drain the server transport");
 		current = query(servers, client, "test/state");
 		check(current.pid == pid && Reflect.fields(current.documents).length == 0, "Closing every tab closes documents, retaining server process");
+		check(logs.join("\n").indexOf("closed " + LspProtocol.uri(file)) >= 0 && !servers.busy(), "Explicit documentless requests resume polling until their replies arrive");
+		timedOut = false;
+		client.request("test/deferred", {}, _ -> timedOut = true, "welcome-timeout", .05);
+		check(servers.busy(), "A request without code tabs still schedules its timeout");
+		until(servers, () -> timedOut);
+		check(!servers.busy(), "Polling pauses again after a documentless request times out");
 		servers.sync(file, "replayed after crash");
+		check(servers.busy(), "Opening a code document resumes a paused server");
 		client.request("test/crash", {}, _ -> {});
 		until(servers, () -> client.state == "restarting");
 		until(servers, () -> client.state == "ready");

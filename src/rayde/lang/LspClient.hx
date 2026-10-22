@@ -63,6 +63,7 @@ class LspClient {
 		documents.remove(file);
 		if (config.diagnosticProgress == true && doc.analyzed < doc.version) onDocumentActivity(file);
 		cancelFile(file);
+		onWake();
 	}
 
 	/** Opt-in servers publish diagnostics after every document analysis, including an empty result. **/
@@ -165,14 +166,21 @@ class LspClient {
 		}, "", 20);
 	}
 
+	/** A ready process sleeps without documents; explicit requests and lifecycle work still need replies. */
+	public function needsPolling():Bool {
+		if (state == "closing") return true;
+		if (disposed || state == "failed" || state == "idle" || state == "stopped") return false;
+		return state != "ready" || documents.keys().hasNext() || pending.keys().hasNext();
+	}
+
 	public function tick():Void {
+		if (!needsPolling()) return;
 		var now = haxe.Timer.stamp();
 		if (state == "closing") {
 			if (now >= closingAt) forceClose();
 			else read();
 			return;
 		}
-		if (disposed || state == "failed" || state == "idle" || state == "stopped") return;
 		if (transport == null && now >= retryAt) start();
 		read();
 		if (state == "starting" && now - startedAt > 22) { fail("Language server initialization timed out"); return; }

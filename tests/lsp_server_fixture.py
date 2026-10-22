@@ -56,8 +56,10 @@ while True:
             assert params["contentChanges"][-1]["range"] == {"start": {"line": 0, "character": 0}, "end": end}
         documents[doc["uri"]].update(version=doc["version"], text=params["contentChanges"][-1]["text"])
     elif method == "textDocument/didClose":
-        record("close " + params["textDocument"]["uri"])
-        documents.pop(params["textDocument"]["uri"], None)
+        uri = params["textDocument"]["uri"]
+        documents.pop(uri, None)
+        send({"method": "window/logMessage", "params": {"type": 3, "message": "closed " + uri}})
+        record("close " + uri)
     elif method == "textDocument/didSave":
         record("save " + params.get("text", ""))
     elif method == "$/cancelRequest":

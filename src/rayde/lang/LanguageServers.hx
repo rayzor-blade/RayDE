@@ -110,16 +110,17 @@ class LanguageServers {
 	}
 	public function tick():Void {
 		for (entry in entries.copy()) {
+			if (!entry.client.needsPolling()) continue;
 			var before = entry.client.state;
 			entry.client.tick();
 			if (before != "failed" && entry.client.state == "failed") onChanged();
 		}
 		for (client in closing.copy()) { client.tick(); if (client.state == "stopped") closing.remove(client); }
 	}
-	public function busy():Bool return Lambda.exists(entries, e -> ["failed", "idle", "stopped"].indexOf(e.client.state) < 0) || closing.length > 0;
+	public function busy():Bool return Lambda.exists(entries, e -> e.client.needsPolling()) || closing.length > 0;
 	public function pollDelay():Float {
 		var delay = closing.length > 0 ? .025 : .2;
-		for (entry in entries) if (["failed", "idle", "stopped"].indexOf(entry.client.state) < 0) delay = Math.min(delay, entry.client.pollDelay());
+		for (entry in entries) if (entry.client.needsPolling()) delay = Math.min(delay, entry.client.pollDelay());
 		return delay;
 	}
 	public function dispose():Void {

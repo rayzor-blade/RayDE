@@ -358,7 +358,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final languageActivityRevision = Signal.make(0);
 	final languageRevision = Signal.make(0);
 	var languagesScheduled = false;
-	var languagePollSerial = 0;
+	var languagePollTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var diagnosticsScheduled = false;
 
 	final runState = Signal.make("idle");
@@ -1610,17 +1610,22 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function wakeLanguages(urgent = true):Void {
-		if (gone || !languageServers.busy() || languagesScheduled && !urgent) return;
+		if (gone || !languageServers.busy()) {
+			if (languagePollTimer != null) languagePollTimer.cancel();
+			languagePollTimer = null;
+			languagesScheduled = false;
+			return;
+		}
+		if (languagesScheduled && !urgent) return;
+		if (languagePollTimer != null) languagePollTimer.cancel();
 		languagesScheduled = true;
-		var serial = ++languagePollSerial;
-		ashui.animation.AnimationScheduler.main.after(urgent ? .016 : languageServers.pollDelay(), () -> {
-			if (serial == languagePollSerial) pollLanguages();
-		});
+		languagePollTimer = ashui.animation.AnimationScheduler.main.after(urgent ? .016 : languageServers.pollDelay(), pollLanguages);
 	}
 
 	function pollLanguages():Void {
+		languagePollTimer = null;
 		languagesScheduled = false;
-		if (gone) return;
+		if (gone || !languageServers.busy()) return;
 		languageServers.tick();
 		wakeLanguages(false);
 	}
@@ -1981,6 +1986,9 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			if (languagePollTimer != null) languagePollTimer.cancel();
+			languagePollTimer = null;
+			languagesScheduled = false;
 			if (workspaceSession != null) workspaceSession.close(sessionReady ? sessionSnapshot() : null);
 			fileIndex.dispose();
 			localHistory.dispose();
