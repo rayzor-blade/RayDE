@@ -65,7 +65,7 @@ class LspMemoryProbe {
 				if(haxe.Timer.stamp()>until) throw "LSP did not initialize";
 			}
 		}
-		var sequence = 0;
+		var sequence = 0, completionPeakRows = 0;
 		function emit(phase:String, allocated:Float=0., ms:Float=0.):Void {
 			var retained=0, chars=0, pending=0, completionItems=0, completionRows=0, editors=0, watches=0;
 			var client = bench.languageServers.client(files[0]);
@@ -83,7 +83,8 @@ class LspMemoryProbe {
 			var ack = Sys.getEnv("RAYDE_LSP_ACK") + "/" + sequence++;
 			Sys.println("lsp-memory:"+haxe.Json.stringify({mode:mode,phase:phase,ack:ack,allocated:allocated,ms:ms,heap:hl.Gc.stats(),
 				nodes:tree.order().length,watches:watches,editors:editors,documents:retained,documentCharacters:chars,pending:pending,
-				completionItems:completionItems,completionRows:completionRows,problemRows:Css.query(tree,bench.node.id,".rayde-problem").length})); Sys.stdout().flush();
+				completionItems:completionItems,completionRows:completionRows,completionPeakRows:completionPeakRows,
+				mountedCompletionRows:Css.query(tree,bench.node.id,".ui-code-completion-row").length,problemRows:Css.query(tree,bench.node.id,".rayde-problem").length})); Sys.stdout().flush();
 			var deadline=haxe.Timer.stamp()+60;
 			while(!sys.FileSystem.exists(ack)) { if(haxe.Timer.stamp()>deadline) throw "Sampler timeout"; Sys.sleep(.01); }
 			sys.FileSystem.deleteFile(ack); last=haxe.Timer.stamp();
@@ -126,7 +127,11 @@ class LspMemoryProbe {
 		var editor=bench.editorFor(files[0]), caret=main.indexOf("item.field0")+"item.".length;
 		editor.select(caret,caret); editor.focus();
 		phase("completions-5", () -> {
-			for(_ in 0...5) { bench.runCommand("suggest"); drive(.4); editor.hideCompletions(); drive(.15); }
+			for(_ in 0...5) {
+				bench.runCommand("suggest"); drive(.4);
+				completionPeakRows = Std.int(Math.max(completionPeakRows, Css.query(tree,bench.node.id,".ui-code-completion-row").length));
+				editor.hideCompletions(); drive(.15);
+			}
 		});
 		hl.Gc.major(); emit("completions-collected");
 		phase("hover-5", () -> {
