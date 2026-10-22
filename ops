@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":1,"timestamp":1792674604,"nonce":"cN7Squ3tcixLRS7lKbZdx7zsppU=","title":"Remove the extra borders around the code diff","message":"The diff tab drew its own rounded frame and a rule under its header inside the tab's card. The tab's card is now the only frame.","files":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792674604,"nonce":"wn/bQ49BMCJQLiuVOWiEdeZbnUM=","added":["area:ui"],"removed":null}]}
