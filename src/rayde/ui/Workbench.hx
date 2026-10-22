@@ -330,6 +330,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final consoleText = Signal.make("");
 	var diagnosticJobs:DiagnosticJobs;
 	public var languageServers(default, null):LanguageServers;
+	var problemScrollY = 0.;
+	var problemScrollCount = 0;
 	final languageStatusRevision = Signal.make(0);
 	final languageRevision = Signal.make(0);
 	var languagesScheduled = false;
@@ -1818,7 +1820,10 @@ class Workbench extends Component<WorkbenchProps> {
 		languageServers.onStatus = () -> { if (!gone) languageStatusRevision.set(languageStatusRevision.get() + 1); };
 		languageServers.onDiagnostics = value -> {
 			var file = LspProtocol.path(value.uri);
-			if (file != null) problems.set([for (p in problems.get()) if (p.file != file) p].concat(LspProtocol.diagnostics(value)));
+			if (file == null) return;
+			var next = LspProtocol.diagnostics(value), current = problems.get();
+			if (!LspProtocol.sameDiagnostics([for (p in current) if (p.file == file) p], next))
+				problems.set([for (p in current) if (p.file != file) p].concat(next));
 		};
 		languageServers.onChanged = () -> {
 			if (gone) return;
@@ -2914,7 +2919,7 @@ class Workbench extends Component<WorkbenchProps> {
 					<tabs-trigger id="rayde-tab-extension" value="extension">Extension</tabs-trigger>
 					{[for (c in containers) if (c.location == "panel") <tabs-trigger id={"rayde-tab-" + c.id} value={"ext-" + c.id}>${c.title}</tabs-trigger>]}
 				</tabs-list>
-				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><for {list in [problems.get()]}>${problemsPane(list)}</for></tabs-content>
+				<tabs-content value="problems" class="flex-1 min-h-0 pt-1"><if {panelShown.get() && bottom.get() == "problems"}><for {list in [problems.get()]}>${problemsPane(list)}</for></if></tabs-content>
 				<tabs-content value="console" class="flex-1 min-h-0 pt-1">
 					${outputPane()}
 				</tabs-content>
@@ -3057,11 +3062,16 @@ class Workbench extends Component<WorkbenchProps> {
 	function profileItem(p:Profile):Element
 		return <dropdown-menu-item id={"rayde-profile-" + p.name} shortcut={p.program} onSelect={() -> newTerminal(p)}>${p.name == defaultProfile().name ? p.name + " (default)" : p.name}</dropdown-menu-item>;
 
-	function problemsPane(list:Array<Diagnostic>):Element
-		return <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">
+	function problemsPane(list:Array<Diagnostic>):Element {
+		var pane = <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">
 			<if {list.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">No problems in the open files.</text></div></if>
 			{[for (p in list) problemRow(p)]}
 		</div>;
+		var scroll = ashui.input.Scroll.attach(pane.node, false, true);
+		if (list.length == problemScrollCount) scroll.y.set(problemScrollY);
+		Owner.onCleanup(() -> { problemScrollY = scroll.y.get(); problemScrollCount = list.length; });
+		return pane;
+	}
 
 	function problemRow(p:Diagnostic):Element {
 		var located = p.file != null && p.range != null;

@@ -24,6 +24,7 @@ class LspClient {
 	var startedAt = 0.;
 	var disposed = false;
 	var resumeAfterClose = false;
+	var dirty = false;
 
 	function set_state(value:String):String {
 		if (state != value) { state = value; if (onStateChanged != null) onStateChanged(); }
@@ -44,9 +45,9 @@ class LspClient {
 	public function sync(file:String, language:String, text:String):Void {
 		if (state == "idle") state = "starting";
 		var doc = documents.get(file);
-		if (doc == null) documents.set(file, {language:language, text:text, version:1, sent:0, sentText:""});
+		if (doc == null) { documents.set(file, {language:language, text:text, version:1, sent:0, sentText:""}); dirty = true; }
 		else if (doc.text != text) {
-			doc.text = text; doc.version++;
+			doc.text = text; doc.version++; dirty = true;
 			cancelFile(file);
 		}
 		if (doc == null || doc.sent != doc.version) onWake();
@@ -105,6 +106,8 @@ class LspClient {
 	}
 
 	function flush():Void {
+		if (!dirty) return;
+		dirty = false;
 		var sync:Dynamic = capabilities.textDocumentSync;
 		var kind:Int = sync == null ? 0 : Std.isOfType(sync, Int) ? sync : sync.change == null ? 0 : sync.change;
 		for (file => doc in documents) {
@@ -172,13 +175,15 @@ class LspClient {
 	public function pollDelay():Float {
 		if (state != "ready") return .025;
 		for (_ in pending) return .016;
-		for (doc in documents) if (doc.sent != doc.version) return .016;
+		if (dirty) return .016;
 		return .2;
 	}
 
 	function read():Void {
 		if (transport == null) return;
-		for (event in transport.poll()) {
+		var events = transport.poll();
+		if (events == null) return;
+		for (event in events) {
 			if (transport == null) break;
 			switch (event.t:String) {
 				case "connected": initialize();
@@ -229,6 +234,7 @@ class LspClient {
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "restarting";
 		for (doc in documents) { doc.sent = 0; doc.sentText = ""; }
+		dirty = true;
 		var callbacks = [for (p in pending) p]; pending.clear();
 		retryAt = haxe.Timer.stamp() + Math.min(4, Math.pow(2, attempts.length - 1));
 		onLog("error", error);
@@ -241,6 +247,7 @@ class LspClient {
 		if (state == "closing") { resumeAfterClose = true; return; }
 		attempts = []; retryAt = 0; capabilities = {};
 		for (doc in documents) { doc.sent = 0; doc.sentText = ""; }
+		dirty = true;
 		state = "starting"; onWake();
 	}
 

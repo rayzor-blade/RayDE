@@ -16,9 +16,9 @@ class LspTransport {
 		return sendNative(handle, bytes.getData(), bytes.length);
 	}
 
-	public function poll():Array<Dynamic> {
+	public function poll():Null<Array<Dynamic>> {
 		var bytes = handle < 0 ? null : pollNative(handle);
-		return bytes == null ? [] : haxe.Json.parse(bytes.sub(4, bytes.getI32(0)).toBytes(bytes.getI32(0)).toString());
+		return bytes == null ? null : haxe.Json.parse(bytes.sub(4, bytes.getI32(0)).toBytes(bytes.getI32(0)).toString());
 	}
 
 	public function close():Void {

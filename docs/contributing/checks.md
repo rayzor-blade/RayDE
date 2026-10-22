@@ -83,3 +83,12 @@ The terminal's native library has its own `cargo test` in `native/terminal`.
 
 
 `SNAPSHOT_ONLY=explorer scripts/snapshot.sh` checks the Explorer's native Collapsible/Resizable sections, compiler Outline including unsaved edits, active-file Git history, dependency source expansion and opening in tabs, Outline declaration jumps and compact indentation, local revision preview and undoable restore, persistent undo/redo and visibility cleanup in both schemes. The core suite separately checks never-staged recovery, external disk changes, abandoned edit states, renamed journals, bounded patch compaction and malformed checkpoints.
+
+`LspMemoryProbe` compares the same offscreen editor workload with LSP disabled, a framed fixture server, and the packaged Rayzor binary. It measures opening tabs, idle polling, switches, edits, completions, hovers and closure without PNG readbacks. Compile it with the shared UI arguments, then run the sampler:
+
+```sh
+ASH=../ash/target/release/ash bash -e -c 'source scripts/deps.sh; haxe "${ui_args[@]}" -D ashui_window -cp tests -main LspMemoryProbe -hl bin/lsp-memory-probe.hl'
+RAYDE_LSP_FILES=57 python3 tests/lsp_memory_probe.py ../ash/target/release/ash --preset application bin/lsp-memory-probe.hl
+```
+
+`RAYDE_LSP_FILES` is the number of generated sample tabs in addition to Main. `RAYDE_LSP_MODES=off,real` skips the fixture comparison; `RAYDE_LSP_COMMAND` selects an existing server executable, and `RAYDE_LSP_OUTPUT` selects a directory under `bin`. The sampler requires macOS `vmmap` and samples client and direct child processes separately while the probe waits at checkpoints. JSON and raw mappings distinguish cumulative allocation traffic, collected document/pending-request/UI counts, and physical footprint. GC block statistics are diagnostic counters, not physical RAM. The 10,000-poll phase stresses idle client overhead; it does not represent a production polling frequency. Driver rendering, JIT warm-up, allocator reuse and OS compression can affect footprint between fresh runs. `RAYDE_LSP_DIAGNOSTICS=1 RAYDE_LSP_MODES=fixture` isolates a 200-diagnostic publication, identical republishing, and opening/closing Problems; it also verifies scroll restoration on remount.

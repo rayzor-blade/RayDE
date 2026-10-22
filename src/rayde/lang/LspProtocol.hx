@@ -75,6 +75,16 @@ class LspProtocol {
 		return file == null ? [] : [for (d in (value.diagnostics:Array<Dynamic>))
 			{file:file, range:(d.range:TextRange), severity:d.severity == null ? 1 : (d.severity:Int), message:Std.string(d.message)}];
 	}
+	public static function sameDiagnostics(before:Array<Diagnostic>, after:Array<Diagnostic>):Bool {
+		if (before.length != after.length) return false;
+		for (i in 0...before.length) {
+			var a = before[i], b = after[i];
+			if (a.file != b.file || a.message != b.message || a.severity != b.severity
+				|| a.range.start.line != b.range.start.line || a.range.start.character != b.range.start.character
+				|| a.range.end.line != b.range.end.line || a.range.end.character != b.range.end.character) return false;
+		}
+		return true;
+	}
 	public static function outline(value:Dynamic):Array<OutlineSymbol> {
 		if (value == null || !Std.isOfType(value, Array)) return [];
 		return [for (s in (value:Array<Dynamic>)) {
