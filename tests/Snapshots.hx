@@ -1421,6 +1421,13 @@ class Snapshots {
 				click(icon);
 				until(() -> says("modified.txt") && says("staged.txt") && says("conflict.txt") && says("untracked.txt") && says("5 files"), "the SCM sidebar's native status groups");
 				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
+				until(() -> bench.boundsOf("#rayde-status-branch") != null, "the Git extension to show its branch in the status bar");
+				var branchBounds = bench.boundsOf("#rayde-status-branch"), runtimeBounds = bench.boundsOf("#rayde-runtime");
+				if (branchBounds.x >= runtimeBounds.x) throw "the branch item must come first at the left of the status bar";
+				shot("status-branch");
+				@:privateAccess bench.setExtensionStatus(git.connection.file, "branch", {text:"main", icon:"branch", detail:"0\u2193 3\u2191", detailIcon:"refresh", tooltip:"main: 0 behind and 3 ahead of its upstream", view:"scm"});
+				settle(10); shot("status-branch-sync");
+				click("#rayde-status-branch"); settle(10);
 				for (label in ["Merge conflicts", "Staged", "Changes", "Untracked", "renamed-file.txt", "main"])
 					if (!says(label)) throw 'missing SCM content $label';
 				shot("scm-ready");

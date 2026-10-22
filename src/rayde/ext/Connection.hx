@@ -11,6 +11,7 @@ typedef WorkspaceServices = {
 	writeFile:(String, String) -> Void,
 	?notify:(String, String, String, String)->Void,
 	?focusView:(String, Int)->Void,
+	?setStatus:(String, Null<String>, Dynamic)->Void,
 	?openExternal:String->Void,
 	?registerLanguage:(String, Dynamic, (String, String)->Void)->String,
 	?unregisterLanguage:(String, String)->Void,
@@ -24,7 +25,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal", "setStatusItem"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -61,6 +62,7 @@ class Connection {
 		var grantsChanged = manifest != null && haxe.Json.stringify(manifest.natives) != haxe.Json.stringify(m.natives);
 		var languagesRevoked = manifest != null && manifest.capabilities.indexOf("languages.register") >= 0 && m.capabilities.indexOf("languages.register") < 0;
 		if ((file != m.mainPath() || languagesRevoked) && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
+		if (file != m.mainPath() && services != null && services.setStatus != null) services.setStatus(file, null, null);
 		manifest = m;
 		file = m.mainPath();
 		var denied = m.problems.length > 0 || !nativeAllowed(m);
@@ -75,6 +77,7 @@ class Connection {
 
 	function setState(value:String):Void {
 		if (value != "running" && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
+		if (value != "running" && services != null && services.setStatus != null) services.setStatus(file, null, null);
 		state = value;
 		if (onState != null)
 			onState(value);
@@ -353,6 +356,16 @@ class Connection {
 					services.languageServers == null ? [] : services.languageServers(file);
 				case "focusView" if (module == "rayde.window"):
 					if (services.focusView != null) services.focusView(file, Std.int(args[0]));
+					null;
+				case "setStatusItem" if (module == "rayde.window"):
+					var id = Std.string(args[0]), item:Dynamic = args.length > 1 ? args[1] : null;
+					if (!~/^[A-Za-z0-9_.-]+$/.match(id)) throw "A status item needs an id of letters, digits, underscores, dots or hyphens";
+					if (item != null) {
+						if (!Std.isOfType(item.text, String)) throw "A status item needs text";
+						for (field in ["icon", "detail", "detailIcon", "tooltip", "view", "command"])
+							if (Reflect.field(item, field) != null && !Std.isOfType(Reflect.field(item, field), String)) throw 'Status item $field must be a string';
+					}
+					if (services.setStatus != null) services.setStatus(file, id, item);
 					null;
 				case "openExternal" if (module == "rayde.window"):
 					if (manifest != null && manifest.capabilities.indexOf("window.openExternal") < 0) throw "Capability window.openExternal is not granted";

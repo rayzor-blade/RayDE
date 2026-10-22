@@ -2,7 +2,9 @@ import haxe.Json;
 import rayde.workspace.root;
 import rayde.workspace.openFile;
 import rayde.settings.get;
+import rayde.window.setStatusItem;
 import gitNative.repositoryStatus;
+import gitNative.branchSummary;
 import gitNative.openHistory;
 import gitNative.remoteOperation;
 import historyGraph.compactScene;
@@ -42,6 +44,20 @@ var lastFailure = '';
 var statusKey = '', entriesKey = '', historyKey = '';
 var repositoryPath = null;
 
+/** The branch, with its distance from the upstream, at the left of the status bar. */
+function showBranch(summary) {
+  var detail = summary.upstream ? summary.behind + '\u2193 ' + summary.ahead + '\u2191' : null;
+  var tooltip = summary.upstream ? summary.branch + ': ' + summary.behind + ' behind and ' + summary.ahead + ' ahead of its upstream' : summary.branch + ': no upstream branch';
+  setStatusItem('branch', {text: summary.branch, icon: 'branch', detail: detail, detailIcon: detail == null ? null : 'refresh', tooltip: tooltip, view: 'scm'});
+}
+
+function refreshBranch() {
+  try {
+    if (repositoryPath == null) repositoryPath = await root();
+    showBranch(branchSummary(repositoryPath));
+  } catch (failure) { setStatusItem('branch', null); }
+}
+
 function configureHistory(action) { expand = action; }
 
 function choose(id) {
@@ -65,7 +81,7 @@ function refresh(showBusy = true) {
     if (repositoryPath == null) repositoryPath = await root();
     var path = repositoryPath, snapshot = repositoryStatus(path);
     var status = Json.stringify(snapshot), entries = Json.stringify(snapshot.entries);
-    if (status != statusKey) { statusKey = status; state.value = snapshot; }
+    if (status != statusKey) { statusKey = status; state.value = snapshot; showBranch(snapshot); }
     if (entries != entriesKey) { entriesKey = entries; sections.value = groups(snapshot.entries); }
     var nextHistory = Json.stringify({path:path, head:snapshot.head, refs:snapshot.refs, focus:focus.value});
     if (nextHistory != historyKey) {
@@ -202,5 +218,5 @@ registerCommand('git.push', args -> runRemote('push'));
 onTool('git-refresh', () -> refresh());
 onHook('file.saved', e -> refresh());
 onHook('view.visibility', e -> { if (e.id == 'scm') { visible = e.visible; if (visible) refresh(false); } });
-spawn(() -> { while (true) { await sleep(2500); if (visible) refresh(false); } });
+spawn(() -> { var quiet = 0; while (true) { await sleep(2500); if (visible) { quiet = 0; refresh(false); } else if (++quiet >= 4) { quiet = 0; refreshBranch(); } } });
 spawn(() -> refresh());

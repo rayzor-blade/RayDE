@@ -120,6 +120,7 @@ native "git2" {
   @:blocking function git_revwalk_push(walk:Walk, id:Oid):Int32;
   @:owner(reference) function git_reference_target(reference:Reference):Oid;
   @:owner(reference) @:blocking function git_reference_set_target(out:Out<Reference>, reference:Reference, id:Oid, message:CString):Int32;
+  @:blocking function git_graph_ahead_behind(ahead:Out<SizeT>, behind:Out<SizeT>, repository:Repository, local:Oid, upstream:Oid):Int32;
   @:owner(branch) @:blocking function git_branch_upstream(out:Out<Reference>, branch:Reference):Int32;
   @:blocking function git_branch_upstream_remote(out:Buffer, repository:Repository, branch:CString):Int32;
   @:blocking function git_branch_upstream_merge(out:Buffer, repository:Repository, branch:CString):Int32;
@@ -365,20 +366,42 @@ function references(repository) {
   } catch (error) { iterator.close(); throw error; }
 }
 
+/** The branch HEAD is on, its id, and how far it is ahead of and behind its upstream. */
+function headSummary(repository) {
+  var summary = {branch: 'No commits', head: '', upstream: false, ahead: 0, behind: 0}, head = Out(Reference);
+  var unborn = check(git_repository_head_unborn(repository), 'repository HEAD state');
+  if (unborn != 0) return summary;
+  check(git_repository_head(head, repository), 'repository HEAD');
+  var ref = head.value;
+  try {
+    var detached = check(git_repository_head_detached(repository), 'detached HEAD state') == 1;
+    summary.branch = detached ? 'Detached HEAD' : git_reference_shorthand(ref);
+    summary.head = git_oid_tostr_s(git_reference_target(ref));
+    if (!detached) {
+      var upstream = Out(Reference);
+      if (git_branch_upstream(upstream, ref) == 0) {
+        var target = upstream.value;
+        try {
+          var ahead = Out(SizeT), behind = Out(SizeT);
+          if (git_graph_ahead_behind(ahead, behind, repository, git_reference_target(ref), git_reference_target(target)) == 0) {
+            summary.upstream = true; summary.ahead = ahead.value; summary.behind = behind.value;
+          }
+          target.close();
+        } catch (error) { target.close(); throw error; }
+      }
+    }
+    ref.close();
+  } catch (error) { ref.close(); throw error; }
+  return summary;
+}
+
+function branchSummary(path) { return withRepository(path, headSummary); }
+
 function repositoryStatus(path) {
   return withRepository(path, repository -> {
-    var branch = 'No commits', headId = '', head = Out(Reference);
-    var unborn = check(git_repository_head_unborn(repository), 'repository HEAD state');
-    if (unborn == 0) {
-      check(git_repository_head(head, repository), 'repository HEAD');
-      var ref = head.value;
-      try {
-        branch = check(git_repository_head_detached(repository), 'detached HEAD state') == 1 ? 'Detached HEAD' : git_reference_shorthand(ref);
-        headId = git_oid_tostr_s(git_reference_target(ref));
-        ref.close();
-      } catch (error) { ref.close(); throw error; }
-    }
-    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository), branch: branch, head:headId, refs:references(repository), entries: status(repository)};
+    var summary = headSummary(repository);
+    return {repository: git_repository_path(repository), workdir: git_repository_workdir(repository), branch: summary.branch, head: summary.head,
+      upstream: summary.upstream, ahead: summary.ahead, behind: summary.behind, refs: references(repository), entries: status(repository)};
   });
 }
 

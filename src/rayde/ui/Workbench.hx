@@ -87,6 +87,7 @@ typedef WorkbenchProps = {
 };
 
 /** A part of the layout an extension view takes: its icon in the activity bar, and where its view is drawn. */
+private typedef ExtensionStatus = {owner:String, id:String, text:String, ?icon:String, ?detail:String, ?detailIcon:String, ?tooltip:String, ?view:String, ?command:String};
 private typedef Container = {id:String, title:String, icon:ashui.svg.SvgDocument, location:String, view:ViewDecl, extension:Manifest};
 
 /** A terminal that is running, and the profile it was started from. */
@@ -1757,6 +1758,7 @@ class Workbench extends Component<WorkbenchProps> {
 			activeFile: () -> realFile(active.get()),
 			root: () -> props.display.cwd,
 			openFile: p -> openFile(projectPath(p)),
+			setStatus: setExtensionStatus,
 			focusView: (file, root) -> {
 				var id = TAB + file + "#" + root;
 				if (open.get().indexOf(id) >= 0) active.set(id);
@@ -2345,6 +2347,52 @@ class Workbench extends Component<WorkbenchProps> {
 	function tagged(item:Element, path:String):Element {
 		ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-path", path);
 		return item;
+	}
+
+	/** What extensions put at the left of the status bar, in the order they were first set. */
+	final extensionStatus = Signal.make((([]:Array<ExtensionStatus>)));
+
+	/** Sets, replaces or (with a null item) removes one of an extension's status items; a null id removes all of them. */
+	function setExtensionStatus(owner:String, id:Null<String>, item:Dynamic):Void {
+		var items = extensionStatus.get().filter(entry -> entry.owner != owner || id != null && entry.id != id);
+		if (id != null && item != null) {
+			var field = (name:String) -> { var value:Dynamic = Reflect.field(item, name); return value == null ? null : (Std.string(value):Null<String>); };
+			var next:ExtensionStatus = {owner:owner, id:id, text:Std.string(item.text), icon:field("icon"), detail:field("detail"), detailIcon:field("detailIcon"),
+				tooltip:field("tooltip"), view:field("view"), command:field("command")};
+			var at = Lambda.findIndex(extensionStatus.get(), entry -> entry.owner == owner && entry.id == id);
+			if (at < 0) items.push(next);
+			else items.insert(Math.round(Math.min(at, items.length)), next);
+		}
+		if (haxe.Json.stringify(items) != haxe.Json.stringify(extensionStatus.get())) extensionStatus.set(items);
+	}
+
+	function extensionStatusItems(items:Array<ExtensionStatus>):Element {
+		var out:Array<Element> = [];
+		for (entry in items) {
+			var item = entry;
+			var icon = item.icon == null ? null : ViewIcons.named(null, item.icon), detailIcon = item.detailIcon == null ? null : ViewIcons.named(null, item.detailIcon);
+			var content = <div id={"rayde-status-" + item.id} class="rayde-status-item action flex" onClick={_ -> extensionStatusPressed(item)}>
+				<if {icon != null}><icon document={icon} class="size-3.5"/></if>
+				<text>${item.text}</text>
+				<if {item.detail != null}><div class="flex items-center gap-1 rayde-status-detail">
+					<if {detailIcon != null}><icon document={detailIcon} class="size-3.5"/></if><text>${item.detail}</text>
+				</div></if>
+			</div>;
+			out.push(item.tooltip == null ? content : <tooltip label={item.tooltip} side="top">{content}</tooltip>);
+		}
+		return <div class="flex items-center gap-1">{out}</div>;
+	}
+
+	function extensionStatusPressed(item:ExtensionStatus):Void {
+		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == item.owner);
+		if (extension == null || extension.connection.manifest == null) return;
+		var id = extension.connection.manifest.id;
+		if (item.view != null) {
+			var container = Lambda.find(containers, c -> c.extension.id == id && c.view.id == item.view);
+			// Showing a view is not toggling it: a status item never folds the sidebar it points at.
+			if (container != null && !(container.location == "sidebar" && sideView.get() == container.id && explorerShown.get())) chooseContainer(container);
+		}
+		if (item.command != null) extensionManager.command(id, item.command, null);
 	}
 
 	/** The rules git ignores files by, for the project that is open. */
@@ -3291,6 +3339,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The runtime the project runs on, the problem counts, and where the run stands. */
 	function statusBar():Element
 		return <div id="rayde-status-bar" class="rayde-status flex items-center gap-2 px-3 shrink-0" height={28}>
+			<for {items in [extensionStatus.get()]}>${extensionStatusItems(items)}</for>
 			<tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
 				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
 			</tooltip>

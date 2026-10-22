@@ -107,6 +107,7 @@ import gitNative.remoteOperation;
 import gitNative.commitChanges;
 import gitNative.openFileHistory;
 import gitNative.blobText;
+import gitNative.branchSummary;
 function emit(value) { trace('@result:' + stringify(value)); }
 function text(snapshot) {
   for (part in [snapshot.staged, snapshot.changes])
@@ -444,6 +445,14 @@ catch (error) { emit({error:'' + error}); }
         assert git(origin, "rev-parse", "main").stdout == remote_head
         remote(host, receiver, "pull", "diverged")
         assert git(receiver, "rev-parse", "HEAD").stdout == local_head
+        counts = git(receiver, "rev-list", "--left-right", "--count", "HEAD...origin/main").stdout.split()
+        summary = host.run(PREAMBLE + "emit(branchSummary(REPO));".replace("REPO", json.dumps(str(receiver))))
+        assert summary["branch"] == "main" and summary["upstream"] is True, summary
+        assert (summary["ahead"], summary["behind"]) == (int(counts[0]), int(counts[1])) and summary["ahead"] > 0 and summary["behind"] > 0, (summary, counts)
+        level = host.run(PREAMBLE + "emit(branchSummary(REPO));".replace("REPO", json.dumps(str(sender))))
+        assert level["upstream"] is True and level["ahead"] == 0 and level["behind"] == 0, level
+        unborn = host.run(PREAMBLE + "emit(branchSummary(REPO));".replace("REPO", json.dumps(str(empty))))
+        assert unborn == {"branch":"No commits", "head":"", "upstream":False, "ahead":0, "behind":0}, unborn
         assert not git(receiver, "status", "--porcelain").stdout
         for strategy in ["merge", "rebase"]:
             git(receiver, "reset", "--hard", local_head.decode().strip())
