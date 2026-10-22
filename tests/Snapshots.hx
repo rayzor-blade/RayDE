@@ -138,6 +138,25 @@ class Snapshots {
 				client.request("test/state", {}, result -> { if (result.pid != pid) throw "Tab lifecycle restarted the LSP"; gotPid = true; });
 				until(() -> gotPid, "persistent LSP after close and reopen");
 				if (bench.languageServers.client(file) != client) throw "Reopening replaced the LSP client";
+				editor = bench.editorFor(file);
+				bench.problems.set([
+					{file:file, severity:1, range:{start:{line:0,character:0},end:{line:0,character:5}},
+						message:"**Initialization macro** `ashui.core.render.UiFramework.register()`: undefined variable in macro: `Extensions`\n\n```haxe\nvar example:Int = 1;\n```\n\nSee [documentation](https://haxe.org/manual/)."},
+					{file:file, severity:2, range:{start:{line:0,character:2},end:{line:0,character:7}}, message:"Related **warning** with `inline code`."}
+				]); settle();
+				var diagnosticHint = @:privateAccess bench.hintAt(file, 3);
+				if(diagnosticHint == null || diagnosticHint.from != 0 || diagnosticHint.to != 7 || diagnosticHint.className != "ui-code-hint-error" || diagnosticHint.renderDocs == null)
+					throw "Diagnostic hover did not combine overlapping ranges with severity and rich documentation";
+				var diagnosticSpot = editor.rectAt(3);
+				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
+				ashui.input.Pointer.move(bench.tree, diagnosticSpot.x + diagnosticSpot.width / 2, diagnosticSpot.y + diagnosticSpot.height / 2);
+				until(() -> Css.query(bench.tree, bench.node.id, ".ui-code-hint-error .rayde-md-inline-code").length > 0, "Markdown diagnostic popup");
+				for(selector in [".ui-code-hint-error .ui-code-hint-icon", ".ui-code-hint-error .rayde-md-strong", ".ui-code-hint-error .rayde-md-code [data-token=keyword]", ".ui-code-hint-error .rayde-md-link"])
+					if(Css.query(bench.tree, bench.node.id, selector).length == 0) throw "Missing Markdown diagnostic content: " + selector;
+				if(!Lambda.exists(Css.query(bench.tree, bench.node.id, ".rayde-hover-docs text"), id -> ashui.ui.Text.at(id).text() == "warning")) throw "An overlapping diagnostic message was dropped";
+				shot("diagnostic-markdown"); editor.hideHint(); settle();
+				if(Css.query(bench.tree, bench.node.id, ".rayde-hover-docs").length != 0) throw "Dismissed diagnostic retained Markdown widgets";
+				bench.problems.set([]); settle();
 				bench.openSettings("extensions"); settle();
 				var prefix = "#rayde-extension-setting-rayzor-";
 				for (name in ["command", "hxml", "stdlib", "macroBudgetMs"])
@@ -507,8 +526,9 @@ class Snapshots {
 				var hint = @:privateAccess bench.hintAt(file, at);
 				if (hint == null || hint.signature.indexOf("times:Int") < 0 || hint.docs == null || hint.docs.indexOf("Says hello") < 0)
 					throw 'the hint on greet should have its type and documentation: ${hint == null ? "none" : hint.signature + " / " + hint.docs}';
-				if (@:privateAccess bench.hintAt(file, text.indexOf('"hello"') + 2) != null)
-					throw "where a problem is underlined the problem is what shows, so there is no hint of the compiler's";
+				var diagnosticHint = @:privateAccess bench.hintAt(file, text.indexOf('"hello"') + 2);
+				if (diagnosticHint == null || diagnosticHint.renderDocs == null || diagnosticHint.signature != null || diagnosticHint.className != "ui-code-hint-error")
+					throw "an underlined problem should show Markdown diagnostic documentation instead of compiler hover";
 				var spot = @:privateAccess bench.editorOf(file).rectAt(at);
 				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 2, spot.y + spot.height / 2);
 				settle(60);

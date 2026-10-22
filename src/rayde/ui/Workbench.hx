@@ -2794,15 +2794,24 @@ class Workbench extends Component<WorkbenchProps> {
 		});
 	}
 
-	/**
-	 * What the pointer resting on a character of a Haxe file shows: the type the compiler gives it, and its documentation.
-	 * Where a problem is underlined the problem's message shows, which the editor does when this gives nothing.
-	 */
+	/** Documentation for a diagnostic at the pointer, or the language server's type and documentation. */
 	function hintAt(file:String, offset:Int):Null<ashui.components.code.CodeHints.CodeHint> {
-		if (!StringTools.endsWith(file, ".hx") && languageServers.client(file) == null)
-			return null;
 		var editor = editorOf(file);
-		if (editor != null && editor.decorationsAt(offset).length > 0)
+		var marked = editor == null ? [] : editor.decorationsAt(offset);
+		if (marked.length > 0) {
+			var titled = [for (d in marked) if (d.title != null && d.title != "") d];
+			if (titled.length == 0) return null;
+			var from = titled[0].from, to = titled[0].to;
+			for (d in titled) {
+				from = Std.int(Math.min(from, d.from));
+				to = Std.int(Math.max(to, d.to));
+			}
+			var message = [for (d in titled) d.title].join("\n\n");
+			return {from:from, to:Std.int(Math.max(to, from + 1)),
+				className:StringTools.replace(titled[0].className, "squiggle", "hint"),
+				renderDocs:() -> HoverDocumentation.render({kind:"markdown", value:message})};
+		}
+		if (!StringTools.endsWith(file, ".hx") && languageServers.client(file) == null)
 			return null;
 		var text = buffer(file).get();
 		var client = languageServers.client(file);

@@ -27,7 +27,7 @@ Key bindings follow VS Code. On Linux and Windows read Ctrl for Cmd. **Settings 
 
 ## Editor
 
-- Hovering a name in a Haxe file shows its type and documentation; hovering an underlined range shows the problem.
+- Hovering a name in a Haxe file shows its type and documentation; hovering an underlined range shows the problem. Diagnostic popups render Markdown, including inline code, highlighted code blocks, emphasis and links. Long documentation scrolls within the popup.
 - **Completion.** The list opens after `.` and at the first character of a word, or with Ctrl+Space. Typing narrows it (prefix, word starts, letters in order). Up, Down, Page Up, Page Down, Home and End move; Enter or Tab inserts the row; Escape closes. Each row has a kind letter, the item's type and, for the selected row, its documentation. Items come from the compiler's display server and reflect the buffer as typed, not the saved file.
 - **Signature help.** `(` and `,` open the signatures of the call the caret is in, with the current argument in bold. The popover follows typing and moves with the caret; it closes at the call's `)` or on Escape.
 
