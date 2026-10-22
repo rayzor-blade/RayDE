@@ -42,10 +42,6 @@ class LanguageServers {
 		}
 		var command = expand(transport.command);
 		if (command == "rayzor") command = RayzorBinary.find() ?? command;
-		if (definition.id == "rayzor" && !Reflect.hasField(env, "RAYZOR_STD_PATH") && Sys.getEnv("RAYZOR_STD_PATH") == null) {
-			var library = RayzorBinary.standardLibrary(command);
-			if (library != null) Reflect.setField(env, "RAYZOR_STD_PATH", library);
-		}
 		var config:Dynamic = {command:command, args:[for (arg in strings(transport.args == null ? [] : transport.args)) expand(arg)],
 			cwd:root, env:env, lazy:definition.lazy == true, initializationOptions:definition.initializationOptions, settings:definition.settings};
 		unregister(owner, id);
