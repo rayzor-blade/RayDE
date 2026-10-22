@@ -213,7 +213,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final buffers = new Map<String, Signal<String>>();
 	final imageViews = new Map<String, ImagePreview.ImageViewState>();
 	final imageTextModes = new Map<String, Signal<Bool>>();
-	final documents = new Map<String, CodeEditorState>();
+	final documents = new Map<String, DocumentState>();
 	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
@@ -1306,10 +1306,10 @@ class Workbench extends Component<WorkbenchProps> {
 		return b;
 	}
 
-	function documentState(file:String):CodeEditorState {
+	function documentState(file:String):DocumentState {
 		var state = documents.get(file);
 		if (state == null) {
-			state = new CodeEditorState(buffer(file));
+			state = new DocumentState(buffer(file));
 			DocumentHistory.restore(state, localHistory.undo(file, state.value.get()));
 			documents.set(file, state);
 		}
@@ -2953,8 +2953,8 @@ class Workbench extends Component<WorkbenchProps> {
 		holdCaretWhileScrolling(editorRef(file).get());
 		annotate(file, editorRef(file).get());
 		assistWatch(file, editorRef(file).get());
-		var mounted = editorRef(file).get();
-		Owner.onCleanup(() -> assist.stop(file, mounted));
+		var mounted = editorRef(file).get(), state = documents.get(file);
+		Owner.onCleanup(() -> { assist.stop(file, mounted); state.compact(); });
 		return editor;
 	}
 

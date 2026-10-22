@@ -2419,10 +2419,16 @@ class Snapshots {
 				editor.select(1, 7); editor.toggleFold(1); settle();
 				editor.scroll.jumpTo(0, 360); settle();
 				var y = editor.scroll.y.get();
+				var line = document.lines[1], highlighted = document.highlighted;
+				var tokens = haxe.Json.stringify(line.tokens), brackets = document.matchingBrackets(source.indexOf("{") + 1);
 				bench.openFile(b); settle();
 				var state = @:privateAccess bench.documents.get(a);
 				if (bench.editorFor(a) != null || state.mounted || state.document != document || state.caret != 7 || state.anchor != 1 || state.scrollY != y)
 					throw "inactive tabs must retain document/navigation data without an editor view";
+				if (document.lines[1] == line || haxe.Json.stringify(document.lines[1].tokens) != tokens || document.highlighted != highlighted
+					|| document.matchingBrackets(source.indexOf("{") + 1).join(",") != brackets.join(","))
+					throw "inactive caches must be packed without re-highlighting or changing tokens and brackets";
+				var packedLine = document.lines[1];
 				if (Css.query(bench.tree, bench.node.id, '.ui-code[data-mode="editor"]').length != 1)
 					throw "only the active code editor may be mounted";
 				var shortEditor = bench.editorFor(b);
@@ -2433,6 +2439,9 @@ class Snapshots {
 				editor = bench.editorFor(a);
 				if (editor.document != document || editor.editing.anchor.get() != 1 || editor.editing.caret.get() != 7 || editor.scroll.y.get() != y || !document.lines[1].folded)
 					throw "switching back must restore the document, selection, scroll and folds";
+				bench.active.set(b); settle(); bench.active.set(a); settle();
+				if (document.lines[1] != packedLine) throw "unchanged caches must not be packed again on every tab switch";
+				editor = bench.editorFor(a);
 				shot("restored");
 				editor.undo(); settle();
 				if (bench.buffer(a).get() != source) throw "undo must survive editor disposal";

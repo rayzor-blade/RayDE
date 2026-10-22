@@ -35,6 +35,8 @@ The command center searches the complete file catalog while mounting only the vi
 
 Each project remembers its file-tab order and active tab. Reopening restores existing files, Settings and available extension view tabs; inactive code editors load when selected. Unsaved text and undo history recover through local history. Closing all tabs keeps the next launch empty.
 
+Only the active code tab mounts an editor. Inactive tabs keep text, undo/redo, selection, scroll and folded regions; their completed syntax caches are packed together in memory and reused when revisiting an unchanged file.
+
 - Hovering a name in a Haxe file shows its type and documentation; hovering an underlined range shows the problem. Diagnostic popups render Markdown, including inline code, highlighted code blocks, emphasis and links. Long documentation scrolls within the popup. Hover documentation is requested from the language server; revisiting an unchanged open tab keeps its existing LSP document version.
 - **Completion.** The list opens after `.` and at the first character of a word, or with Ctrl+Space. Typing narrows it (prefix, word starts, letters in order). Up, Down, Page Up, Page Down, Home and End move; Enter or Tab inserts the row; Escape closes. Each row has a kind letter, the item's type and, for the selected row, its documentation. Items come from the compiler's display server and reflect the buffer as typed, not the saved file.
 - **Signature help.** `(` and `,` open the signatures of the call the caret is in, with the current argument in bold. The popover follows typing and moves with the caret; it closes at the call's `)` or on Escape.
