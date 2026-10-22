@@ -2,12 +2,19 @@ import rayde.run.Job;
 import rayde.run.OutputJobs;
 import rayde.run.Worker;
 
+@:access(rayde.run.Worker)
 class PanelWorkerChecks {
 	static function main():Void run();
 	static function until(done:Void->Bool, message:String):Void {
 		var end = haxe.Timer.stamp() + 10;
 		while (!done() && haxe.Timer.stamp() < end) Sys.sleep(.005);
 		if (!done()) throw message;
+	}
+	static function running(worker:Worker<Int, Int>):Bool {
+		worker.mailbox.mutex.acquire();
+		var started = worker.mailbox.started;
+		worker.mailbox.mutex.release();
+		return started;
 	}
 
 	public static function run():Void {
@@ -24,6 +31,15 @@ class PanelWorkerChecks {
 		var results = [];
 		until(() -> { results = results.concat(worker.poll()); return !worker.busy(); }, "Panel worker did not settle");
 		if (results.length != 1 || results[0].value != 99) throw "Panel worker delivered superseded or cancelled results";
+		until(() -> !running(worker), "Idle panel worker did not retire");
+		worker.submit("restart", 101);
+		until(() -> !running(worker), "Restarted panel worker did not retire");
+		results = worker.poll();
+		if (results.length != 1 || results[0].value != 101) throw "Worker retirement lost a completed result or rejected new work";
+		for (i in 0...100) worker.submit("restart", i);
+		results = [];
+		until(() -> { results = results.concat(worker.poll()); return !worker.busy(); }, "Restarted worker did not settle");
+		if (results.length == 0 || results[results.length - 1].value != 99) throw "Restarted worker lost its latest queued request";
 		worker.dispose(); worker.submit("disposed", 1);
 		if (worker.busy()) throw "Disposed panel worker accepted work";
 
@@ -74,6 +90,6 @@ class PanelWorkerChecks {
 		if (terminal == null || !terminal.write("queued\n")) throw "Starting terminal rejected input";
 		until(() -> { terminal.starting(); return terminal.line(1).indexOf("accepted:queued") >= 0; }, "Starting terminal lost queued input");
 		terminal.close();
-		Sys.println("panel workers: coalescing, cancellation, bounded severity logs, process output and exit status");
+		Sys.println("panel workers: idle retirement, restart, result retention, coalescing, cancellation, bounded severity logs, process output and exit status");
 	}
 }

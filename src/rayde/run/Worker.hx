@@ -26,6 +26,7 @@ private class Mailbox<T, R> {
 
 /** A data-only worker with one pending request and one result per key. UI owners never enter its closure. */
 class Worker<T, R> {
+	static inline var IDLE_SECONDS = 1.;
 	final mailbox = new Mailbox<T, R>();
 	final work:(T, Void->Bool)->R;
 
@@ -86,13 +87,18 @@ class Worker<T, R> {
 
 	static function run<T, R>(box:Mailbox<T, R>, work:(T, Void->Bool)->R):Void {
 		while (true) {
-			box.wake.wait();
+			var woke = box.wake.wait(IDLE_SECONDS);
 			box.mutex.acquire();
-			var stop = box.stopped, key = box.order.shift(), task = key == null ? null : box.pending.get(key);
+			// Retire under the submit lock so the next request either reaches this worker or starts its successor.
+			if (box.stopped || !woke && box.order.length == 0) {
+				box.started = false;
+				box.mutex.release();
+				return;
+			}
+			var key = box.order.shift(), task = key == null ? null : box.pending.get(key);
 			if (key != null) box.pending.remove(key);
 			box.active = task;
 			box.mutex.release();
-			if (stop) return;
 			if (task == null) continue;
 			perform(box, task, work);
 			task = null;
