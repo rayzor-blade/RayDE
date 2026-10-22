@@ -82,7 +82,10 @@ class ProjectFile {
 			for (i in 0...project.args.length - 1) if (project.args[i] == "-cp") {
 				var cp = project.args[i + 1];
 				cp = Path.addTrailingSlash(Path.normalize(Path.isAbsolute(cp) ? cp : Path.join([project.root, cp])));
-				if (StringTools.startsWith(project.main, cp)) module = Path.withoutExtension(project.main.substr(cp.length)).split("/").join(".");
+				if (StringTools.startsWith(project.main, cp)) {
+					module = Path.withoutExtension(project.main.substr(cp.length)).split("/").join(".");
+					break;
+				}
 			}
 			if (module == null) { project.args = project.args.concat(["-cp", Path.directory(project.main)]); module = Path.withoutExtension(Path.withoutDirectory(project.main)); }
 			project.args = project.args.concat(["-main", module]);

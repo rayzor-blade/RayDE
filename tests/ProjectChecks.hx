@@ -52,6 +52,12 @@ class ProjectChecks {
 		sys.io.File.saveContent(entries[2], "[project]\nname = 'Unicode λ'\nentry = 'src/Main.hx'\n[build]\nclass-paths = [\n 'src', # comment\n 'lib code',\n]\n[build.defines]\nfeature = true\nmessage = 'hello # world'\n");
 		rayzor = ProjectFile.read(entries[2]);
 		check(rayzor.name == "Unicode λ" && rayzor.args.indexOf("lib code") >= 0 && rayzor.args.indexOf("message=hello # world") >= 0, "TOML multiline arrays, Unicode, comments or defines were misread");
+		var nested = rayzor.root + "/examples/sample-app";
+		sys.FileSystem.createDirectory(nested);
+		sys.io.File.saveContent(nested + "/Main.hx", "class Main { static function main() {} }\n");
+		sys.io.File.saveContent(nested + "/rayzor.toml", "[project]\nentry='Main.hx'\n[build]\nclass-paths=['.', '../../']\n");
+		var application = ProjectFile.read(nested + "/rayzor.toml"), main = application.args.indexOf("-main");
+		check(main >= 0 && application.args[main + 1] == "Main", "Overlapping class paths did not use the first matching source root");
 		sys.FileSystem.createDirectory(rayzor.root + "/config");
 		sys.io.File.saveContent(rayzor.root + "/config/editor.hxml", "-cp ../src\n-main Main\n");
 		sys.io.File.saveContent(entries[2], "[project]\nname='delegated'\nhxml='config/editor.hxml'\n");
