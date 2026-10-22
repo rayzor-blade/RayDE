@@ -25,10 +25,10 @@ ash=${RAYDE_ASH:-$(command -v ash 2>/dev/null || echo "$HOME/.ash/bin/ash")}
 [ -x "$ash" ] || { echo "rayde: ash was not found; install it or set RAYDE_ASH" >&2; exit 1; }
 if [ $# -eq 0 ]; then
   if command -v zenity >/dev/null 2>&1; then
-    project=$(zenity --file-selection --title="Open a project (.hxml, .rayext or .raytheme)" 2>/dev/null) || exit 0
+    project=$(zenity --file-selection --title="Open a project (.hxml, haxelib.json or rayzor.toml)" 2>/dev/null) || exit 0
     set -- "$project"
   elif command -v kdialog >/dev/null 2>&1; then
-    project=$(kdialog --getopenfilename . "*.hxml *.rayext *.raytheme" 2>/dev/null) || exit 0
+    project=$(kdialog --getopenfilename . "*.hxml *.json *.toml *.rayext *.raytheme" 2>/dev/null) || exit 0
     set -- "$project"
   fi
 fi

@@ -50,6 +50,15 @@ class Runner {
 		console = "";
 		problems = [];
 		exitCode = null;
+		if (display.project != null && !display.project.runnable) {
+			state = "failed"; append("This project has no application entry point. Open a runnable build to use Run.\n"); return;
+		}
+		if (display.project != null && display.project.runtime == "rayzor") {
+			sys.FileSystem.createDirectory(out);
+			building = false; state = "running"; append("Running with Rayzor…\n");
+			job = new Job(rayde.lang.RayzorBinary.find() ?? "rayzor", ["run"], haxe.io.Path.join([out, "run.log"]), null, display.cwd, true);
+			job.start(); return;
+		}
 		display.server.ensure();
 		if (sys.FileSystem.exists(program()))
 			sys.FileSystem.deleteFile(program());

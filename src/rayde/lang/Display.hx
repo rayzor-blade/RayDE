@@ -45,23 +45,31 @@ class Display {
 
 	/** The build file this was read from, when it was read from one. */
 	public final hxml:Null<String>;
+	public var project(default, null):Null<rayde.project.ProjectFile>;
 
 	var id = 0;
 
 	/** Files last typed from contents rather than from disk. */
 	final edited = new Map<String, Bool>();
 
-	public function new(server:CompilerServer, cwd:String, args:Array<String>, ?hxml:String) {
+	public function new(server:CompilerServer, cwd:String, args:Array<String>, ?hxml:String, ?project:rayde.project.ProjectFile) {
 		this.server = server;
 		this.cwd = cwd;
 		this.args = args;
 		this.hxml = hxml;
+		this.project = project;
 	}
 
 	/** Reads the build file again, so requests use what it says now. Nothing happens for a project not read from one. */
 	public function reload():Void
-		if (hxml != null)
+		if (project != null) { project = rayde.project.ProjectFile.read(project.file); args = project.args; }
+		else if (hxml != null)
 			args = Hxml.read(hxml);
+
+	public static function ofProject(server:CompilerServer, file:String):Display {
+		var project = rayde.project.ProjectFile.read(file);
+		return new Display(server, project.root, project.args, project.hxml, project);
+	}
 
 	/** A project read from its `.hxml`, run from that file's folder. */
 	public static function ofHxml(server:CompilerServer, hxml:String):Display {

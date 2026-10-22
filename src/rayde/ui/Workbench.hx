@@ -379,7 +379,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Opens what a project opens with: for an extension, its main script, with its view shown where the config puts it. */
 	public function openProject():Void {
 		if (sessionReady) return;
-		workspaceSession = new WorkspaceSession(props.display.cwd, props.display.hxml ?? (extension != null ? extension.file : themeStudio != null ? themeStudio.file : props.display.cwd));
+		workspaceSession = new WorkspaceSession(props.display.cwd, projectEntry() ?? (extension != null ? extension.file : themeStudio != null ? themeStudio.file : props.display.cwd));
 		var saved = workspaceSession.read();
 		if (saved != null) {
 			var files = [for (entry in saved.files) sessionPath(entry)];
@@ -617,6 +617,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function mainFile():Null<String> {
 		if (extension != null)
 			return sys.FileSystem.exists(extension.mainPath()) ? extension.mainPath() : null;
+		if (props.display.project != null && props.display.project.main != null && sys.FileSystem.exists(props.display.project.main)) return props.display.project.main;
 		var args = props.display.args;
 		for (i in 0...args.length - 1)
 			if (args[i] == "--main" || args[i] == "-main" || args[i] == "-m")
@@ -2631,10 +2632,11 @@ class Workbench extends Component<WorkbenchProps> {
 			return [{label: haxe.io.Path.withoutDirectory(props.display.cwd), dir: props.display.cwd}];
 		if (extension != null)
 			return extension.sourceDirs();
-		var args = props.display.args, out = [];
+		var args = props.display.args, out = [], base = props.display.cwd;
 		for (i in 0...args.length - 1)
-			if (args[i] == "-cp" || args[i] == "--class-path") {
-				var dir = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([props.display.cwd, args[i + 1]]);
+			if (args[i] == "--cwd") base = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([base, args[i + 1]]);
+			else if (args[i] == "-cp" || args[i] == "-p" || args[i] == "--class-path") {
+				var dir = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([base, args[i + 1]]);
 				if (sys.FileSystem.exists(dir) && sys.FileSystem.isDirectory(dir))
 					out.push({label: args[i + 1], dir: dir});
 			}
@@ -2647,10 +2649,13 @@ class Workbench extends Component<WorkbenchProps> {
 			return tagged(<tree-item value={themeStudio.file} label={haxe.io.Path.withoutDirectory(themeStudio.file)} icon={Icons.PALETTE_LINE}/>, themeStudio.file);
 		if (extension != null)
 			return tagged(<tree-item value={extension.file} label={haxe.io.Path.withoutDirectory(extension.file)} icon={Icons.SETTINGS_3_LINE}/>, extension.file);
-		if (props.display.hxml == null)
+		var entry = projectEntry();
+		if (entry == null)
 			return <div/>;
-		return tagged(<tree-item value={props.display.hxml} label={haxe.io.Path.withoutDirectory(props.display.hxml)} icon={Icons.SETTINGS_3_LINE}/>, props.display.hxml);
+		return tagged(<tree-item value={entry} label={haxe.io.Path.withoutDirectory(entry)} icon={Icons.SETTINGS_3_LINE}/>, entry);
 	}
+
+	function projectEntry():Null<String> return props.display.project == null ? props.display.hxml : props.display.project.file;
 
 	function folders():Array<Element> {
 		var entries = folderEntries(props.display.cwd);
@@ -2697,6 +2702,7 @@ class Workbench extends Component<WorkbenchProps> {
 		var children:Array<Element> = [], sources = classpaths();
 		for (name in names) {
 			var path = haxe.io.Path.join([dir, name]);
+			if (path == projectEntry()) continue;
 			if (name.startsWith("."))
 				continue;
 			if (sys.FileSystem.isDirectory(path))
@@ -2764,7 +2770,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function welcome():Element
 		return <welcome name={props.name} runtime={runtime()} root={props.display.cwd}
-			build={props.display.hxml == null ? "build.hxml" : haxe.io.Path.withoutDirectory(props.display.hxml)} haxe={compilerVersion()}
+			build={projectEntry() == null ? "build.hxml" : haxe.io.Path.withoutDirectory(projectEntry())} haxe={compilerVersion()} canRun={props.display.project == null || props.display.project.runnable}
 			sources={[for (cp in classpaths()) cp.label]} files={() -> projectFiles().length} main={mainFile()} recent={recent} problems={problems}
 			onOpen={path -> openFile(path)} onFiles={() -> openCenter()} onCommands={() -> openCenter(">")} onRun={run} onBuild={openBuild}/>;
 
@@ -3352,6 +3358,7 @@ class Workbench extends Component<WorkbenchProps> {
 	 * show hints between lines; until then it sits here.
 	 */
 	function runStatus(state:String):Element {
+		if (props.display.project != null && !props.display.project.runnable) return <div/>;
 		var active = state == "building" || state == "running";
 		return <div class="flex items-center gap-2">
 			<if {state == "building"}><text class="text-text-tertiary">Building</text></if>

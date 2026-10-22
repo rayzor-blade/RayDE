@@ -17,6 +17,7 @@ mod syntax;
 mod grammars;
 mod image_preview;
 mod lsp;
+mod project;
 
 // RAYDE_EXTENSION_TIMING=1 reports worker stages without changing scheduling.
 fn timed(start: Instant, stage: &str, detail: &str) {

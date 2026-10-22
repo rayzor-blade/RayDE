@@ -9,7 +9,7 @@ import rayde.lang.Display;
 import rayde.theme.ThemeFile;
 import rayde.ui.Workbench;
 
-/** RayDE as an application: `rayde <build.hxml>` opens that Haxe project, `rayde <name.rayext>` that extension and `rayde <name.raytheme>` that theme, in the workbench. */
+/** Opens a project entry, extension or theme in the workbench; the macOS bundle offers project creation without arguments. */
 class Main {
 	static function main():Void {
 		var args = Sys.args();
@@ -19,7 +19,7 @@ class Main {
 			args = [chosen];
 		}
 		if (args.length == 0) {
-			Sys.println("usage: rayde <build.hxml | name.rayext | name.raytheme>");
+			Sys.println("usage: rayde <build.hxml | haxelib.json | rayzor.toml | name.rayext | name.raytheme>");
 			Sys.exit(1);
 		}
 		var root = haxe.io.Path.directory(sys.FileSystem.fullPath(args[0]));
@@ -34,9 +34,9 @@ class Main {
 			Theming.apply(appearance);
 		rayde.ui.Style.use();
 		// An extension is not built by the Haxe compiler: its display has no build file, and the server never starts.
-		var server = new CompilerServer(), display = extension != null || theme != null ? new Display(server, root, []) : Display.ofHxml(server, args[0]);
+		var server = new CompilerServer(), display = extension != null || theme != null ? new Display(server, root, []) : Display.ofProject(server, args[0]);
 		rayde.settings.RecentProjects.remember(args[0]);
-		var name = extension != null ? extension.name : theme != null ? theme.name : haxe.io.Path.withoutDirectory(root);
+		var name = extension != null ? extension.name : theme != null ? theme.name : display.project.name;
 		WindowedApp.run({
 			title: "RayDE · " + name,
 			width: 1280,
@@ -53,7 +53,7 @@ class Main {
 		}, () -> {
 			var app = WindowedApp.current;
 			rayde.ui.GpuProgress.attach(app.device, app.tree, () -> app.frames);
-			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : "ash", extension: extension, theme: theme, chrome: rayde.ui.WindowChrome.ofApp()});
+			var bench = new Workbench({display: display, name: name, runtime: extension != null ? "rayscript" : display.project == null ? "ash" : display.project.runtime, extension: extension, theme: theme, chrome: rayde.ui.WindowChrome.ofApp()});
 			bench.openProject();
 			// RAYDE_PANEL=terminal (or problems, console) opens the bottom panel on that tab at launch, for scripted runs.
 			var tab = Sys.getEnv("RAYDE_PANEL");

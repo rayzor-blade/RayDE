@@ -17,6 +17,18 @@ fn packed_text(text:&str) -> *mut vbyte {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn project_toml(data:*const vbyte, len:i32) -> *mut vbyte {
+    catch_unwind(|| unsafe { text(data,len) }.map_or(ptr::null_mut(), |s| packed_text(&super::project::parse(s).to_string()))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_project_toml, project_toml, "PBi_B");
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn project_directory(data:*const vbyte, len:i32) -> *mut vbyte {
+    catch_unwind(|| unsafe { text(data,len) }.map_or(ptr::null_mut(), |s| packed_text(&super::project::create_directory(s).to_string()))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_project_directory, project_directory, "PBi_B");
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn lsp_open(data:*const vbyte, len:i32) -> i32 {
     catch_unwind(|| unsafe { text(data,len) }.and_then(|s| super::lsp::open(s).ok()).unwrap_or(-1)).unwrap_or(-1)
 }

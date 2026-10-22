@@ -799,6 +799,7 @@ class Checks {
 		settingsChecks();
 		RecentProjectsChecks.run();
 		WorkspaceSessionChecks.run();
+		ProjectChecks.run();
 		terminalChecks();
 		manifestChecks();
 		iconChecks();

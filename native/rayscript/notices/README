@@ -1,4 +1,4 @@
-Syntax, Markdown and image dependencies
+Syntax, Markdown, image and project dependencies
 
 The grammar data comes from @wooorm/starry-night 3.11.0. Its original NOTICE
 and LICENSE accompany this file. Entries referring to lang/<name>.js map to
@@ -23,3 +23,6 @@ decoders. The image-* files contain their newly introduced dependency licenses.
 Atomig-macro shares atomig's MIT/Apache-2.0 licensing and repository.
 Avif-parse is unmodified MPL-2.0 code; its SOURCE notice points to the exact
 source archive.
+
+TOML 0.8.23 parses project manifests. The project-* files include its newly
+introduced dependency licenses; exact versions are locked in Cargo.lock.
