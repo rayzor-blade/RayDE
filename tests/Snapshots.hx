@@ -166,7 +166,7 @@ class Snapshots {
 				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
 				spot = editor.rectAt(6);
 				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 4, spot.y + spot.height / 2);
-				until(() -> Css.query(bench.tree, bench.node.id, ".rayde-hover-markdown").length > 0, "cache documentation for the indexed file");
+				until(() -> Css.query(bench.tree, bench.node.id, ".rayde-hover-markdown").length > 0, "documentation for the indexed file");
 				var traffic = sys.io.File.getContent(root + "/lsp-events"), version = client.version(file), oldEditor = editor;
 				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
 				bench.openFile(other); settle(); bench.openFile(file); settle();
@@ -175,10 +175,12 @@ class Snapshots {
 				if(client.version(file) != version || bench.languageServers.status(file).indexing) throw "Tab return reindexed an unchanged document";
 				spot = editor.rectAt(6);
 				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 4, spot.y + spot.height / 2);
-				until(() -> Css.query(bench.tree, bench.node.id, ".rayde-hover-markdown").length > 0, "cached documentation after editor remount");
+				until(() -> Css.query(bench.tree, bench.node.id, ".rayde-hover-markdown").length > 0, "server documentation after editor remount");
 				drained = false; client.request("test/state", {}, _ -> drained = true);
 				until(() -> drained, "tab-return protocol barrier");
-				if(sys.io.File.getContent(root + "/lsp-events") != traffic) throw "Tab return sent document lifecycle or repeat hover traffic";
+				var returned = sys.io.File.getContent(root + "/lsp-events").substr(traffic.length);
+				if(returned.indexOf("open ") >= 0 || returned.indexOf("change ") >= 0 || returned.indexOf("close ") >= 0) throw "Tab return resent an unchanged document";
+				if(returned.split("hover ").length != 2) throw "Tab return did not request documentation from the server";
 				shot("hover-tab-return"); editor.hideHint();
 				hover("#rayde-lsp-status"); settle(40);
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — ready"), "ready server tooltip");
