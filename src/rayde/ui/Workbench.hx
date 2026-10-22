@@ -3100,10 +3100,13 @@ class Workbench extends Component<WorkbenchProps> {
 		var extension = Lambda.find(extensionManager.extensions, entry -> entry.connection.file == server.owner);
 		var icon = extension == null || extension.connection.manifest == null ? Icons.CODE_S_SLASH_LINE : ViewIcons.of(extension.connection.manifest);
 		var running = ["ready", "starting", "restarting"].indexOf(server.state) >= 0;
-		var label = server.name + (server.state == "ready" ? "" : " · " + (server.state == "idle" ? "not started" : server.state));
-		return <dropdown-menu side="top" id="rayde-lsp-menu">
+		var status = server.state == "idle" ? "not started" : server.state;
+		var label = server.name + (server.state == "ready" ? "" : " · " + status);
+		var picture:Element = <icon document={icon} class="size-3.5"/>;
+		if (!running) ashui.css.Identity.of(picture.tree, picture.node.id).addClasses(["rayde-lsp-inactive"]);
+		return <tooltip id="rayde-lsp-tooltip" label={server.name + " — " + status} side="top"><dropdown-menu side="top" id="rayde-lsp-menu">
 			<dropdown-menu-trigger id="rayde-lsp-status" variant={Ghost} class="rayde-status-item rayde-lsp-status">
-				<icon document={icon} class="size-3.5"/><text>{label}</text>
+				{picture}<text>{label}</text>
 			</dropdown-menu-trigger>
 			<dropdown-menu-content>
 				<dropdown-menu-label>{server.name + " — " + server.state}</dropdown-menu-label>
@@ -3114,7 +3117,7 @@ class Workbench extends Component<WorkbenchProps> {
 				<dropdown-menu-item id="rayde-lsp-settings" onSelect={() -> openSettings("extensions")}>Language Server Settings…</dropdown-menu-item>
 				<dropdown-menu-item id="rayde-lsp-output" onSelect={() -> showLanguageOutput(server.owner)}>Show Output</dropdown-menu-item>
 			</dropdown-menu-content>
-		</dropdown-menu>;
+		</dropdown-menu></tooltip>;
 	}
 
 	function showLanguageOutput(owner:String):Void {

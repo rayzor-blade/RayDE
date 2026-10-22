@@ -366,5 +366,7 @@
 #rayde .rayde-hover-markdown .rayde-md-word { font-size: 13px; line-height: 20px; }
 #rayde .rayde-hover-markdown .rayde-md-code { padding: 8px; gap: 0; border-radius: 5px; overflow: auto; }
 #rayde .rayde-hover-markdown .rayde-md-code > .ui-code-hint-line { flex-shrink: 0; }
-#rayde #rayde-lsp-menu { align-self: center; align-items: center; }
+#rayde #rayde-lsp-tooltip, #rayde #rayde-lsp-menu { align-self: center; align-items: center; }
 #rayde .rayde-lsp-status { font-size: var(--text-xs); min-height: 0; height: 20px; padding: 0 6px; }
+
+#rayde .rayde-lsp-inactive { filter: grayscale(1); }

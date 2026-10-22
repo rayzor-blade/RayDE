@@ -99,10 +99,16 @@ class Snapshots {
 				if (bounds.height > 321 || docsScroll == null || docsScroll.limits().y <= 0) throw "Long hover documentation is not bounded and scrollable";
 				if (!Lambda.exists(Css.query(bench.tree, bench.node.id, ".rayde-hover-docs text"), id -> ashui.ui.Text.at(id).text() == "visible fallback code")) throw "Unknown code language lost its text";
 				shot("hover-scroll"); editor.hideHint();
+				hover("#rayde-lsp-status"); settle(40);
+				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — ready"), "ready server tooltip");
+				shot("server-tooltip");
 				click("#rayde-lsp-status"); shot("server-menu");
 				click("#rayde-lsp-stop");
 				until(() -> client.state == "stopped", "status menu to stop LSP");
 				if (bench.languageServers.client(file) != null) throw "Stopped server still routes language requests";
+				hover("#rayde-lsp-status"); settle(40);
+				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — stopped"), "stopped server tooltip");
+				shot("server-stopped-tooltip");
 				click("#rayde-lsp-status"); shot("server-stopped");
 				click("#rayde-lsp-start");
 				until(() -> client.state == "ready", "status menu to start LSP");
