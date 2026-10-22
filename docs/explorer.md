@@ -2,6 +2,8 @@
 
 The file tree occupies the top pane. Drag the horizontal dividers to resize it and the Outline, Timeline and Dependencies panes. Outline, Timeline and Dependencies have collapsible headers; reopening restores their height. Their state survives switching between Explorer and another sidebar. Focus a divider and use the arrow keys to resize with the keyboard.
 
+Files and folders that git ignores are muted in the tree, as is everything inside an ignored folder. The rules come from the repository's `.git/info/exclude` and the `.gitignore` of each folder above the entry, the last matching pattern deciding, with `!` negation, anchored and directory-only patterns, `*`, `?`, `[...]` and `**`; a file inside an ignored folder cannot be re-included. Whether a file is tracked, and global excludes, are not considered. Outside a repository nothing is muted. An edited `.gitignore` applies to rows built after the edit.
+
 Outline follows the active Haxe buffer, including unsaved edits. Its symbols come from the compiler's module-symbols request and include types, fields, methods, parameters and local variables. Select a symbol to navigate to its declaration. Other file types show an empty-state message.
 
 Timeline contains local history independently of source control. Selecting a local revision opens a read-only tab. Its Restore icon replaces the source's unsaved buffer as an undoable edit; saving remains a separate action. Local checkpoints preserve text patches and the bounded editor undo/redo stacks without retaining editor instances or render resources. They include edits that were never staged and intermediate states later abandoned after Undo.

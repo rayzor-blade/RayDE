@@ -358,6 +358,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final languageActivityRevision = Signal.make(0);
 	final languageRevision = Signal.make(0);
 	var languagesScheduled = false;
+	var ignoreRules:Null<rayde.files.GitIgnore>;
+	var ignoreRoot = "";
 	var languagePollTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var diagnosticsScheduled = false;
 
@@ -2345,6 +2347,21 @@ class Workbench extends Component<WorkbenchProps> {
 		return item;
 	}
 
+	/** The rules git ignores files by, for the project that is open. */
+	function gitIgnore():rayde.files.GitIgnore {
+		if (ignoreRules == null || ignoreRoot != props.display.cwd) {
+			ignoreRoot = props.display.cwd;
+			ignoreRules = new rayde.files.GitIgnore(ignoreRoot);
+		}
+		return ignoreRules;
+	}
+
+	/** Marks a row of the tree whose file or folder git ignores, which the stylesheet mutes. */
+	function untracked(item:Element, path:String):Element {
+		if (gitIgnore().ignored(path)) ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-ignored", "");
+		return item;
+	}
+
 	/** The path of the row of the tree under a point, or null. */
 	function rowAt(x:Float, y:Float):Null<String> {
 		for (hit in tree.hitTest(x, y))
@@ -2708,13 +2725,13 @@ class Workbench extends Component<WorkbenchProps> {
 			if (directories.get(name))
 				children.push(folder(path, name, Lambda.exists(sources, cp -> FileOps.inside(path, cp.dir))));
 			else
-				children.push(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path));
+				children.push(untracked(tagged(<tree-item value={path} label={name} icon={fileIcon(path)}/>, path), path));
 		}
 		return children;
 	}
 
 	function folder(dir:String, label:String, expanded:Bool):Element {
-		return tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)} load={() -> folderEntries(dir)}/>, dir);
+		return untracked(tagged(<tree-item value={dir} label={label} icon={Icons.FOLDER_LINE} expanded={folderState(dir, expanded)} load={() -> folderEntries(dir)}/>, dir), dir);
 	}
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */

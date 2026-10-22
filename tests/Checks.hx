@@ -791,6 +791,33 @@ class Checks {
 			sys.FileSystem.deleteFile(path);
 	}
 
+	static function gitIgnoreChecks():Void {
+		var root = Sys.getCwd() + "bin/gitignore-checks-" + Std.random(0x3fffffff);
+		for (dir in ["/.git/info", "/build", "/src/nested", "/src/keep", "/docs/api", "/out/deep"]) sys.FileSystem.createDirectory(root + dir);
+		function put(name:String, text = "x") sys.io.File.saveContent(root + "/" + name, text);
+		put(".gitignore", "# comment\nbuild/\n*.log\n!keep.log\n/top-only.txt\nout/**/*.bin\n*.[ch]\nfoo?bar\ndocs/api\n\\#hash\n");
+		put(".git/info/exclude", "excluded.txt\n");
+		put("src/.gitignore", "*.tmp\n!important.tmp\nkeep/*\n!keep/this.txt\n");
+		for (name in ["build/a.o", "app.log", "keep.log", "src/x.log", "top-only.txt", "src/top-only.txt", "out/deep/a.bin", "out/a.bin", "out/deep/a.txt", "a.c", "foo-bar", "fooxxbar",
+			"docs/api/index.html", "docs/guide.md", "#hash", "excluded.txt", "src/a.tmp", "src/important.tmp", "src/keep/this.txt", "src/keep/other.txt", "src/nested/b.tmp", "a.tmp", "plain.hx"]) {
+			put(name);
+		}
+		var ignore = new rayde.files.GitIgnore(root);
+		var expected = ["build" => true, "build/a.o" => true, "app.log" => true, "keep.log" => false, "src/x.log" => true, "top-only.txt" => true, "src/top-only.txt" => false,
+			"out/deep/a.bin" => true, "out/a.bin" => true, "out/deep/a.txt" => false, "a.c" => true, "foo-bar" => true, "fooxxbar" => false, "docs/api" => true,
+			"docs/api/index.html" => true, "docs/guide.md" => false, "#hash" => true, "excluded.txt" => true, "src/a.tmp" => true, "src/important.tmp" => false,
+			"src/keep/this.txt" => false, "src/keep/other.txt" => true, "src/nested/b.tmp" => true, "a.tmp" => false, "plain.hx" => false, ".gitignore" => false, "src" => false];
+		for (path => value in expected) check(ignore.ignored(root + "/" + path) == value, "gitignore: " + path + (value ? " is ignored" : " is not ignored"));
+		check(!new rayde.files.GitIgnore("/").ignored("/tmp"), "gitignore: nothing is ignored outside a repository");
+		put(".gitignore", "plain.hx\n");
+		check(ignore.ignored(root + "/plain.hx") && !ignore.ignored(root + "/build/a.o"), "gitignore: an edited file is read again");
+		function remove(path:String):Void {
+			if (sys.FileSystem.isDirectory(path)) { for (name in sys.FileSystem.readDirectory(path)) remove(path + "/" + name); sys.FileSystem.deleteDirectory(path); }
+			else sys.FileSystem.deleteFile(path);
+		}
+		remove(root);
+	}
+
 	static function main():Void {
 		themeChecks();
 		callSiteChecks();
@@ -804,6 +831,7 @@ class Checks {
 		manifestChecks();
 		iconChecks();
 		fileOpsChecks();
+		gitIgnoreChecks();
 		extensionHostChecks();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();

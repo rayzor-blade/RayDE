@@ -240,6 +240,8 @@ class Snapshots {
 				function label(word:String):Bool return Lambda.exists(Css.query(tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text().indexOf(word) >= 0);
 				bench.openFile(file); settle();
 				if (has("#rayde-outline-scroll") || has("#rayde-dependencies-scroll") || has("#rayde-activity-ext-git-timeline")) throw "closed sections built their contents or added an activity icon";
+				if (!has('[data-path="' + root + '/.rayde"][data-ignored]') || has('[data-path="' + root + '/src"][data-ignored]') || has('[data-path="' + root + '/build.hxml"][data-ignored]')) throw "the Explorer did not mute exactly the entries .gitignore names";
+				shot("ignored");
 				click("#rayde-explorer-toggle-outline");
 				until(() -> label("Main"), "compiler Outline symbols");
 				bench.editorFor(file).select(0, 0);
