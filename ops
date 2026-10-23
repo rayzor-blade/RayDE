@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792714030,"nonce":"ZrKBHDB3Sn3qNh6Kpip3EEfo+iE=","added":["perf","area:lsp"],"removed":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":2,"timestamp":1792714349,"nonce":"WpAYesRTlKSmRE1Bdg0HEku03cg=","title":"Wake idle LSP and extension clients only on queued work","was":"Wake idle language clients on input instead of polling"}]}
