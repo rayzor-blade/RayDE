@@ -15,6 +15,8 @@ import rayde.ext.GitProfiles;
 @:access(ashui.types.Bitmap)
 class GitAvatarChecks {
 	static function main():Void {
+		var cache = 'bin/git-avatar-checks-${Std.random(0x3fffffff)}';
+		GitProfiles.directory = () -> cache;
 		var bytes = sys.io.File.getBytes("tests/fixtures/images/sample.jpg");
 		GitProfiles.request = (url, _) -> url.indexOf("api.github.com") >= 0
 			? haxe.io.Bytes.ofString('[{"author":{"avatar_url":"https://avatars.githubusercontent.com/u/1"}}]') : bytes;

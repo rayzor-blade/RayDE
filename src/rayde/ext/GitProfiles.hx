@@ -7,7 +7,7 @@ import rayde.run.Worker;
 
 typedef GitProfile = {name:String, bytes:Bytes};
 private typedef Repository = {host:String, path:String};
-private typedef Request = {repository:Repository, commit:String, email:String, name:String};
+private typedef Request = {repository:Repository, commit:String, email:String, name:String, ?directory:String};
 private typedef Cached = {profile:Null<GitProfile>, until:Float};
 private typedef Listener = {key:String, owner:Owner, done:Null<GitProfile>->Void};
 
@@ -24,15 +24,21 @@ class GitProfiles {
 	static inline var MAX_BYTES = 2 * 1024 * 1024;
 	static var request:(String, Int)->Null<Bytes> = http;
 	static var status = 0;
+	static var directory:Void->Null<String> = () -> {
+		var home = Sys.getEnv("HOME") ?? Sys.getEnv("USERPROFILE");
+		return home == null || home == "" ? null : haxe.io.Path.join([home,".rayde","cache","git-avatars"]);
+	};
+	static function identity(repo:Repository, commit:String, email:String):String
+		return repo.host + ":" + (email == "" ? repo.path + ":" + commit.toLowerCase() : email.toLowerCase());
 
 	public static function observe(data:Dynamic, allowed:Bool, done:Null<GitProfile>->Void):Void {
 		var repo = data == null ? null : repository(field(data, "remote"));
 		var commit = field(data, "id"), email = field(data, "email"), name = field(data, "author");
 		if (!allowed || repo == null || !~/^[a-fA-F0-9]{40,64}$/.match(commit)) { done(null); return; }
-		var key = repo.host + "/" + repo.path + ":" + (email == "" ? commit : email.toLowerCase());
+		var key = identity(repo,commit,email);
 		var known = cache.get(key), now = haxe.Timer.stamp();
 		if (known != null && known.until > now) { touch(key); done(known.profile); return; }
-		if (!pending.exists(key) && Lambda.count(pending) >= 64) { done(null); return; }
+		if (!pending.exists(key) && Lambda.count(pending) >= 64) { done(known == null ? null : known.profile); return; }
 		var listener = {key:key, owner:Owner.current, done:done};
 		listeners.push(listener);
 		Owner.onCleanup(() -> {
@@ -43,7 +49,7 @@ class GitProfiles {
 		if (!hooked) { LayoutTree.flushHooks.push(flush); hooked = true; }
 		if (!pending.exists(key)) {
 			pending.set(key, true);
-			worker.submit(key, {repository:repo, commit:commit, email:email, name:name});
+			worker.submit(key, {repository:repo, commit:commit, email:email, name:name,directory:directory()});
 		}
 	}
 
@@ -58,8 +64,8 @@ class GitProfiles {
 			pending.remove(result.key);
 			var previous = cache.get(result.key);
 			if (previous != null && previous.profile != null) retained -= previous.profile.bytes.length;
-			var profile = result.value;
-			cache.set(result.key, {profile:profile, until:haxe.Timer.stamp() + (profile == null ? 600 : 86400)});
+			var profile = result.value ?? (previous == null ? null : previous.profile);
+			cache.set(result.key, {profile:profile, until:haxe.Timer.stamp() + (result.value == null ? 600 : 86400)});
 			if (profile != null) retained += profile.bytes.length;
 			touch(result.key);
 			while (recent.length > 128 || retained > MAX_BYTES) {
@@ -98,6 +104,17 @@ class GitProfiles {
 	}
 
 	static function lookup(job:Request, cancelled:Void->Bool):Null<GitProfile> {
+		if (cancelled()) return null;
+		var key = identity(job.repository,job.commit,job.email);
+		var saved = job.directory == null ? null : GitAvatarCache.read(job.directory,key);
+		if (saved != null && Sys.time() - saved.saved < GitAvatarCache.FRESH_SECONDS) return cancelled() ? null : saved.profile;
+		var profile = try fetch(job,cancelled) catch (_:Dynamic) null;
+		if (cancelled()) return null;
+		if (profile != null && job.directory != null) GitAvatarCache.save(job.directory,key,profile);
+		return profile ?? (saved == null ? null : saved.profile);
+	}
+
+	static function fetch(job:Request, cancelled:Void->Bool):Null<GitProfile> {
 		var repo = job.repository;
 		if (cancelled() || blocked.exists(repo.host) && blocked.get(repo.host) > haxe.Timer.stamp()) return null;
 		var url = switch repo.host {

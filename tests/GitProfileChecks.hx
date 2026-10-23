@@ -7,6 +7,7 @@ import rayde.ext.GitProfiles;
 class GitProfileChecks {
 	static function check(value:Bool, message:String):Void { if (!value) throw message; }
 	static function main():Void {
+		GitProfiles.directory = () -> null;
 		for (url in ["git@github.com:owner/repo.git", "https://github.com/owner/repo", "ssh://git@github.com:22/owner/repo.git", "https://token@github.com/owner/repo.git"])
 			check(GitProfiles.repository(url).path == "owner/repo", "Known remote did not normalize: " + url);
 		check(GitProfiles.repository("git@gitlab.com:group/subgroup/project.git").path == "group/subgroup/project", "GitLab subgroup path");
@@ -28,7 +29,7 @@ class GitProfileChecks {
 		check(urls[2].indexOf("author%2Bgit%40example.test") >= 0, "GitLab public email must be URL encoded");
 		var count = urls.length;
 		check(GitProfiles.lookup({repository:{host:"github.com", path:"owner/repo"}, commit:sha, email:"a@b.test", name:"A"}, () -> true) == null && urls.length == count, "Cancelled lookup made a request");
-		var tree = new LayoutTree(), stop:Void->Void = null, delivered = 0, key = "github.com/owner/repo:author@example.test";
+		var tree = new LayoutTree(), stop:Void->Void = null, delivered = 0;
 		var profile = {id:sha, remote:"git@github.com:owner/repo.git", author:"Author", email:"author@example.test"};
 		Owner.root(tree, cleanup -> {
 			stop = cleanup;
