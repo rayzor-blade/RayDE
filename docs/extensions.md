@@ -107,7 +107,15 @@ The name is the logical library in a RayScript `native "git2"` block. Paths are 
 
 **Settings > Extensions** shows each library's path, hash and approval state. User, workspace and development extensions wait for every library to be approved. **Approve** grants native execution; **Revoke** stops the host and clears its views. Approvals are stored under `extensions.nativeApprovals` in `~/.rayde/settings.json`, bound to the extension id and location, library name, path and hash. Workspace settings cannot grant approval. A changed path, hash or extension location requires approval again. Built-ins are pre-approved and still undergo the same host validation. Validation failures appear in the extension's Output channel and block execution until it is restarted.
 
-Approval trusts the extension's scripts to call native code with your account permissions. It does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. Native faults remain confined to the extension's host process. The current native ABI target is macOS arm64.
+Approval trusts the extension's scripts to call native code with your account permissions. It does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. Native libraries currently share RayDE's process and address space, so native faults can terminate RayDE. The current native ABI target is macOS arm64.
+
+#### Memory ownership
+
+Third-party native extension authors are responsible for their native allocations, library caches, handles and background work. They must bound retained data, pair allocations with the library's matching release functions, and clean up resources when work completes, fails or is cancelled and when views or the extension close. Native handle declarations must describe the correct destructor and ownership relationships; borrowed memory must remain valid for every call that uses it. RayScript collection cannot reclaim arbitrary allocations or internal caches inside a native library.
+
+RayDE maintainers are responsible for the VM, the native bridge and resources owned by the editor, including extension presentations, copied messages and decoded images. A bridge or lifecycle defect that retains an extension's resources is a RayDE defect. Our recommended built-in extensions also fall under RayDE's memory and performance maintenance, including their native dependencies.
+
+These ownership requirements are an author contract. The current embedded runtime provides no per-extension native memory limit or process isolation. Stopping an extension requests cleanup; it cannot forcibly reclaim leaked native allocations or interrupt an in-flight native call safely.
 
 ## Project starters
 
