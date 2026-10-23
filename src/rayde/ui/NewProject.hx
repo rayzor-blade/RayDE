@@ -54,7 +54,6 @@ class NewProject extends Component<NewProjectProps> {
 			<dialog-content id="rayde-project-modal" size={Full} onCancel={e -> if (locked()) e.preventDefault()}>
 				<div class="rayde-project-heading">
 					<div class="rayde-project-title">
-						<text class="rayde-project-eyebrow">HAXE ECOSYSTEM</text>
 						<dialog-title>Create a project</dialog-title>
 						<dialog-description>Choose a starting point for your next idea.</dialog-description>
 					</div>

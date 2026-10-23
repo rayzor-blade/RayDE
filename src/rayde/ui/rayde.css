@@ -3,7 +3,6 @@
 #rayde-project-modal { width: 800px; max-width: 94vw; max-height: 92vh; min-height: 0; gap: 16px; padding: 24px; overflow: auto; }
 .rayde-project-heading { flex-direction: row; align-items: flex-start; justify-content: space-between; flex-shrink: 0; gap: 16px; }
 .rayde-project-title { flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
-.rayde-project-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: var(--primary); }
 #rayde-project-close { --ui-button-height: 28px; --ui-button-width: 28px; color: var(--text-secondary); }
 .rayde-project-categories { flex-direction: row; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
 .rayde-project-categories .ui-button { color: var(--text-secondary); }
