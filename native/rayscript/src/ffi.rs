@@ -5,6 +5,44 @@ use std::ptr;
 static RUNTIMES: Mutex<Vec<Option<Arc<Runtime>>>> = Mutex::new(Vec::new());
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn jam_document_open(data:*const vbyte,len:i32) -> i32 {
+    catch_unwind(||unsafe {text(data,len)}.map_or(-1,super::jam::document_open)).unwrap_or(-1)
+}
+define_prim!(hlp_jam_document_open,jam_document_open,"PBi_i");
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jam_document_call(id:i32,data:*const vbyte,len:i32) -> *mut vbyte {
+    catch_unwind(||unsafe {text(data,len)}.map_or(ptr::null_mut(),|s|packed_text(&super::jam::document_call(id,s)))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_jam_document_call,jam_document_call,"PiBi_B");
+#[unsafe(no_mangle)]
+pub extern "C" fn jam_document_close(id:i32) { let _=catch_unwind(||super::jam::document_close(id)); }
+define_prim!(hlp_jam_document_close,jam_document_close,"Pi_v");
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jam_session_open(data:*const vbyte,len:i32) -> i32 {
+    catch_unwind(||unsafe {text(data,len)}.map_or(-1,super::jam::session_open)).unwrap_or(-1)
+}
+define_prim!(hlp_jam_session_open,jam_session_open,"PBi_i");
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jam_session_send(id:i32,data:*const vbyte,len:i32) -> bool {
+    catch_unwind(||unsafe {text(data,len)}.is_some_and(|s|super::jam::session_send(id,s))).unwrap_or(false)
+}
+define_prim!(hlp_jam_session_send,jam_session_send,"PiBi_b");
+#[unsafe(no_mangle)]
+pub extern "C" fn jam_session_poll(id:i32) -> *mut vbyte {
+    catch_unwind(||super::jam::session_poll(id).map_or(ptr::null_mut(),|s|packed_text(&s))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_jam_session_poll,jam_session_poll,"Pi_B");
+#[unsafe(no_mangle)]
+pub extern "C" fn jam_session_pending(id:i32) -> bool { catch_unwind(||super::jam::session_pending(id)).unwrap_or(false) }
+define_prim!(hlp_jam_session_pending,jam_session_pending,"Pi_b");
+#[unsafe(no_mangle)]
+pub extern "C" fn jam_session_can_wake(id:i32) -> bool { catch_unwind(||super::jam::session_can_wake(id)).unwrap_or(false) }
+define_prim!(hlp_jam_session_can_wake,jam_session_can_wake,"Pi_b");
+#[unsafe(no_mangle)]
+pub extern "C" fn jam_session_close(id:i32) { let _=catch_unwind(||super::jam::session_close(id)); }
+define_prim!(hlp_jam_session_close,jam_session_close,"Pi_v");
+
+#[unsafe(no_mangle)]
 pub extern "C" fn project_apple_silicon() -> bool {
     cfg!(all(target_os = "macos", target_arch = "aarch64"))
 }

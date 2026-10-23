@@ -6,6 +6,7 @@ import ashui.components.ContextMenu.ContextMenuTrigger;
 import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
+import rayde.jam.JamSession;
 import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
@@ -226,6 +227,9 @@ class Workbench extends Component<WorkbenchProps> {
 	final imageViews = new Map<String, ImagePreview.ImageViewState>();
 	final imageTextModes = new Map<String, Signal<Bool>>();
 	final documents = new Map<String, DocumentState>();
+	final jam = Signal.make((null : Null<JamSession>));
+	var jamPoll:Null<ashui.animation.AnimationScheduler.Timer>;
+	var jamPresence:Null<ashui.animation.AnimationScheduler.Timer>;
 	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
@@ -1267,6 +1271,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
 	function commands():Array<CenterAction>
 		return [
+			{id:"jam.start",label:"Jam: Share Active Document…",icon:Icons.TEAM_LINE,run:askStartJam},
+			{id:"jam.join",label:"Jam: Join Shared Document…",icon:Icons.TEAM_LINE,run:askJoinJam},
+			{id:"jam.copy",label:"Jam: Copy Invitation",icon:Icons.LINK_M,run:copyJamInvite},
+			{id:"jam.leave",label:"Jam: Leave",icon:Icons.LOGOUT_BOX_LINE,run:leaveJam},
 			{id:"newwindow", label:"New Window", icon:Icons.WINDOW_LINE, run:() -> if (props.onNewWindow != null) props.onNewWindow()},
 			{id:"closewindow", label:"Close Window", icon:Icons.CLOSE_LINE, run:() -> chrome.close()},
 			{id:"openfolder", label:"Open Folder…", icon:Icons.FOLDER_OPEN_LINE, run:() -> pickProject("folder")},
@@ -1506,6 +1514,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
+		if (jam.get() != null) opened = opened.concat([jam.get().file]);
 		if (languageServers != null) languageServers.retain(opened);
 		for (file in imageViews.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageViews.remove(file);
 		for (file in imageTextModes.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageTextModes.remove(file);
@@ -1530,6 +1539,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
 	public function edited(file:String):Void {
+		if (jam.get() != null && jam.get().file == file) jam.get().acceptBuffer();
 		checkpointHistory(file);
 		if (dirty.get().indexOf(file) < 0)
 			dirty.set(dirty.get().concat([file]));
@@ -2216,6 +2226,13 @@ class Workbench extends Component<WorkbenchProps> {
 			if (current == tree && !gone && languageServers.hasEvents()) pollLanguages();
 		};
 		ashui.layout.LayoutTree.flushHooks.push(receiveLanguages);
+		var receiveJam:ashui.layout.LayoutTree->Void = current -> { if (current == tree && !gone) pollJam(); };
+		ashui.layout.LayoutTree.flushHooks.push(receiveJam);
+		Owner.onCleanup(() -> {
+			for (i in 0...ashui.layout.LayoutTree.flushHooks.length) if (Reflect.compareMethods(ashui.layout.LayoutTree.flushHooks[i],receiveJam)) {
+				ashui.layout.LayoutTree.flushHooks.splice(i,1); break;
+			}
+		});
 		Owner.onCleanup(() -> ashui.layout.LayoutTree.flushHooks.remove(receiveLanguages));
 		#if ashui_window
 		installDesktopMenus();
@@ -2248,6 +2265,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			leaveJam();
 			if (codeActionTimer != null) codeActionTimer.cancel();
 			if (codeActionPoll != null) codeActionPoll.cancel();
 			codeActionTimer = null; codeActionPoll = null;
@@ -2875,6 +2893,7 @@ class Workbench extends Component<WorkbenchProps> {
 			value: haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path)),
 			check: FileOps.invalid,
 			accept: name -> {
+				if (jam.get() != null && FileOps.inside(path,jam.get().file)) throw "Leave the Jam before renaming its shared document";
 				var to = FileOps.rename(props.display.cwd, path, name);
 				moveTabs(path, to);
 				refreshExplorer();
@@ -2888,6 +2907,7 @@ class Workbench extends Component<WorkbenchProps> {
 			action: "Delete",
 			destructive: true,
 			accept: _ -> {
+				if (jam.get() != null && FileOps.inside(path,jam.get().file)) throw "Leave the Jam before deleting its shared document";
 				for (f in FileOps.under(open.get(), path))
 					closeFile(f);
 				FileOps.delete(props.display.cwd, path);
@@ -3219,7 +3239,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function codeEditor(file:String):Element {
 		if (restoredTabs.remove(file)) check(file);
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} readOnly={Computed.make(() -> jam.get() != null && jam.get().file == file && !jam.get().editable())} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> definitionAt(file, offset)} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);
@@ -3230,6 +3250,17 @@ class Workbench extends Component<WorkbenchProps> {
 		assistWatch(file, editorRef(file).get());
 		var mounted = editorRef(file).get(), state = documents.get(file);
 		watchCodeActions(file, mounted);
+		new ashui.reactive.Watch(() -> { mounted.editing.caret.get(); mounted.editing.anchor.get(); mounted.editing.composing.get(); 0; }, _ -> {
+			var current = jam.get();
+			if (current == null || current.file != file) return;
+			pollJam();
+			if (jamPresence != null) jamPresence.cancel();
+			jamPresence=ashui.animation.AnimationScheduler.main.after(.04, () -> {
+				jamPresence=null;
+				if (!gone && jam.get() == current && editorOf(file) == mounted && mounted.editing.composing.get() == "")
+					current.moved(mounted.editing.caret.get(),mounted.editing.anchor.get());
+			});
+		}, (_,_) -> false);
 		Owner.onCleanup(() -> { assist.stop(file, mounted); state.compact(); });
 		return editor;
 	}
@@ -3746,6 +3777,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The runtime the project runs on, the problem counts, and where the run stands. */
 	function statusBar():Element
 		return <div id="rayde-status-bar" class="rayde-status flex items-center gap-2 px-3 shrink-0" height={28}>
+			<for {current in [jam.get()]}><if {current != null}>${jamStatus(current)}</if></for>
 			<for {items in [extensionStatus.get()]}>${extensionStatusItems(items)}</for>
 			<for {list in [problems.get()]}>${problemCounts(list)}</for>
 			<div class="flex-1"/>
@@ -3758,6 +3790,87 @@ class Workbench extends Component<WorkbenchProps> {
 				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
 			</tooltip></if>
 		</div>;
+
+	function jamFile():String {
+		var file=active.get();
+		if (jam.get() != null) throw "Leave the current Jam before starting another";
+		if (file == "" || isVirtual(file) || ImagePreview.isRaster(file) || !FileOps.inside(props.display.cwd,file))
+			throw "Open a text document in this workspace first";
+		return file;
+	}
+
+	function askStartJam():Void {
+		try {
+			var file=jamFile();
+			prompt.set({title:"Share " + haxe.io.Path.withoutDirectory(file),description:"Share this document in a local Jam. Participants can edit it. Save writes changes to your local copy. Closing the host window ends the room.",action:"Start Jam",hasInput:true,value:Sys.getEnv("USER") ?? "Host",placeholder:"Your display name",
+				check:name -> StringTools.trim(name) == "" || haxe.io.Bytes.ofString(name).length > 64 ? "Enter a name of 1–64 bytes" : null,
+				accept:name -> beginJam(file,true,name,"")});
+		} catch (error:Dynamic) say(Std.string(error));
+	}
+
+	function askJoinJam():Void {
+		try {
+			var file=jamFile();
+			if (dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
+			prompt.set({title:"Join a local Jam",description:"Open the matching file in your own workspace copy. Joining replaces its editor buffer with the shared document. Your disk copy changes only when you save.",action:"Join Jam",hasInput:true,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,false,Sys.getEnv("USER") ?? "Guest",StringTools.trim(invitation))});
+		} catch (error:Dynamic) say(Std.string(error));
+	}
+
+	function beginJam(file:String,host:Bool,name:String,invitation:String):Void {
+		if (jam.get() != null || !buffers.exists(file)) throw "Open the document and leave any existing Jam first";
+		if (!host && dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
+		var current=new JamSession(file,documentState(file),host,name,invitation,() -> { if (!gone) edited(file); });
+		jam.set(current);
+		var editor=editorOf(file);
+		if (editor != null) current.moved(editor.editing.caret.get(),editor.editing.anchor.get());
+		pollJam(); scheduleJam();
+	}
+
+	function pollJam():Void {
+		var current=jam.get();
+		if (current == null || !current.pending()) return;
+		var editor=editorOf(current.file);
+		if (editor != null && editor.editing.composing.get() != "") return;
+		if (editor != null) current.remember(editor.editing.caret.get(),editor.editing.anchor.get());
+		current.poll();
+	}
+
+	function scheduleJam():Void {
+		var current=jam.get();
+		if (gone || current == null || current.canWake() || current.failure.get() != "") return;
+		jamPoll=ashui.animation.AnimationScheduler.main.after(.05,() -> { jamPoll=null; pollJam(); scheduleJam(); });
+	}
+
+	function copyJamInvite():Void {
+		var current=jam.get();
+		if (current == null || current.invite.get() == "") { say("No local Jam invitation is available"); return; }
+		ashui.input.Clipboard.setText(current.invite.get()); say("Jam invitation copied");
+	}
+
+	function leaveJam():Void {
+		if (jamPoll != null) jamPoll.cancel(); jamPoll=null;
+		if (jamPresence != null) jamPresence.cancel(); jamPresence=null;
+		var current=jam.get();
+		if (current != null) current.dispose();
+		jam.set(null);
+		if (!gone) releaseClosedDocuments();
+	}
+
+	function jamStatus(current:JamSession):Element {
+		var label=Computed.make(() -> "Jam · " + current.status.get() + (current.people.get().length > 0 ? " · " + current.people.get().length : ""));
+		var description=Computed.make(() -> current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.people.get().map(p -> p.name).join(", "));
+		return <tooltip label={description} side="top"><dropdown-menu side="top" id="rayde-jam-menu">
+			<dropdown-menu-trigger id="rayde-jam-status" variant={Ghost} class="rayde-status-item"><icon document={Icons.TEAM_LINE} class="size-3.5"/><text>${label}</text></dropdown-menu-trigger>
+			<dropdown-menu-content>
+				<dropdown-menu-label><text>${description}</text></dropdown-menu-label>
+				<dropdown-menu-item onSelect={() -> openFile(current.file)}>Open Shared Document</dropdown-menu-item>
+				<dropdown-menu-item disabled={!current.host || current.invite.get() == ""} onSelect={copyJamInvite}>Copy Invitation</dropdown-menu-item>
+				<dropdown-menu-item onSelect={() -> current.pause(false)}>Reconnect</dropdown-menu-item>
+				<dropdown-menu-separator/>
+				<dropdown-menu-item id="rayde-jam-leave" onSelect={leaveJam}>${current.host ? "End Jam" : "Leave Jam"}</dropdown-menu-item>
+			</dropdown-menu-content>
+		</dropdown-menu></tooltip>;
+	}
 
 	function languageStatus():Null<LanguageServerStatus> {
 		languageStatusRevision.get(); languageRevision.get();

@@ -1,4 +1,4 @@
-Syntax, Markdown, image and project dependencies
+Syntax, Markdown, image, project and collaboration dependencies
 
 The grammar data comes from @wooorm/starry-night 3.11.0. Its original NOTICE
 and LICENSE accompany this file. Entries referring to lang/<name>.js map to
@@ -26,3 +26,8 @@ source archive.
 
 TOML 0.8.23 parses project manifests. The project-* files include its newly
 introduced dependency licenses; exact versions are locked in Cargo.lock.
+
+Yrs 0.28.0 supplies the local Jam CRDT. Tokio-tungstenite 0.28.0 and Tokio
+supply asynchronous loopback WebSocket transport. The jam-* files contain
+licenses for newly introduced dependencies; both native lockfiles record
+their exact versions.

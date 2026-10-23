@@ -90,3 +90,17 @@ Inactive image tabs release their decoded pixels, vector documents and cached GP
 | Extensions | Extension settings. |
 
 `RAYDE_SETTINGS=<section>` opens the Settings page on a section at launch (`build`, `libraries`, `terminal`, `appearance`, `keys`, `extensions`). `RAYDE_PANEL=<tab>` opens the bottom panel on `terminal`, `problems` or `console`.
+
+## Local Jam preview
+
+Use **Jam: Share Active Document…** in the command center to share one text document. Confirm your display name, then use **Jam: Copy Invitation** or the Jam status menu to copy the invitation. In another RayDE window, open the matching filename in a separate workspace copy and choose **Jam: Join Shared Document…**. Save or discard existing edits before joining. Joining adopts the shared text in the editor buffer; writing the file still requires Save.
+
+Participants see remote carets, selections and names. Undo and redo affect their own Jam edits. Inactive editor views are released while their shared document keeps synchronizing. Closing a tab does not leave the room; **Jam: Leave** releases session resources. Closing the host window ends the local room. Sessions are not automatically restored on launch. Leave before renaming or deleting the shared document.
+
+This preview shares one explicitly selected text document, with up to eight participants. It has no accounts, hosted discovery, disk asset synchronization or media. Invitations only accept numeric loopback WebSocket addresses. Use an SSH tunnel to test another machine; the local service does not expose an unencrypted LAN listener. Keep invitation tokens private.
+
+The native client uses pinned Yrs 0.28.0 update-v1 documents with UTF-16 offsets. Room protocol version 1 negotiates `hello`/`welcome`, exchanges base64 CRDT `sync`/`update` messages, acknowledges applied updates by connection-local ID, and publishes ephemeral `presence`/`cursor` and participant lists. The initial welcome and reconnect carry room state and a state vector; clients merge retained offline edits and send the missing state. An acknowledgement means application to the running room's memory. Hosted durable recovery remains separate work.
+
+Text is limited to 1 MiB, decoded updates to 2 MiB, and session traffic/state queues are bounded. The local undo manager retains at most 100 actions within a 1 MiB edit budget, clearing its history when that budget is reached. A limit or protocol failure is shown in Jam status; leave and start a new session with the current buffer. Room data is ephemeral and needs Save/local recovery for persistence.
+
+`bash scripts/check-jam.sh` builds and runs the local checks. `cargo test --manifest-path native/jam/Cargo.toml --locked` checks native convergence, Unicode, author undo, WebSocket reconnect and protocol rejection. `tests/JamWorkbenchChecks.hx` exercises the editor integration in both themes. After building the standalone native client, `python3 tests/jam_peer_checks.py` runs two clients locally; `--ssh nuc --remote-binary <path>` uses a prebuilt second client through a reverse loopback tunnel. Check the remote host's workload before compiling or running there.

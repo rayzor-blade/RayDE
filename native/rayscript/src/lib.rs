@@ -20,6 +20,7 @@ mod lsp;
 mod project;
 mod wake;
 mod extension_process;
+mod jam;
 
 // RAYDE_EXTENSION_TIMING=1 reports worker stages without changing scheduling.
 fn timed(start: Instant, stage: &str, detail: &str) {

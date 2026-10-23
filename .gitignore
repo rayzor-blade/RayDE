@@ -3,6 +3,7 @@
 .DS_Store
 .rayde/
 /native/terminal/target/
+/native/jam/target/
 /extensions/git/natives/
 /extensions/git/git.rayext
 __pycache__/
