@@ -4,11 +4,13 @@ import json
 import os
 from pathlib import Path
 import sys
+import threading
 
 documents = {}
 deferred = []
 cancelled = []
 events = Path(sys.argv[1])
+output_lock = threading.Lock()
 
 
 def record(event):
@@ -18,8 +20,9 @@ def record(event):
 
 def send(message):
     body = json.dumps({"jsonrpc": "2.0", **message}, ensure_ascii=False).encode()
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
-    sys.stdout.buffer.flush()
+    with output_lock:
+        sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+        sys.stdout.buffer.flush()
 
 
 record("start " + str(os.getpid()))
@@ -71,6 +74,11 @@ while True:
     elif method == "test/notify":
         for notification in params.get("notifications", []):
             send(notification)
+        send({"id": identifier, "result": True})
+    elif method == "test/notifyLater":
+        later = threading.Timer(params.get("delay", 0.6), lambda text=params["message"]: send({"method": "window/logMessage", "params": {"type": 3, "message": text}}))
+        later.daemon = True
+        later.start()
         send({"id": identifier, "result": True})
     elif method == "test/deferred":
         deferred.append(identifier)

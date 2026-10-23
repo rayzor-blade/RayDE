@@ -1786,11 +1786,14 @@ class Workbench extends Component<WorkbenchProps> {
 		}
 		if (languagesScheduled && !urgent) return;
 		if (languagePollTimer != null) languagePollTimer.cancel();
+		var delay = urgent ? .016 : languageServers.pollDelay();
+		if (delay == null) { languagePollTimer = null; languagesScheduled = false; return; }
 		languagesScheduled = true;
-		languagePollTimer = ashui.animation.AnimationScheduler.main.after(urgent ? .016 : languageServers.pollDelay(), pollLanguages);
+		languagePollTimer = ashui.animation.AnimationScheduler.main.after(delay, pollLanguages);
 	}
 
 	function pollLanguages():Void {
+		if (languagePollTimer != null) languagePollTimer.cancel();
 		languagePollTimer = null;
 		languagesScheduled = false;
 		if (gone || !languageServers.busy()) return;
@@ -2129,6 +2132,11 @@ class Workbench extends Component<WorkbenchProps> {
 		startExtensions();
 		containers = makeContainers();
 		commandList = commands();
+		var receiveLanguages:ashui.layout.LayoutTree->Void = current -> {
+			if (current == tree && !gone && languageServers.hasEvents()) pollLanguages();
+		};
+		ashui.layout.LayoutTree.flushHooks.push(receiveLanguages);
+		Owner.onCleanup(() -> ashui.layout.LayoutTree.flushHooks.remove(receiveLanguages));
 		#if ashui_window
 		installDesktopMenus();
 		#end

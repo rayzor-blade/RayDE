@@ -98,6 +98,20 @@ class Connection {
 	public function running():Bool
 		return host != null && host.running();
 
+	public function hasEvents():Bool return nextMessage < messages.length || host != null && host.pending();
+	public function canWake():Bool return host != null && host.canWake();
+
+	/** Deadlines for local delayed events and replies; native output wakes an otherwise quiet window. */
+	public function pollDelay():Null<Float> {
+		if (hasEvents()) return 0.;
+		var delay:Null<Float> = null, now = haxe.Timer.stamp();
+		for (at in [for (item in pending) item.at].concat([for (item in replies) item.at]).concat([for (item in queued) item.deadline])) {
+			var left = Math.max(0, at - now);
+			if (delay == null || left < delay) delay = left;
+		}
+		return delay;
+	}
+
 	public function start():Void {
 		stop();
 		if (manifest != null && manifest.natives.length > 0 && (manifest.problems.length > 0 || !nativeAllowed(manifest))) {

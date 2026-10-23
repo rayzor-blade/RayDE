@@ -220,7 +220,7 @@ class LspClient {
 		if (transport == null && now >= retryAt) start();
 		read();
 		if (state == "starting" && now - startedAt > 22) { fail("Language server initialization timed out"); return; }
-		for (id in [for (id => p in pending) if (p.deadline < now) id]) {
+		for (id in [for (id => p in pending) if (p.deadline <= now) id]) {
 			var p = pending.get(id); cancel(id); p.done(null);
 			onLog("warning", "Language server request timed out");
 		}
@@ -228,11 +228,28 @@ class LspClient {
 		publishProgress();
 	}
 
-	public function pollDelay():Float {
-		if (state != "ready") return .025;
-		for (_ in pending) return .016;
-		if (dirty) return .016;
-		return .2;
+	public function hasEvents():Bool return transport != null && transport.pending();
+
+	/** Native input wakes the window; timers cover only deadlines and adapters without wake support. */
+	public function pollDelay():Null<Float> {
+		if (transport == null && state == "restarting") return Math.max(0, retryAt - haxe.Timer.stamp());
+		if (transport == null || !transport.canWake()) {
+			if (state != "ready") return .025;
+			for (_ in pending) return .016;
+			return dirty ? .016 : .2;
+		}
+		if (hasEvents() || state == "ready" && dirty) return 0.;
+		var now = haxe.Timer.stamp(), delay:Null<Float> = switch state {
+			case "closing": Math.max(0, closingAt - now);
+			case "starting": Math.max(0, startedAt + 22 - now);
+			case "restarting": Math.max(0, retryAt - now);
+			case _: null;
+		};
+		for (request in pending) {
+			var left = Math.max(0, request.deadline - now);
+			if (delay == null || left < delay) delay = left;
+		}
+		return delay;
 	}
 
 	function read():Void {

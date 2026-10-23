@@ -4,7 +4,7 @@ RayScript extensions register language servers with RayDE's asynchronous LSP cli
 
 ## Rayzor
 
-The built-in [Rayzor extension](../extensions/rayzor) is enabled by default and handles `.hx` files. It registers when the workspace opens and launches `rayzor lsp` over stdio when the first Haxe document opens. The process remains alive after its last document closes, with polling paused on the welcome page. Opening code or making an explicit request resumes polling; startup, restart and shutdown finish even without code tabs. It contributes no sidebar view.
+The built-in [Rayzor extension](../extensions/rayzor) is enabled by default and handles `.hx` files. It registers when the workspace opens and launches `rayzor lsp` over stdio when the first Haxe document opens. The process remains alive after its last document closes. Native replies wake the UI, so settled code tabs need no periodic LSP polling. Timers cover request and lifecycle deadlines; platforms without native wake support retain fallback polling. Startup, restart and shutdown finish even without code tabs. It contributes no sidebar view.
 
 **Settings > Extensions > Rayzor Language Server** configures the executable, build file, Rayzor standard library and macro time budget. The default command `rayzor` discovers `RAYZOR_LSP`, a packaged executable, PATH, then an existing sibling development build. An explicit command path overrides discovery. The server discovers the installed Haxe standard library by default; the `stdlib` setting overrides it through `RAYZOR_STD_PATH`. RayDE leaves discovery to the server when that setting is empty. **Rayzor: Restart Language Server** applies changed settings. **Rayzor: Language Server Status** reports the registration's state.
 

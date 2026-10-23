@@ -18,6 +18,7 @@ mod grammars;
 mod image_preview;
 mod lsp;
 mod project;
+mod wake;
 
 // RAYDE_EXTENSION_TIMING=1 reports worker stages without changing scheduling.
 fn timed(start: Instant, stage: &str, detail: &str) {
@@ -43,6 +44,7 @@ struct Runtime {
     output: Mutex<Vec<String>>,
     // 0 running, 1 stopped normally, 2 failed.
     status: AtomicI32,
+    wake: Option<unsafe extern "C" fn() -> bool>,
 }
 
 impl Runtime {
@@ -52,6 +54,7 @@ impl Runtime {
             input: tx.clone(),
             output: Mutex::new(Vec::new()),
             status: AtomicI32::new(0),
+            wake: wake::platform_wake(),
         });
         let worker = runtime.clone();
         thread::Builder::new().name("rayde-extension".into()).stack_size(64 << 20).spawn(move || {
@@ -95,7 +98,7 @@ impl Runtime {
                         // Cleanup callbacks may spawn work; cancel it before the final scheduler round.
                         host.vm().cancel_all();
                         host.pump();
-                        worker.output.lock().unwrap().extend(host.take_output());
+                        worker.publish(host.take_output());
                         // Vm::drop drains native calls before releasing their libraries and heap.
                         break;
                     }
@@ -109,7 +112,7 @@ impl Runtime {
                         worker.push(format!("{{\"t\":\"collected\",\"collections\":{},\"objects\":{},\"bytes\":{},\"fibers\":{}}}",
                             vm.collections(), heap.objects, heap.bytes, vm.fiber_count()));
                     }
-                    worker.output.lock().unwrap().extend(host.take_output());
+                    worker.publish(host.take_output());
                     if more { continue; }
                     next = match host.next_wake() {
                         Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
@@ -125,12 +128,26 @@ impl Runtime {
                 worker.push("{\"t\":\"error\",\"kind\":\"host\",\"message\":\"Embedded extension runtime panicked\"}".into());
             }
             worker.status.store(if result.is_ok() { 1 } else { 2 }, Ordering::Release);
+            worker.wake();
         })?;
         Ok(runtime)
     }
 
     fn push(&self, line: String) {
-        self.output.lock().unwrap().push(line);
+        self.publish(vec![line]);
+    }
+
+    fn wake(&self) {
+        if let Some(wake) = self.wake { unsafe { wake(); } }
+    }
+
+    fn publish(&self, lines: Vec<String>) {
+        if lines.is_empty() { return; }
+        let mut output = self.output.lock().unwrap();
+        let wake = output.is_empty();
+        output.extend(lines);
+        drop(output);
+        if wake { self.wake(); }
     }
 }
 

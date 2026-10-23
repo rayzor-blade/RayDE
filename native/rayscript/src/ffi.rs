@@ -53,6 +53,14 @@ pub extern "C" fn lsp_poll(handle:i32) -> *mut vbyte {
 define_prim!(hlp_lsp_poll, lsp_poll, "Pi_B");
 
 #[unsafe(no_mangle)]
+pub extern "C" fn lsp_pending(handle:i32) -> bool { catch_unwind(|| super::lsp::pending(handle)).unwrap_or(false) }
+define_prim!(hlp_lsp_pending, lsp_pending, "Pi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn lsp_can_wake(handle:i32) -> bool { catch_unwind(|| super::lsp::can_wake(handle)).unwrap_or(false) }
+define_prim!(hlp_lsp_can_wake, lsp_can_wake, "Pi_b");
+
+#[unsafe(no_mangle)]
 pub extern "C" fn lsp_close(handle:i32) {
     let _ = catch_unwind(|| super::lsp::close(handle));
 }
@@ -194,6 +202,18 @@ pub extern "C" fn runtime_status(handle: i32) -> i32 {
     catch_unwind(|| runtime(handle).map_or(1, |r| r.status.load(Ordering::Acquire))).unwrap_or(2)
 }
 define_prim!(hlp_runtime_status, runtime_status, "Pi_i");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn runtime_pending(handle:i32) -> bool {
+    catch_unwind(|| runtime(handle).is_some_and(|r| r.status.load(Ordering::Acquire) != 0 || !r.output.lock().unwrap().is_empty())).unwrap_or(false)
+}
+define_prim!(hlp_runtime_pending, runtime_pending, "Pi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn runtime_can_wake(handle:i32) -> bool {
+    catch_unwind(|| runtime(handle).is_some_and(|r| r.wake.is_some())).unwrap_or(false)
+}
+define_prim!(hlp_runtime_can_wake, runtime_can_wake, "Pi_b");
 
 #[unsafe(no_mangle)]
 pub extern "C" fn runtime_poll(handle: i32) -> *mut vbyte {

@@ -26,8 +26,13 @@ class LspTransport {
 		handle = -1;
 	}
 
+	public function pending():Bool return handle >= 0 && pendingNative(handle);
+	public function canWake():Bool return handle >= 0 && canWakeNative(handle);
+
 	@:hlNative("rayscript", "lsp_open") static function openNative(data:hl.Bytes, length:Int):Int return -1;
 	@:hlNative("rayscript", "lsp_send") static function sendNative(handle:Int, data:hl.Bytes, length:Int):Bool return false;
 	@:hlNative("rayscript", "lsp_poll") static function pollNative(handle:Int):hl.Bytes return null;
 	@:hlNative("rayscript", "lsp_close") static function closeNative(handle:Int):Void {}
+	@:hlNative("rayscript", "lsp_pending") static function pendingNative(handle:Int):Bool return false;
+	@:hlNative("rayscript", "lsp_can_wake") static function canWakeNative(handle:Int):Bool return false;
 }

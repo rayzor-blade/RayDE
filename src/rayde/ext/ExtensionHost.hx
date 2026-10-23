@@ -17,6 +17,9 @@ class ExtensionHost {
 	public function running():Bool
 		return state == "running";
 
+	public function pending():Bool return nextLine < lines.length || handle >= 0 && pendingNative(handle);
+	public function canWake():Bool return handle >= 0 && canWakeNative(handle);
+
 	public function start():Void {
 		stop();
 		var bytes = haxe.io.Bytes.ofString(root == null ? "" : root);
@@ -91,4 +94,6 @@ class ExtensionHost {
 	@:hlNative("rayscript", "runtime_poll") static function pollNative(handle:Int):hl.Bytes return null;
 	@:hlNative("rayscript", "runtime_status") static function statusNative(handle:Int):Int return 1;
 	@:hlNative("rayscript", "runtime_close") static function closeNative(handle:Int):Int return 0;
+	@:hlNative("rayscript", "runtime_pending") static function pendingNative(handle:Int):Bool return false;
+	@:hlNative("rayscript", "runtime_can_wake") static function canWakeNative(handle:Int):Bool return false;
 }

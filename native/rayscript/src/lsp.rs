@@ -1,4 +1,5 @@
 //! Process-owned LSP pipes. Workers exchange owned bytes, never HashLink objects.
+use crate::wake::platform_wake;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -10,7 +11,6 @@ use std::{
         mpsc,
     },
     thread,
-    time::Duration,
 };
 
 const MAX_MESSAGE: usize = 16 << 20;
@@ -19,14 +19,19 @@ static CLIENTS: Mutex<BTreeMap<i32, Arc<Client>>> = Mutex::new(BTreeMap::new());
 static NEXT: AtomicI32 = AtomicI32::new(1);
 
 struct Client {
-    input: mpsc::SyncSender<String>,
+    input: mpsc::SyncSender<Option<String>>,
     input_bytes: AtomicUsize,
     output: Mutex<(VecDeque<String>, usize)>,
     child: Mutex<Option<Child>>,
     stopped: AtomicBool,
+    wake: Option<unsafe extern "C" fn() -> bool>,
 }
 
 impl Client {
+    fn wake(&self) {
+        if let Some(wake) = self.wake { unsafe { wake(); } }
+    }
+
     fn push(&self, event: String) -> bool {
         if self.stopped.load(Ordering::Acquire) {
             return false;
@@ -35,8 +40,11 @@ impl Client {
         if queue.1 + event.len() > MAX_QUEUE {
             return false;
         }
+        let wake = queue.0.is_empty();
         queue.1 += event.len();
         queue.0.push_back(event);
+        drop(queue);
+        if wake { self.wake(); }
         true
     }
 
@@ -51,6 +59,9 @@ impl Client {
             }
             queue.1 += event.len();
             queue.0.push_back(event);
+            drop(queue);
+            let _ = self.input.try_send(None);
+            self.wake();
         }
         self.reap();
     }
@@ -171,13 +182,14 @@ pub fn open(config: &str) -> Result<i32, String> {
             );
         }
     }
-    let (tx, rx) = mpsc::sync_channel::<String>(128);
+    let (tx, rx) = mpsc::sync_channel::<Option<String>>(128);
     let client = Arc::new(Client {
         input: tx,
         input_bytes: AtomicUsize::new(0),
         output: Mutex::new((VecDeque::new(), 0)),
         child: Mutex::new(None),
         stopped: AtomicBool::new(false),
+        wake: platform_wake(),
     });
     let handle = NEXT.fetch_add(1, Ordering::Relaxed);
     if handle <= 0 {
@@ -198,16 +210,15 @@ pub fn open(config: &str) -> Result<i32, String> {
             let writer = worker.clone();
             thread::Builder::new().name("rayde-lsp-writer".into()).spawn(move || {
                 while !writer.stopped.load(Ordering::Acquire) {
-                    match rx.recv_timeout(Duration::from_millis(100)) {
-                        Ok(body) => {
+                    match rx.recv() {
+                        Ok(Some(body)) => {
                             writer.input_bytes.fetch_sub(body.len(), Ordering::AcqRel);
                             let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
                             if let Err(error) = stdin.write_all(frame.as_bytes()).and_then(|_| stdin.flush()) {
                                 writer.finish(error.to_string()); break;
                             }
                         },
-                        Err(mpsc::RecvTimeoutError::Timeout) => {},
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Ok(None) | Err(_) => break,
                     }
                 }
             })?;
@@ -262,11 +273,19 @@ pub fn send(handle: i32, body: &str) -> bool {
     {
         return false;
     }
-    if client.input.try_send(body.to_owned()).is_err() {
+    if client.input.try_send(Some(body.to_owned())).is_err() {
         client.input_bytes.fetch_sub(body.len(), Ordering::AcqRel);
         return false;
     }
     true
+}
+
+pub fn pending(handle: i32) -> bool {
+    CLIENTS.lock().unwrap().get(&handle).is_some_and(|client| !client.output.lock().unwrap().0.is_empty())
+}
+
+pub fn can_wake(handle: i32) -> bool {
+    CLIENTS.lock().unwrap().get(&handle).is_some_and(|client| client.wake.is_some())
 }
 
 pub fn poll(handle: i32) -> Option<String> {
@@ -291,6 +310,7 @@ pub fn poll(handle: i32) -> Option<String> {
 pub fn close(handle: i32) {
     if let Some(client) = CLIENTS.lock().unwrap().remove(&handle) {
         client.stopped.store(true, Ordering::Release);
+        let _ = client.input.try_send(None);
         // Process exit and reaping must not block the caller's UI thread.
         let _ = thread::Builder::new()
             .name("rayde-lsp-close".into())
@@ -301,6 +321,31 @@ pub fn close(handle: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    static WAKES: AtomicUsize = AtomicUsize::new(0);
+    unsafe extern "C" fn woke() -> bool { WAKES.fetch_add(1, Ordering::Relaxed); true }
+
+    #[test]
+    fn queued_input_coalesces_wakes_and_rearms_after_draining() {
+        let (input, receiver) = mpsc::sync_channel(128);
+        let client = Arc::new(Client { input, input_bytes:AtomicUsize::new(0), output:Mutex::new((VecDeque::new(), 0)),
+            child:Mutex::new(None), stopped:AtomicBool::new(false), wake:Some(woke) });
+        let id = NEXT.fetch_add(1, Ordering::Relaxed);
+        CLIENTS.lock().unwrap().insert(id, client.clone());
+        WAKES.store(0, Ordering::Relaxed);
+        assert!(client.push("{\"t\":\"connected\"}".into()));
+        assert!(client.push("{\"t\":\"stderr\",\"message\":\"ready\"}".into()));
+        assert!(pending(id) && can_wake(id));
+        assert_eq!(WAKES.load(Ordering::Relaxed), 1);
+        let batch: Value = serde_json::from_str(&poll(id).unwrap()).unwrap();
+        assert_eq!(batch.as_array().unwrap().len(), 2);
+        assert!(!pending(id));
+        assert!(client.push("{\"t\":\"message\",\"body\":{}}".into()));
+        assert_eq!(WAKES.load(Ordering::Relaxed), 2);
+        close(id);
+        assert_eq!(receiver.recv_timeout(std::time::Duration::from_secs(1)).unwrap(), None);
+        assert!(!pending(id) && !can_wake(id));
+    }
+
     #[test]
     fn stderr_lines_preserve_split_ansi_and_utf8() {
         let expected = "\x1b[31mλ😀\x1b[0m";

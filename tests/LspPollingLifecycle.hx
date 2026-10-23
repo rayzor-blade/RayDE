@@ -36,7 +36,12 @@ class LspPollingLifecycle {
 			if (!paused() || client.state != "idle") throw "Welcome page polled an unused lazy language server";
 			bench.openFile(file);
 			until(() -> client.state == "ready");
-			if (!bench.languagesScheduled) throw "Opening code did not schedule language polling";
+			@:privateAccess var canWake = client.transport != null && client.transport.canWake();
+			if (canWake) {
+				until(() -> !bench.languagesScheduled && !bench.languageServers.hasEvents());
+				if (bench.languagePollTimer != null || client.files().indexOf(file) < 0)
+					throw "A settled code tab kept polling its event-driven language server";
+			} else if (!bench.languagesScheduled) throw "Opening code did not schedule fallback language polling";
 			bench.closeFile(file); settle();
 			if (!paused() || client.state != "ready" || client.files().length != 0) throw "Closing the last code tab left an LSP poll scheduled";
 			for (_ in 0...30) settle();
@@ -49,11 +54,11 @@ class LspPollingLifecycle {
 			until(() -> client.state == "ready"); settle();
 			if (!paused()) throw "Explicit restart did not finish and pause on the welcome page";
 			bench.openFile(file); settle();
-			if (!bench.languagesScheduled || client.files().indexOf(file) < 0) throw "Reopening code did not resume the retained language client";
+			if (client.files().indexOf(file) < 0) throw "Reopening code did not resume the retained language client";
 			bench.closeAll(); settle();
 			if (!paused()) throw "Bulk close left language polling scheduled";
 		} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); throw error; }
 		stop(); tree.dispose(); compiler.stop();
-		Sys.println("LSP UI: welcome page pauses polling, code tabs resume it, last/bulk close cancels timers, documentless requests and restart complete");
+		Sys.println("LSP UI: idle code pauses polling, fallback polling resumes, last/bulk close cancels timers, documentless requests and restart complete");
 	}
 }

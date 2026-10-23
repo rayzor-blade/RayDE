@@ -96,6 +96,7 @@ class Studio {
 	var scheduled = false;
 	var scheduledAt = 0.;
 	var pollTimer:ashui.animation.AnimationScheduler.Timer;
+	var receive:LayoutTree->Void;
 
 	/** Whether the Studio has been taken down, and so starts nothing. */
 	var disposed = false;
@@ -131,6 +132,13 @@ class Studio {
 			debug.connect(m -> this.connection.send(m));
 		};
 		this.connection.onWake = activeNow;
+		receive = current -> {
+			if (current != tree || disposed || !this.connection.hasEvents()) return;
+			if (pollTimer != null) pollTimer.cancel();
+			pollTimer = null; scheduled = false;
+			tick(); scheduleNext();
+		};
+		LayoutTree.flushHooks.push(receive);
 		state.set(this.connection.state);
 	}
 
@@ -208,6 +216,7 @@ class Studio {
 	public function dispose():Void {
 		// A reload that was waiting for typing to stop must not start the extension again.
 		disposed = true;
+		LayoutTree.flushHooks.remove(receive);
 		if (pollTimer != null) pollTimer.cancel();
 		pollTimer = null; scheduled = false;
 		changedAt = -1;
@@ -297,11 +306,22 @@ class Studio {
 			scheduled = false;
 			pollTimer = null;
 			tick();
-			// The longer the extension has been quiet, the less often it is looked at; a click or a command brings the next look forward.
-			var quiet = haxe.Timer.stamp() - lastActive;
-			if (!disposed && (connection.running() || changedAt >= 0))
-				schedule(quiet < 1 ? .016 : quiet < 5 ? .1 : .5);
+			scheduleNext();
 		});
+	}
+
+	function scheduleNext():Void {
+		if (disposed) return;
+		var delay = connection.pollDelay(), now = haxe.Timer.stamp();
+		if (connection.running() && !connection.canWake()) {
+			var quiet = now - lastActive, fallback = quiet < 1 ? .016 : quiet < 5 ? .1 : .5;
+			if (delay == null || fallback < delay) delay = fallback;
+		}
+		if (changedAt >= 0) {
+			var reload = Math.max(.001, .4 - (now - changedAt));
+			if (delay == null || reload < delay) delay = reload;
+		}
+		if (delay != null) schedule(delay);
 	}
 
 	/** Moves the extension along: reads what the host said, and reloads after typing has stopped. */

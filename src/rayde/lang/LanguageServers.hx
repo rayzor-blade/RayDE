@@ -121,9 +121,14 @@ class LanguageServers {
 		for (client in closing.copy()) { client.tick(); if (client.state == "stopped") closing.remove(client); }
 	}
 	public function busy():Bool return Lambda.exists(entries, e -> e.client.needsPolling()) || closing.length > 0;
-	public function pollDelay():Float {
-		var delay = closing.length > 0 ? .025 : .2;
-		for (entry in entries) if (entry.client.needsPolling()) delay = Math.min(delay, entry.client.pollDelay());
+	public function hasEvents():Bool
+		return Lambda.exists(entries, e -> e.client.needsPolling() && e.client.hasEvents()) || Lambda.exists(closing, c -> c.hasEvents());
+	public function pollDelay():Null<Float> {
+		var delay:Null<Float> = null;
+		for (client in [for (entry in entries) if (entry.client.needsPolling()) entry.client].concat(closing)) {
+			var next = client.pollDelay();
+			if (next != null && (delay == null || next < delay)) delay = next;
+		}
 		return delay;
 	}
 	public function dispose():Void {
