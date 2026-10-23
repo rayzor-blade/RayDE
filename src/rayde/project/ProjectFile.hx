@@ -35,6 +35,7 @@ class ProjectFile {
 		var project = new ProjectFile(file), name = Path.withoutDirectory(file).toLowerCase();
 		if (StringTools.endsWith(name, ".hxml")) {
 			project.kind = "hxml"; project.hxml = file; project.args = Hxml.read(file);
+			project.runtime = ProjectRunner.resolve(project.root);
 			return project;
 		}
 		if (FileSystem.stat(file).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";
@@ -122,9 +123,10 @@ class ProjectFile {
 	public static function validName(name:String):Bool return name != null && ~/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.match(name);
 
 	/** Creates a fresh directory exclusively; existing projects are never overwritten. */
-	public static function create(parent:String, name:String, kind:String):String {
+	public static function create(parent:String, name:String, kind:String, ?starter:ProjectTemplates.ProjectScaffold):String {
 		if (!validName(name)) throw "Use a project name starting with a letter, followed by letters, numbers, hyphens or underscores (up to 64 characters)";
-		var scaffold = ProjectTemplates.scaffold(kind, name);
+		var scaffold = starter == null ? ProjectTemplates.scaffold(kind, name) : ProjectTemplates.instantiate(starter, name);
+		ProjectTemplates.validate(scaffold);
 		parent = FileSystem.fullPath(parent);
 		if (!FileSystem.isDirectory(parent)) throw "Choose a parent folder";
 		var root = Path.join([parent, name]), bytes = haxe.io.Bytes.ofString(root);
@@ -144,7 +146,7 @@ class ProjectFile {
 				written.push(file);
 				File.saveContent(file, text);
 			}
-			return root + "/" + scaffold.entry;
+			return scaffold.entry == "" ? root : root + "/" + scaffold.entry;
 		} catch (error:Dynamic) {
 			for (file in written) try FileSystem.deleteFile(file) catch (_:Dynamic) {}
 			directories.reverse();

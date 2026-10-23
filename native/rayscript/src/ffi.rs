@@ -4,6 +4,12 @@ use std::ptr;
 
 static RUNTIMES: Mutex<Vec<Option<Arc<Runtime>>>> = Mutex::new(Vec::new());
 
+#[unsafe(no_mangle)]
+pub extern "C" fn project_apple_silicon() -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+}
+define_prim!(hlp_project_apple_silicon, project_apple_silicon, "P_b");
+
 fn packed_text(text:&str) -> *mut vbyte {
     let size = text.len();
     let Some(length) = size.checked_add(4).and_then(|n| i32::try_from(n).ok()) else { return ptr::null_mut(); };

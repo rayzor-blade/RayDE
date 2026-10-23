@@ -54,7 +54,7 @@ class ProjectChecks {
 			var args = switch template.id {
 				case "hxml": ["-cp", "src", "--run", "Main"];
 				case "haxelib": ["-cp", "src", "--no-output", "Library"];
-				case "javascript", "hashlink": ["build.hxml"];
+				case "javascript", "hashlink", "ash": ["build.hxml"];
 				case _: null;
 			};
 			if (args != null) {

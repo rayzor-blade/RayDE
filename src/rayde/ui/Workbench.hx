@@ -257,12 +257,16 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Bumped when the build file changes, so what is drawn from it is made again. */
 	final buildRevision = Signal.make(0);
+	final runnerRevision = Signal.make(0);
 	/** The side panel's width, activity bar included. */
 	final treeWidth = Signal.make(ACTIVITY + EXPLORER_WIDTH);
 	final projectPicker = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
 	var pickingProject = false;
 	var cancelProjectDialog:Null<Void->Void>;
 	final creatingProject = Signal.make(false);
+	final projectStarters = new rayde.project.ProjectStarters();
+	final starterRevision = Signal.make(0);
+	var extensionsDiscovered = false;
 	final explorerShown:Computed<Bool>;
 	/** The bottom panel's height: 0 while it is closed, which is how it starts. */
 	final problemsHeight = Signal.make(0.);
@@ -1216,6 +1220,16 @@ class Workbench extends Component<WorkbenchProps> {
 	function newProject():Void {
 		quickOpen.set(false);
 		creatingProject.set(true);
+		ashui.animation.AnimationScheduler.main.after(.016, () -> {
+			if (gone) return;
+			discoverExtensions(false);
+			extensionManager.newProject();
+		});
+	}
+
+	function projectTemplates():Array<rayde.project.ProjectTemplates.ProjectTemplate> {
+		starterRevision.get();
+		return rayde.project.ProjectTemplates.all.concat(projectStarters.list());
 	}
 
 	function recentProjects():Void {
@@ -1727,7 +1741,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function startExtensions():Void {
 		extensionManager = new Manager(props.display.cwd, {builtins: Extensions.builtins(), user: haxe.io.Path.join([Extensions.home(), ".rayde", "extensions"]),
 			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
-		if (props.empty == true) return;
+		projectStarters.onChanged = () -> starterRevision.set(starterRevision.get() + 1);
 		extensionManager.onDiscover = entry -> {
 			var m = entry.connection.manifest, dev = entry.installed.scope == "Development";
 			if (dev) { entry.connection.source = () -> buffer(entry.connection.file).get(); entry.connection.useMocks = true; }
@@ -1747,7 +1761,6 @@ class Workbench extends Component<WorkbenchProps> {
 				studio.debug.onStop = stop -> showStop(studio, stop);
 			}
 		};
-		extensionManager.discover(services(), Extensions.disabled(props.display.cwd), extension);
 		extensionManager.onChanged = () -> {
 			extensionRevision.set(extensionRevision.get() + 1);
 			if (!supervisionScheduled && Lambda.exists(extensionManager.extensions, e -> !e.disabled && !e.restartBlocked && e.activation != null && e.connection.state == "exited")) {
@@ -1761,8 +1774,15 @@ class Workbench extends Component<WorkbenchProps> {
 				if (panelShown.get() && bottom.get() == "console") refreshExtensionOutput();
 			}
 		};
+		if (props.empty != true) discoverExtensions(true);
+	}
+
+	function discoverExtensions(start:Bool):Void {
+		if (extensionsDiscovered) return;
+		extensionsDiscovered = true;
+		extensionManager.discover(services(), Extensions.disabled(props.display.cwd), extension);
 		refreshExtensionBindings();
-		ashui.animation.AnimationScheduler.main.after(.016, () -> { if (!gone) extensionManager.start(); });
+		if (start) ashui.animation.AnimationScheduler.main.after(.016, () -> { if (!gone) extensionManager.start(); });
 	}
 
 	function superviseExtensions():Void {
@@ -1904,6 +1924,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
+			registerStarter:projectStarters.register,
+			unregisterStarter:projectStarters.unregister,
+			releaseStarters:projectStarters.release,
 			registerLanguage:(owner, definition, log) -> languageServers.register(owner, definition, log),
 			unregisterLanguage:(owner, id) -> languageServers.unregister(owner, id),
 			languageServers:owner -> languageServers.servers(owner),
@@ -2088,8 +2111,11 @@ class Workbench extends Component<WorkbenchProps> {
 		return at.node.id == found[0] || tree.ancestors(at.node.id).indexOf(found[0]) >= 0;
 	}
 
-	function runtime():String
-		return props.runtime == null ? "ash" : props.runtime;
+	function runtime():String {
+		buildRevision.get();
+		runnerRevision.get();
+		return props.display.project != null && props.display.project.kind == "hxml" ? props.display.project.runtime : props.runtime == null ? "ash" : props.runtime;
+	}
 
 	function render():Element {
 		extension = props.extension;
@@ -2203,7 +2229,7 @@ class Workbench extends Component<WorkbenchProps> {
 			</div>
 			${statusBar()}
 			<prompt request={prompt}/>
-			<if {creatingProject.get()}><new-project opened={creatingProject} directory={props.display.cwd} onCreate={openWorkspace}/></if>
+			<if {creatingProject.get()}><new-project opened={creatingProject} directory={props.display.cwd} templates={projectTemplates} onCreate={openWorkspace}/></if>
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} refreshFiles={refreshFileIndex} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>
@@ -3074,7 +3100,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (file == SETTINGS)
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<settings-page category={settingsCategory} root={props.display.cwd} build={buildModel} rayzor={rayzorManifest()} onEditBuildText={() -> openFile(rayzorManifest())} beforeBuildChange={beforeBuildChange} terminal={terminalSettings} appearance={appearance} bindings={bindings}
-					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
+					commands={commandList} libraries={libraries} onBuildChanged={buildChanged} onRunnerChanged={() -> { props.display.reload(); runnerRevision.set(runnerRevision.get() + 1); }} onTerminalChanged={() -> settingsRevision.set(settingsRevision.get() + 1)}
 					onAppearanceChanged={() -> {
 						windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 						settingsRevision.set(settingsRevision.get() + 1);

@@ -1,0 +1,7 @@
+{
+  "id": "console-starter",
+  "name": "Console Starter",
+  "main": "main.rays",
+  "activationEvents": ["onNewProject"],
+  "capabilities": ["projects.register"]
+}

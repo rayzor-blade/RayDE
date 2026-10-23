@@ -829,6 +829,8 @@ class Checks {
 		RecentProjectsChecks.run();
 		WorkspaceSessionChecks.run();
 		ProjectChecks.run();
+		ProjectStarterChecks.run();
+		ProjectRunnerChecks.run();
 		terminalChecks();
 		manifestChecks();
 		iconChecks();

@@ -21,7 +21,10 @@ class NewProjectChecks {
 		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), dark ? Dark : Light); rayde.ui.Style.use();
 		var tree = new LayoutTree(), stop:Void->Void = null, form:NewProject = null;
 		var opened = Signal.make(false), created = "";
-		function mount():ashui.layout.Element { form = new NewProject({opened:opened, directory:scratch, onCreate:path -> created = path}); return form; }
+		var templates = Signal.make(rayde.project.ProjectTemplates.all.copy());
+		var disposedImages = 0, observeImage = (_:ashui.types.Bitmap) -> disposedImages++;
+		ashui.types.Bitmap.disposing.push(observeImage);
+		function mount():ashui.layout.Element { form = new NewProject({opened:opened, directory:scratch, templates:() -> templates.get(), onCreate:path -> created = path}); return form; }
 		var root = Owner.root(tree, cleanup -> {
 			stop = cleanup;
 			return <div id="rayde" widthPercent={1} heightPercent={1} class="bg-background text-text-primary"><text>RayDE workspace</text><if {opened.get()}>${mount()}</if></div>;
@@ -56,11 +59,20 @@ class NewProjectChecks {
 			settle(); var base = count(), baseTexts = texts(), hooks = ashui.input.Pointer.hooks.length;
 			check(nodes(".rayde-project-template").length == 0, "Closed modal built template cards");
 			opened.set(true); settle(); shot("all");
-			check(nodes(".rayde-project-template").length == 9, "Missing ecosystem templates");
+			check(nodes(".rayde-project-template").length == rayde.project.ProjectTemplates.all.length, "Missing ecosystem templates");
+			var custom:rayde.project.ProjectTemplates.ProjectTemplate = {id:"ext:fixture:console", owner:"fixture", icon:"terminal", name:"Custom Console", category:"Applications", description:"Extension starter", target:"Cross-platform", requirements:"Haxe", command:"haxe build.hxml", docs:"", scaffold:{entry:"build.hxml", files:["build.hxml" => "-cp src\n-main Main\n"]}};
+			templates.set(rayde.project.ProjectTemplates.all.concat([custom])); settle();
+			ashui.input.Scroll.at(nodes("#rayde-project-catalog")[0], tree).scrollTo(0, 1e9); settle();
+			click("#" + NewProject.templateId(custom.id));
+			check(form.selected.get() == custom.id, "Extension starter did not appear in the live catalog");
+			check(ashui.ui.Text.at(nodes("#rayde-project-requirements")[0]).text() == custom.requirements, "Selected starter did not update its requirements");
+			templates.set(rayde.project.ProjectTemplates.all.copy()); settle();
+			ashui.input.Scroll.at(nodes("#rayde-project-catalog")[0], tree).scrollTo(0, 0); settle();
+			check(form.selected.get() == "hxml" && nodes("#" + NewProject.templateId(custom.id)).length == 0, "Removed extension starter retained its card or selection");
 			var panel = bounds("#rayde-project-modal"), footer = bounds("#rayde-project-footer");
 			check(panel.x >= -1 && panel.y >= -1 && panel.x + panel.width <= width + 1 && panel.y + panel.height <= height + 1, "Project modal exceeds the window");
 			check(footer.y + footer.height <= panel.y + panel.height && bounds("#rayde-project-name").height >= 30, "Project controls are clipped");
-			var first = bounds("#rayde-project-template-hxml"), second = bounds("#rayde-project-template-rayzor"), third = bounds("#rayde-project-template-haxelib");
+			var first = bounds("#rayde-project-template-hxml"), second = bounds("#rayde-project-template-ash"), third = bounds("#rayde-project-template-ashui");
 			check(first.width > 150 && second.x > first.x && (width > 720 ? third.x > second.x : third.y > first.y), "Template cards are not a responsive grid");
 			var grid = bounds(".rayde-project-grid"), end = width > 720 ? third : second;
 			check(end.x + end.width >= grid.x + grid.width - 4, "Template grid leaves unused space at the right");
@@ -72,7 +84,7 @@ class NewProjectChecks {
 				shot("scrolled"); scroll.y.set(0); settle();
 			}
 			click("#rayde-project-category-games");
-			check(nodes(".rayde-project-template").length == 3 && form.selected.get() == "heaps", "Category filter lost its visible selection");
+			check(nodes(".rayde-project-template").length == rayde.project.ProjectTemplates.matching("Games").length && form.selected.get() == "heaps", "Category filter lost its visible selection");
 			var flixel = nodes("#rayde-project-template-flixel")[0];
 			ashui.input.Focus.set(ashui.input.Interaction.byId(tree, flixel), true); press(window.Key.Named(Enter));
 			check(form.selected.get() == "flixel" && nodes("#rayde-project-template-flixel[data-selected]").length == 1, "Keyboard activation did not select a template");
@@ -86,8 +98,9 @@ class NewProjectChecks {
 			check(!opened.get() && StringTools.endsWith(created, "/my-game/haxelib.json") && sys.FileSystem.exists(scratch + "/my-game/src/PlayState.hx"), "Selected template did not create and open its project");
 			form = null; settle();
 			check(count() == base && texts() == baseTexts && nodes("#rayde-project-modal").length == 0 && ashui.input.Pointer.hooks.length == hooks, "Closed project modal retained UI, text or pointer hooks");
+			check(disposedImages >= 3, "Original raster logos retained their decoded pixels after cards unmounted");
 			for (_ in 0...3) { opened.set(true); settle(); press(window.Key.Named(Escape)); form = null; settle(); check(!opened.get() && count() == base, "Escape or repeated opens retained the catalog"); }
-		} catch (error:Dynamic) { stop(); tree.dispose(); throw error; }
-		stop(); tree.dispose();
+		} catch (error:Dynamic) { stop(); tree.dispose(); ashui.types.Bitmap.disposing.remove(observeImage); throw error; }
+		stop(); tree.dispose(); ashui.types.Bitmap.disposing.remove(observeImage);
 	}
 }

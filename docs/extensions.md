@@ -37,6 +37,7 @@ An extension starts on one of its `activationEvents`:
 - `workspaceContains:<glob>`: a matching path under the project root. `*` and `?` match within a path segment; `**` crosses folders.
 - `onCommand:<id>`: when a contributed command is chosen. `*` matches several command ids. The command waits until the script registers its handler.
 - `onView:<id>`: when the activity bar opens that view.
+- `onNewProject`: when the project template gallery opens, including on a fresh Welcome window. These extensions stay inactive until needed.
 
 Views, commands and menu items from enabled extensions share the workbench. Views and command bindings are identified by their owning extension. A failed host is restarted at most three times in a minute; after the limit it stays stopped until disabled and enabled again. **Output** has a channel per extension for logs, errors and restart reports, alongside the Build channel.
 
@@ -106,6 +107,43 @@ The name is the logical library in a RayScript `native "git2"` block. Paths are 
 **Settings > Extensions** shows each library's path, hash and approval state. User, workspace and development extensions wait for every library to be approved. **Approve** grants native execution; **Revoke** stops the host and clears its views. Approvals are stored under `extensions.nativeApprovals` in `~/.rayde/settings.json`, bound to the extension id and location, library name, path and hash. Workspace settings cannot grant approval. A changed path, hash or extension location requires approval again. Built-ins are pre-approved and still undergo the same host validation. Validation failures appear in the extension's Output channel and block execution until it is restarted.
 
 Approval trusts the extension's scripts to call native code with your account permissions. It does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. Native faults remain confined to the extension's host process. The current native ABI target is macOS arm64.
+
+## Project starters
+
+A RayScript extension can add starter cards to **New Project** without a sidebar or a view. Declare `"activationEvents": ["onNewProject"]` and `"capabilities": ["projects.register"]` in its manifest, then register the starter from its main script:
+
+```haxe
+import rayde.projects.registerStarter;
+import rayde.projects.unregisterStarter;
+
+var starter = await registerStarter({
+  id: 'console',
+  name: 'Console Application',
+  category: 'Applications',
+  description: 'A starter from my extension.',
+  target: 'Cross-platform',
+  icon: 'terminal',
+  requirements: 'Haxe and Ash',
+  command: 'haxe build.hxml',
+  runner: 'ash',
+  entry: 'build.hxml',
+  files: [
+    {path: 'build.hxml', text: '-cp src\n-main Main\n-hl bin/app.hl\n'},
+    {path: 'src/Main.hx', text: 'class Main { static function main() { trace("Hello, {{name}}!"); } }\n'}
+  ]
+});
+
+// Optional: remove a starter while the extension keeps running.
+registerCommand('removeStarter', _ -> await unregisterStarter(starter));
+```
+
+`id` is local to the extension; the returned id is namespaced, so extensions cannot replace one another's starters or the built-ins. Registering the same id replaces its definition. Stopping, disabling, restarting or revoking `projects.register` removes that extension's registrations. The open gallery follows these changes and selects another visible starter if its selection disappears.
+
+`name`, `id` and `files` are required. `category` is `Applications`, `Games` or `Libraries` and defaults to `Applications`; `target` defaults to `Cross-platform`. `icon` is a named RayDE icon or an SVG path inside the extension (at most 64 KiB). `entry` names an included `.hxml`, `haxelib.json` or `rayzor.toml`; omit it or use an empty string to open the generated directory as a folder workspace. Optional `runner` is `auto`, `ash` or `hashlink`, stored in the new workspace's Run settings. `command` describes the first terminal command; scaffolding does not execute it. `docs` can name the starter's documentation URL.
+
+Files contain UTF-8 text. RayDE substitutes `{{name}}` in their contents after the user enters a project name; file paths are literal, relative paths. Absolute paths, traversal, duplicate names and file/folder collisions are refused before creation. Creation runs on a worker in a new directory and never overwrites an existing folder. A starter is limited to 256 files, 1 MiB per file and 4 MiB total. The live catalog retains at most 16 starters per extension, 64 total and 8 MiB of text.
+
+The runnable fixture is [Console Starter](../tests/fixtures/starters/console/main.rays).
 
 ## Views
 

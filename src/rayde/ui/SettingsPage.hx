@@ -5,6 +5,7 @@ import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.build.HxmlFile;
+import rayde.ui.RunnerSettings;
 import rayde.ext.Manifest;
 import rayde.ext.Manager;
 import rayde.keys.KeyBindings;
@@ -44,6 +45,7 @@ typedef SettingsPageProps = {
 	commands:Array<CenterAction>,
 	libraries:LibraryManager,
 	onBuildChanged:Void->Void,
+	?onRunnerChanged:Void->Void,
 	onTerminalChanged:Void->Void,
 	onAppearanceChanged:Void->Void,
 	onBindingsChanged:Void->Void,
@@ -64,6 +66,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 	public static final categories:Array<SettingsCategory> = [
 		{id: "extension", label: "Extension", icon: Icons.PUZZLE_LINE},
 		{id: "build", label: "Build", icon: Icons.HAMMER_LINE},
+		{id: "run", label: "Run", icon: Icons.PLAY_LINE},
 		{id: "libraries", label: "Libraries", icon: Icons.BOOK_2_LINE},
 		{id: "terminal", label: "Terminal", icon: Icons.TERMINAL_BOX_LINE},
 		{id: "appearance", label: "Color scheme", icon: Icons.PALETTE_LINE},
@@ -83,7 +86,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 
 	/** Whether a project has the section: the config of an extension only for an extension, the build and libraries for the rest. */
 	function has(c:SettingsCategory):Bool
-		return props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
+		return c.id == "run" ? props.build != null : props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
 
 	function render():Element
 		return <div id="rayde-settings" class="flex flex-1 min-h-0">
@@ -109,6 +112,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 	/** The chosen section, which fills what the list leaves. */
 	function section(id:String):Element
 		return switch id {
+			case "run": <runner-settings root={props.root} onChanged={props.onRunnerChanged}/>;
 			case "libraries": <library-settings file={props.build} root={props.root} manager={props.libraries} onChanged={props.onBuildChanged}/>;
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;

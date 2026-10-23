@@ -24,7 +24,7 @@ class ProjectWorkbenchChecks {
 				bench.openProject(); settle();
 				if (kind == "hxml") {
 					bench.newProject(); settle();
-					if (bench.quickOpen.get() || bench.prompt.get() != null || Css.query(tree, bench.node.id, ".rayde-project-template").length != 9) throw "New Project did not open the dedicated template modal";
+					if (bench.quickOpen.get() || bench.prompt.get() != null || Css.query(tree, bench.node.id, ".rayde-project-template").length != rayde.project.ProjectTemplates.all.length) throw "New Project did not open the dedicated template modal";
 					var panel = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, "#rayde-project-modal")[0]));
 					if (panel.width < 700 || panel.height < 500 || panel.y < 0 || panel.y + panel.height > 800) throw "Workbench project modal is not visible within the viewport";
 					ashui.core.render.Snapshot.capture("project-templates-workbench", tree, bench.node, 1280, 800);

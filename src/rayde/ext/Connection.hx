@@ -17,6 +17,9 @@ typedef WorkspaceServices = {
 	?unregisterLanguage:(String, String)->Void,
 	?languageServers:String->Array<Dynamic>,
 	?releaseLanguages:String->Void,
+	?registerStarter:(String, Manifest, Dynamic)->String,
+	?unregisterStarter:(String, Manifest, String)->Void,
+	?releaseStarters:String->Void,
 	replay:String->Dynamic
 };
 
@@ -25,7 +28,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal", "setStatusItem"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal", "setStatusItem"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"], "rayde.projects" => ["registerStarter", "unregisterStarter"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -61,6 +64,8 @@ class Connection {
 	public function useManifest(m:Manifest):Void {
 		var grantsChanged = manifest != null && haxe.Json.stringify(manifest.natives) != haxe.Json.stringify(m.natives);
 		var languagesRevoked = manifest != null && manifest.capabilities.indexOf("languages.register") >= 0 && m.capabilities.indexOf("languages.register") < 0;
+		var startersRevoked = manifest != null && manifest.capabilities.indexOf("projects.register") >= 0 && m.capabilities.indexOf("projects.register") < 0;
+		if ((file != m.mainPath() || startersRevoked || manifest != null && manifest.id != m.id) && services != null && services.releaseStarters != null) services.releaseStarters(file);
 		if ((file != m.mainPath() || languagesRevoked) && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		if (file != m.mainPath() && services != null && services.setStatus != null) services.setStatus(file, null, null);
 		manifest = m;
@@ -76,6 +81,7 @@ class Connection {
 		return manifest == null ? haxe.io.Path.join([haxe.io.Path.directory(file), "studio.mocks.json"]) : manifest.mocksPath();
 
 	function setState(value:String):Void {
+		if (value != "running" && services != null && services.releaseStarters != null) services.releaseStarters(file);
 		if (value != "running" && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		if (value != "running" && services != null && services.setStatus != null) services.setStatus(file, null, null);
 		state = value;
@@ -355,11 +361,19 @@ class Connection {
 			};
 		if (module == "rayde.languages" && (manifest == null || manifest.capabilities.indexOf("languages.register") < 0))
 			return {t:"reject", id:call.id, message:"Capability languages.register is not granted"};
+		if (module == "rayde.projects" && (manifest == null || manifest.capabilities.indexOf("projects.register") < 0))
+			return {t:"reject", id:call.id, message:"Capability projects.register is not granted"};
 		if (services == null)
 			return {t: "reject", id: call.id, message: "The workbench provides no services here."};
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "registerStarter" if (module == "rayde.projects"):
+					if (services.registerStarter == null) throw "Project starters are unavailable";
+					services.registerStarter(file, manifest, args[0]);
+				case "unregisterStarter" if (module == "rayde.projects"):
+					if (services.unregisterStarter != null) services.unregisterStarter(file, manifest, Std.string(args[0]));
+					null;
 				case "registerServer" if (module == "rayde.languages"):
 					if (services.registerLanguage == null) throw "Language servers are unavailable";
 					services.registerLanguage(file, args[0], (kind, text) -> note("console", kind, text));

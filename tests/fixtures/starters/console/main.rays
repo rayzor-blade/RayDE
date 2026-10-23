@@ -1,0 +1,22 @@
+import rayde.projects.registerStarter;
+import rayde.projects.unregisterStarter;
+
+var starter = await registerStarter({
+  id: 'console',
+  name: 'Custom Console',
+  category: 'Applications',
+  description: 'A console starter supplied by a RayScript extension.',
+  target: 'Cross-platform',
+  icon: 'terminal',
+  requirements: 'Haxe',
+  command: 'haxe -cp src --run Main',
+  runner: 'ash',
+  entry: 'build.hxml',
+  files: [
+    {path: 'build.hxml', text: '-cp src\n-main Main\n'},
+    {path: 'src/Main.hx', text: 'class Main { static function main() { trace("Hello, {{name}}!"); } }\n'},
+    {path: 'README.md', text: '# {{name}}\n\nRun `haxe -cp src --run Main`.\n'}
+  ]
+});
+
+registerCommand('remove', _ -> await unregisterStarter(starter));

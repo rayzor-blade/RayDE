@@ -5,10 +5,12 @@ import ashui.components.Dialog;
 import ashui.components.Icon;
 import ashui.layout.Element;
 import ashui.reactive.Owner;
+import ashui.reactive.Computed;
 import ashui.reactive.Signal;
 import ashui.reactive.Watch;
 import ashui.ui.Component;
 import ashui.ui.Ref;
+import rayde.ui.ProjectLogo;
 import rayde.project.ProjectFile;
 import rayde.project.ProjectTemplates;
 import rayde.project.ProjectTemplates.ProjectTemplate;
@@ -16,13 +18,13 @@ import rayde.project.ProjectTemplates.ProjectTemplate;
 typedef NewProjectProps = {
 	opened:Signal<Bool>,
 	directory:String,
+	?templates:Void->Array<ProjectTemplate>,
 	onCreate:String->Void
 };
 
 /** Mounted only while choosing a starter; file operations stay on a data-only worker. */
 class NewProject extends Component<NewProjectProps> {
 	static final categories = ["All", "Applications", "Games", "Libraries"];
-	static final rayzorIcon = ashui.svg.SvgDocument.embed("extensions/rayzor/logo.svg");
 	final selected = Signal.make("hxml");
 	final category = Signal.make("All");
 	final name = Signal.make("my-project");
@@ -37,6 +39,10 @@ class NewProject extends Component<NewProjectProps> {
 
 	function render():Element {
 		directory.set(props.directory);
+		var picked = Computed.make(choice), destinationPath = Computed.make(destination);
+		new Watch(() -> [for (item in catalog()) item.id].join("\n"), _ -> {
+			if (!Lambda.exists(catalog(), item -> item.id == selected.get())) chooseCategory(category.get());
+		});
 		Owner.onCleanup(() -> {
 			gone = true;
 			if (cancelDialog != null) cancelDialog();
@@ -57,48 +63,48 @@ class NewProject extends Component<NewProjectProps> {
 						<dialog-title>Create a project</dialog-title>
 						<dialog-description>Choose a starting point for your next idea.</dialog-description>
 					</div>
-					<button id="rayde-project-close" variant={Ghost} size={Icon} disabled={locked()} onClick={_ -> close()}><icon document={Icons.CLOSE_LINE} class="size-5"/></button>
+					<button id="rayde-project-close" variant={Ghost} size={Icon} disabled={busy.get() || browsing.get()} onClick={_ -> close()}><icon document={Icons.CLOSE_LINE} class="size-5"/></button>
 				</div>
 				<div class="rayde-project-categories">
 					<for {group in categories}>${categoryButton(group)}</for>
 				</div>
 				<div id="rayde-project-catalog" class="rayde-project-catalog">
-					<div class="rayde-project-grid"><for {template in ProjectTemplates.matching(category.get())}>${card(template)}</for></div>
+					<div class="rayde-project-grid"><for {template in ProjectTemplates.matching(category.get(), catalog())}>${card(template)}</for></div>
 				</div>
 				<div class="rayde-project-details">
 					<icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0"/>
 					<div class="rayde-project-detail-text">
-						<text id="rayde-project-requirements">${ProjectTemplates.get(selected.get()).requirements}</text>
-						<text class="rayde-project-muted">${"Get started: " + ProjectTemplates.get(selected.get()).command}</text>
+						<text id="rayde-project-requirements">${picked.get().requirements}</text>
+						<text class="rayde-project-muted">${"Get started: " + picked.get().command}</text>
 					</div>
 				</div>
 				<div class="rayde-project-fields">
 					<div class="rayde-project-name-field">
 						<label for="rayde-project-name">Project name</label>
-						<input ref={input} id="rayde-project-name" value={name} maxlength={64} disabled={locked()} placeholder="my-project" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
+						<input ref={input} id="rayde-project-name" value={name} maxlength={64} disabled={busy.get() || browsing.get()} placeholder="my-project" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
 					</div>
 					<div class="rayde-project-location-field">
 						<label for="rayde-project-directory">Location</label>
 						<div class="rayde-project-location">
-							<input id="rayde-project-directory" value={directory} disabled={locked()} placeholder="Parent folder" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
-							<button id="rayde-project-browse" variant={Outline} disabled={locked()} onClick={_ -> browse()}>Browse…</button>
+							<input id="rayde-project-directory" value={directory} disabled={busy.get() || browsing.get()} placeholder="Parent folder" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
+							<button id="rayde-project-browse" variant={Outline} disabled={busy.get() || browsing.get()} onClick={_ -> browse()}>Browse…</button>
 						</div>
 					</div>
 				</div>
 				<if {error.get() != ""}><text id="rayde-project-error" class="text-xs text-error">${error.get()}</text></if>
 				<dialog-footer id="rayde-project-footer">
-					<div class="rayde-project-destination"><icon document={Icons.FOLDER_ADD_LINE} class="size-4 shrink-0"/><text id="rayde-project-destination">${destination()}</text></div>
-					<button id="rayde-project-cancel" variant={Outline} disabled={locked()} onClick={_ -> close()}>Cancel</button>
-					<button id="rayde-project-create" disabled={locked()} onClick={_ -> create()}><icon document={Icons.ADD_LINE} class="size-4"/>${busy.get() ? "Creating…" : "Create Project"}</button>
+					<div class="rayde-project-destination"><icon document={Icons.FOLDER_ADD_LINE} class="size-4 shrink-0"/><text id="rayde-project-destination">${destinationPath.get()}</text></div>
+					<button id="rayde-project-cancel" variant={Outline} disabled={busy.get() || browsing.get()} onClick={_ -> close()}>Cancel</button>
+					<button id="rayde-project-create" disabled={busy.get() || browsing.get()} onClick={_ -> create()}><icon document={Icons.ADD_LINE} class="size-4"/>${busy.get() ? "Creating…" : "Create Project"}</button>
 				</dialog-footer>
 			</dialog-content>
 		</dialog>;
 	}
 
 	function card(template:ProjectTemplate):Element {
-		var button = <button id={"rayde-project-template-" + template.id} variant={Outline} class="rayde-project-template" disabled={locked()} onClick={_ -> selected.set(template.id)}>
+		var button = <button id={templateId(template.id)} variant={Outline} class="rayde-project-template" disabled={busy.get() || browsing.get()} onClick={_ -> selected.set(template.id)}>
 			<div class="rayde-project-card-top">
-				<icon document={icon(template.id)} class="rayde-project-template-icon"/>
+				<project-logo template={template}/>
 				<text class="rayde-project-target">${template.target}</text>
 				<icon document={Icons.CHECK_LINE} class="rayde-project-check"/>
 			</div>
@@ -112,29 +118,20 @@ class NewProject extends Component<NewProjectProps> {
 	}
 
 	function categoryButton(group:String):Element {
-		var button = <button id={"rayde-project-category-" + group.toLowerCase()} variant={Ghost} size={Sm} disabled={locked()} onClick={_ -> chooseCategory(group)}>${group}</button>;
+		var button = <button id={"rayde-project-category-" + group.toLowerCase()} variant={Ghost} size={Sm} disabled={busy.get() || browsing.get()} onClick={_ -> chooseCategory(group)}>${group}</button>;
 		var identity = ashui.css.Identity.of(button.tree, button.node.id);
 		new Watch(() -> category.get() == group, value -> identity.setAttribute("data-selected", value ? "" : null));
 		return button;
 	}
 
-	static function icon(id:String):ashui.svg.SvgDocument return switch id {
-		case "hxml": Icons.HAXE;
-		case "rayzor": rayzorIcon;
-		case "haxelib": Icons.BOX_3_LINE;
-		case "javascript": Icons.JAVASCRIPT_LINE;
-		case "hashlink": Icons.TERMINAL_BOX_LINE;
-		case "heaps": Icons.STACK_LINE;
-		case "openfl": Icons.FLASHLIGHT_LINE;
-		case "flixel": Icons.GAMEPAD_LINE;
-		case "lime": Icons.WINDOW_LINE;
-		case _: Icons.CODE_BOX_LINE;
-	};
+	function catalog():Array<ProjectTemplate> return props.templates == null ? ProjectTemplates.all : props.templates();
+	public static function templateId(id:String):String return "rayde-project-template-" + (StringTools.startsWith(id, "ext:") ? haxe.io.Bytes.ofString(id).toHex() : id);
+	function choice():ProjectTemplate return Lambda.find(catalog(), item -> item.id == selected.get()) ?? ProjectTemplates.all[0];
 
 	function locked():Bool return busy.get() || browsing.get();
 	function chooseCategory(value:String):Void {
 		category.set(value);
-		var templates = ProjectTemplates.matching(value);
+		var templates = ProjectTemplates.matching(value, catalog());
 		if (!Lambda.exists(templates, template -> template.id == selected.get())) selected.set(templates[0].id);
 	}
 	function close():Void { if (!locked()) props.opened.set(false); }
@@ -165,7 +162,8 @@ class NewProject extends Component<NewProjectProps> {
 		if (!ProjectFile.validName(projectName)) { error.set("Start with a letter; use letters, numbers, hyphens or underscores (up to 64 characters)."); return; }
 		if (parent == "") { error.set("Choose a location for your project."); return; }
 		name.set(projectName); directory.set(parent); error.set(""); busy.set(true);
-		jobs.submit("create", {mode:"new", kind:selected.get(), name:projectName, selected:parent});
+		var template = choice();
+		jobs.submit("create", {mode:"new", kind:template.id, scaffold:template.scaffold, name:projectName, selected:parent});
 		ashui.animation.AnimationScheduler.main.after(.03, poll);
 	}
 

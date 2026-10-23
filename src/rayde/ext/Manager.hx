@@ -190,6 +190,10 @@ class Manager {
 		return events(e).indexOf(event) >= 0 && activate(e, event);
 	}
 
+	public function newProject():Void {
+		for (entry in enabled()) if (events(entry).indexOf("onNewProject") >= 0) activate(entry, "onNewProject");
+	}
+
 	public function setDisabled(id:String, disabled:Bool):Void {
 		var e = find(id);
 		if (e == null || e.disabled == disabled)

@@ -28,13 +28,16 @@ class Runner {
 
 	final display:Display;
 	final ash:String;
+	final hashlink:String;
 	final out:String;
 	var job:Null<Job>;
 	var building = false;
+	var runtime = "ash";
 
 	public function new(display:Display, ?ash:String) {
 		this.display = display;
 		this.ash = ash != null ? ash : Sys.getEnv("ASH") != null ? Sys.getEnv("ASH") : "ash";
+		hashlink = Sys.getEnv("HL") ?? "hl";
 		out = haxe.io.Path.join([display.cwd, ".rayde", "run"]);
 	}
 
@@ -50,6 +53,7 @@ class Runner {
 		console = "";
 		problems = [];
 		exitCode = null;
+		runtime = display.project == null ? rayde.project.ProjectRunner.resolve(display.cwd) : display.project.runtime;
 		if (display.project != null && !display.project.runnable) {
 			state = "failed"; append("This project has no application entry point. Open a runnable build to use Run.\n"); return;
 		}
@@ -66,7 +70,7 @@ class Runner {
 		building = true;
 		state = "building";
 		append("Building…\n");
-		job = new Job("haxe", ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(display.args).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
+		job = new Job("haxe", ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
 		job.start();
 	}
 
@@ -103,7 +107,7 @@ class Runner {
 			}
 			append("Running…\n");
 			state = "running";
-			job = new Job(ash, ["--preset", "application", program()], haxe.io.Path.join([out, "run.log"]), null, null, true);
+			job = new Job(runtime == "hashlink" ? hashlink : ash, runtime == "hashlink" ? [program()] : ["--preset", "application", program()], haxe.io.Path.join([out, "run.log"]), null, display.cwd, true);
 			job.start();
 			return;
 		}
@@ -118,5 +122,15 @@ class Runner {
 		revision++;
 		var all = console + text, lines = all.split("\n");
 		console = lines.length > 2000 ? lines.slice(lines.length - 2000).join("\n") : all;
+	}
+
+	/** Run writes bytecode to its own output, keeping the project's editor/compiler arguments intact. */
+	static function bytecodeArgs(args:Array<String>):Array<String> {
+		var out:Array<String> = [], at = 0;
+		while (at < args.length) {
+			if ((args[at] == "-hl" || args[at] == "--hl") && at + 1 < args.length) at += 2;
+			else out.push(args[at++]);
+		}
+		return out;
 	}
 }

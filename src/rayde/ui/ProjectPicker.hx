@@ -1,6 +1,6 @@
 package rayde.ui;
 
-typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String, ?selected:String};
+typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String, ?selected:String, ?scaffold:rayde.project.ProjectTemplates.ProjectScaffold};
 
 /** Native path selection, invoked by a worker only after an explicit Welcome action. */
 class ProjectPicker {
@@ -21,7 +21,7 @@ class ProjectPicker {
 				else throw "Install zenity or kdialog to choose a workspace";
 		};
 		if (chosen == null || chosen == "" || cancelled()) return null;
-		if (request.mode == "new") return rayde.project.ProjectFile.create(chosen, request.name, request.kind);
+		if (request.mode == "new") return rayde.project.ProjectFile.create(chosen, request.name, request.kind, request.scaffold);
 		if (folder && !sys.FileSystem.isDirectory(chosen)) throw "Choose a folder workspace";
 		return chosen;
 	}

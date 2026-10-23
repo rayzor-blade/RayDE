@@ -145,7 +145,7 @@ class Manifest {
 		activationEvents = Reflect.hasField(json, "activationEvents") ? strings(json, "activationEvents") : null;
 		if (activationEvents != null)
 			for (event in activationEvents)
-				if (event != "onStartup" && !~/^(workspaceContains|onCommand|onView):.+$/.match(event)) problems.push('Unknown activation event "$event".');
+				if (event != "onStartup" && event != "onNewProject" && !~/^(workspaceContains|onCommand|onView):.+$/.match(event)) problems.push('Unknown activation event "$event".');
 		var contributes = Reflect.field(json, "contributes");
 		configuration = contributes == null ? null : Reflect.field(contributes, "configuration");
 		name = text(json, "name", fallback);

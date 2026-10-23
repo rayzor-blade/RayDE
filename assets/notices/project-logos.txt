@@ -1,0 +1,64 @@
+Project starter logos
+====================
+
+Original project artwork is used to identify the corresponding starters.
+The artwork, project names and trademarks remain with their respective owners.
+The accompanying project-logo-*-LICENSE files preserve available upstream notices.
+SVG XML declarations and DOCTYPE headers were removed for embedding; Lime's editor namespace entities were expanded. Shapes and colours are unchanged.
+PNG assets are unmodified. Raster logos are decoded only for mounted cards, reduced for display and disposed with them.
+
+Sources
+-------
+Haxe / Haxelib: HaxeFoundation/haxelib, cbced3883bcd92f16bce51ee6c856480334561d1, www/img/haxe-logo.svg
+https://github.com/HaxeFoundation/haxelib/blob/cbced3883bcd92f16bce51ee6c856480334561d1/www/img/haxe-logo.svg
+Haxelib's own website uses the Haxe mark.
+
+Ash: rayzor-blade/ash, 1e95e1978118d73bd083d04556441070f669c7fd, website/ash-mark-tight.png
+https://github.com/rayzor-blade/ash/blob/1e95e1978118d73bd083d04556441070f669c7fd/website/ash-mark-tight.png
+
+Ashui: rayzor-blade/ashui, df13b67594818efa4af258ad2748f62517980786, docs/images/ashui-logo.png
+https://github.com/rayzor-blade/ashui/blob/df13b67594818efa4af258ad2748f62517980786/docs/images/ashui-logo.png
+
+Rayzor: the already-bundled extensions/rayzor/logo.svg from the Rayzor repository.
+
+JavaScript: Christopher Williams and Manuel Strehl's community JS logo, original logo.js repository, js.svg
+https://github.com/voodootikigod/logo.js/blob/master/js.svg
+
+HashLink: HaxeFoundation/hashlink.haxe.org, 014303e6f2d277fbff10d0adfda7b3a9e7dfe1ed, hashlink.svg
+https://github.com/HaxeFoundation/hashlink.haxe.org/blob/014303e6f2d277fbff10d0adfda7b3a9e7dfe1ed/hashlink.svg
+
+Heaps: HeapsIO/heaps.io, 8e982a9cecd15d7254780315a886ecac6fb3e390, assets/logo/avatar.png
+https://github.com/HeapsIO/heaps.io/blob/8e982a9cecd15d7254780315a886ecac6fb3e390/assets/logo/avatar.png
+
+OpenFL: openfl/openfl.org, 037a7525c9371a5df2a0a5570f802044690b72c1, _assets/images/icon.svg
+https://github.com/openfl/openfl.org/blob/037a7525c9371a5df2a0a5570f802044690b72c1/_assets/images/icon.svg
+
+HaxeFlixel: HaxeFlixel/flixel, 9f90434a2b613205e918e8b36b13e60c64debe1f, assets/images/logo/HaxeFlixel.svg
+https://github.com/HaxeFlixel/flixel/blob/9f90434a2b613205e918e8b36b13e60c64debe1f/assets/images/logo/HaxeFlixel.svg
+
+Lime: openfl/lime, 4514e52aabac420bf4f5adda3a73032d4034c7e6, templates/default/icon.svg
+https://github.com/openfl/lime/blob/4514e52aabac420bf4f5adda3a73032d4034c7e6/templates/default/icon.svg
+
+Starter taglines
+----------------
+Haxe: https://haxe.org/
+Ash: https://ash.rayzor.tech/ and the upstream README
+Ashui: the upstream README
+Rayzor: https://rayzor.tech/ and its repository website/index.html
+HashLink: https://hashlink.haxe.org/
+Heaps: https://heaps.io/
+OpenFL: https://www.openfl.org/ (page title)
+HaxeFlixel: https://haxeflixel.com/
+Lime: https://lime.openfl.org/
+
+Bundled asset SHA-256
+--------------------
+ash.png 180b012173f8d6e6565a2a551d7e71fe0004d381105d92bc237a8846790266f2
+ashui.png 4dfaec9d61070787ded9cc3637c43bab0bea81714052e097c88a660354cfbc54
+flixel.svg 65cd6f3566c2e9389792fd274812c02d04b0cf15026aba004e26d5fb8a5d33c7
+hashlink.svg fa3a8090eceec3474f6e3c9e2a3e3e2d02a97aa95ce8aec18c2216cee5018c93
+haxe.svg 53af1e6b0d17eec7a69ec85b28354be66bc6521d57e4fb9f92987f9250ae3883
+heaps.png cf58250408b3578111716005bbd9a5e689ed1f3da907e101c2e7becbadc00703
+javascript.svg a70a3d8d36ea6b0e614a04ec30d5a4fb2bf36d515492cb84050ded2b84d14393
+lime.svg 803c0241115df61cf48b3a76e14a3fe617ab55cb7d68fe72bbb7bb0098ca43d8
+openfl.svg f5375031758f6b15ea09972f410afd9dca17d8e304f9f599f09073ba105cb907
