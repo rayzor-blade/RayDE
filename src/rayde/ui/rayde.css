@@ -191,6 +191,7 @@
 #rayde .rayde-status { color: var(--text-secondary); font-size: var(--text-xs); }
 #rayde .rayde-status-item { align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-md); corner-shape: squircle; height: 20px; }
 #rayde .rayde-status-item.action { cursor: pointer; }
+#rayde #rayde-build { min-height: 0; font-size: var(--text-xs); font-weight: 400; color: var(--text-secondary); }
 #rayde .rayde-status-detail { color: var(--text-secondary); }
 #rayde .rayde-status-item.action:hover { background: var(--accent-subtle); color: var(--text-primary); }
 

@@ -831,6 +831,7 @@ class Checks {
 		ProjectChecks.run();
 		ProjectStarterChecks.run();
 		ProjectRunnerChecks.run();
+		BuildChecks.run();
 		terminalChecks();
 		manifestChecks();
 		iconChecks();

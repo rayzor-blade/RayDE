@@ -14,6 +14,8 @@ The Explorer lists every file type, including dotfiles, with folders first and H
 
 Key bindings follow VS Code. They work from anywhere in the window: the workbench takes the keyboard whenever nothing else has it, such as a window just opened, the Welcome page or after a click on bare space, so Cmd+P and the rest are heard there too. The Explorer's file commands (copy, cut, paste, rename, delete, duplicate) run only while the Explorer has the keyboard. On Linux and Windows read Ctrl for Cmd. **Settings > Key bindings** edits them; user changes are stored in `.rayde/keybindings.json` as `{"command": ..., "key": ...}` entries, and an empty `key` removes a binding.
 
+**Build** is the hammer button beside Run in the bottom toolbar, also available as **Run > Build Project** and in the command center. It saves edited files and invokes the selected HXML with the configured Haxe compiler, preserving its targets, output paths and multiple compilations. Rayzor projects use `rayzor build` from their manifest folder. The compiler runs on a worker; Output shows progress, Problems shows compiler diagnostics, and Stop cancels the job. Build does not add a program launch. **Open Build Settings** remains a separate command.
+
 ## Keys
 
 | Key | Action |
@@ -30,6 +32,7 @@ Key bindings follow VS Code. They work from anywhere in the window: the workbenc
 | Ctrl+Space | Completion list at the caret (**Trigger Suggest**). |
 | Cmd+Shift+Space | Signature of the call the caret is in (**Trigger Parameter Hints**). |
 | F5, Shift+F5 | Run, stop. While an extension is stopped at a breakpoint, F5 continues. |
+| Cmd+Shift+B | Build the project without launching its output. |
 | F9 | Toggle a breakpoint on the line (extensions). A click in the gutter does the same. |
 | F10, F11, Shift+F11 | Step over, into, out (extensions). |
 | Cmd+M | Minimize. |

@@ -3,16 +3,9 @@ package rayde.run;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 
-/**
- * Builds a project through its compilation server and runs it on ash, an
- * `ash --preset application` run of the program the build made. A build is
- * `haxe --connect` against the server the language layer already keeps warm,
- * so it only types what changed. Nothing here waits: `tick`, from the
- * frame loop, moves a run along and gathers what the build and the program
- * printed.
- */
+/** Build preserves the project's targets; Run uses its runtime. Jobs own their processes on a worker. */
 class Runner {
-	/** idle, building, running, finished (with its exit code in `exitCode`) or failed (the build did not make a program). */
+	/** idle, building, running, built, finished or failed. */
 	public var state(default, null) = "idle";
 
 	/** What the build and the program have printed, newest last, bounded. */
@@ -32,6 +25,7 @@ class Runner {
 	final out:String;
 	var job:Null<Job>;
 	var building = false;
+	var buildOnly = false;
 	var runtime = "ash";
 
 	public function new(display:Display, ?ash:String) {
@@ -47,9 +41,29 @@ class Runner {
 	public function active():Bool
 		return state == "building" || state == "running";
 
+	public function canBuild():Bool
+		return display.hxml != null || display.project != null && display.project.runtime == "rayzor";
+
+	/** Compiles the selected project as declared, without adding a target or launching its output. */
+	public function build():Void {
+		stop();
+		console = ""; problems = []; exitCode = null;
+		building = true; buildOnly = true;
+		if (!canBuild()) {
+			state = "failed"; append("Open an HXML or Rayzor project to build.\n"); return;
+		}
+		var rayzor = display.project != null && display.project.runtime == "rayzor";
+		state = "building";
+		append(rayzor ? "Building with Rayzor…\n" : "Building with Haxe…\n");
+		job = new Job(rayzor ? rayde.lang.RayzorBinary.find() ?? "rayzor" : display.server.haxe,
+			rayzor ? ["build"] : [display.hxml], haxe.io.Path.join([out, "build.log"]), null, display.cwd, true);
+		job.start();
+	}
+
 	/** Builds, and when that made a program, runs it. */
 	public function start():Void {
 		stop();
+		buildOnly = false;
 		console = "";
 		problems = [];
 		exitCode = null;
@@ -70,7 +84,7 @@ class Runner {
 		building = true;
 		state = "building";
 		append("Building…\n");
-		job = new Job("haxe", ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
+		job = new Job(display.server.haxe, ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
 		job.start();
 	}
 
@@ -100,6 +114,12 @@ class Runner {
 			building = false;
 			problems = CompilerOutput.parse(console, display.cwd);
 			revision++;
+			if (buildOnly) {
+				exitCode = code;
+				state = code == 0 ? "built" : "failed";
+				append(code == 0 ? "Build succeeded.\n" : "Build failed with " + code + ".\n");
+				return;
+			}
 			if (code != 0 || !sys.FileSystem.exists(program())) {
 				state = "failed";
 				append("The build did not make a program.\n");

@@ -381,6 +381,7 @@ class Workbench extends Component<WorkbenchProps> {
 	var diagnosticsScheduled = false;
 
 	final runState = Signal.make("idle");
+	var runPollScheduled = false;
 	public var runner(default, null):Null<Runner>;
 	var seen = -1;
 	var pill:Element;
@@ -1262,6 +1263,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "findnext", label: "Find Next", icon: Icons.ARROW_DOWN_LINE, run: () -> editorFindNext()},
 			{id: "findprevious", label: "Find Previous", icon: Icons.ARROW_UP_LINE, run: () -> editorFindNext(true)},
 			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: run},
+			{id: "buildproject", label: "Build Project", icon: Icons.HAMMER_LINE, run: buildProject},
 			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: stopRun},
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: saveAll},
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (active.get() != "") closeFile(active.get())},
@@ -1269,7 +1271,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "suggest", label: "Trigger Suggest", icon: Icons.LIGHTBULB_LINE, run: triggerSuggest},
 			{id: "parameterhints", label: "Trigger Parameter Hints", icon: Icons.BRACES_LINE, run: triggerParameterHints},
 			{id: "settings", label: "Open Settings", icon: Icons.SETTINGS_3_LINE, run: () -> openSettings()},
-			{id: "build", label: "Open Build Settings", icon: Icons.HAMMER_LINE, run: openBuild},
+			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
 			{id: "libraries", label: "Manage Libraries", icon: Icons.BOOK_2_LINE, run: () -> openSettings("libraries")},
 			{id: "colorscheme", label: "Color Scheme", icon: Icons.PALETTE_LINE, run: () -> openSettings("appearance")},
 			{id: "keybindings", label: "Open Keyboard Shortcuts", icon: Icons.KEYBOARD_LINE, run: () -> openSettings("keys")},
@@ -1332,13 +1334,13 @@ class Workbench extends Component<WorkbenchProps> {
 	function desktopMenus():Array<ashui.app.ApplicationMenu.MenuGroup> {
 		var labels = ["save" => "Save", "close" => "Close Tab", "find" => "Find", "replace" => "Replace",
 			"quickopen" => "Go to File…", "gotoline" => "Go to Line…", "definition" => "Go to Definition",
-			"run" => "Run Project", "stop" => "Stop", "runtask" => "Run Task…", "build" => "Build Settings",
+			"run" => "Run Project", "buildproject" => "Build Project", "stop" => "Stop", "runtask" => "Run Task…", "build" => "Build Settings",
 			"terminal" => "Toggle Terminal", "newterminal" => "New Terminal", "splitterminal" => "Split Terminal",
 			"panel" => "Toggle Panel", "problems" => "Show Problems", "output" => "Show Output", "extensions" => "Show Extensions"];
 		function item(id:String, ?label:String):ashui.app.ApplicationMenu.MenuItem {
 			var command = Lambda.find(commandList, c -> c.id == id), chord = bindings.of(id);
 			return {label:label != null ? label : command == null ? labels.get(id) : command.label,
-				enabled:command != null, shortcut:bindings.label(id),
+				enabled:command != null && (id != "buildproject" || canBuild() && !runner.active()), shortcut:bindings.label(id),
 				key:chord == null ? null : {key:chord.key, meta:chord.meta, ctrl:chord.ctrl, alt:chord.alt, shift:chord.shift},
 				run:command == null ? null : command.run};
 		}
@@ -1360,7 +1362,7 @@ class Workbench extends Component<WorkbenchProps> {
 				item("find"), item("replace"), separator, item("settings")]},
 			{label:"View", items:[item("commands"), item("explorer"), item("panel"), separator, item("problems"), item("output"), item("extensions"), item("fullscreen")]},
 			{label:"Go", items:[item("quickopen"), item("gotoline"), item("definition")]},
-			{label:"Run", items:[item("run"), item("stop"), item("runtask"), item("build")]},
+			{label:"Run", items:[item("buildproject"), item("run"), item("stop"), separator, item("runtask"), item("build")]},
 			{label:"Terminal", items:[item("terminal"), item("newterminal"), item("splitterminal")]},
 			{label:"Window", items:windows},
 			{label:"Help", items:[item("commands", "Show All Commands"), item("keybindings")]}
@@ -1370,7 +1372,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function installDesktopMenus():Void {
 		var menu = new ashui.app.ApplicationMenu("RayDE", ProjectWindows.quit);
 		new ashui.reactive.Watch(() -> {
-			active.get(); dirty.get(); bindingsRevision.get(); ashui.app.WindowedApp.windowRevision.get(); ashui.input.WindowState.active.get();
+			active.get(); dirty.get(); bindingsRevision.get(); runState.get(); buildRevision.get(); ashui.app.WindowedApp.windowRevision.get(); ashui.input.WindowState.active.get();
 			return 0;
 		}, _ -> { var groups = desktopMenus(); menuGroups.set(groups); menu.update(groups); }, (_, _) -> false);
 	}
@@ -2023,15 +2025,34 @@ class Workbench extends Component<WorkbenchProps> {
 		poll();
 	}
 
-	/** While a build or run is going, looks at it ten times a second; a window that is otherwise still draws no frames to do it from. */
-	function poll():Void {
-		tick();
-		if (runner.active())
-			ashui.animation.AnimationScheduler.main.after(.1, poll);
+	function canBuild():Bool {
+		buildRevision.get();
+		return props.empty != true && runner != null && runner.canBuild();
 	}
 
-	public function stopRun():Void
+	/** Saves edited files and builds the project's declared targets on the process worker. */
+	public function buildProject():Void {
+		if (!canBuild() || runner.active()) return;
+		saveAll();
+		runner.build();
+		showPanel("console");
+		poll();
+	}
+
+	/** While a build or run is going, looks at it ten times a second; a window that is otherwise still draws no frames to do it from. */
+	function poll():Void {
+		if (gone) return;
+		tick();
+		if (runner.active() && !runPollScheduled) {
+			runPollScheduled = true;
+			ashui.animation.AnimationScheduler.main.after(.1, () -> { runPollScheduled = false; poll(); });
+		}
+	}
+
+	public function stopRun():Void {
 		runner.stop();
+		tick();
+	}
 
 	/** Moves a build or run along and shows what it printed. */
 	public function tick():Void {
@@ -2045,9 +2066,10 @@ class Workbench extends Component<WorkbenchProps> {
 		if (!outputScheduled) { outputScheduled = true; ashui.animation.AnimationScheduler.main.after(.016, pollOutput); }
 		runState.set(runner.state);
 		if (runner.problems != lastBuild) {
+			var previous = lastBuild;
 			lastBuild = runner.problems;
-			problems.set([for (p in problems.get()) if (!Lambda.exists(runner.problems, b -> b.file == p.file)) p].concat(runner.problems));
-			if (runner.state == "failed")
+			problems.set([for (p in problems.get()) if ((previous == null || previous.indexOf(p) < 0) && !Lambda.exists(runner.problems, b -> b.file == p.file)) p].concat(runner.problems));
+			if (runner.state == "failed" && runner.problems.length > 0)
 				showPanel("problems");
 		}
 	}
@@ -3628,21 +3650,23 @@ class Workbench extends Component<WorkbenchProps> {
 		</tooltip>;
 	}
 
-	/**
-	 * Where a run stands, and the Run or Stop that goes with it. Run belongs on
-	 * the entry point as a code hint, as VS Code puts it, once the editor can
-	 * show hints between lines; until then it sits here.
-	 */
+	/** Build and Run share progress and Stop, with separate actions while idle. */
 	function runStatus(state:String):Element {
-		if (props.empty == true || props.display.project != null && !props.display.project.runnable) return <div/>;
+		var runnable = props.display.project == null || props.display.project.runnable;
+		if (props.empty == true || !runnable && !canBuild()) return <div/>;
 		var active = state == "building" || state == "running";
+		var shortcut = bindings.label("buildproject");
 		return <div class="flex items-center gap-2">
+			<if {canBuild()}><tooltip label={"Build project" + (shortcut == null ? "" : " (" + shortcut + ")")} side="top">
+				<button id="rayde-build" variant={Ghost} size={Sm} class="rayde-status-item action" disabled={active} onClick={_ -> buildProject()}><icon document={Icons.HAMMER_LINE} class="size-3.5"/>Build</button>
+			</tooltip></if>
 			<if {state == "building"}><text class="text-text-tertiary">Building</text></if>
 			<if {state == "running"}><text class="text-text-tertiary">Running</text></if>
 			<if {state == "finished"}><text id="rayde-status" class="text-text-tertiary">${"Exited " + runner.exitCode}</text></if>
+			<if {state == "built"}><text id="rayde-status" class="text-text-tertiary">Build succeeded</text></if>
 			<if {state == "failed"}><text id="rayde-status" class="text-error">Build failed</text></if>
 			<if {active}><div id="rayde-stop" class="rayde-status-item action flex text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-3.5"/><text>Stop</text></div>
-			<else><div id="rayde-run" class="rayde-status-item action flex" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-3.5"/><text>Run</text></div></if>
+			<else><if {runnable}><div id="rayde-run" class="rayde-status-item action flex" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-3.5"/><text>Run</text></div></if></if>
 		</div>;
 	}
 }
