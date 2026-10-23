@@ -20,6 +20,11 @@ typedef WorkspaceServices = {
 	?registerStarter:(String, Manifest, Dynamic)->String,
 	?unregisterStarter:(String, Manifest, String)->Void,
 	?releaseStarters:String->Void,
+	?registerCodeActions:(String, Manifest, Dynamic)->String,
+	?unregisterCodeActions:(String, String)->Void,
+	?respondCodeActions:(String, String, Dynamic)->Bool,
+	?invalidateCodeActions:String->Void,
+	?releaseCodeActions:String->Void,
 	replay:String->Dynamic
 };
 
@@ -28,7 +33,7 @@ typedef HostEntry = {kind:String, text:String, time:Float, ?file:String, ?line:I
 
 /** A host connection with no dependency on the editor's view or development tools. */
 class Connection {
-	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal", "setStatusItem"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"], "rayde.projects" => ["registerStarter", "unregisterStarter"]];
+	public static final builtin:Map<String, Array<String>> = ["rayde.workspace" => ["readFile", "readBytes", "activeFile", "root", "openFile", "writeFile"], "rayde.settings" => ["get"], "rayde.window" => ["notify", "focusView", "openExternal", "setStatusItem"], "rayde.languages" => ["registerServer", "unregisterServer", "servers"], "rayde.projects" => ["registerStarter", "unregisterStarter"], "rayde.codeActions" => ["registerProvider", "unregisterProvider", "respond", "invalidate"]];
 
 	public var state(default, null) = "stopped";
 	public var manifest(default, null):Null<Manifest>;
@@ -65,6 +70,8 @@ class Connection {
 		var grantsChanged = manifest != null && haxe.Json.stringify(manifest.natives) != haxe.Json.stringify(m.natives);
 		var languagesRevoked = manifest != null && manifest.capabilities.indexOf("languages.register") >= 0 && m.capabilities.indexOf("languages.register") < 0;
 		var startersRevoked = manifest != null && manifest.capabilities.indexOf("projects.register") >= 0 && m.capabilities.indexOf("projects.register") < 0;
+		var actionsRevoked = manifest != null && Lambda.exists(["codeActions.provide", "workspace.read", "workspace.write"], cap -> manifest.capabilities.indexOf(cap) >= 0 && m.capabilities.indexOf(cap) < 0);
+		if ((file != m.mainPath() || actionsRevoked || manifest != null && manifest.id != m.id) && services != null && services.releaseCodeActions != null) services.releaseCodeActions(file);
 		if ((file != m.mainPath() || startersRevoked || manifest != null && manifest.id != m.id) && services != null && services.releaseStarters != null) services.releaseStarters(file);
 		if ((file != m.mainPath() || languagesRevoked) && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		if (file != m.mainPath() && services != null && services.setStatus != null) services.setStatus(file, null, null);
@@ -81,6 +88,7 @@ class Connection {
 		return manifest == null ? haxe.io.Path.join([haxe.io.Path.directory(file), "studio.mocks.json"]) : manifest.mocksPath();
 
 	function setState(value:String):Void {
+		if (value != "running" && services != null && services.releaseCodeActions != null) services.releaseCodeActions(file);
 		if (value != "running" && services != null && services.releaseStarters != null) services.releaseStarters(file);
 		if (value != "running" && services != null && services.releaseLanguages != null) services.releaseLanguages(file);
 		if (value != "running" && services != null && services.setStatus != null) services.setStatus(file, null, null);
@@ -363,11 +371,23 @@ class Connection {
 			return {t:"reject", id:call.id, message:"Capability languages.register is not granted"};
 		if (module == "rayde.projects" && (manifest == null || manifest.capabilities.indexOf("projects.register") < 0))
 			return {t:"reject", id:call.id, message:"Capability projects.register is not granted"};
+		if (module == "rayde.codeActions" && (manifest == null || manifest.capabilities.indexOf("codeActions.provide") < 0 || manifest.capabilities.indexOf("workspace.read") < 0))
+			return {t:"reject", id:call.id, message:"Capabilities codeActions.provide and workspace.read are required"};
 		if (services == null)
 			return {t: "reject", id: call.id, message: "The workbench provides no services here."};
 		var args:Array<Dynamic> = call.args;
 		try {
 			var value:Dynamic = switch fn {
+				case "registerProvider" if (module == "rayde.codeActions"):
+					if (services.registerCodeActions == null) throw "Code actions are unavailable";
+					services.registerCodeActions(file, manifest, args[0]);
+				case "unregisterProvider" if (module == "rayde.codeActions"):
+					if (services.unregisterCodeActions != null) services.unregisterCodeActions(file, Std.string(args[0])); null;
+				case "respond" if (module == "rayde.codeActions"):
+					if (services.respondCodeActions == null) throw "Code actions are unavailable";
+					services.respondCodeActions(file, Std.string(args[0]), args[1]);
+				case "invalidate" if (module == "rayde.codeActions"):
+					if (services.invalidateCodeActions != null) services.invalidateCodeActions(file); null;
 				case "registerStarter" if (module == "rayde.projects"):
 					if (services.registerStarter == null) throw "Project starters are unavailable";
 					services.registerStarter(file, manifest, args[0]);

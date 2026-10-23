@@ -10,6 +10,8 @@ typedef MenuLocation = {id:String, label:String, detail:String};
 class Hooks {
 	/** Events, for `onHook(name, handler)`. An event the extension listens for is sent to it; the rest are not. */
 	public static final events:Array<HookInfo> = [
+		{name:"codeActions.request", data:"{ request, provider, context: { path, language, text, version, range, trigger, diagnostics } }", detail:"Answer a registered provider's versioned request with rayde.codeActions.respond"},
+		{name:"codeActions.cancel", data:"{ request }", detail:"Request was superseded, closed, unregistered or timed out; discard its work"},
 		{name: "project.opened", data: "{ root }", detail: "Project folder. Sent once, when the extension subscribes"},
 		{name: "active.changed", data: "{ path }", detail: "Editor in front changed; path is null for a page that is not a file. Sent on subscribe"},
 		{name: "view.visibility", data: "{ id, visible }", detail: "Declared view attached or detached; current visibility of each view is sent on subscribe"},

@@ -72,6 +72,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 	/** The list of choices the center was opened to pick from, or null when it goes to files and commands. */
 	var picker:Null<Picker> = null;
 	var choices:Array<CenterAction> = [];
+	var requestSerial = -1;
 
 	function render():Element {
 		panel = <div id="rayde-command-center" class="rayde-glass rayde-command-center flex flex-col overflow-hidden" width={600}>
@@ -87,7 +88,8 @@ class CommandCenter extends Component<CommandCenterProps> {
 			props.request.get();
 			0;
 		}, _ -> if (props.opened.get()) {
-			carry = props.request.get().text;
+			carry = props.request.get().serial != requestSerial ? props.request.get().text : input.get() == null ? carry : input.get().value.get();
+			requestSerial = props.request.get().serial;
 			picker = props.request.get().picker;
 			mode.set(picker != null ? "pick" : modeOf(carry));
 			builds.set(builds.get() + 1);
@@ -97,13 +99,15 @@ class CommandCenter extends Component<CommandCenterProps> {
 			picker = null;
 			choices = [];
 			carry = "";
+			requestSerial = -1;
 		}, (_, _) -> false);
 		// A press outside the panel and its pill closes it; the pill closes it itself when it is open.
+		var panelInput = Interaction.of(panel.node), anchorInput = Interaction.of(props.anchor.node);
 		var outside:LayoutTree->Void = tree -> if (tree == root.tree
 			&& props.opened.get()
 			&& Pointer.at(tree).pressed
-			&& !Interaction.of(panel.node).hovered.get()
-			&& !Interaction.of(props.anchor.node).hovered.get())
+			&& !panelInput.hovered.get()
+			&& !anchorInput.hovered.get())
 			props.opened.set(false);
 		// Only while it is open: a hook makes every pointer move in the window work, where none lets a still region sleep.
 		var hooked = false;

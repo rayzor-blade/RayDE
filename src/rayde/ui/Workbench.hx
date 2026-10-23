@@ -24,6 +24,10 @@ import ashui.ui.Component;
 import ashui.types.Style;
 import ashui.ui.Ref;
 import rayde.build.HxmlFile;
+import rayde.actions.CodeActions;
+import rayde.actions.CodeAction;
+import rayde.actions.EntryPointActions;
+import rayde.ext.CodeActionProviders;
 import rayde.ext.Manifest;
 import rayde.ext.Manager;
 import rayde.ext.Manager.ManagedExtension;
@@ -386,6 +390,17 @@ class Workbench extends Component<WorkbenchProps> {
 	var seen = -1;
 	var pill:Element;
 	var lastBuild:Null<Array<Diagnostic>>;
+	public final codeActions = new CodeActions();
+	var codeActionProviders:CodeActionProviders;
+	var entryActions:EntryPointActions;
+	final codeActionRevision = Signal.make(0);
+	var codeActionVersion = 0;
+	var codeActionFile = "";
+	var codeActionMount = 0;
+	var codeActionTimer:Null<ashui.animation.AnimationScheduler.Timer>;
+	var codeActionPoll:Null<ashui.animation.AnimationScheduler.Timer>;
+	var codeActionPicker:Null<Int>;
+	var requestingActions = false;
 
 	public function new(props:WorkbenchProps) {
 		if (props.empty == true) treeWidth.set(ACTIVITY);
@@ -1269,6 +1284,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (active.get() != "") closeFile(active.get())},
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, run: goToDefinition},
 			{id: "suggest", label: "Trigger Suggest", icon: Icons.LIGHTBULB_LINE, run: triggerSuggest},
+			{id:"codeactions", label:"Show Code Actions", icon:Icons.LIGHTBULB_LINE, run:showCodeActions},
 			{id: "parameterhints", label: "Trigger Parameter Hints", icon: Icons.BRACES_LINE, run: triggerParameterHints},
 			{id: "settings", label: "Open Settings", icon: Icons.SETTINGS_3_LINE, run: () -> openSettings()},
 			{id: "build", label: "Open Build Settings", icon: Icons.SETTINGS_3_LINE, run: openBuild},
@@ -1359,7 +1375,7 @@ class Workbench extends Component<WorkbenchProps> {
 			{label:"File", items:files},
 			{label:"Edit", items:[edit("undo","Undo","z"), edit("redo","Redo","z",true), separator,
 				edit("cut","Cut","x"), edit("copy","Copy","c"), edit("paste","Paste","v"), separator, edit("selectall","Select All","a"), separator,
-				item("find"), item("replace"), separator, item("settings")]},
+				item("find"), item("replace"), item("codeactions"), separator, item("settings")]},
 			{label:"View", items:[item("commands"), item("explorer"), item("panel"), separator, item("problems"), item("output"), item("extensions"), item("fullscreen")]},
 			{label:"Go", items:[item("quickopen"), item("gotoline"), item("definition")]},
 			{label:"Run", items:[item("buildproject"), item("run"), item("stop"), separator, item("runtask"), item("build")]},
@@ -1926,6 +1942,11 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
+			registerCodeActions:codeActionProviders.register,
+			unregisterCodeActions:codeActionProviders.unregister,
+			respondCodeActions:codeActionProviders.respond,
+			invalidateCodeActions:codeActionProviders.invalidate,
+			releaseCodeActions:codeActionProviders.release,
 			registerStarter:projectStarters.register,
 			unregisterStarter:projectStarters.unregister,
 			releaseStarters:projectStarters.release,
@@ -2171,6 +2192,7 @@ class Workbench extends Component<WorkbenchProps> {
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
+		setupCodeActions();
 		startExtensions();
 		containers = makeContainers();
 		commandList = commands();
@@ -2210,6 +2232,10 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			if (codeActionTimer != null) codeActionTimer.cancel();
+			if (codeActionPoll != null) codeActionPoll.cancel();
+			codeActionTimer = null; codeActionPoll = null;
+			entryActions.dispose(); codeActions.dispose();
 			if (cancelProjectDialog != null) cancelProjectDialog();
 			cancelProjectDialog = null;
 			projectPicker.dispose();
@@ -3178,13 +3204,143 @@ class Workbench extends Component<WorkbenchProps> {
 				edited(file);
 				assistInput(file);
 			}}
-			class="flex-1 min-h-0"/>;
+			class="rayde-code-editor flex-1 min-h-0"/>;
 		holdCaretWhileScrolling(editorRef(file).get());
 		annotate(file, editorRef(file).get());
 		assistWatch(file, editorRef(file).get());
 		var mounted = editorRef(file).get(), state = documents.get(file);
+		watchCodeActions(file, mounted);
 		Owner.onCleanup(() -> { assist.stop(file, mounted); state.compact(); });
 		return editor;
+	}
+
+	function setupCodeActions():Void {
+		codeActionProviders = new CodeActionProviders(codeActions, props.display.cwd, (owner, name, data) -> {
+			if (extensionManager == null) return;
+			var entry = Lambda.find(extensionManager.extensions, e -> e.connection.file == owner);
+			if (entry != null && !entry.disabled) entry.connection.hook(name, data);
+		}, (owner, command, args) -> {
+			var entry = Lambda.find(extensionManager.extensions, e -> e.connection.file == owner);
+			if (entry != null && !entry.disabled && entry.connection.running()) entry.connection.command(command, args);
+		});
+		entryActions = new EntryPointActions(codeActions, file -> extension == null && props.empty != true &&
+			(props.display.project == null || props.display.project.runnable) && mainFile() == file, run);
+		codeActions.onChanged = () -> {
+			if (gone) return;
+			codeActionRevision.set(codeActionRevision.get() + 1);
+			if (!requestingActions) { updateCodeActionPicker(); wakeCodeActions(); }
+		};
+		codeActions.onProvidersChanged = () -> {
+			if (gone) return;
+			var file = active.get(), editor = editorOf(file);
+			if (editor != null) queueCodeActions(file, editor, codeActionPicker != null && quickOpen.get());
+		};
+		codeActions.onError = (owner, message) -> {
+			var entry = extensionManager == null ? null : Lambda.find(extensionManager.extensions, e -> e.connection.file == owner);
+			if (entry != null) entry.connection.note("console", "error", "Code actions: " + message);
+		};
+	}
+
+	function watchCodeActions(file:String, editor:CodeEditor):Void {
+		var mount = ++codeActionMount;
+		var previous = editor.onGutterClick;
+		editor.onGutterClick = (line, event) -> {
+			if (event.button != null && !event.button.match(Left)) return;
+			var marker = editor.annotations.markerAt(line);
+			if (marker != null && marker.className.split(" ").indexOf("rayde-code-action") >= 0) {
+				var items = [for (i in codeActions.list()) if (i.action.disabled == null && editor.document.lineAt(i.action.range.from) == line) i];
+				if (items.length == 1) executeCodeAction(items[0].key, codeActionVersion);
+				else if (items.length > 1) chooseCodeActions(items);
+			} else if (previous != null) previous(line, event);
+		};
+		new ashui.reactive.Watch(() -> editor.value.get(), _ -> queueCodeActions(file, editor));
+		new ashui.reactive.Watch(() -> [for (p in problems.get()) if (p.file == file) p], _ -> queueCodeActions(file, editor, codeActionPicker != null && quickOpen.get()), LspProtocol.sameDiagnostics);
+		new ashui.reactive.Watch(() -> codeActionRevision.get(), _ -> {
+			var seen = new Map<Int, Bool>(), marks:Array<ashui.components.code.CodeAnnotations.CodeMarker> = [];
+			for (item in codeActions.list()) if (item.action.disabled == null && codeActions.current(file, codeActionVersion)) {
+				var line = editor.document.lineAt(item.action.range.from);
+				if (!seen.exists(line)) {
+					seen.set(line,true);
+					var run = item.action.kind == "run" || item.action.kind.startsWith("run.");
+					marks.push({line:line,className:run ? "rayde-code-action rayde-code-action-run" : "rayde-code-action",title:item.action.title,icon:ViewIcons.named(null,item.action.icon) ?? Icons.LIGHTBULB_LINE});
+				}
+			}
+			editor.markers("code-actions", marks);
+		});
+		Owner.onCleanup(() -> {
+			editor.markers("code-actions", []);
+			if (codeActionFile != file || codeActionMount != mount) return;
+			if (codeActionTimer != null) codeActionTimer.cancel(); codeActionTimer = null;
+			codeActionVersion++; codeActionFile = ""; codeActionPicker = null; codeActions.clear();
+		});
+	}
+
+	function queueCodeActions(file:String, editor:CodeEditor, manual = false):Void {
+		if (gone || active.get() != file) return;
+		if (codeActionTimer != null) codeActionTimer.cancel();
+		codeActionVersion++; codeActionFile = file;
+		requestingActions = true; codeActions.clear(); requestingActions = false;
+		var version = codeActionVersion;
+		codeActionTimer = ashui.animation.AnimationScheduler.main.after(manual ? .01 : .18, () -> {
+			codeActionTimer = null;
+			if (gone || version != codeActionVersion || active.get() != file || editorOf(file) != editor) return;
+			var language = languageServers.language(file) ?? LanguageNames.id(file);
+			extensionManager.codeActions(language);
+			var text = editor.value.get(), anchor = editor.editing.anchor.get(), caret = editor.editing.caret.get();
+			var range = manual ? {from:Std.int(Math.min(anchor,caret)),to:Std.int(Math.max(anchor,caret))} : {from:0,to:text.length};
+			requestingActions = true;
+			var accepted = codeActions.request({path:file,language:language,text:text,version:version,range:range,trigger:manual ? "invoked" : "automatic",
+				diagnostics:[for (p in problems.get()) if (p.file == file && p.range != null) {from:offsetOf(text,p.range.start.line,p.range.start.character),to:offsetOf(text,p.range.end.line,p.range.end.character),message:p.message,severity:p.severity}]});
+			requestingActions = false; updateCodeActionPicker(!accepted); wakeCodeActions();
+		});
+	}
+
+	function wakeCodeActions():Void {
+		if (codeActionPoll != null) codeActionPoll.cancel(); codeActionPoll = null;
+		if (gone) return;
+		var delay = entryActions.busy() ? .016 : codeActions.delay();
+		if (delay != null) codeActionPoll = ashui.animation.AnimationScheduler.main.after(delay, () -> {
+			codeActionPoll = null; if (gone) return;
+			entryActions.tick(); codeActions.expire(); wakeCodeActions();
+		});
+	}
+
+	public function showCodeActions():Void {
+		var file = active.get(), editor = editorOf(file);
+		if (editor == null) return;
+		openPicker("Code actions", [{id:"actions-loading",label:"Loading code actions…",icon:Icons.LIGHTBULB_LINE,run:() -> {}}]);
+		codeActionPicker = centerRequest.get().serial;
+		queueCodeActions(file, editor, true);
+	}
+	function updateCodeActionPicker(tooLarge = false):Void {
+		if (codeActionPicker == null || !quickOpen.get() || centerRequest.get().serial != codeActionPicker) { codeActionPicker = null; return; }
+		if (!tooLarge && !codeActions.current(codeActionFile, codeActionVersion)) return;
+		var items = actionChoices(codeActions.list());
+		if (codeActions.busy()) items.push({id:"actions-loading",label:"Loading code actions…",icon:Icons.LIGHTBULB_LINE,run:() -> {}});
+		if (items.length == 0) items.push({id:"actions-empty",label:tooLarge ? "File is too large for code actions" : "No code actions available",icon:Icons.LIGHTBULB_LINE,run:() -> {}});
+		centerRequest.set({text:"",serial:codeActionPicker,picker:{placeholder:"Code actions",items:items}});
+	}
+	function actionChoices(items:Array<ActionItem>):Array<CenterAction> {
+		var version = codeActionVersion, choices:Array<CenterAction> = [];
+		for (index => item in items) {
+			var key = item.key, disabled = item.action.disabled;
+			choices.push({id:"code-action-" + index,label:item.action.title,icon:ViewIcons.named(null,item.action.icon) ?? Icons.LIGHTBULB_LINE,
+				shortcut:disabled ?? item.action.kind,run:() -> { if (disabled != null) say(disabled); else executeCodeAction(key, version); }});
+		}
+		return choices;
+	}
+	function chooseCodeActions(items:Array<ActionItem>):Void { codeActionPicker = null; openPicker("Code actions", actionChoices(items)); }
+	public function executeCodeAction(key:String, version:Int):Bool {
+		var file = active.get(), editor = editorOf(file);
+		if (editor == null) return false;
+		var done = false;
+		try done = codeActions.execute(key,file,version,(context, action) -> {
+			if (editorOf(file) != editor || context.text != editor.value.get()) return false;
+			if (action.edits != null && action.edits.length > 0) editor.applyEdits(action.edits);
+			return true;
+		}) catch (error:Dynamic) say(Std.string(error));
+		if (active.get() == file && editorOf(file) == editor) queueCodeActions(file, editor);
+		return done;
 	}
 
 	/** The text offset of a position, its line and character counted from zero; the end of the line, or of the text, where there is none. */

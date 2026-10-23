@@ -35,6 +35,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 	static final capabilities = [
 		{id: "workspace.read", label: "Workspace read", hint: "Read files and folders in the project"},
 		{id: "workspace.write", label: "Workspace write", hint: "Create, modify and delete files"},
+		{id:"codeActions.provide", label:"Code actions", hint:"Provide editor actions and gutter hints; also requires Workspace read"},
 		{id: "process.spawn", label: "Process spawn", hint: "Start processes from an allow-list"},
 		{id: "net.fetch", label: "Network fetch", hint: "HTTP requests to allow-listed hosts"},
 		{id: "net.profiles", label: "Public Git profiles", hint: "Author avatars from known public repository providers"},

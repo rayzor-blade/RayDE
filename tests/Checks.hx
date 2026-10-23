@@ -830,6 +830,8 @@ class Checks {
 		WorkspaceSessionChecks.run();
 		ProjectChecks.run();
 		ProjectStarterChecks.run();
+		CodeActionChecks.run();
+		CodeActionExtensionChecks.run();
 		ProjectRunnerChecks.run();
 		BuildChecks.run();
 		terminalChecks();

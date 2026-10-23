@@ -16,6 +16,8 @@ Key bindings follow VS Code. They work from anywhere in the window: the workbenc
 
 **Build** is the hammer button beside Run in the bottom toolbar, also available as **Run > Build Project** and in the command center. It saves edited files and invokes the selected HXML with the configured Haxe compiler, preserving its explicit targets, output paths and multiple compilations. If a single-compilation HXML declares no target, Build emits HashLink bytecode like Run, without launching it; explicit `--no-output` checks remain unchanged. Rayzor projects use `rayzor build` from their manifest folder. The compiler runs on a worker; Output shows progress, Problems shows compiler diagnostics, and Stop cancels the job. Build does not add a program launch. **Open Build Settings** remains a separate command.
 
+**Show Code Actions** (Cmd+., Ctrl+. elsewhere with the default keymap) lists actions from the active document's providers. Opt-in providers also put icons beside their target lines; clicking a shared line opens a chooser. The configured Haxe main class gets a **Run Project** icon that uses the normal save/build/run path. Other entry points can be supplied by extensions. Actions belong to a document version and disappear when it changes or its tab becomes inactive. Extension edits to the current document form one undo step.
+
 ## Keys
 
 | Key | Action |
@@ -31,6 +33,7 @@ Key bindings follow VS Code. They work from anywhere in the window: the workbenc
 | F12 | Go to the definition of the name under the cursor. Command-click a symbol on macOS, or Control-click elsewhere, to go to its definition. |
 | Ctrl+Space | Completion list at the caret (**Trigger Suggest**). |
 | Cmd+Shift+Space | Signature of the call the caret is in (**Trigger Parameter Hints**). |
+| Cmd+. | Show Code Actions for the current selection. |
 | F5, Shift+F5 | Run, stop. While an extension is stopped at a breakpoint, F5 continues. |
 | Cmd+Shift+B | Build the project without launching its output. |
 | F9 | Toggle a breakpoint on the line (extensions). A click in the gutter does the same. |

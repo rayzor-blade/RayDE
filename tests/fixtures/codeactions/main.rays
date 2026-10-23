@@ -1,0 +1,20 @@
+import rayde.codeActions.registerProvider;
+import rayde.codeActions.unregisterProvider;
+import rayde.codeActions.respond;
+import rayde.codeActions.invalidate;
+
+onHook('codeActions.request', e -> {
+  var at = e.context.text.indexOf('0');
+  if (at < 0) { await respond(e.request, []); return; }
+  var accepted = await respond(e.request, [
+    {id: 'increment', title: 'Set value to one', kind: 'quickfix', icon: 'edit',
+     range: {from: at, to: at + 1}, edits: [{from: at, to: at + 1, text: '1'}, {from: e.context.text.length, to: e.context.text.length, text: '\n// fixed'}],
+     command: 'completed', arguments: {value: 1}}
+  ]);
+  trace('response:' + accepted);
+});
+onHook('codeActions.cancel', e -> trace('cancelled:' + e.request));
+registerCommand('completed', e -> trace('completed:' + e.arguments.value + ':' + e.path));
+var provider = await registerProvider({id: 'numbers', languages: ['haxe'], kinds: ['quickfix'], automatic: true});
+registerCommand('remove', _ -> await unregisterProvider(provider));
+registerCommand('invalidate', _ -> await invalidate());

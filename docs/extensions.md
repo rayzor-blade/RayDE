@@ -38,6 +38,7 @@ An extension starts on one of its `activationEvents`:
 - `onCommand:<id>`: when a contributed command is chosen. `*` matches several command ids. The command waits until the script registers its handler.
 - `onView:<id>`: when the activity bar opens that view.
 - `onNewProject`: when the project template gallery opens, including on a fresh Welcome window. These extensions stay inactive until needed.
+- `onCodeActions:<language>`: when an active code editor requests actions for that language, such as `onCodeActions:haxe`. No provider host starts just for Welcome or an inactive tab.
 
 Views, commands and menu items from enabled extensions share the workbench. Views and command bindings are identified by their owning extension. A failed host is restarted at most three times in a minute; after the limit it stays stopped until disabled and enabled again. **Output** has a channel per extension for logs, errors and restart reports, alongside the Build channel.
 
@@ -144,6 +145,44 @@ registerCommand('removeStarter', _ -> await unregisterStarter(starter));
 Files contain UTF-8 text. RayDE substitutes `{{name}}` in their contents after the user enters a project name; file paths are literal, relative paths. Absolute paths, traversal, duplicate names and file/folder collisions are refused before creation. Creation runs on a worker in a new directory and never overwrites an existing folder. A starter is limited to 256 files, 1 MiB per file and 4 MiB total. The live catalog retains at most 16 starters per extension, 64 total and 8 MiB of text.
 
 The runnable fixture is [Console Starter](../tests/fixtures/starters/console/main.rays).
+
+## Code actions
+
+Providers use the same registry for the editor's gutter hints and **Show Code Actions** chooser. No view or sidebar contribution is needed. Add `"activationEvents": ["onCodeActions:haxe"]` and `"capabilities": ["codeActions.provide", "workspace.read", "workspace.write"]` to the manifest; `workspace.write` is required only for actions that return edits.
+
+```haxe
+import rayde.codeActions.registerProvider;
+import rayde.codeActions.respond;
+
+onHook('codeActions.request', e -> {
+  var start = e.context.range.from;
+  var end = e.context.range.to;
+  var selected = e.context.text.substring(start, end);
+  await respond(e.request, selected.length == 0 ? [] : [
+    {id: 'uppercase', title: 'Convert selection to uppercase', kind: 'refactor.rewrite', icon: 'edit',
+     range: {from: start, to: end},
+     edits: [{from: start, to: end, text: selected.toUpperCase()}]}
+  ]);
+});
+
+var provider = await registerProvider({
+  id: 'text-tools', languages: ['haxe'], kinds: ['refactor'], automatic: false
+});
+```
+
+Subscribe before registering. `id` is local to the extension; the returned provider id is opaque and can be passed to `unregisterProvider(id)`. Registering the same local id replaces it. Providers select `languages` (lowercase language ids) or `extensions` (without a dot); either match is sufficient. Optional `kinds` restricts replies to those kinds and their dotted children. Kinds are extensible: `quickfix`, `refactor.rewrite`, `source.organizeImports`, `run` and `debug` can share this API. Automatic hints require explicit `automatic: true`; otherwise only an invoked chooser calls the provider.
+
+Each request is `{request, provider, context}`. `provider` is the local id. `context` contains `path`, `language`, `text`, `version`, `range`, `trigger` (`automatic` or `invoked`) and up to 100 diagnostics (`from`, `to`, `message`, `severity`). Invoked requests carry the selection or caret; automatic requests cover the document. **All RayScript API ranges are Unicode character offsets**, matching RayScript's `length`, `indexOf` and `substring`, with an exclusive `to`. RayDE converts them to the native editor's positions, including text containing emoji. Source snapshots are sent only for files inside the workspace and never require the provider to retain editor instances.
+
+Reply once with `await respond(e.request, actions)`. Each action needs a unique `id`, `title`, `kind`, and either `edits` or `command`. Optional `range` defaults to the request's range, `icon` names a RayDE icon, `preferred` orders actions on the same range, and `disabled` explains why an action cannot run. Edits are non-overlapping `{from, to, text}` replacements in the requested document. They apply together through the editor's undo system. Other files are not accepted as edit targets.
+
+A command is local to the owning extension, registered with `registerCommand`. Its handler receives `{path, version, range, arguments}`; `arguments` comes from the action's optional JSON payload. When an action has both edits and a command, the edits apply first. A command cannot use an action payload to invoke another extension or a workbench command. The built-in Run provider uses the same native registry and routes through RayDE's project runner.
+
+`onHook('codeActions.cancel', e -> ...)` signals a superseded request, tab change, provider removal or timeout. Stop work and discard source data for that token. Responses after cancellation, after four seconds or from another owner return `false`. Before execution RayDE checks that the active document and version still match; actions are consumed once. Call `await invalidate()` from `rayde.codeActions` when external provider state changes. This schedules a fresh request for the active editor. Edits, diagnostics and provider changes also refresh actions; caret movement alone does not rescan the document.
+
+Only one active-document session is retained per window. Closing or switching tabs cancels pending requests and drops results. Stopping, disabling, restarting, changing an extension identity or revoking its provide/read/write grants removes its providers. Limits are 16 providers per extension, 64 per window, 128 actions per response, 512 per document, 128 edits per action, 256 KiB of inserted text per action and 32 KiB of command arguments. A response is limited to 1 MiB and current results to 4 MiB. Documents larger than 4 MiB of editor text are skipped.
+
+Native providers register with [CodeActions](../src/rayde/actions/CodeActions.hx) and the typed structures in [CodeAction](../src/rayde/actions/CodeAction.hx). Dispatch and cancellation callbacks support asynchronous workers or a future language-server adapter without changing the consumers. Native ranges use editor positions. The [Run provider](../src/rayde/actions/EntryPointActions.hx) scans the configured main class on a data-only worker; the [RayScript fixture](../tests/fixtures/codeactions/main.rays) exercises hooks, edits, owner commands and invalidation. LSP code-action requests are not wired in by this change.
 
 ## Views
 

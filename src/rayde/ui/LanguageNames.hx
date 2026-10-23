@@ -2,6 +2,14 @@ package rayde.ui;
 
 /** The language a file is shown as in the status bar, or null for what is not text a language applies to. */
 class LanguageNames {
+	public static function id(file:String):String {
+		return switch of(file) {
+			case "C++": "cpp"; case "C#": "csharp"; case "F#": "fsharp";
+			case "JavaScript React": "javascriptreact"; case "TypeScript React": "typescriptreact";
+			case "Shell Script": "shellscript"; case "Plain Text" | null: "plaintext";
+			case name: name.toLowerCase();
+		};
+	}
 	static final BY_NAME = ["dockerfile" => "Dockerfile", "containerfile" => "Dockerfile", "makefile" => "Makefile", "justfile" => "Just", "cmakelists.txt" => "CMake"];
 	static final BY_EXTENSION:Map<String, String> = {
 		var names = new Map<String, String>();

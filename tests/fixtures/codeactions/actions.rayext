@@ -1,0 +1,7 @@
+{
+  "id": "code-action-fixture",
+  "name": "Code Action Fixture",
+  "main": "main.rays",
+  "activationEvents": ["onCodeActions:haxe"],
+  "capabilities": ["codeActions.provide", "workspace.read", "workspace.write"]
+}

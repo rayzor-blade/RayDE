@@ -194,6 +194,11 @@ class Manager {
 		for (entry in enabled()) if (events(entry).indexOf("onNewProject") >= 0) activate(entry, "onNewProject");
 	}
 
+	public function codeActions(language:String):Void {
+		var event = "onCodeActions:" + language;
+		for (entry in enabled()) if (events(entry).indexOf(event) >= 0) activate(entry, event);
+	}
+
 	public function setDisabled(id:String, disabled:Bool):Void {
 		var e = find(id);
 		if (e == null || e.disabled == disabled)
