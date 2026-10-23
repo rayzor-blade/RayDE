@@ -1,5 +1,6 @@
 import timeline.Timeline;
 import rayde.workspace.root;
+import rayde.window.focusView;
 import gitNative.openHistory;
 import historyGraph.scene;
 import historyGraph.timestamp;
@@ -110,9 +111,11 @@ function History(props) {
 }
 
 function showHistory(focus = 'all') {
-  if (opened != null) return;
-  var path = await root();
-  if (opened == null) opened = mount(() -> <History path={path} focus={focus}/>, 'tab:Git history');
+  if (opened == null) {
+    var path = await root();
+    if (opened == null) opened = mount(() -> <History path={path} focus={focus}/>, 'tab:Git history');
+  }
+  if (opened != null) await focusView(opened);
 }
 
 registerCommand('git.history', args -> showHistory());

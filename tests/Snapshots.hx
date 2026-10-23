@@ -1654,7 +1654,22 @@ class Snapshots {
 					throw "linear history accepted a pan or zoom gesture";
 				if ((@:privateAccess control("git-history-canvas").scene.get()) != scrollScene) throw "scrolling replaced the retained graph drawing";
 				shot("scrolled");
+				var retainedGraphTab = bench.active.get(), retainedRoot = studio.tabViews[0].root;
 				var drawing = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=git-history-canvas") >= 0);
+				var retainedScene = @:privateAccess studio.preview.parts.get(drawing.id).props.get("scene");
+				var retainedSelection = canvas().selection.ids.get().join(","), retainedGraphState = control("git-history-canvas").state();
+				bench.openFile(sourcePath); settle();
+				shot("history-inactive");
+				click("#git-scm-expand .ui-button");
+				try until(() -> bench.active.get() == retainedGraphTab && control("git-history-canvas") != null, "maximize to focus the existing graph from a code tab")
+				catch (error:Dynamic) throw error + ": " + haxe.Json.stringify({active:bench.active.get(), expected:retainedGraphTab, tabs:studio.tabViews, output:git.output});
+				settle();
+				if (studio.tabViews.length != 1 || studio.tabViews[0].root != retainedRoot) throw "Maximize duplicated the mounted history";
+				var focusedGraphState = control("git-history-canvas").state();
+				if (canvas().selection.ids.get().join(",") != retainedSelection || focusedGraphState.scrollX != retainedGraphState.scrollX || focusedGraphState.scrollY != retainedGraphState.scrollY)
+					throw "Focusing history reset its selected commit or scroll position";
+				if ((@:privateAccess studio.preview.parts.get(drawing.id).props.get("scene")) != retainedScene) throw "Focusing history reloaded its graph";
+				shot("history-refocused");
 				var accepted = @:privateAccess control("git-history-canvas").scene.get();
 				studio.preview.apply([["set", drawing.id, "scene", {commands: [{type: "circle", radius: -1}]}]]);
 				if ((@:privateAccess control("git-history-canvas").scene.get()) != accepted) throw "invalid scene replaced the last accepted drawing";
