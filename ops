@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792714381,"nonce":"sQkGCf+KJsNZo6wn2owpb1y56HI=","message":"Implemented and validated in bcfa081. The native AOT executable and RayDE.app were rebuilt, the bundle passed strict signature verification, and its isolated launch/exit smoke test passed.","files":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1792714381,"nonce":"OBWgrK1wkYIyBMmwsc+GjmMWnFo=","status":2}]}
