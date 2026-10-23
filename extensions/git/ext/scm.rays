@@ -171,15 +171,16 @@ function Sidebar(props) {
     ]}>
     <div slot="changes" id="git-scm-working-files" class="flex flex-col gap-2 py-1 overflow-auto flex-1 min-h-0">
       <for {group in sections}>
-        <div id={'git-scm-' + group.id} class="flex flex-col gap-1 min-w-0">
+        <div id={'git-scm-' + group.id} class="flex flex-col min-w-0">
           <div class="flex items-center justify-between px-4 py-1">
             <span class="text-xs font-semibold text-text-secondary">{group.title}</span>
             <span class="text-xs text-text-secondary">{group.items.length}</span>
           </div>
           <for {entry in group.items}>
-            <div class="flex items-center min-w-0 w-full">
+            <div class="flex items-center min-w-0 w-full shrink-0">
               <ui-button variant="ghost" class="flex-1 min-w-0" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> openEntry(group.id, entry)}>
                 <div class="flex items-center gap-2 w-full min-w-0 px-1">
+                  <ui-icon file={entry.path}/>
                   <span class="text-sm truncate min-w-0">{entry.name}</span>
                   <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
                   <span class={entry.badge == '!' ? 'text-xs text-error' : entry.badge == 'U' || entry.badge == 'A' ? 'text-xs text-success' : 'text-xs text-warning'}>{entry.badge}</span>

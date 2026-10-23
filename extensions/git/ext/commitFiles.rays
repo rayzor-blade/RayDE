@@ -37,15 +37,16 @@ function showCommitFile(entry) {
 
 function Files(props) {
   var state = props.state;
-  return <div id={props.id} class="flex flex-col gap-1 min-w-0">
+  return <div id={props.id} class="flex flex-col min-w-0 shrink-0">
     <if {state.busy.value}><span class="px-3 py-1 text-xs text-text-secondary">Loading changed files…</span>
     <else><if {state.error.value != ''}><span class="px-3 py-1 text-xs text-text-secondary">Changed files unavailable</span>
     <else><if {state.files.value.length == 0}><span class="px-3 py-1 text-xs text-text-secondary">No changed files</span>
     <else>
       <for {entry in state.files}>
-        <div class="flex flex-col min-w-0 px-3 py-1">
-          <ui-button variant="ghost" class="w-full" height={24} style={{'--ui-button-padding':'0 8px'}} onClick={() -> showCommitFile(entry)}>
+        <div class="flex flex-col min-w-0 px-3 shrink-0">
+          <ui-button variant="ghost" class="w-full shrink-0" height={24} style={{'--ui-button-padding':'0 4px'}} onClick={() -> showCommitFile(entry)}>
           <div class="flex items-center gap-2 min-w-0 w-full">
+            <ui-icon file={entry.path}/>
             <span class="text-sm truncate min-w-0">{entry.name}</span>
             <span class="text-xs text-text-tertiary truncate flex-1 min-w-0">{entry.directory}</span>
             <span class={entry.badge == 'A' ? 'text-xs text-success' : entry.badge == 'D' ? 'text-xs text-error' : 'text-xs text-warning'}>{entry.badge}</span>

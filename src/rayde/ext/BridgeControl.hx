@@ -249,10 +249,10 @@ class BridgeControl {
 				if (["paths", "native"].indexOf(mode) < 0) throw "Unknown canvas text rendering";
 				if (kit != null && mode != textRendering) throw "Canvas text rendering is fixed while mounted";
 				textRendering = mode; return true;
-			case "name" if (kind == "ui-icon"):
-				var name = data == null ? null : CanvasScene.text({name:data}, "name");
-				var document = rayde.ui.ViewIcons.named(null, name);
-				if (name != null && document == null) throw 'Unknown icon $name';
+			case "name" | "file" if (kind == "ui-icon"):
+				var source = data == null ? null : CanvasScene.text({name:data}, "name");
+				var document = source == null ? null : name == "file" ? rayde.ui.FileIcons.of(source) : rayde.ui.ViewIcons.named(null, source);
+				if (source != null && document == null) throw 'Unknown icon $source';
 				if (stopIcon != null) stopIcon();
 				if (document != null) scope.run(() -> {
 					var child = new Owner(tree);
