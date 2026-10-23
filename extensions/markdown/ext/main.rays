@@ -40,8 +40,9 @@ function update(preview) {
     }
   } catch (failure) {
     if (preview.live && sequence == preview.sequence) {
-      preview.error.value = '' + failure;
+      preview.error.value = 'Unable to preview ' + basename(preview.path) + '.';
       trace('Cannot preview ' + preview.path + ': ' + failure);
+      notify(preview.error.value, 'error');
     }
   }
 }
@@ -55,7 +56,10 @@ function follow(preview, href) {
     var hash = href.indexOf('#'), name = hash < 0 ? href : href.substr(0, hash);
     var path = relative(preview.path, name);
     if (markdown(path)) show(path); else await openFile(path);
-  } catch (failure) { notify('' + failure, 'error'); }
+  } catch (failure) {
+    trace('Cannot open link ' + href + ' from ' + preview.path + ': ' + failure);
+    notify('Unable to open ' + basename(href) + '.', 'error');
+  }
 }
 
 function Document(props) {
@@ -72,9 +76,8 @@ function Document(props) {
     </div>
     <div id="markdown-scroll" virtualizeImages={true} class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
       <if {preview.error.value != null}><div id="markdown-error" class="flex flex-col gap-2 p-6 shrink-0">
-        <h3 class="text-sm font-semibold m-0">Unable to load preview</h3>
-        <span class="text-sm text-text-secondary">{preview.path}</span>
-        <span class="text-sm text-text-secondary">{preview.error}</span>
+        <h3 class="text-sm font-semibold m-0">{preview.error}</h3>
+        <span class="text-sm text-text-secondary">See Markdown in Output for details.</span>
         <div><ui-button id="markdown-retry" variant="outline" onClick={() -> update(preview)}>Retry</ui-button></div>
       </div></if>
       <if {preview.document.value != null}><markdown-view id="markdown-document" document={preview.document} onLink={e -> follow(preview, e.href)}/></if>

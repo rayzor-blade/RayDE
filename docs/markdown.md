@@ -4,7 +4,7 @@ The built-in Markdown extension opens editor tabs. **Markdown: Open Preview** us
 
 The Explorer includes Markdown in the project root, documentation folders and source folders. `.md`, `.markdown`, `.mdown` and `.mkd` are recognized without case sensitivity and use the Markdown icon. Source folders start expanded; other folders load when opened.
 
-External class paths appear in Dependencies. Their Markdown files, relative links and local images can be previewed within the declared dependency roots. A failed read shows the file path, reason and a Retry action; a failed refresh keeps the last rendered document available.
+External class paths appear in Dependencies. Their Markdown files, relative links and local images can be previewed within the declared dependency roots. A failed read shows the file name and a Retry action; the notification's **Show Output** action reveals the full path and diagnostic details. A failed refresh keeps the last rendered document available.
 
 ![Markdown source opened from the project Explorer](images/markdown-explorer.png)
 

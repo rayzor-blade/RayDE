@@ -2508,7 +2508,9 @@ class Snapshots {
 				var missing = root + "/missing-preview.md";
 				manager.command("markdown", "markdown.preview", {path:missing});
 				until(() -> Css.query(tree, bench.node.id, "#markdown-error").length > 0, "failed initial preview");
-				if (Lambda.exists(studio.preview.outline(), p -> p.text == "Loading preview…") || !Lambda.exists(studio.preview.outline(), p -> p.text != null && p.text.indexOf(missing) >= 0)) throw "Failed preview did not replace loading with its file path";
+				var failureText = [for (p in studio.preview.outline()) if (p.text != null) p.text].join("\n");
+				if (failureText.indexOf("Loading preview…") >= 0 || failureText.indexOf("missing-preview.md") < 0 || failureText.indexOf(root) >= 0) throw "Failed preview did not show a concise file name";
+				if (!Lambda.exists(studio.console.get(), e -> e.text.indexOf(missing) >= 0)) throw "Preview Output omitted the full path";
 				shot("preview-read-error");
 				sys.io.File.saveContent(missing, "# Preview recovered\n"); click("#markdown-retry .ui-button");
 				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="preview-recovered"]').length > 0, "initial preview retry"); shot("preview-recovered");
