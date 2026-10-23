@@ -32,11 +32,31 @@ class BuildChecks {
 		sys.io.File.saveContent(root + "/src/Main.hx", source);
 		runner.build(); finish(runner);
 		check(runner.state == "built" && runner.problems.length == 0, "Successful rebuild retained old errors");
+		defaults(root, compiler, source);
 		var folder = new Runner(Display.ofProject(compiler, root));
 		check(!folder.canBuild(), "Folder workspace inferred a build target");
 		folder.build(); check(folder.state == "failed" && !folder.active(), "Unsupported workspace launched a build");
 		if (Sys.systemName() != "Windows") processes(root);
 		Sys.println("build: declared HXML targets, multiple compilations, no launch, diagnostics, rebuild, compiler selection, Rayzor routing and cancellation");
+	}
+	static function defaults(root:String, compiler:CompilerServer, source:String):Void {
+		var file = root + "/default.hxml";
+		sys.io.File.saveContent(file, "-cp src\n-main Main\n");
+		sys.io.File.saveContent(root + "/src/Main.hx", 'class Main { static function main() { #if hl var broken:Int = "text"; #end } }\n');
+		var run = new Runner(Display.ofHxml(compiler, file)); run.build(); finish(run);
+		check(run.state == "failed" && run.problems.length > 0, "Targetless Build missed a HashLink-only error that Run would catch");
+		sys.io.File.saveContent(file, "-cp src\n-main Main\n--no-output\n");
+		run.build(); finish(run);
+		check(run.state == "built" && run.console.indexOf("No target declared") < 0, "Build replaced deliberate --no-output checking");
+		sys.io.File.saveContent(root + "/src/Main.hx", source);
+		sys.io.File.saveContent(file, "-cp src\n-main Main\n");
+		run.build(); finish(run);
+		check(run.state == "built" && sys.FileSystem.exists(root + "/.rayde/run/build.hl") && run.console.indexOf("PROGRAM_RAN") < 0, "Targetless Build did not emit bytecode without launching it");
+		sys.io.File.saveContent(root + "/nested.hxml", "-cp src\n-main Main\n-js bin/nested.js\n");
+		sys.io.File.saveContent(file, "nested.hxml\n"); run.build(); finish(run);
+		check(run.state == "built" && sys.FileSystem.exists(root + "/bin/nested.js") && run.console.indexOf("No target declared") < 0, "Nested HXML target was replaced");
+		sys.io.File.saveContent(file, "-cp src\n-main Main\n--next\n-cp src\n-main Main\n"); run.build();
+		check(run.state == "failed" && !run.active(), "Multiple targetless compilations incorrectly reported success");
 	}
 	static function processes(root:String):Void {
 		var record = root + "/record", executable = root + "/compiler";

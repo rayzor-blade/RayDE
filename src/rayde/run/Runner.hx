@@ -44,7 +44,7 @@ class Runner {
 	public function canBuild():Bool
 		return display.hxml != null || display.project != null && display.project.runtime == "rayzor";
 
-	/** Compiles the selected project as declared, without adding a target or launching its output. */
+	/** Compiles without launching; targetless HXML uses Run's bytecode default. */
 	public function build():Void {
 		stop();
 		console = ""; problems = []; exitCode = null;
@@ -55,8 +55,17 @@ class Runner {
 		var rayzor = display.project != null && display.project.runtime == "rayzor";
 		state = "building";
 		append(rayzor ? "Building with Rayzor…\n" : "Building with Haxe…\n");
+		var args = ["build"];
+		if (!rayzor) try {
+			var plan = HaxeBuild.plan(display.hxml, haxe.io.Path.join([out, "build.hl"]));
+			args = plan.args;
+			if (plan.implicit) append("No target declared; using HashLink bytecode, as Run does.\n");
+		} catch (error:Dynamic) {
+			building = false; state = "failed"; exitCode = 1;
+			append("Build failed: " + Std.string(error) + "\n"); return;
+		}
 		job = new Job(rayzor ? rayde.lang.RayzorBinary.find() ?? "rayzor" : display.server.haxe,
-			rayzor ? ["build"] : [display.hxml], haxe.io.Path.join([out, "build.log"]), null, display.cwd, true);
+			args, haxe.io.Path.join([out, "build.log"]), null, display.cwd, true);
 		job.start();
 	}
 

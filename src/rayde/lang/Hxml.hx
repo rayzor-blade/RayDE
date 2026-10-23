@@ -12,11 +12,17 @@ using StringTools;
  */
 class Hxml {
 	public static function read(file:String):Array<String> {
+		var out = readAll(file);
+		var next = out.indexOf("--next");
+		return next < 0 ? out : out.slice(0, next);
+	}
+
+	/** Includes every compilation when inspecting build-wide options. */
+	public static function readAll(file:String):Array<String> {
 		var out:Array<String> = [];
 		file = sys.FileSystem.fullPath(file);
 		expand(file, haxe.io.Path.directory(file), out, 0);
-		var next = out.indexOf("--next");
-		return next < 0 ? out : out.slice(0, next);
+		return out;
 	}
 
 	/** The arguments of `text`, split as the compiler splits an `.hxml` line by line. */
