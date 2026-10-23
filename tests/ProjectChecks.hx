@@ -40,6 +40,31 @@ class ProjectChecks {
 		var occupied = root + "/occupied"; sys.io.File.saveContent(occupied, "keep");
 		rejects(() -> ProjectFile.create(root, "occupied", "hxml"), "Creation overwrote an existing file");
 		check(sys.io.File.getContent(occupied) == "keep", "Existing file was modified");
+		for (template in rayde.project.ProjectTemplates.all) {
+			var entry = ProjectFile.create(root, "starter-" + template.id, template.id), project = ProjectFile.read(entry);
+			check(project.args.indexOf("src") >= 0 && sys.FileSystem.exists(project.root + "/README.md"), "Template omitted its source root or getting-started instructions");
+			if (["openfl", "flixel", "lime"].indexOf(template.id) >= 0) {
+				var xml = Xml.parse(sys.io.File.getContent(project.root + "/project.xml")).firstElement();
+				check(xml.nodeName == "project", "Framework template does not have a Lime project");
+				var libraries = [for (lib in xml.elementsNamed("haxelib")) lib.get("name")];
+				check(libraries.indexOf(template.id) >= 0 && project.args.indexOf(template.id) >= 0, "Framework dependency is missing from the build or editor manifest");
+			}
+			if (template.id == "flixel") check(sys.FileSystem.exists(project.root + "/src/PlayState.hx"), "HaxeFlixel template omitted its initial state");
+			if (template.id == "javascript" || template.id == "heaps") check(sys.FileSystem.exists(project.root + "/index.html"), "Browser template omitted its launch page");
+			var args = switch template.id {
+				case "hxml": ["-cp", "src", "--run", "Main"];
+				case "haxelib": ["-cp", "src", "--no-output", "Library"];
+				case "javascript", "hashlink": ["build.hxml"];
+				case _: null;
+			};
+			if (args != null) {
+				var compile = new sys.io.Process("haxe", ["--cwd", project.root].concat(args)), errors = compile.stderr.readAll().toString(), status = compile.exitCode(); compile.close();
+				check(status == 0, "Starter did not compile: " + template.id + "\n" + errors);
+			}
+		}
+		rejects(() -> ProjectFile.create(root, "unknown", "missing-template"), "Unknown template was accepted");
+		check(!sys.FileSystem.exists(root + "/unknown"), "Unknown template left a partial project");
+		rejects(() -> ProjectFile.create(occupied, "new-project", "hxml"), "A file was accepted as the project parent");
 		var libraryRoot = haxe.io.Path.directory(entries[1]);
 		sys.io.File.saveContent(entries[1], '{"name":"library","classPath":"source code","dependencies":{"tink_core":"","format":"3.8.0"}}');
 		sys.io.File.saveContent(libraryRoot + "/extraParams.hxml", "-D library_define\n");
@@ -88,6 +113,6 @@ class ProjectChecks {
 		Sys.putEnv("RAYZOR_LSP", old ?? "");
 		check(run.state == "finished" && sys.io.File.getContent(record) == haxe.io.Path.directory(entries[2]) + "\nrun\n" && !server.running(), "Rayzor project did not use its runtime and project directory");
 		server.stop();
-		Sys.println("projects: three scaffold types, exclusive creation, manifest parsing, dependencies, nested HXML, reload, recents and runtime routing");
+		Sys.println("projects: ecosystem starters, core-target compilation, exclusive creation, manifest parsing, dependencies, nested HXML, reload, recents and runtime routing");
 	}
 }

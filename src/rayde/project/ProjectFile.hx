@@ -124,28 +124,31 @@ class ProjectFile {
 	/** Creates a fresh directory exclusively; existing projects are never overwritten. */
 	public static function create(parent:String, name:String, kind:String):String {
 		if (!validName(name)) throw "Use a project name starting with a letter, followed by letters, numbers, hyphens or underscores (up to 64 characters)";
-		if (["hxml", "haxelib", "rayzor"].indexOf(kind) < 0) throw "Unknown project type";
+		var scaffold = ProjectTemplates.scaffold(kind, name);
 		parent = FileSystem.fullPath(parent);
 		if (!FileSystem.isDirectory(parent)) throw "Choose a parent folder";
 		var root = Path.join([parent, name]), bytes = haxe.io.Bytes.ofString(root);
 		unpack(directoryNative(bytes.getData(), bytes.length));
-		var written:Array<String> = [];
-		function write(path:String, text:String):Void { File.saveContent(root + "/" + path, text); written.push(root + "/" + path); }
+		var written:Array<String> = [], directories:Array<String> = [];
+		function directory(path:String):Void {
+			if (path == root || FileSystem.exists(path)) return;
+			directory(Path.directory(path));
+			FileSystem.createDirectory(path);
+			directories.push(path);
+		}
 		try {
-			FileSystem.createDirectory(root + "/src");
-			write(".gitignore", ".rayde/\n.rayzor/\nbin/\nbuild/\n");
-			var entry = kind == "hxml" ? "build.hxml" : kind == "haxelib" ? "haxelib.json" : "rayzor.toml";
-			if (kind == "haxelib") {
-				write(entry, haxe.Json.stringify({name:name.toLowerCase(), version:"0.1.0", classPath:"src", license:"MIT", description:"", contributors:[], dependencies:{}}, null, "\t") + "\n");
-				write("src/Library.hx", "class Library {\n\tpublic static function hello():String {\n\t\treturn \"Hello!\";\n\t}\n}\n");
-			} else {
-				write("src/Main.hx", "class Main {\n\tstatic function main() {\n\t\ttrace(\"Hello, world!\");\n\t}\n}\n");
-				write(entry, kind == "hxml" ? "-cp src\n-main Main\n" : '[project]\nname = "$name"\nversion = "0.1.0"\nentry = "src/Main.hx"\n\n[build]\nclass-paths = ["src"]\nopt-level = 2\npreset = "application"\noutput = "build/$name"\n\n[cache]\nenabled = true\n');
+			directory(root + "/bin");
+			for (path => text in scaffold.files) {
+				var file = root + "/" + path;
+				directory(Path.directory(file));
+				written.push(file);
+				File.saveContent(file, text);
 			}
-			return root + "/" + entry;
+			return root + "/" + scaffold.entry;
 		} catch (error:Dynamic) {
 			for (file in written) try FileSystem.deleteFile(file) catch (_:Dynamic) {}
-			try FileSystem.deleteDirectory(root + "/src") catch (_:Dynamic) {}
+			directories.reverse();
+			for (path in directories) try FileSystem.deleteDirectory(path) catch (_:Dynamic) {}
 			try FileSystem.deleteDirectory(root) catch (_:Dynamic) {}
 			throw error;
 		}

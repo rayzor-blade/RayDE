@@ -61,6 +61,7 @@ import rayde.run.Tasks;
 import rayde.term.Terminal;
 import rayde.ui.FileTabs;
 import rayde.ui.Prompt;
+import rayde.ui.NewProject;
 import rayde.ui.Prompt.PromptRequest;
 import rayde.ui.SettingsPage;
 import rayde.ui.StudioPanels;
@@ -261,6 +262,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final projectPicker = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
 	var pickingProject = false;
 	var cancelProjectDialog:Null<Void->Void>;
+	final creatingProject = Signal.make(false);
 	final explorerShown:Computed<Bool>;
 	/** The bottom panel's height: 0 while it is closed, which is how it starts. */
 	final problemsHeight = Signal.make(0.);
@@ -1179,28 +1181,25 @@ class Workbench extends Component<WorkbenchProps> {
 		return false;
 	}
 
-	function pickProject(mode:String, ?kind:String, ?name:String):Void {
+	function pickProject(mode:String):Void {
 		if (pickingProject) return;
 		pickingProject = true;
 		#if ashui_window
 		var app = ashui.app.WindowedApp.current;
 		if (app != null && ashui.app.FileDialog.available()) {
 			try cancelProjectDialog = ashui.app.FileDialog.open(app, {
-				title:mode == "new" ? "Choose a parent folder" : mode == "folder" ? "Open Folder Workspace" : "Open Project",
+				title:mode == "folder" ? "Open Folder Workspace" : "Open Project",
 				folder:mode != "project", directory:props.display.cwd, extensions:["hxml", "json", "toml", "rayext", "raytheme"]
 			}, selected -> {
 				cancelProjectDialog = null;
 				pickingProject = false;
 				if (gone || selected == null) return;
-				if (mode != "new") { openWorkspace(selected); return; }
-				pickingProject = true;
-				projectPicker.submit("pick", {mode:mode, kind:kind, name:name, selected:selected});
-				ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
+				openWorkspace(selected);
 			}) catch (error:Dynamic) { pickingProject = false; say(Std.string(error)); }
 			return;
 		}
 		#end
-		projectPicker.submit("pick", {mode:mode, kind:kind, name:name});
+		projectPicker.submit("pick", {mode:mode});
 		ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
 	}
 
@@ -1215,13 +1214,8 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function newProject():Void {
-		openPicker("Choose a project template", [for (kind in ["hxml", "haxelib", "rayzor"]) {
-			id:kind, label:kind == "hxml" ? "Haxe application" : kind == "haxelib" ? "Haxe library" : "Rayzor application", icon:Icons.FOLDER_ADD_LINE,
-			run:() -> prompt.set({title:"New Project", description:"Choose a name, then select the parent folder for the new project.", action:"Choose Location…",
-				hasInput:true, value:"my-project", placeholder:"Project name",
-				check:name -> rayde.project.ProjectFile.validName(name) ? null : "Start with a letter; use letters, numbers, hyphens or underscores (up to 64 characters).",
-				accept:name -> pickProject("new", kind, name)})
-		}]);
+		quickOpen.set(false);
+		creatingProject.set(true);
 	}
 
 	function recentProjects():Void {
@@ -2209,6 +2203,7 @@ class Workbench extends Component<WorkbenchProps> {
 			</div>
 			${statusBar()}
 			<prompt request={prompt}/>
+			<if {creatingProject.get()}><new-project opened={creatingProject} directory={props.display.cwd} onCreate={openWorkspace}/></if>
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={recentFiles} refreshFiles={refreshFileIndex} root={props.display.cwd} actions={commandList} tasks={taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>

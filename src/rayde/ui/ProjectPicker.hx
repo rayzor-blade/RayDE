@@ -6,7 +6,7 @@ typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String, ?selected
 class ProjectPicker {
 	public static function choose(request:ProjectPickRequest, cancelled:Void->Bool):Null<String> {
 		if (cancelled()) return null;
-		var folder = request.mode != "project", title = folder ? request.mode == "new" ? "Choose a parent folder" : "Open Folder Workspace" : "Open Project";
+		var folder = request.mode != "project", title = folder ? request.mode == "new" || request.mode == "parent" ? "Choose a parent folder" : "Open Folder Workspace" : "Open Project";
 		var chosen = request.selected != null ? request.selected : switch Sys.systemName() {
 			case "Mac": run("/usr/bin/osascript", ["-e", 'on run argv\ntry\nreturn POSIX path of (choose ${folder ? "folder" : "file"} with prompt (item 1 of argv)${folder ? "" : ' of type {"hxml", "json", "toml", "rayext", "raytheme"}'})\non error number -128\nreturn ""\nend try\nend run', "--", title], cancelled);
 			case "Windows":
