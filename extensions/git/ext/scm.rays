@@ -12,6 +12,7 @@ import commitFiles.selection;
 import diffView.showDiff;
 import commitFiles.Files;
 import report.report;
+import commitHover.commitHover;
 
 function groups(entries) {
   var conflicts = [], staged = [], changes = [], untracked = [];
@@ -150,6 +151,7 @@ function openEntry(group, entry) {
 }
 
 function Sidebar(props) {
+  var hover = commitHover();
   return <div id="git-scm" class="flex flex-col flex-1 min-h-0 min-w-0">
     <div class="flex items-center gap-1 px-3 py-2 border-b shrink-0">
       <span id="git-scm-branch" class="text-sm font-semibold truncate flex-1">{state.value == null ? 'Repository' : state.value.branch}</span>
@@ -199,8 +201,8 @@ function Sidebar(props) {
         <ui-button id="git-scm-focus-commit" class="w-8" size="icon" variant="ghost" tooltip="Focus on selected commit" disabled={busy.value || selected.value == ''} onClick={() -> focusHistory(selected.value)}><ui-icon name="focus"/></ui-button>
         <ui-button id="git-scm-expand" class="w-8" size="icon" variant="ghost" tooltip="Maximize graph" onClick={() -> { if (expand != null) expand(focus.value); }}><ui-icon name="maximize"/></ui-button>
       </div>
-      <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" navigation="scroll" textRendering="native" scene={compactScene(commits.value, refs.value, selected.value)}
-        selected={selected.value == '' ? [] : [selected.value]} command={command} onClick={e -> choose(e.region)}/>
+      <canvas-kit id="git-scm-canvas" class="flex-1 min-h-0" navigation="scroll" textRendering="native" scene={compactScene(commits.value, refs.value, selected.value)} hoverCard={hover.card}
+        selected={selected.value == '' ? [] : [selected.value]} command={command} onClick={e -> choose(e.region)} onHover={hover.hover}/>
       <span id="git-scm-selection" class="text-xs text-text-tertiary truncate px-3 py-1 shrink-0">{busy.value ? 'Loading history\u2026' : selectedInfo.value}</span>
     </div>
     <div slot="commit" class="flex flex-col flex-1 min-h-0 overflow-auto py-1">

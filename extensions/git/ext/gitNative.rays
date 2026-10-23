@@ -104,6 +104,7 @@ native "git2" {
   @:owner(repository) @:blocking function git_commit_lookup(out:Out<Commit>, repository:Repository, id:Oid):Int32;
   function git_commit_free(commit:Commit):Void;
   function git_commit_summary(commit:Commit):CString;
+  function git_commit_message(commit:Commit):CString;
   function git_commit_time(commit:Commit):Int64;
   @:owner(commit) function git_commit_author(commit:Commit):Author;
   function git_commit_parentcount(commit:Commit):UInt32;
@@ -129,6 +130,7 @@ native "git2" {
   @:blocking function git_remote_list(out:StrArray, repository:Repository):Int32;
   function git_strarray_dispose(array:StrArray):Void;
   @:owner(repository) @:blocking function git_remote_lookup(out:Out<Remote>, repository:Repository, name:CString):Int32;
+  function git_remote_url(remote:Remote):CString;
   function git_remote_free(remote:Remote):Void;
   @:blocking function git_remote_fetch(remote:Remote, specs:Ptr, options:Ptr, message:CString):Int32;
   function git_push_options_init(options:PushOptions, version:UInt32):Int32;
@@ -275,6 +277,35 @@ function diff(repository, staged) {
 /** Changes against the first parent; a root commit is compared with an empty tree. */
 function commitChanges(path, id) {
   return withRepository(path, repository -> changesInRepository(repository, id));
+}
+
+/** Full messages are read only for a hovered commit or a diff header. */
+function commitDetails(path, id = 'HEAD') {
+  return withRepository(path, repository -> {
+    var object = Out(Tree), commit = null, resolved = null;
+    try {
+      check(git_revparse_single(object, repository, id + '^{commit}'), 'resolve commit details');
+      resolved = object.value;
+      var slot = Out(Commit);
+      check(git_commit_lookup(slot, repository, git_object_id(resolved)), 'commit details');
+      commit = slot.value;
+      var author = git_commit_author(commit);
+      var result = {id:git_oid_tostr_s(git_object_id(resolved)), subject:git_commit_summary(commit), message:git_commit_message(commit),
+        author:author.name, email:author.email, time:git_commit_time(commit), remote:repositoryRemote(repository)};
+      commit.close(); resolved.close(); return result;
+    } catch (failure) { if (commit != null) commit.close(); if (resolved != null) resolved.close(); throw failure; }
+  });
+}
+
+function repositoryRemote(repository) {
+  var remote = null;
+  try {
+    var slot = Out(Remote);
+    check(git_remote_lookup(slot, repository, defaultRemote(repository)), 'profile remote');
+    remote = slot.value;
+    var url = git_remote_url(remote);
+    remote.close(); return url == null ? '' : url;
+  } catch (failure) { if (remote != null) remote.close(); return ''; }
 }
 
 function changesInRepository(repository, id) {
@@ -458,7 +489,7 @@ function openHistory(path, ref = 'all', firstParent = false) {
         return {commits: rows, done: done};
       } catch (error) { close(); throw error; }
     }
-    return {next: next, close: close, changes: id -> changesInRepository(repository, id), refs: refs, repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
+    return {next: next, close: close, changes: id -> changesInRepository(repository, id), refs: refs, remote:repositoryRemote(repository), repository: git_repository_path(repository), workdir: git_repository_workdir(repository)};
   } catch (error) { close(); throw error; }
 }
 

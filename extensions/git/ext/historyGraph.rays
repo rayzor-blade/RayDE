@@ -74,10 +74,10 @@ function compactScene(commits, refs, selected) {
   return {bounds:{x:0,y:0,width:width,height:Math.max(24,commits.length*23+14)}, commands:commands, regions:regions};
 }
 
-function scene(commits, refs, selected) {
-  var graph = layout(commits), commands = [], regions = [];
+function scene(commits, refs, selected, remote = '') {
+  var graph = layout(commits), commands = [], regions = [], avatars = [];
   var colors = [0x209b8b, 0x9473ed, 0xd49232, 0x528ed7, 0xc46da6, 0x73a345];
-  var textX = 48 + graph.lanes * 24, width = Math.max(800, textX + 620);
+  var textX = 48 + graph.lanes * 24, width = Math.max(832, textX + 652);
   for (row in graph.rows) {
     var y = 26 + row.index * 40;
     if (row.commit.id == selected)
@@ -93,15 +93,16 @@ function scene(commits, refs, selected) {
     var commit = row.commit, x = 28 + row.lane * 24, y = 26 + row.index * 40;
     commands.push({type: 'circle', x: x, y: y, radius: commit.parents.length > 1 ? 6 : 5,
       color: colors[row.lane % colors.length]});
-    commands.push({type: 'text', x: textX, y: y + 5, text: commit.id.substr(0, 7), color: commit.id == selected ? 'selectionText' : 'textSecondary', size: 12});
+    avatars.push({x:textX, y:y-12, size:24, profile:{id:commit.id, remote:remote, author:commit.author, email:commit.email}});
+    commands.push({type: 'text', x: textX + 32, y: y + 5, text: commit.id.substr(0, 7), color: commit.id == selected ? 'selectionText' : 'textSecondary', size: 12});
     var title = commit.subject == null || commit.subject == '' ? '(no subject)' : commit.subject;
     if (title.length > 48) title = title.substr(0, 47) + '\u2026';
-    commands.push({type: 'text', x: textX + 72, y: y + 5, text: title, color: commit.id == selected ? 'selectionText' : 'textPrimary', size: 13,
+    commands.push({type: 'text', x: textX + 104, y: y + 5, text: title, color: commit.id == selected ? 'selectionText' : 'textPrimary', size: 13,
       weight: commit.id == selected ? 600 : 400});
     var labels = [];
     for (ref in refs) if (ref.target == commit.id) labels.push(ref.label);
     if (labels.length > 0)
-      commands.push({type: 'text', x: textX + 440, y: y + 5, text: labels.join(' \u00b7 '), color: commit.id == selected ? 'selectionText' : 'textLink', size: 12});
+      commands.push({type: 'text', x: textX + 472, y: y + 5, text: labels.join(' \u00b7 '), color: commit.id == selected ? 'selectionText' : 'textLink', size: 12});
   }
-  return {bounds: {x: 0, y: 0, width: width, height: Math.max(80, commits.length * 40 + 24)}, commands: commands, regions: regions};
+  return {bounds: {x: 0, y: 0, width: width, height: Math.max(80, commits.length * 40 + 24)}, commands: commands, regions: regions, avatars:avatars};
 }

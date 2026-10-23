@@ -1,4 +1,22 @@
 /* RayDE's own rules over ashui's components. Regions are cards with a gap between; the theme gives the colours. */
+.rayde-git-avatar { position: relative; width: 100%; height: 100%; flex-shrink: 0; align-items: center; justify-content: center; overflow: hidden; border-radius: 999px; background: var(--accent-subtle); color: var(--text-secondary); }
+.rayde-git-avatar > img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.rayde-git-avatar > text { font-size: 11px; font-weight: 600; }
+.rayde-git-popover { display: flex; flex-direction: column; width: 420px; max-width: 90vw; gap: 8px; padding: 14px; background: var(--surface-elevated); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.rayde-git-person { flex-direction: row; align-items: center; gap: 10px; }
+.rayde-git-person > .rayde-git-avatar { width: 32px; height: 32px; }
+.rayde-git-identity { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rayde-git-name { font-size: 14px; font-weight: 600; }
+.rayde-git-muted { font-size: 12px; color: var(--text-secondary); }
+.rayde-git-hash { flex-direction: row; align-items: center; gap: 4px; }
+.rayde-git-hash > text { flex: 1; min-width: 0; }
+.rayde-git-hash .ui-button { --ui-button-height: 24px; --ui-button-width: 24px; }
+.rayde-diff-heading { flex-direction: row; align-items: center; min-height: 44px; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--surface); }
+.rayde-diff-navigation { flex-direction: row; align-items: center; gap: 4px; padding-right: 8px; flex-shrink: 0; }
+.rayde-diff-navigation > text { white-space: nowrap; font-size: var(--text-xs); color: var(--text-secondary); }
+.rayde-diff-navigation .ui-button { --ui-button-height: 28px; --ui-button-width: 28px; }
+.rayde-git-message { max-height: 240px; min-height: 0; overflow: auto; }
+.rayde-git-message > text { white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
 
 /* The resizables draw nothing of their own, so each region's card is the only border and no two regions share one. */
 #rayde .ui-resizable { border-width: 0; border-radius: 0; background: transparent; }

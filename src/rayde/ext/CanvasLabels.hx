@@ -9,12 +9,15 @@ import ashui.ui.Text;
 import rayde.ext.CanvasScene.CanvasLabel;
 
 private typedef LabelSlot = {owner:Owner, element:Text, text:Signal<String>};
+private typedef AvatarSlot = {owner:Owner, element:GitAvatar, profile:Signal<Dynamic>};
 
 /** Visible, pooled text runs use Ashui's glyph atlas instead of tessellated glyph outlines. */
 class CanvasLabels {
 	final parent:Node;
 	final scope:Owner;
 	final slots:Array<LabelSlot> = [];
+	final avatars:Array<AvatarSlot> = [];
+	final profiles:Bool;
 	final baselines = new Map<String, Float>();
 	var previous:CanvasScene;
 	var offsetX = Math.NaN;
@@ -22,9 +25,10 @@ class CanvasLabels {
 	var width = -1.;
 	var height = -1.;
 
-	public function new(parent:Node, scope:Owner) {
+	public function new(parent:Node, scope:Owner, profiles = false) {
 		this.parent = parent;
 		this.scope = scope;
+		this.profiles = profiles;
 	}
 
 	public function update(scene:CanvasScene, x:Float, y:Float, w:Float, h:Float):Bool {
@@ -54,6 +58,24 @@ class CanvasLabels {
 		}
 		for (i in used...slots.length) Identity.of(slots[i].element.tree, slots[i].element.node.id).setInline("display", "none");
 		while (slots.length > Std.int(Math.max(16, used * 2))) slots.pop().owner.dispose();
+		used = 0;
+		for (avatar in scene.avatars) {
+			if (avatar.y + avatar.size < y || avatar.y > y + h || avatar.x > x + w || avatar.x + avatar.size < x) continue;
+			if (used == avatars.length) scope.run(() -> {
+				var owner = new Owner();
+				avatars.push(owner.run(() -> {
+					var profile = Signal.make((null:Dynamic)), element = new GitAvatar({profile:profile, network:profiles});
+					Identity.of(element.tree, element.node.id).setInline("position", "absolute").setInline("pointer-events", "none");
+					element.tree.addChild(parent.id, element.node.id);
+					return {owner:owner, element:element, profile:profile};
+				}));
+			});
+			var slot = avatars[used++]; slot.profile.set(avatar.profile);
+			Identity.of(slot.element.tree, slot.element.node.id).setInline("width", avatar.size + "px").setInline("height", avatar.size + "px");
+			slot.element.node.set(Prop.Left, (avatar.x:Single)); slot.element.node.set(Prop.Top, (avatar.y:Single));
+			slot.element.node.set(Prop.Width, (avatar.size:Single)); slot.element.node.set(Prop.Height, (avatar.size:Single));
+		}
+		while (avatars.length > used) avatars.pop().owner.dispose();
 		return true;
 	}
 

@@ -1,0 +1,20 @@
+import gitNative.commitDetails;
+import rayde.workspace.root;
+
+/** Late hover reads cannot replace the commit currently under the pointer. */
+function commitHover(path = null) {
+  var card = signal(null), sequence = 0, last = null, live = true;
+  onCleanup(() -> { live = false; sequence++; });
+  function hover(event) {
+    var request = ++sequence, id = event.region;
+    card.value = null;
+    if (id == null || id == '') return;
+    await sleep(350);
+    if (!live || request != sequence) return;
+    try {
+      var details = last != null && last.id == id ? last : commitDetails(path == null ? await root() : path, id);
+      if (live && request == sequence) { last = details; card.value = details; }
+    } catch (failure) {}
+  }
+  return {card:card, hover:hover};
+}

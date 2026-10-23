@@ -115,7 +115,7 @@ class Studio {
 		this.manifest = manifest;
 		title = Signal.make(manifest != null ? manifest.viewTitle : "Preview");
 		Utilities.install();
-		preview = new Preview(tree, send, readImage);
+		preview = new Preview(tree, send, readImage, manifest != null && manifest.capabilities.indexOf("net.profiles") >= 0);
 		this.connection = connection == null ? new Connection(file, source, manifest) : connection;
 		preview.onProblem = message -> this.connection.note("console", "error", message);
 		if (connection == null) this.connection.useMocks = true;

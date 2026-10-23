@@ -105,6 +105,7 @@ import gitNative.openHistory;
 import gitNative.repositoryStatus;
 import gitNative.remoteOperation;
 import gitNative.commitChanges;
+import gitNative.commitDetails;
 import gitNative.openFileHistory;
 import gitNative.blobText;
 import gitNative.branchSummary;
@@ -333,7 +334,12 @@ emit({latest:commitChanges(REPO,'HEAD'), merge:commitChanges(REPO,'HEAD~1'),
         git(changes, "rm", "deleted.txt")
         write(changes, "nested/added.txt", "added\n")
         git(changes, "add", ".")
-        git(changes, "commit", "-m", "rename and deletion")
+        git(changes, "commit", "-m", "rename and deletion", "-m", "Full commit body, beyond the summary.\n\nKeep the final paragraph.")
+        git(changes, "remote", "add", "origin", "git@github.com:example/public-project.git")
+        details = host.run(PREAMBLE + "emit(commitDetails(REPO,'HEAD'));".replace("REPO", json.dumps(str(changes))))
+        assert details["subject"] == "rename and deletion" and "Keep the final paragraph." in details["message"], details
+        assert details["author"] == "Fixture" and details["email"] == "fixture@example.test", details
+        assert details["remote"] == "git@github.com:example/public-project.git" and len(details["id"]) == 40, details
         result = host.run(PREAMBLE + """
 var error = '';
 try { commitChanges(REPO,'missing-commit'); } catch (failure) { error = '' + failure; }

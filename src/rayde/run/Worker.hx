@@ -29,8 +29,9 @@ class Worker<T, R> {
 	static inline var IDLE_SECONDS = 1.;
 	final mailbox = new Mailbox<T, R>();
 	final work:(T, Void->Bool)->R;
+	final ready:Null<Void->Void>;
 
-	public function new(work:(T, Void->Bool)->R) this.work = work;
+	public function new(work:(T, Void->Bool)->R, ?ready:Void->Void) { this.work = work; this.ready = ready; }
 
 	public function submit(key:String, value:T):Void {
 		var box = mailbox;
@@ -44,8 +45,8 @@ class Worker<T, R> {
 		box.pending.set(key, {key:key, serial:box.serial, value:value});
 		box.mutex.release();
 		if (start) {
-			var handler = work;
-			sys.thread.Thread.create(() -> run(box, handler));
+			var handler = work, notify = ready;
+			sys.thread.Thread.create(() -> run(box, handler, notify));
 		}
 		if (wake) box.wake.release();
 	}
@@ -85,7 +86,7 @@ class Worker<T, R> {
 		mailbox.wake.release();
 	}
 
-	static function run<T, R>(box:Mailbox<T, R>, work:(T, Void->Bool)->R):Void {
+	static function run<T, R>(box:Mailbox<T, R>, work:(T, Void->Bool)->R, ready:Null<Void->Void>):Void {
 		while (true) {
 			var woke = box.wake.wait(IDLE_SECONDS);
 			box.mutex.acquire();
@@ -100,18 +101,20 @@ class Worker<T, R> {
 			box.active = task;
 			box.mutex.release();
 			if (task == null) continue;
-			perform(box, task, work);
+			perform(box, task, work, ready);
 			task = null;
 		}
 	}
 
-	static function perform<T, R>(box:Mailbox<T, R>, task:Task<T>, work:(T, Void->Bool)->R):Void {
+	static function perform<T, R>(box:Mailbox<T, R>, task:Task<T>, work:(T, Void->Bool)->R, ready:Null<Void->Void>):Void {
 		var value:Null<R> = null, error:Null<String> = null;
 		try value = work(task.value, () -> !box.current(task)) catch (failure:Dynamic) error = Std.string(failure);
 		box.mutex.acquire();
-		if (!box.stopped && box.versions.get(task.key) == task.serial)
+		var publish = !box.stopped && box.versions.get(task.key) == task.serial;
+		if (publish)
 			box.results.set(task.key, {key:task.key, value:value, error:error});
 		box.active = null;
 		box.mutex.release();
+		if (publish && ready != null) ready();
 	}
 }

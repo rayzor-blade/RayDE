@@ -60,6 +60,7 @@ class Preview {
 	final parts:Map<Int, Part> = new Map();
 	final emit:PreviewEvent;
 	final image:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
+	final profiles:Bool;
 
 	/** Whether there are ashui nodes: false until a page shows the view, and again once it is hidden. */
 	var shown = false;
@@ -74,10 +75,11 @@ class Preview {
 	public var revision(default, null) = 0;
 	public var onProblem:Null<String->Void>;
 
-	public function new(tree:LayoutTree, emit:PreviewEvent, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}) {
+	public function new(tree:LayoutTree, emit:PreviewEvent, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, profiles = false) {
 		this.tree = tree;
 		this.emit = emit;
 		this.image = image;
+		this.profiles = profiles;
 	}
 
 	/** Takes everything down, the model and the nodes. */
@@ -245,7 +247,7 @@ class Preview {
 		if (BridgeControl.supported(p.tag)) {
 			p.control = new BridgeControl(tree, p.tag, (event, payload) -> {
 				if (p.listens.exists(event)) emit(p.host, event, payload);
-			}, p.localState, image);
+			}, p.localState, image, profiles);
 			node = p.control.node;
 			dirtyControls.set(p.host, true);
 		} else node = tree.createNode();

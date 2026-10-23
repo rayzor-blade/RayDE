@@ -1455,6 +1455,29 @@ class Snapshots {
 				for (label in ["Merge conflicts", "Staged", "Changes", "Untracked", "renamed-file.txt", "main"])
 					if (!says(label)) throw 'missing SCM content $label';
 				shot("scm-ready");
+				var hoverCanvas = @:privateAccess control("git-scm-canvas").kit;
+				var hoverBounds = tree.getScrolledBounds(hoverCanvas.node);
+				ashui.input.Pointer.move(tree, hoverBounds.x + 90, hoverBounds.y + 13);
+				until(() -> Css.query(tree, bench.node.id, ".rayde-git-popover").length == 1, "a commit hover to show its full message and author");
+				var hoverText = Css.query(tree, bench.node.id, ".rayde-git-popover text").map(id -> ashui.ui.Text.at(id).text()).join("\n");
+				if (hoverText.indexOf("Paragraph 8:") < 0 || hoverText.indexOf("Fixture") < 0 || Css.query(tree, bench.node.id, ".rayde-git-popover .rayde-git-avatar").length != 1) throw "Commit hover omitted full message, author or avatar fallback";
+				shot("scm-commit-hover");
+				click("#git-commit-copy");
+				var copiedCommit = ashui.input.Clipboard.text();
+				if (!~/^[0-9a-f]{40}$/.match(copiedCommit) || hoverText.indexOf(copiedCommit) < 0) throw "Commit hover did not copy its full hash";
+				var messageNode = new ashui.layout.Node(Css.query(tree, bench.node.id, ".rayde-git-message")[0]);
+				var messageBounds = tree.getScrolledBounds(messageNode);
+				ashui.input.Pointer.move(tree, messageBounds.x + 30, messageBounds.y + 30); settle(40);
+				if (Css.query(tree, bench.node.id, ".rayde-git-popover").length != 1) throw "Commit hover closed while entering its body";
+				ashui.input.Pointer.wheel(tree, 0, -800); settle(10);
+				var messageScroll = ashui.input.Scroll.at(messageNode.id, tree);
+				if (messageScroll == null || messageScroll.y.get() <= 0) throw "Commit hover body did not scroll";
+				shot("scm-commit-hover-scrolled");
+				ashui.input.Pointer.move(tree, 5, 5); settle(40);
+				if (Css.query(tree, bench.node.id, ".rayde-git-popover").length != 0) throw "Commit hover survived pointer leave";
+				ashui.input.Pointer.move(tree, hoverBounds.x + 90, hoverBounds.y + 13);
+				until(() -> Css.query(tree, bench.node.id, ".rayde-git-popover").length == 1, "revisiting the same commit to reopen its hover card");
+				ashui.input.Pointer.move(tree, 5, 5); settle(40);
 				scroll("#git-scm-working-files", 150);
 				click("#git-scm-changes .git-open-file .ui-button");
 				until(() -> StringTools.endsWith(bench.active.get(), "/src/modified.txt"), "an SCM row's Open file button to open its full path in the editor");
@@ -1466,6 +1489,21 @@ class Snapshots {
 				click("#git-scm-changes > div > div > .ui-button");
 				until(() -> StringTools.startsWith(bench.active.get(), Workbench.TAB) && control("git-diff-view") != null, "an SCM filename row to open its change as a diff tab");
 				until(() -> @:privateAccess control("git-diff-view").diff != null && @:privateAccess control("git-diff-view").diff.changeCount.get() == 1, "the working change of modified.txt to be compared");
+				if (Css.query(tree, bench.node.id, "#git-diff-view .ui-code-diff-bar").length != 0) throw "Diff retained a separate navigation header";
+				var titleBounds = bench.boundsOf("#git-diff-title"), nextBounds = bench.boundsOf("#git-diff-next");
+				if (Math.abs(titleBounds.y + titleBounds.height / 2 - nextBounds.y - nextBounds.height / 2) > 2) throw "Diff title and navigation do not share a row";
+				click("#git-diff-next");
+				if ((@:privateAccess control("git-diff-view").diff.currentChange.get()) != 0) throw "Diff next button did not navigate";
+				click("#git-diff-previous");
+				until(() -> control("git-diff-copy") != null, "the diff base commit to load");
+				click("#git-diff-copy .ui-button");
+				if (ashui.input.Clipboard.text() != copiedCommit) throw "Diff did not copy the full base commit hash";
+				if (bench.boundsOf("#git-diff-author").x >= bench.boundsOf("#git-diff-title").x) throw "Diff author must precede the hash at the left";
+				click("#git-diff-layout .ui-button");
+				until(() -> (@:privateAccess control("git-diff-view").diffLayout.get()) == "inline" && Lambda.exists(studio.preview.outline(), p -> p.props.indexOf("name=layout-rows") >= 0), "inline layout and its row icon");
+				shot("scm-diff-inline");
+				click("#git-diff-layout .ui-button");
+				until(() -> (@:privateAccess control("git-diff-view").diffLayout.get()) == "split" && Lambda.exists(studio.preview.outline(), p -> p.props.indexOf("name=layout-columns") >= 0), "split layout and its column icon");
 				settle(20); shot("scm-diff");
 				var diffTab = bench.active.get();
 				bench.closeFile(diffTab); bench.active.set(sourcePath);
@@ -1475,6 +1513,7 @@ class Snapshots {
 					click(selector);
 					until(() -> StringTools.startsWith(bench.active.get(), Workbench.TAB) && control("git-diff-view") != null && @:privateAccess control("git-diff-view").diff != null && !@:privateAccess control("git-diff-view").diff.comparing.get(), label);
 					settle(20); shot(name);
+					until(() -> Css.query(tree, bench.node.id, "#git-diff-author .rayde-git-avatar").length == 1, "a diff header to show its author avatar");
 					var tab = bench.active.get(); bench.closeFile(tab); bench.active.set(sourcePath);
 				}
 				diffOf("#git-scm-staged > div > div > .ui-button", "a staged file to open its change against HEAD", "scm-diff-staged");
@@ -1584,7 +1623,11 @@ class Snapshots {
 				until(() -> within("git-history-files", "history.txt"), "the expanded graph's selected commit files");
 				if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
 				function canvas():ashui.canvaskit.CanvasKit return @:privateAccess control("git-history-canvas").kit;
+				until(() -> Css.query(tree, bench.node.id, "#git-history-canvas .rayde-git-avatar").length > 0, "visible graph author avatars");
+				if (Css.query(tree, bench.node.id, "#git-history-canvas .rayde-git-avatar").length > 30) throw "Expanded graph mounted offscreen avatar images";
 				shot("history");
+				click("#git-history-copy .ui-button");
+				if (ashui.input.Clipboard.text() != copiedCommit) throw "Expanded history copied a shortened commit hash";
 				click("#rayde-tab-Git-history-close");
 				until(() -> studio.tabViews.length == 0, "history tab close button");
 				click("#git-scm-expand .ui-button");
@@ -1598,7 +1641,7 @@ class Snapshots {
 				until(() -> says("Merge native library trust"), "canvas click to select a commit through RayScript");
 				until(() -> within("git-history-files", "trust.txt"), "a selected merge commit's changed files in the expanded view");
 				shot("selected");
-				var revision = studio.preview.revision;
+				var scrollScene = @:privateAccess control("git-history-canvas").scene.get();
 				var scrollGraph = ashui.input.Scroll.at(control("git-history-canvas").node.id, tree);
 				ashui.input.Pointer.move(tree, bounds.x + 120, bounds.y + 120);
 				ashui.input.Pointer.wheel(tree, 0, -240); settle();
@@ -1609,7 +1652,7 @@ class Snapshots {
 				ashui.input.Pointer.release(tree, Middle); settle();
 				if (viewport.zoom.get() != 1 || viewport.panX.get() != -scrollGraph.x.get() || viewport.panY.get() != -scrollGraph.y.get() || scrollGraph.y.get() != scrollY)
 					throw "linear history accepted a pan or zoom gesture";
-				if (studio.preview.revision != revision) throw "scrolling sent drawing operations through the host";
+				if ((@:privateAccess control("git-history-canvas").scene.get()) != scrollScene) throw "scrolling replaced the retained graph drawing";
 				shot("scrolled");
 				var drawing = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=git-history-canvas") >= 0);
 				var accepted = @:privateAccess control("git-history-canvas").scene.get();
@@ -1630,7 +1673,7 @@ class Snapshots {
 				if (restored.scrollX != saved.scrollX || restored.scrollY != saved.scrollY) throw "hidden history lost its scroll position";
 				click("#git-history-more .ui-button");
 				until(() -> says("114"), "the next native history page");
-				revision = studio.preview.revision;
+				var revision = studio.preview.revision;
 				click("#git-history-more .ui-button");
 				if (studio.preview.revision != revision) throw "disabled load-more button dispatched an event";
 				click("#git-history-branch .ui-select"); press(Named(End)); press(Named(Enter));

@@ -3,6 +3,7 @@ import rayde.workspace.readFile;
 import rayde.workspace.openFile;
 import rayde.window.focusView;
 import gitNative.blobText;
+import gitNative.commitDetails;
 import report.report;
 
 var tabs = [];
@@ -27,17 +28,29 @@ function side(repository, spec, path) {
   return {text: lines(blob.text), binary: blob.binary};
 }
 
+function DiffHeader(props) {
+  return <div class="flex items-center gap-2 px-4 py-1 min-w-0 w-full shrink-0">
+    <if {props.author.value != null}><div id="git-diff-author" class="flex items-center gap-2 shrink-0">
+      <ui-avatar profile={props.author}/><span class="text-xs text-text-secondary max-w-40 truncate">{(props.author.value.base ? 'Base: ' : '') + props.author.value.author}</span>
+    </div></if>
+    <span id="git-diff-title" class="text-sm text-text-secondary truncate min-w-0">{props.title}</span>
+    <if {props.author.value != null}><ui-button id="git-diff-copy" size="icon" variant="ghost" tooltip="Copy commit hash" copyText={props.author.value.id}><ui-icon name="copy"/></ui-button></if>
+    <div class="flex-1"/>
+    <ui-button id="git-diff-layout" size="icon" variant="ghost" tooltip="Switch between side by side and inline" onClick={() -> props.layout.value = props.layout.value == 'split' ? 'inline' : 'split'}><ui-icon name={props.layout.value == 'split' ? 'layout-columns' : 'layout-rows'}/></ui-button>
+    <if {props.openable}><ui-button id="git-diff-file" size="icon" variant="ghost" tooltip="Open file" onClick={() -> openFile(props.path)}><ui-icon name="code"/></ui-button></if>
+  </div>;
+}
+
 function Diff(props) {
   var layout = signal('split');
   onCleanup(() -> { tabs = tabs.filter(tab -> tab.key != props.id); });
   return <div id="git-diff" class="flex flex-col flex-1 min-h-0 min-w-0">
-    <div class="flex items-center gap-2 px-4 py-2 shrink-0">
-      <span id="git-diff-title" class="text-sm text-text-secondary flex-1 truncate">{props.title}</span>
-      <ui-button id="git-diff-layout" size="icon" variant="ghost" tooltip="Switch between side by side and inline" onClick={() -> layout.value = layout.value == 'split' ? 'inline' : 'split'}><ui-icon name="layout-columns"/></ui-button>
-      <if {props.openable}><ui-button id="git-diff-file" size="icon" variant="ghost" tooltip="Open file" onClick={() -> openFile(props.path)}><ui-icon name="code"/></ui-button></if>
-    </div>
-    <if {props.note.value != ''}><p id="git-diff-note" class="p-6 text-text-secondary">{props.note}</p>
-    <else><code-diff id="git-diff-view" original={props.original} modified={props.modified} language={props.language} layout={layout} navigation={true}/></if>
+    <if {props.note.value != ''}>
+      <DiffHeader title={props.title} author={props.author} layout={layout} openable={props.openable} path={props.path}/>
+      <p id="git-diff-note" class="p-6 text-text-secondary">{props.note}</p>
+    <else><code-diff id="git-diff-view" original={props.original} modified={props.modified} language={props.language} layout={layout} navigation={true}>
+      <DiffHeader title={props.title} author={props.author} layout={layout} openable={props.openable} path={props.path}/>
+    </code-diff></if>
   </div>;
 }
 
@@ -45,26 +58,31 @@ function Diff(props) {
   Opens a tab comparing two versions of `path`. A spec is a blob of the repository (`HEAD:path`, `:path` for the index,
   `<commit>:path`), `workdir` for the working file, or null for no file. The same comparison reuses its tab.
 */
-function showDiff(title, path, before, after, openable = true) {
+function showDiff(title, path, before, after, openable = true, commit = null) {
   var repository = await root();
   var key = title + '\u0000' + path;
   for (tab in tabs) if (tab.key == key) {
     tab.original.value = '';
-    refill(tab, repository, before, after, path);
+    refill(tab, repository, before, after, path, commit);
     await focusView(tab.root);
     return;
   }
-  var tab = {key: key, original: signal(''), modified: signal(''), note: signal(''), root: 0};
+  var tab = {key: key, original: signal(''), modified: signal(''), note: signal(''), author:signal(null), root: 0};
   tabs.push(tab);
-  tab.root = mount(() -> <Diff id={key} title={title} path={path} openable={openable} original={tab.original} modified={tab.modified} note={tab.note} language={languageOf(path)}/>, 'tab:' + basename(path) + ' (' + title + ')');
-  refill(tab, repository, before, after, path);
+  tab.root = mount(() -> <Diff id={key} title={title} path={path} openable={openable} original={tab.original} modified={tab.modified} note={tab.note} author={tab.author} language={languageOf(path)}/>, 'tab:' + basename(path) + ' (' + title + ')');
+  refill(tab, repository, before, after, path, commit);
 }
 
-function refill(tab, repository, before, after, path) {
+function refill(tab, repository, before, after, path, commit) {
   try {
     var left = side(repository, before, path), right = side(repository, after, path);
     tab.note.value = left.binary || right.binary ? 'Binary file not shown' : '';
     tab.original.value = left.text;
     tab.modified.value = right.text;
   } catch (failure) { tab.note.value = 'Diff unavailable'; report(failure); }
+  tab.author.value = null;
+  try {
+    var author = commitDetails(repository, commit == null ? 'HEAD' : commit);
+    tab.author.value = {id:author.id, remote:author.remote, author:author.author, email:author.email, base:commit == null};
+  } catch (failure) {}
 }

@@ -19,13 +19,13 @@ def create(root):
         return subprocess.run(["git", "-C", str(root), *args], env=env, check=True,
                               input=data, text=True, capture_output=True).stdout.strip()
 
-    def commit(subject, filename="history.txt"):
+    def commit(subject, filename="history.txt", body=None):
         nonlocal counter
         counter += 1
         env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = f"{1720000000 + counter * 3600} +0000"
         (root / filename).write_text(subject + "\n")
         git("add", filename)
-        git("commit", "-m", subject)
+        git("commit", "-m", subject, *(["-m", body] if body else []))
 
     git("init", "-b", "main")
     git("config", "core.hooksPath", str(root / ".git/no-hooks"))
@@ -55,7 +55,7 @@ def create(root):
     git("checkout", "main")
     commit("Polish extension settings")
     git("merge", "--no-ff", "ffi/trust", "-m", "Merge native library trust")
-    commit("Add Git history graph")
+    commit("Add Git history graph", body="Full commit message with author details.\n\n" + "\n\n".join(f"Paragraph {i}: preserve the full description when hovering a commit, even when the graph shortens its title." for i in range(1, 9)))
     empty_tree = git("hash-object", "-t", "tree", "-w", "--stdin", data="")
     metadata = git("hash-object", "-t", "commit", "-w", "--stdin", data=f"tree {empty_tree}\nauthor Metadata <metadata@example.test> 1800000000 +0000\ncommitter Metadata <metadata@example.test> 1800000000 +0000\n\n")
     for name in ["refs/bugs/" + "a" * 64, "refs/remotes/issue-store/bugs/" + "a" * 64,

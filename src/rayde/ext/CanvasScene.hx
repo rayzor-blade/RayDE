@@ -9,7 +9,8 @@ import ashui.theme.ThemeState;
 import ashui.types.Brush;
 
 private typedef Ink = {color:Dynamic, alpha:Float};
-private typedef Region = {id:String, x:Float, y:Float, width:Float, height:Float};
+typedef CanvasRegion = {id:String, x:Float, y:Float, width:Float, height:Float};
+typedef CanvasAvatar = {x:Float, y:Float, size:Float, profile:Dynamic};
 private typedef Box = {x:Float, y:Float, width:Float, height:Float};
 typedef CanvasLabel = {text:String, x:Float, y:Float, ink:Ink, size:Float, weight:Int};
 private enum Drawing {
@@ -23,14 +24,21 @@ private enum Drawing {
 class CanvasScene {
 	public final bounds:{x:Float, y:Float, width:Float, height:Float};
 	public final labels:Array<CanvasLabel> = [];
+	public final avatars:Array<CanvasAvatar> = [];
 	final drawings:Array<Drawing> = [];
-	final regions:Array<Region> = [];
+	final regions:Array<CanvasRegion> = [];
 	final brushes:Map<String, Brush> = [];
 	var theme:Null<ThemeState>;
 
 	public function new(value:Dynamic) {
 		bounds = value == null || value.bounds == null ? {x: 0., y: 0., width: 1., height: 1.} : box(value.bounds);
 		if (value == null) return;
+		for (avatar in list(value, "avatars")) {
+			var profile:Dynamic = avatar.profile;
+			if (profile == null) throw "Avatar requires an author profile";
+			for (key in ["id", "remote", "author", "email"]) text(profile, key);
+			avatars.push({x:number(avatar, "x"), y:number(avatar, "y"), size:number(avatar, "size", 24, 16, 64), profile:profile});
+		}
 		var segments = 0;
 		for (op in list(value, "commands")) {
 			var ink = ink(op), width = number(op, "stroke", 0, 0, 256);
@@ -82,6 +90,8 @@ class CanvasScene {
 			regions.push({id: id, x: b.x, y: b.y, width: b.width, height: b.height});
 		}
 	}
+
+	public function region(id:String):Null<CanvasRegion> return Lambda.find(regions, r -> r.id == id);
 
 	public function draw(ctx:DrawContext, kit:CanvasKit, ?hovered:String, visibleOnly = false, nativeText = false):Void {
 		var current = ThemeState.get();

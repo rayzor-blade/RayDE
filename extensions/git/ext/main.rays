@@ -8,6 +8,7 @@ import scm.configureHistory;
 import commitFiles.selection;
 import commitFiles.Files;
 import report.report;
+import commitHover.commitHover;
 
 var opened = null;
 
@@ -16,6 +17,7 @@ function History(props) {
   var branch = signal('all'), selected = signal(''), detail = signal(null), busy = signal(false), done = signal(false);
   var command = signal(null);
   var changed = selection(props.path);
+  var remote = signal(''), hover = commitHover(props.path);
   var cursor = null, live = true, sequence = 0;
   function choose(id) {
     selected.value = id;
@@ -43,6 +45,7 @@ function History(props) {
       var next = openHistory(props.path, ref);
       if (!live) { next.close(); return; }
       cursor = next;
+      remote.value = next.remote;
       refs.value = next.refs;
       var items = [{value: 'all', label: 'All references'}, {value:'HEAD',label:'Current branch'}];
       for (item in next.refs) items.push({value: item.name, label: item.label});
@@ -80,9 +83,9 @@ function History(props) {
     </div>
     <div class="flex flex-1 min-h-0">
       <div class="flex flex-col flex-1 min-w-0">
-        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" textRendering="native" scene={scene(commits.value, refs.value, selected.value)}
+        <canvas-kit id="git-history-canvas" class="flex-1 min-h-0" navigation="scroll" textRendering="native" scene={scene(commits.value, refs.value, selected.value, remote.value)} hoverCard={hover.card}
           selected={selected.value == '' ? [] : [selected.value]} command={command}
-          onClick={e -> choose(e.region)}/>
+          onClick={e -> choose(e.region)} onHover={hover.hover}/>
         <div class="flex items-center gap-3 px-4 py-2 border-t shrink-0">
           <span id="git-history-count" class="text-xs text-text-secondary">{commits.value.length} commits</span>
           <ui-button id="git-history-more" variant="outline" class="w-24" disabled={busy.value || done.value || cursor == null} onClick={() -> page()}>Load more</ui-button>
@@ -92,15 +95,15 @@ function History(props) {
         <span class="text-xs text-text-secondary uppercase">Commit</span>
         <if {detail.value != null}>
           <h3 class="text-base font-semibold m-0">{detail.value.subject}</h3>
-          <span class="text-xs text-text-secondary">{selected.value.substr(0, 12)}</span>
-          <span class="text-sm">{detail.value.author}</span>
+          <ui-button id="git-history-copy" variant="ghost" class="self-start" tooltip="Copy commit hash" copyText={selected.value}><span class="text-xs text-text-secondary">{selected.value.substr(0, 12)}</span><ui-icon name="copy"/></ui-button>
+          <div class="flex items-center gap-2"><ui-avatar profile={{id:detail.value.id, remote:remote.value, author:detail.value.author, email:detail.value.email}}/><span class="text-sm">{detail.value.author}</span></div>
           <span class="text-xs text-text-secondary">{detail.value.email}</span>
           <span class="text-xs text-text-secondary">{timestamp(detail.value.time)}</span>
           <span class="text-xs text-text-secondary uppercase">Parents</span>
-          <for {parent in detail.value.parents}><span class="text-xs">{parent.substr(0, 12)}</span></for>
+          <for {parent in detail.value.parents}><ui-button variant="ghost" class="self-start" tooltip="Copy parent commit hash" copyText={parent}><span class="text-xs">{parent.substr(0, 12)}</span><ui-icon name="copy"/></ui-button></for>
           <span class="text-xs text-text-secondary uppercase">Changed files</span>
           <if {detail.value.parents.length > 1}><span class="text-xs text-text-secondary">Compared with first parent</span></if>
-          <Files state={changed} id="git-history-files"/>
+          <Files state={changed} id="git-history-files" flush={true}/>
           <else><p class="text-sm text-text-secondary">{busy.value ? 'Loading history…' : 'No commits'}</p></if>
       </div>
     </div>

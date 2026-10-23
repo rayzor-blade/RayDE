@@ -262,13 +262,21 @@ var branch = signal('all');
 
 `ui-button` accepts text or markup children, `disabled`, `variant` (`primary`, `secondary`, `outline`, `ghost`, `link`, `destructive`) and `size` (`sm`, `md`, `lg`). `ui-select` accepts `value`, `disabled`, `size` and `options`: `{value, label, disabled?}` records. It emits `change` with `{value}`. Both use Ashui's focus and keyboard handling. Their default row height is 32 px; numeric `height` permits 16–256 px for dense lists. CSS sets the wrapper's width, placement and component custom properties.
 
+`ui-button copyText={text}` copies that text to the system clipboard when the user activates the button. It grants no clipboard read access. Git uses it to copy full commit and parent hashes while displaying shortened labels.
+
 `ui-icon` renders Ashui's named icon set through its `name` property, at 16 px by default. Icon buttons accept `size="icon"`, `aria-label` and a static `tooltip`, for example `<ui-button size="icon" tooltip="Maximize graph"><ui-icon name="maximize"/></ui-button>`. The tooltip also supplies the accessible label. `maximize` uses the pack's `fullscreen-line` SVG; `fetch`, `pull`, `push`, `focus` and `filter-off` are also available.
 
 Use `file` instead of `name` to show a file's Explorer icon, for example `<ui-icon file={entry.path}/>`. This shares RayDE's filename and language mappings, colours and fallback icon without reading the file.
 
+`ui-avatar` accepts `profile={...}` with `id`, `remote`, `author` and `email` fields. The `net.profiles` capability enables public author lookups for GitHub, GitLab.com and Bitbucket Cloud; other remotes and unavailable accounts show initials. Requests use system `curl` on a worker with bounded responses and timeouts, without credentials. The shared cache retains at most 128 entries and 2 MiB of compressed images; visible presentations own and release their decoded 64 px bitmaps.
+
+The adapters use [GitHub commit authors](https://docs.github.com/en/rest/commits/commits), [GitLab's public-email avatar API](https://docs.gitlab.com/api/avatar/) and [Bitbucket commit authors](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-commits/). GitHub noreply addresses and exact public email matches can resolve accounts for unpublished commits. Restricted profiles, rate limits, missing `curl` and offline failures fall back quietly.
+
+Git graphs supply `hoverCard` on `canvas-kit` after a brief hover delay. A card contains the full local commit message, author and avatar. Its capped message body scrolls independently and stays open while the pointer enters it. Expanded graphs mount avatars only for visible rows. Diff headers show the selected commit's author, or explicitly label the base commit for working-tree comparisons.
+
 `ui-menu` is Ashui's native DropdownMenu with an icon-sized chevron trigger. It takes `tooltip`, `disabled` and `options` (`{value, label, disabled?}`), and emits `select` with `{value}`. Its keyboard navigation, focus restoration and dismissal use the native component.
 
-`code-diff` is Ashui's CodeDiff: two texts compared. It takes `original` and `modified` strings, `language` (`haxe`, `json`, `rust`, `typescript`, `javascript`, `css`, `python`, `lua` or `plain`), `layout` (`inline` or `split`) and `navigation` (a bar with the change count and previous/next buttons, fixed once mounted). All but `navigation` can be signals. It is read-only and fills its parent.
+`code-diff` is Ashui's CodeDiff: two texts compared. It takes `original` and `modified` strings, `language` (`haxe`, `json`, `rust`, `typescript`, `javascript`, `css`, `python`, `lua` or `plain`), `layout` (`inline` or `split`) and `navigation` (a bar with the change count and previous/next buttons, fixed once mounted). Markup children occupy the left side of that same header, so titles and custom controls share the navigation row. All but `navigation` can be signals. It is read-only and fills its parent.
 
 `canvas-kit` retains a serializable drawing scene and runs Ashui CanvasKit in the editor:
 

@@ -32,7 +32,7 @@ function selection(path) {
 function showCommitFile(entry) {
   var added = entry.status == 1, removed = entry.status == 2;
   var old = entry.oldPath == null || entry.oldPath == '' ? entry.path : entry.oldPath;
-  showDiff(entry.id.substr(0, 7), entry.path, added ? null : entry.id + '^1:' + old, removed ? null : entry.id + ':' + entry.path, false);
+  showDiff(entry.id.substr(0, 7), entry.path, added ? null : entry.id + '^1:' + old, removed ? null : entry.id + ':' + entry.path, false, entry.id);
 }
 
 function Files(props) {
@@ -43,8 +43,8 @@ function Files(props) {
     <else><if {state.files.value.length == 0}><span class="px-3 py-1 text-xs text-text-secondary">No changed files</span>
     <else>
       <for {entry in state.files}>
-        <div class="flex flex-col min-w-0 px-3 shrink-0">
-          <ui-button variant="ghost" class="w-full shrink-0" height={24} style={{'--ui-button-padding':'0 4px'}} onClick={() -> showCommitFile(entry)}>
+        <div class={props.flush ? 'flex flex-col min-w-0 shrink-0' : 'flex flex-col min-w-0 px-3 shrink-0'}>
+          <ui-button variant="ghost" class="w-full shrink-0" height={24} style={{'--ui-button-padding':props.flush ? '0' : '0 4px'}} onClick={() -> showCommitFile(entry)}>
           <div class="flex items-center gap-2 min-w-0 w-full">
             <ui-icon file={entry.path}/>
             <span class="text-sm truncate min-w-0">{entry.name}</span>

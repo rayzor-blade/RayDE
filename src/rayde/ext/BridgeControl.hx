@@ -40,6 +40,7 @@ class BridgeControl {
 	var stopSelect:Null<Void->Void>;
 	var stopIcon:Null<Void->Void>;
 	var nativeButton:Button;
+	var copyText:Null<String>;
 	var nativeSelect:Select;
 	var kit:CanvasKit;
 	var viewport:Viewport2D;
@@ -69,13 +70,17 @@ class BridgeControl {
 	var diff:Null<CodeDiff>;
 	final image:Null<(String, String)->{bytes:haxe.io.Bytes, svg:Bool}>;
 	final markdownState:Dynamic;
+	final profile = Signal.make((null:Dynamic));
+	final profiles:Bool;
+	var commitPopover:CommitPopover;
 
 	public static function supported(tag:String):Bool
-		return tag == "markdown-view" || tag == "code-diff" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon";
+		return tag == "markdown-view" || tag == "code-diff" || tag == "canvas-kit" || tag == "ui-button" || tag == "ui-menu" || tag == "ui-select" || tag == "ui-panel-group" || tag == "ui-icon" || tag == "ui-avatar";
 
-	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}) {
+	public function new(tree:LayoutTree, kind:String, emit:(String, Dynamic)->Void, ?state:Dynamic, ?image:(String, String)->{bytes:haxe.io.Bytes, svg:Bool}, profiles = false) {
 		this.tree = tree;
 		this.image = image;
+		this.profiles = profiles;
 		markdownState = state;
 		this.kind = kind;
 		this.emit = emit;
@@ -88,8 +93,16 @@ class BridgeControl {
 				content = slot.node;
 				content.set(Prop.WidthPercent, (1:Single));
 				nativeButton = new Button({size: Sm, variant: Secondary, disabled: disabled, type: "button",
-					onClick: e -> emit("click", {x: e.localX, y: e.localY})}, [slot]);
+					onClick: e -> {
+						if (copyText != null) ashui.input.Clipboard.setText(copyText);
+						emit("click", {x: e.localX, y: e.localY});
+					}}, [slot]);
 				fill(nativeButton);
+			} else if (kind == "code-diff") {
+				content = new Div({display:Flex, flexGrow:1, minWidth:0}).node;
+			} else if (kind == "ui-avatar") {
+				var avatar = new GitAvatar({profile:profile, network:profiles});
+				fill(avatar); tree.addChild(box.node.id, avatar.node.id);
 			} else if (kind == "canvas-kit") {
 				viewport = new Viewport2D();
 				selection = new Selection2D();
@@ -116,8 +129,9 @@ class BridgeControl {
 			node.set(Prop.FlexDirection, Column);
 			node.set(Prop.FlexGrow, (1:Single));
 		}
-		else if (kind == "ui-icon") {
-			node.set(Prop.Width, (16:Single)); node.set(Prop.Height, (16:Single));
+		else if (kind == "ui-icon" || kind == "ui-avatar") {
+			var size:Single = kind == "ui-avatar" ? 24 : 16;
+			node.set(Prop.Width, size); node.set(Prop.Height, size);
 			node.set(Prop.FlexShrink, (0:Single));
 		}
 		else if (kind != "canvas-kit" && kind != "markdown-view" && kind != "code-diff") node.set(Prop.Height, (32:Single));
@@ -134,6 +148,7 @@ class BridgeControl {
 			onClick:(id, e) -> clickRegion(id, e),
 			onHover:id -> { hovered.set(id ?? ""); emit("hover", {region:id}); }});
 		kit.momentumDecay = 0;
+		commitPopover = new CommitPopover(tree, scope, profiles);
 		if (scrolling) {
 			node.set(Prop.Overflow, ashui.types.Overflow.Scroll);
 			scroller = ashui.input.Scroll.attach(node, true, true);
@@ -152,14 +167,17 @@ class BridgeControl {
 				kit.node.set(Prop.Top, (offset.y:Single));
 				viewport.panX.set(-offset.x); viewport.panY.set(-offset.y);
 				hovered.set("");
+				commitPopover.hide(); emit("hover", {region:null});
 			});
 			var input = Interaction.of(kit.node);
 			input.onPointerMove(e -> {
 				var point = viewport.screenToContent(e.localX, e.localY);
 				var hit = kit.index.hitTest(point.x, point.y), id = hit == null ? "" : hit.id;
-				if (hovered.get() != id) { hovered.set(id); emit("hover", {region:hit == null ? null : id}); }
+				if (hovered.get() != id) { commitPopover.hide(); hovered.set(id); emit("hover", {region:hit == null ? null : id}); }
+				else commitPopover.stay();
 			});
-			input.onPointerLeave(_ -> { hovered.set(""); emit("hover", {region:null}); });
+			input.onPointerLeave(_ -> { hovered.set(""); commitPopover.leave(); emit("hover", {region:null}); });
+			input.onPointerDown(_ -> commitPopover.hide());
 			input.onClick(e -> {
 				if (e.button != null && e.button != Left) return;
 				var point = viewport.screenToContent(e.localX, e.localY);
@@ -170,7 +188,7 @@ class BridgeControl {
 			});
 		} else fill(kit);
 		tree.addChild(node.id, kit.node.id);
-		var labels = nativeText ? new CanvasLabels(node, Owner.current) : null;
+		var labels = nativeText ? new CanvasLabels(node, Owner.current, profiles) : null;
 		if (labels != null) {
 			var placeLabels:LayoutTree->Bool = laid -> {
 				if (laid != tree) return false;
@@ -226,6 +244,15 @@ class BridgeControl {
 
 	public function set(name:String, data:Dynamic):Bool {
 		switch name {
+			case "profile" if (kind == "ui-avatar"): profile.set(data); return true;
+			case "copyText" if (kind == "ui-button"):
+				copyText = data == null ? null : CanvasScene.text({text:data}, "text"); return true;
+			case "hoverCard" if (kind == "canvas-kit"):
+				if (data != null && kit != null && data.id == hovered.get()) {
+					var region = scene.get().region(Std.string(data.id)), bounds = tree.getScrolledBounds(kit.node);
+					if (region != null && bounds != null) commitPopover.show(data, {x:bounds.x + Math.max(0, region.x - scroller.x.get()), y:bounds.y + region.y - scroller.y.get(), width:Math.min(region.width, bounds.width), height:region.height});
+				}
+				return true;
 			case "document" if (kind == "markdown-view"):
 				markdownSource = data;
 				markdownDocument.set(data == null ? null : Std.isOfType(data, String) ? haxe.Json.parse(data) : data); return true;
@@ -327,8 +354,24 @@ class BridgeControl {
 		}
 		if (kind == "code-diff") {
 			if (diff == null) scope.run(() -> {
-				diff = new CodeDiff({original:diffOriginal, modified:diffModified, language:diffLanguage, layout:diffLayout, navigation:diffNavigation});
+				diff = new CodeDiff({original:diffOriginal, modified:diffModified, language:diffLanguage, layout:diffLayout});
+				var heading = new Div({classes:["rayde-diff-heading"]});
+				tree.addChild(heading.node.id, content.id);
+				if (diffNavigation) {
+					var count = Computed.make(() -> {
+						var n = diff.changeCount.get(), c = diff.currentChange.get();
+						return n == 0 ? "No changes" : c < 0 ? (n == 1 ? "1 change" : n + " changes") : (c + 1) + " of " + n;
+					});
+					var none = Computed.make(() -> diff.changeCount.get() == 0);
+					var tools = <div class="rayde-diff-navigation"><text>{count}</text>
+						${new Tooltip({label:"Previous change (Shift+F7)"}, [new Button({id:"git-diff-previous", variant:Ghost, size:Icon, disabled:none, onClick:_ -> diff.previousChange()}, [new Icon({document:rayde.ui.Icons.ARROW_UP_S_LINE})])])}
+						${new Tooltip({label:"Next change (F7)"}, [new Button({id:"git-diff-next", variant:Ghost, size:Icon, disabled:none, onClick:_ -> diff.nextChange()}, [new Icon({document:rayde.ui.Icons.ARROW_DOWN_S_LINE})])])}
+					</div>;
+					tree.addChild(heading.node.id, tools.node.id);
+				}
+				if (diffNavigation || tree.children(content.id).length > 0) tree.addChild(node.id, heading.node.id);
 				fill(diff);
+				diff.node.set(Prop.MinHeight, (0:Single));
 				tree.addChild(node.id, diff.node.id);
 			});
 			return;

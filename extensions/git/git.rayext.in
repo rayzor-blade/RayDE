@@ -6,7 +6,7 @@
   "main": "ext/main.rays",
   "sources": ["ext"],
   "activationEvents": ["workspaceContains:.git", "onView:scm", "onView:timeline", "onCommand:git.history", "onCommand:git.refresh", "onCommand:git.fetch", "onCommand:git.pull", "onCommand:git.push"],
-  "capabilities": ["workspace.read", "native:git2"],
+  "capabilities": ["workspace.read", "native:git2", "net.profiles"],
   "natives": {
     "git2": {"path": "natives/@LIBRARY@", "sha256": "@SHA256@"}
   },

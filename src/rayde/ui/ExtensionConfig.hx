@@ -37,6 +37,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		{id: "workspace.write", label: "Workspace write", hint: "Create, modify and delete files"},
 		{id: "process.spawn", label: "Process spawn", hint: "Start processes from an allow-list"},
 		{id: "net.fetch", label: "Network fetch", hint: "HTTP requests to allow-listed hosts"},
+		{id: "net.profiles", label: "Public Git profiles", hint: "Author avatars from known public repository providers"},
 		{id: "terminal", label: "Terminal", hint: "Open terminals and write to them"},
 		{id: "clipboard", label: "Clipboard", hint: "Read and write the system clipboard"}
 	];
