@@ -9,7 +9,7 @@ import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 import rayde.ui.Workbench.WorkbenchProps;
 
-typedef WorkspaceWindowProps = {initial:WorkbenchProps, server:CompilerServer, ?chrome:WindowChrome, ?openWindow:Null<String>->Void};
+typedef WorkspaceWindowProps = {initial:WorkbenchProps, server:CompilerServer, ?chrome:WindowChrome, ?openWindow:Null<String>->Void, ?onWorkspaceChanged:String->Void};
 
 /** Replaces workspace owners in the existing window; each workbench releases its own services. */
 class WorkspaceWindow extends Component<WorkspaceWindowProps> {
@@ -46,6 +46,7 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		var next = describe(props.server, entry);
 		rayde.settings.RecentProjects.remember(entry);
 		current.set(next);
+		if (props.onWorkspaceChanged != null) props.onWorkspaceChanged(sys.FileSystem.fullPath(entry));
 	}
 
 	function render():Element {

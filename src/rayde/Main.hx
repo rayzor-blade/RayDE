@@ -1,6 +1,6 @@
 package rayde;
 
-/** Starts Welcome or a command-line workspace in the desktop window manager. */
+/** Starts a command-line workspace or resumes the desktop window session. */
 class Main {
 	static function main():Void {
 		var args = Sys.args();

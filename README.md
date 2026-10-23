@@ -23,7 +23,7 @@ RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://gith
 ## Getting started
 
 ```sh
-scripts/rayde.sh                        # Welcome, recent workspaces and project creation
+scripts/rayde.sh                        # Restore windows and tabs, or Welcome on first launch
 scripts/rayde.sh path/to/folder          # a folder workspace, including non-Haxe projects
 scripts/rayde.sh path/to/build.hxml     # a Haxe project
 scripts/rayde.sh path/to/name.rayext    # an extension

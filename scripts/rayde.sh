@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opens Welcome, or a supplied folder, project entry, extension or theme.
+# Restores the window session, or opens a supplied folder, project entry, extension or theme.
 # --build rebuilds without opening a window; --native also compiles bin/rayde ahead of time.
 set -euo pipefail
 source "$(dirname "$0")/deps.sh"
