@@ -39,20 +39,25 @@ https://github.com/HaxeFlixel/flixel/blob/9f90434a2b613205e918e8b36b13e60c64debe
 Lime: openfl/lime, 4514e52aabac420bf4f5adda3a73032d4034c7e6, templates/default/icon.svg
 https://github.com/openfl/lime/blob/4514e52aabac420bf4f5adda3a73032d4034c7e6/templates/default/icon.svg
 
+Ceramic: ceramic-engine/ceramic, d1dd197ba3545084b73887cf280cff47c6d7132a, tools/tpl/project/empty/assets/ceramic@2x.png
+https://github.com/ceramic-engine/ceramic/blob/d1dd197ba3545084b73887cf280cff47c6d7132a/tools/tpl/project/empty/assets/ceramic@2x.png
+
 Starter taglines
 ----------------
 Haxe: https://haxe.org/
-Ash: https://ash.rayzor.tech/ and the upstream README
+Ash: description supplied by the project maintainer
 Ashui: the upstream README
-Rayzor: https://rayzor.tech/ and its repository website/index.html
+Rayzor: description supplied by the project maintainer
 HashLink: https://hashlink.haxe.org/
 Heaps: https://heaps.io/
 OpenFL: https://www.openfl.org/ (page title)
 HaxeFlixel: https://haxeflixel.com/
 Lime: https://lime.openfl.org/
+Ceramic: https://ceramic-engine.com/
 
 Bundled asset SHA-256
 --------------------
+ceramic.png e80738b65f463e7475dd5954adb90abc5a373e8eb5a3db059bd0f66710955ecc
 ash.png 180b012173f8d6e6565a2a551d7e71fe0004d381105d92bc237a8846790266f2
 ashui.png 4dfaec9d61070787ded9cc3637c43bab0bea81714052e097c88a660354cfbc54
 flixel.svg 65cd6f3566c2e9389792fd274812c02d04b0cf15026aba004e26d5fb8a5d33c7

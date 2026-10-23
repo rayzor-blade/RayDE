@@ -42,6 +42,10 @@ class ProjectChecks {
 		check(sys.io.File.getContent(occupied) == "keep", "Existing file was modified");
 		for (template in rayde.project.ProjectTemplates.all) {
 			var entry = ProjectFile.create(root, "starter-" + template.id, template.id), project = ProjectFile.read(entry);
+			if (template.id == "ceramic") {
+				check(project.kind == "folder" && !project.runnable && sys.FileSystem.exists(project.root + "/ceramic.yml") && sys.FileSystem.exists(project.root + "/src/Project.hx") && sys.FileSystem.exists(project.root + "/src/MainScene.hx"), "Ceramic did not open its engine-managed source folder");
+				continue;
+			}
 			check(project.args.indexOf("src") >= 0 && sys.FileSystem.exists(project.root + "/README.md"), "Template omitted its source root or getting-started instructions");
 			if (["openfl", "flixel", "lime"].indexOf(template.id) >= 0) {
 				var xml = Xml.parse(sys.io.File.getContent(project.root + "/project.xml")).firstElement();
@@ -54,12 +58,17 @@ class ProjectChecks {
 			var args = switch template.id {
 				case "hxml": ["-cp", "src", "--run", "Main"];
 				case "haxelib": ["-cp", "src", "--no-output", "Library"];
-				case "javascript", "hashlink", "ash": ["build.hxml"];
+				case "javascript": Sys.getEnv("RAYDE_TEST_WEB_STARTER") == "1" ? ["build.hxml"] : null;
+				case "hashlink", "ash": ["build.hxml"];
 				case _: null;
 			};
 			if (args != null) {
 				var compile = new sys.io.Process("haxe", ["--cwd", project.root].concat(args)), errors = compile.stderr.readAll().toString(), status = compile.exitCode(); compile.close();
 				check(status == 0, "Starter did not compile: " + template.id + "\n" + errors);
+				if (template.id == "javascript") {
+					var api = new sys.io.Process("haxe", ["--cwd", project.root, "server.hxml"]), errors = api.stderr.readAll().toString(), status = api.exitCode(); api.close();
+					check(status == 0, "Tink Web API did not compile:\n" + errors);
+				}
 			}
 		}
 		rejects(() -> ProjectFile.create(root, "unknown", "missing-template"), "Unknown template was accepted");

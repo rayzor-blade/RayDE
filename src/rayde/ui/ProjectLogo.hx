@@ -27,6 +27,7 @@ class ProjectLogo extends Component<{template:ProjectTemplate}> {
 			case "ash": raster(ProjectLogoAssets.bytes("assets/project-logos/ash.png"));
 			case "ashui": raster(ProjectLogoAssets.bytes("assets/project-logos/ashui.png"), true);
 			case "heaps": raster(ProjectLogoAssets.bytes("assets/project-logos/heaps.png"));
+			case "ceramic": <div class="rayde-project-ceramic-logo">${raster(ProjectLogoAssets.bytes("assets/project-logos/ceramic.png"))}</div>;
 			case "hxml" | "haxelib": vector(haxeLogo);
 			case "rayzor": vector(rayzor);
 			case "javascript": vector(javascript);

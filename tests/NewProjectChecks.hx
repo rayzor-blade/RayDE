@@ -79,7 +79,7 @@ class NewProjectChecks {
 			var catalog = bounds("#rayde-project-catalog"), scroll = ashui.input.Scroll.at(nodes("#rayde-project-catalog")[0], tree);
 			if (scroll != null && scroll.limits().y > 0) {
 				ashui.input.Pointer.move(tree, catalog.x + catalog.width / 2, catalog.y + catalog.height / 2); ashui.input.Pointer.wheel(tree, 0, -10000); settle();
-				var last = bounds("#rayde-project-template-lime");
+				var last = bounds("#rayde-project-template-ceramic");
 				check(scroll.y.get() > 0 && last.y + last.height <= catalog.y + catalog.height + 1 && bounds("#rayde-project-footer").y == footer.y, "Scrolling templates moved the form or hid the final card");
 				shot("scrolled"); scroll.y.set(0); settle();
 			}

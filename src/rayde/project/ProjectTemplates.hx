@@ -21,16 +21,17 @@ typedef ProjectScaffold = {entry:String, files:Map<String, String>};
 class ProjectTemplates {
 	public static final all:Array<ProjectTemplate> = [
 		{id:"hxml", name:"Haxe Application", category:"Applications", description:"The cross-platform toolkit.", target:"Cross-platform", requirements:"Haxe · Ash or HashLink for RayDE Run", command:"haxe -cp src --run Main", docs:"https://haxe.org/manual/introduction-hello-world.html"},
-		{id:"ash", name:"Ash", category:"Applications", description:"A faster runtime for HashLink bytecode.", target:"Cross-platform", requirements:"Haxe · Ash", command:"haxe build.hxml && ash --preset application bin/app.hl", docs:"https://github.com/rayzor-blade/ash"},
+		{id:"ash", name:"Ash", category:"Applications", description:"High performance runtime for Hashlink bytecode - JIT, AOT and WASM support", target:"Cross-platform", requirements:"Haxe · Ash", command:"haxe build.hxml && ash --preset application bin/app.hl", docs:"https://github.com/rayzor-blade/ash"},
 		{id:"ashui", name:"Ashui", category:"Applications", description:"Native, reactive UI for Haxe.", target:"Cross-platform", requirements:"Haxe · Ash · ashui · ashui-components", command:"haxe build.hxml && ash --preset application bin/app.hl", docs:"https://github.com/rayzor-blade/ashui"},
-		{id:"rayzor", name:"Rayzor", category:"Applications", description:"Instant Haxe. Native performance.", target:"Cross-platform", requirements:"Rayzor", command:"rayzor run", docs:"https://github.com/rayzor-blade/rayzor"},
+		{id:"rayzor", name:"Rayzor", category:"Applications", description:"High performance native Haxe runtime", target:"Cross-platform", requirements:"Rayzor", command:"rayzor run", docs:"https://github.com/rayzor-blade/rayzor"},
 		{id:"haxelib", name:"Haxelib Library", category:"Libraries", description:"A reusable, publishable Haxe package.", target:"Cross-platform", requirements:"Haxe · Haxelib", command:"haxe -cp src --no-output Library", docs:"https://haxe.org/manual/haxelib-json.html"},
-		{id:"javascript", name:"Web Application", category:"Applications", description:"Haxe to JavaScript, ready for a browser.", target:"Web", requirements:"Haxe · Web browser", command:"haxe build.hxml", docs:"https://haxe.org/manual/target-javascript-getting-started.html"},
+		{id:"javascript", name:"Tink Web Application", category:"Applications", description:"Reactive browser UI with Coconut and a Tink Web API.", target:"Web", requirements:"Haxe · Coconut · Tink · Node.js for the API", command:"haxe build.hxml", docs:"https://haxetink.github.io/tink_web/"},
 		{id:"hashlink", name:"HashLink", category:"Applications", description:"A high performance virtual machine for Haxe.", target:"Cross-platform", requirements:"Haxe · HashLink (Ash on Apple Silicon)", command:"haxe build.hxml", docs:"https://haxe.org/manual/target-hl-getting-started.html"},
 		{id:"heaps", name:"Heaps", category:"Games", description:"Cross platform graphics for high performance games.", target:"Cross-platform", requirements:"Haxe · heaps (haxelib install heaps)", command:"haxe build.hxml", docs:"https://github.com/HeapsIO/heaps/wiki/Hello-World"},
 		{id:"openfl", name:"OpenFL", category:"Applications", description:"Creative expression for desktop, mobile, web and console platforms.", target:"Cross-platform", requirements:"Haxe · openfl (haxelib install openfl)", command:"haxelib run lime test html5", docs:"https://www.openfl.org/learn/docs/getting-started/"},
 		{id:"flixel", name:"HaxeFlixel", category:"Games", description:"Create cross-platform games easier and free.", target:"Cross-platform", requirements:"Haxe · flixel (haxelib install flixel)", command:"haxelib run lime test html5", docs:"https://haxeflixel.com/documentation/hello-world/"},
-		{id:"lime", name:"Lime", category:"Applications", description:"Mobile, Desktop, Web and More.", target:"Cross-platform", requirements:"Haxe · lime (haxelib install lime)", command:"haxelib run lime test html5", docs:"https://lime.openfl.org/docs/command-line-tools/create-new-project/"}
+		{id:"lime", name:"Lime", category:"Applications", description:"Mobile, Desktop, Web and More.", target:"Cross-platform", requirements:"Haxe · lime (haxelib install lime)", command:"haxelib run lime test html5", docs:"https://lime.openfl.org/docs/command-line-tools/create-new-project/"},
+		{id:"ceramic", name:"Ceramic", category:"Games", description:"A cross-platform & open-source 2D framework", target:"Cross-platform", requirements:"Haxe · Ceramic (ceramic-engine.com)", command:"ceramic clay run web --setup --assets", docs:"https://ceramic-engine.com/guides/your-first-project/"}
 	];
 
 	public static function get(id:String):ProjectTemplate {
@@ -58,9 +59,10 @@ class ProjectTemplates {
 				files.set(entry, manifest(name, [], "A Haxe library"));
 				files.set("src/Library.hx", 'class Library {\n\tpublic static function hello():String {\n\t\treturn "Hello!";\n\t}\n}\n');
 			case "javascript":
-				main = 'class Main {\n\tstatic function main() {\n\t\tjs.Browser.document.getElementById("app").textContent = "Hello from Haxe!";\n\t}\n}\n';
-				files.set(entry, build + "-js bin/app.js\n");
-				files.set("index.html", html(name, '<main id="app"></main>'));
+				for (path => text in WebStarter.files(name)) files.set(path, text);
+			case "ceramic":
+				entry = "";
+				for (path => text in CeramicStarter.files(name)) files.set(path, text);
 			case "hashlink" | "ash": files.set(entry, build + "-hl bin/app.hl\n");
 			case "ashui":
 				main = 'import ashui.app.WindowedApp;\nimport ashui.components.Button;\nimport ashui.reactive.Reactive;\n\nclass Main {\n\tstatic function main() {\n\t\tWindowedApp.run({title: "$name", width: 800, height: 600}, () -> {\n\t\t\tvar count = signal(0);\n\t\t\treturn <div widthPercent={1} heightPercent={1} class="flex flex-col items-center justify-center gap-4 p-6 bg-background text-text-primary">\n\t\t\t\t<text class="text-2xl font-semibold">Hello, Ashui!</text>\n\t\t\t\t<button onClick={_ -> count.set(count.get() + 1)}>Clicked $${count.get()} times</button>\n\t\t\t</div>;\n\t\t});\n\t}\n}\n';
@@ -82,8 +84,8 @@ class ProjectTemplates {
 					: 'class Main extends openfl.display.Sprite {\n\tpublic function new() {\n\t\tsuper();\n\t\tvar label = new openfl.text.TextField();\n\t\tlabel.text = "Hello from OpenFL!";\n\t\tlabel.width = 400;\n\t\tlabel.x = 24;\n\t\tlabel.y = 24;\n\t\taddChild(label);\n\t}\n}\n';
 				if (id == "flixel") files.set("src/PlayState.hx", 'class PlayState extends flixel.FlxState {\n\toverride public function create():Void {\n\t\tsuper.create();\n\t\tadd(new flixel.text.FlxText(24, 24, 0, "Hello from HaxeFlixel!", 24));\n\t}\n}\n');
 		}
-		if (id != "haxelib") files.set("src/Main.hx", main);
-		files.set("README.md", '# $name\n\n${template.description}\n\n## Requirements\n\n${template.requirements}\n\n## Get started\n\nRun in this project\'s terminal:\n\n```sh\n${template.command}\n```\n' + (id == "javascript" || id == "heaps" ? "\nThen open `index.html` in your browser.\n" : "") + '\n[Documentation](${template.docs})\n');
+		if (id != "haxelib" && id != "ceramic" && !files.exists("src/Main.hx")) files.set("src/Main.hx", main);
+		if (!files.exists("README.md")) files.set("README.md", '# $name\n\n${template.description}\n\n## Requirements\n\n${template.requirements}\n\n## Get started\n\nRun in this project\'s terminal:\n\n```sh\n${template.command}\n```\n' + (id == "heaps" ? "\nThen open `index.html` in your browser.\n" : "") + '\n[Documentation](${template.docs})\n');
 		if (id == "ashui") files.set("README.md", files.get("README.md") + "\nInstall the UI libraries with `haxelib install ashui` and `haxelib install ashui-components`. Their native libraries are staged beside the compiled bytecode automatically.\n");
 		if (id == "ash" || id == "ashui") files.set("README.md", files.get("README.md") + "\nTo build a native executable, run `ash --build bin/app bin/app.hl`.\n");
 		if (id == "heaps") files.set("README.md", files.get("README.md") + "\n## Native build\n\nInstall `format` and `hlsdl` with Haxelib, then run `haxe native.hxml` and `hl bin/app.hl`.\n");
