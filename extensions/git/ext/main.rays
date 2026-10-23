@@ -97,7 +97,6 @@ function History(props) {
           <h3 class="text-base font-semibold m-0">{detail.value.subject}</h3>
           <ui-button id="git-history-copy" variant="ghost" class="self-start" tooltip="Copy commit hash" copyText={selected.value}><span class="text-xs text-text-secondary">{selected.value.substr(0, 12)}</span><ui-icon name="copy"/></ui-button>
           <div class="flex items-center gap-2"><ui-avatar profile={{id:detail.value.id, remote:remote.value, author:detail.value.author, email:detail.value.email}}/><span class="text-sm">{detail.value.author}</span></div>
-          <span class="text-xs text-text-secondary">{detail.value.email}</span>
           <span class="text-xs text-text-secondary">{timestamp(detail.value.time)}</span>
           <span class="text-xs text-text-secondary uppercase">Parents</span>
           <for {parent in detail.value.parents}><ui-button variant="ghost" class="self-start" tooltip="Copy parent commit hash" copyText={parent}><span class="text-xs">{parent.substr(0, 12)}</span><ui-icon name="copy"/></ui-button></for>

@@ -37,7 +37,7 @@ class CommitPopover {
 			return <div class="rayde-git-popover">
 				<div class="rayde-git-person">
 					${new GitAvatar({profile:profile, network:network})}
-					<div class="rayde-git-identity"><text class="rayde-git-name">{data.author}</text><text class="rayde-git-muted">{data.email}</text></div>
+					<div class="rayde-git-identity"><text class="rayde-git-name">{data.author}</text></div>
 				</div>
 				<div class="rayde-git-hash"><text class="rayde-git-muted">{data.id}</text>
 					${new ashui.components.Tooltip({label:"Copy commit hash"}, [new ashui.components.Button({id:"git-commit-copy", variant:Ghost, size:Icon, onClick:_ -> ashui.input.Clipboard.setText(data.id)}, [new ashui.components.Icon({document:rayde.ui.Icons.FILE_COPY_LINE})])])}
