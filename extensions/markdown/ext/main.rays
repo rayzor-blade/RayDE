@@ -28,6 +28,7 @@ function markdown(path) {
 
 function update(preview) {
   var sequence = ++preview.sequence;
+  preview.error.value = null;
   try {
     var source = await readFile(preview.path);
     if (!preview.live || sequence != preview.sequence || source == preview.source) return;
@@ -37,7 +38,12 @@ function update(preview) {
       preview.source = source;
       preview.document.value = Json.stringify(document);
     }
-  } catch (failure) { if (preview.live) notify('' + failure, 'error'); }
+  } catch (failure) {
+    if (preview.live && sequence == preview.sequence) {
+      preview.error.value = '' + failure;
+      trace('Cannot preview ' + preview.path + ': ' + failure);
+    }
+  }
 }
 
 function follow(preview, href) {
@@ -65,8 +71,14 @@ function Document(props) {
       <ui-button id="markdown-refresh" size="icon" variant="ghost" tooltip="Refresh preview" onClick={() -> { preview.source = null; update(preview); }}><ui-icon name="refresh"/></ui-button>
     </div>
     <div id="markdown-scroll" virtualizeImages={true} class="flex flex-col flex-1 min-h-0 min-w-0 overflow-auto">
-      <if {preview.document.value != null}><markdown-view id="markdown-document" document={preview.document} onLink={e -> follow(preview, e.href)}/>
-      <else><p class="p-6 text-text-secondary">Loading preview…</p></if>
+      <if {preview.error.value != null}><div id="markdown-error" class="flex flex-col gap-2 p-6 shrink-0">
+        <h3 class="text-sm font-semibold m-0">Unable to load preview</h3>
+        <span class="text-sm text-text-secondary">{preview.path}</span>
+        <span class="text-sm text-text-secondary">{preview.error}</span>
+        <div><ui-button id="markdown-retry" variant="outline" onClick={() -> update(preview)}>Retry</ui-button></div>
+      </div></if>
+      <if {preview.document.value != null}><markdown-view id="markdown-document" document={preview.document} onLink={e -> follow(preview, e.href)}/></if>
+      <if {preview.document.value == null && preview.error.value == null}><p class="p-6 text-text-secondary">Loading preview…</p></if>
     </div>
   </div>;
 }
@@ -77,7 +89,7 @@ function show(path = null) {
   for (preview in previews) if (preview.path == path) {
     update(preview); await focusView(preview.root); return;
   }
-  var preview = {path:path, document:signal(null), source:null, live:true, sequence:0, root:0};
+  var preview = {path:path, document:signal(null), error:signal(null), source:null, live:true, sequence:0, root:0};
   previews.push(preview);
   preview.root = mount(() -> <Document preview={preview}/>, 'tab:Preview: ' + basename(path));
   update(preview);

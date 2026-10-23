@@ -26,8 +26,6 @@ typedef ExplorerTreeProps = {
 	name:String,
 	/** The entries of a folder, in the order they are shown. */
 	entries:String->Array<ExplorerEntry>,
-	/** Source folders that are outside the project folder, shown after its entries. */
-	outside:Void->Array<{dir:String, label:String}>,
 	/** The project's own file, the first row under the folder; null if it has none. */
 	head:Void->Null<{path:String, icon:ashui.svg.SvgDocument}>,
 	icon:String->ashui.svg.SvgDocument,
@@ -105,12 +103,6 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 				var head = props.head();
 				if (head != null) out.push(rowOf(head.path, haxe.io.Path.withoutDirectory(head.path), 1, false, head.icon, null, fresh));
 				walk(props.root, 1);
-				for (outside in props.outside()) {
-					var open = props.state(outside.dir, true);
-					signals.push(open);
-					out.push(rowOf(outside.dir, outside.label, 1, true, Icons.FOLDER_LINE, open, fresh));
-					if (open.get()) walk(outside.dir, 2);
-				}
 			}
 			cache = fresh;
 			// A folder that is closed, or no longer there, is listed again when it is next needed.

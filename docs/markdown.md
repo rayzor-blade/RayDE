@@ -4,6 +4,8 @@ The built-in Markdown extension opens editor tabs. **Markdown: Open Preview** us
 
 The Explorer includes Markdown in the project root, documentation folders and source folders. `.md`, `.markdown`, `.mdown` and `.mkd` are recognized without case sensitivity and use the Markdown icon. Source folders start expanded; other folders load when opened.
 
+External class paths appear in Dependencies. Their Markdown files, relative links and local images can be previewed within the declared dependency roots. A failed read shows the file path, reason and a Retry action; a failed refresh keeps the last rendered document available.
+
 ![Markdown source opened from the project Explorer](images/markdown-explorer.png)
 
 Edits update an open preview after the editor's change debounce, including unsaved buffers. Opening the same preview again focuses its existing tab. The source and refresh actions have icon tooltips. Inactive preview tabs release decoded images, generated SVGs, code viewers and diagram canvases; their document structure, scroll position and disclosure state remain available for reopening. Closing a preview, including through a bulk close action, releases its document model too.

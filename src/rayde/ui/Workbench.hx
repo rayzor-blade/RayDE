@@ -185,6 +185,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final explorerFilesSize = Signal.make(Math.NaN);
 	final explorerSections = new Map<String, ExplorerSection>();
 	final dependenciesRevision = Signal.make(0);
+	var dependencyReadRoots:Array<String> = [];
 
 	final folderOpen = new Map<String, Signal<Bool>>();
 
@@ -553,6 +554,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What the form wrote to the build file is now the project's: the compiler reads it, the Explorer and the problems follow it. */
 	public function buildChanged():Void {
 		props.display.reload();
+		dependencyReadRoots = [];
+		dependenciesRevision.set(dependenciesRevision.get() + 1);
 		var manifest = rayzorManifest();
 		if (manifest != null && buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0)
 			buffers.get(manifest).set(sys.io.File.getContent(manifest));
@@ -1923,17 +1926,30 @@ class Workbench extends Component<WorkbenchProps> {
 		view.scroll.scrollTo(0, 1e12);
 	}
 
-	/** Resolves a path an extension gave against the project, refusing one outside it. */
-	function projectPath(path:String):String {
+	/** Extensions may read declared dependency sources; writes stay within the workspace. */
+	function projectPath(path:String, reading = false):String {
 		var full = haxe.io.Path.normalize(haxe.io.Path.isAbsolute(path) ? path : haxe.io.Path.join([props.display.cwd, path]));
-		if (!FileOps.inside(props.display.cwd, full))
-			throw "That is outside the project.";
+		function physical(path:String):String {
+			var tail:Array<String> = [];
+			while (!sys.FileSystem.exists(path)) {
+				var parent = haxe.io.Path.directory(path);
+				if (parent == path || parent == "") return path;
+				tail.unshift(haxe.io.Path.withoutDirectory(path)); path = parent;
+			}
+			return haxe.io.Path.join([sys.FileSystem.fullPath(path)].concat(tail));
+		}
+		var resolved = physical(full);
+		function contains(root:String):Bool {
+			return FileOps.inside(root, full) && FileOps.inside(physical(root), resolved);
+		}
+		if (!contains(props.display.cwd) && !(reading && (Lambda.exists(classpaths(), cp -> contains(cp.dir)) || Lambda.exists(dependencyReadRoots, contains))))
+			throw 'Cannot ${reading ? "read" : "write"} "$full": outside workspace "${props.display.cwd}"${reading ? " and its declared dependency roots" : ""}.';
 		return full;
 	}
 
 	/** Reads a project image within the preview's file-size budget. */
 	function imageBytes(path:String):Null<haxe.io.Bytes> {
-		var full = projectPath(path);
+		var full = projectPath(path, true);
 		if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) return null;
 		if (sys.FileSystem.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
 		return sys.io.File.getBytes(full);
@@ -1960,12 +1976,12 @@ class Workbench extends Component<WorkbenchProps> {
 				return bytes == null ? null : haxe.crypto.Base64.encode(bytes);
 			},
 			readFile: p -> {
-				var full = projectPath(p);
+				var full = projectPath(p, true);
 				buffers.exists(full) ? buffers.get(full).get() : sys.FileSystem.exists(full) && !sys.FileSystem.isDirectory(full) ? sys.io.File.getContent(full) : null;
 			},
 			activeFile: () -> realFile(active.get()),
 			root: () -> props.display.cwd,
-			openFile: p -> openFile(projectPath(p)),
+			openFile: p -> openFile(projectPath(p, true)),
 			setStatus: setExtensionStatus,
 			focusView: (file, root) -> {
 				var id = TAB + file + "#" + root;
@@ -2563,7 +2579,7 @@ class Workbench extends Component<WorkbenchProps> {
 		</div>;
 		var files = () -> <context-menu ref={explorerMenu} id="rayde-explorer-menu">
 				<context-menu-trigger id="rayde-explorer-trigger">
-					<explorer-tree root={props.display.cwd} name={props.name} entries={explorerEntries} outside={outsideFolders} head={headRow} icon={fileIcon}
+					<explorer-tree root={props.display.cwd} name={props.name} entries={explorerEntries} head={headRow} icon={fileIcon}
 						ignored={ignoredPath} opened={startsOpen} state={folderState} selected={treeSelected} onSelect={openExplorerFile}
 						onPress={explorerPress} revision={() -> buildRevision.get()}/>
 				</context-menu-trigger>
@@ -2584,7 +2600,7 @@ class Workbench extends Component<WorkbenchProps> {
 			sections.push(explorerSection(c.view.id, false, 160).panel(c.title, () -> explorerView(c), explorerTools(c)));
 
 		sections.push(explorerSection("dependencies", false, 160).panel("Dependencies", () ->
-			<for {revision in [dependenciesRevision.get()]}><explorer-dependencies root={props.display.cwd} args={props.display.args} onOpen={openFile}/></for>, [
+			<for {revision in [dependenciesRevision.get()]}><explorer-dependencies root={props.display.cwd} args={props.display.args} folders={outsideFolders()} onOpen={openFile} onPaths={paths -> dependencyReadRoots = paths}/></for>, [
 			<tooltip label="Refresh dependencies" side="bottom"><button id="rayde-dependencies-refresh" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> dependenciesRevision.set(dependenciesRevision.get() + 1)}><icon document={Icons.REFRESH_LINE} class="size-3"/></button></tooltip>,
 			<tooltip label="Manage libraries" side="bottom"><button id="rayde-dependencies-settings" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> openSettings("libraries")}><icon document={Icons.SETTINGS_3_LINE} class="size-3"/></button></tooltip>
 		]));
@@ -2982,9 +2998,13 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function projectEntry():Null<String> return props.display.project == null ? props.display.hxml : props.display.project.kind == "folder" ? null : props.display.project.file;
 
-	/** The source folders outside the project's own folder, which the Explorer lists after its entries. */
-	function outsideFolders():Array<{dir:String, label:String}>
-		return [for (cp in classpaths()) if (!FileOps.inside(props.display.cwd, cp.dir)) cp];
+	/** External source roots belong with the build's libraries in Dependencies. */
+	function outsideFolders():Array<{dir:String, label:String}> {
+		var seen = new Map<String, Bool>();
+		return [for (cp in classpaths()) if (!FileOps.inside(props.display.cwd, cp.dir) && !seen.exists(cp.dir)) {
+			seen.set(cp.dir, true); cp;
+		}];
+	}
 
 	/** Whether a folder starts open: the project's source folders do, and what is inside them. */
 	function startsOpen(dir:String):Bool

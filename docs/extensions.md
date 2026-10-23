@@ -299,7 +299,7 @@ The extension asks the workbench for files through the `rayde.workspace` module:
 | `openFile(path)` | `workspace.read` | opens the file in a tab |
 | `writeFile(path, text)` | `workspace.write` | writes the file; an open buffer is updated too |
 
-Paths are resolved against the project folder, and one outside it is refused. Calls return promises, so a script `await`s them. `readFile` answers from the buffer when a file is open, which is why the preview shows an edit as soon as it is saved.
+Paths are resolved against the project folder. Reads and source navigation also accept the build's declared class paths and library source roots resolved in Dependencies; writes remain restricted to the project folder. Other paths are refused with the requested path and workspace in the error. Calls return promises, so a script `await`s them. `readFile` answers from the buffer when a file is open, which is why the preview shows an edit as soon as it is saved.
 
 `rayde.settings.get(key, fallback?)` returns a promise for the calling extension's own setting. Workspace values under `extension.<id>` in `.rayde/settings.json` override user values in `~/.rayde/settings.json`, then the manifest's configuration default and finally the supplied fallback. Reading this section needs no workspace capability and cannot access another extension's section.
 

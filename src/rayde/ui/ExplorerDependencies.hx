@@ -10,7 +10,10 @@ using StringTools;
 
 private typedef Dependency = {entry:String, name:String, version:String, paths:Array<String>, error:String};
 
-typedef ExplorerDependenciesProps = {root:String, args:Array<String>, onOpen:String->Void};
+typedef ExplorerDependenciesProps = {
+	root:String, args:Array<String>, folders:Array<{dir:String, label:String}>, onOpen:String->Void,
+	onPaths:Array<String>->Void
+};
 
 /** Build libraries resolved off the UI thread; source folders create their rows on first expansion. */
 class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
@@ -23,7 +26,7 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 	function render():Element {
 		var rows = Signal.make(([]:Array<Dependency>)), message = Signal.make("Loading dependencies…"), job = new ExplorerJob(props.root);
 		var libs = entries(props.args);
-		if (libs.length == 0) message.set("No Haxe libraries in this build");
+		if (libs.length == 0) { message.set(props.folders.length == 0 ? "No dependencies in this build" : ""); props.onPaths([]); }
 		else job.run(Haxelib.command(), ["list"], (_, text) -> {
 			var installed = Haxelib.parse(text);
 			var initial:Array<Dependency> = [for (entry in libs) {
@@ -45,6 +48,7 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 						}
 					}
 					initial[index] = {entry:lib.entry, name:lib.name, version:lib.version, paths:paths, error:paths.length == 0 ? "Library sources unavailable; check Libraries settings" : ""};
+					props.onPaths([for (item in initial) for (path in item.paths) path]);
 					rows.set(initial.copy()); resolve(index + 1);
 				});
 			}
@@ -52,7 +56,7 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 		});
 		return <div id="rayde-dependencies-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto">
 			<if {message.get() != ""}><div class="px-3 py-2"><text class="text-xs text-text-secondary">${message.get()}</text></div></if>
-			<for {items in [rows.get()]}><tree-view id="rayde-dependencies-tree" onSelect={path -> { if (haxe.io.Path.isAbsolute(path) && sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) props.onOpen(path); }}>{[for (lib in items) library(lib)]}</tree-view></for>
+			<for {items in [rows.get()]}><tree-view id="rayde-dependencies-tree" onSelect={path -> { if (haxe.io.Path.isAbsolute(path) && sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) props.onOpen(path); }}>{[for (folder in props.folders) directory(folder.dir, folder.label)].concat([for (lib in items) library(lib)])}</tree-view></for>
 		</div>;
 	}
 
@@ -71,9 +75,9 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 	function childrenOf(path:String):Array<Element> {
 		var names = try sys.FileSystem.readDirectory(path) catch (_:Dynamic) [];
 		names.sort(Reflect.compare);
-		return [for (name in names) if (!name.startsWith(".")) {
+		return [for (name in names) {
 			var full = haxe.io.Path.join([path, name]);
-			sys.FileSystem.isDirectory(full) ? directory(full, name) : <tree-item value={full} label={name} icon={Icons.FILE_CODE_LINE}/>;
+			sys.FileSystem.isDirectory(full) ? directory(full, name) : <tree-item id={"rayde-library-file-" + haxe.crypto.Md5.encode(full)} value={full} label={name} icon={FileIcons.of(full)}/>;
 		}];
 	}
 }

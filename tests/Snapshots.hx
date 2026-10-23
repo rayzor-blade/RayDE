@@ -2482,7 +2482,37 @@ class Snapshots {
 				if (Math.abs(activeMarkdown().state().y-position) > 1 || Css.query(tree, bench.node.id, "[data-md-block]").length > 25) throw "cached virtual position was not restored";
 				shot("virtual-blocks-restored");
 				bench.closeAll(); until(() -> studio.tabViews.length == 0, "virtual document close");
-
+				var dependency = root + "-dependency", dependencyReadme = dependency + "/README.md";
+				if (Css.query(tree, bench.node.id, '[data-path="$dependency"]').length != 0) throw "External class path leaked into Explorer";
+				click("#rayde-explorer-toggle-dependencies"); settle();
+				click("#rayde-library-" + haxe.crypto.Md5.encode(dependency) + " > .ui-tree-row"); settle();
+				shot("dependency-files");
+				click("#rayde-library-file-" + haxe.crypto.Md5.encode(dependencyReadme) + " > .ui-tree-row");
+				if (bench.active.get() != dependencyReadme) throw "Dependency file did not open in the editor";
+				manager.command("markdown", "markdown.preview", null);
+				until(() -> hasBitmap() && Css.query(tree, bench.node.id, '[data-md-heading="dependency-readme"]').length > 0, "external class-path Markdown and its relative image"); shot("dependency-preview");
+				click("#markdown-source .ui-button"); until(() -> bench.active.get() == dependencyReadme, "dependency preview source navigation");
+				manager.command("markdown", "markdown.preview", {path:dependencyReadme}); until(ready, "dependency preview refocus");
+				part = Lambda.find(studio.preview.outline(), p -> p.props.indexOf("id=markdown-document") >= 0);
+				control = @:privateAccess studio.preview.parts.get(part.id).control;
+				firstScroll = ashui.input.Scroll.at(Css.query(tree, bench.node.id, "#markdown-scroll")[0], tree);
+				follow("guide.md");
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="dependency-guide"]').length > 0, "relative link within a dependency");
+				sys.FileSystem.deleteFile(dependency + "/guide.md"); click("#markdown-refresh .ui-button");
+				until(() -> Css.query(tree, bench.node.id, "#markdown-error").length > 0, "failed refresh to show an inline error");
+				if (!ready()) throw "Failed refresh discarded the last rendered document";
+				shot("preview-refresh-error");
+				sys.io.File.saveContent(dependency + "/guide.md", "# Recovered dependency guide\n"); click("#markdown-retry .ui-button");
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="recovered-dependency-guide"]').length > 0 && Css.query(tree, bench.node.id, "#markdown-error").length == 0, "failed refresh retry");
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "dependency previews to close");
+				var missing = root + "/missing-preview.md";
+				manager.command("markdown", "markdown.preview", {path:missing});
+				until(() -> Css.query(tree, bench.node.id, "#markdown-error").length > 0, "failed initial preview");
+				if (Lambda.exists(studio.preview.outline(), p -> p.text == "Loading preview…") || !Lambda.exists(studio.preview.outline(), p -> p.text != null && p.text.indexOf(missing) >= 0)) throw "Failed preview did not replace loading with its file path";
+				shot("preview-read-error");
+				sys.io.File.saveContent(missing, "# Preview recovered\n"); click("#markdown-retry .ui-button");
+				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="preview-recovered"]').length > 0, "initial preview retry"); shot("preview-recovered");
+				bench.closeAll(); until(() -> studio.tabViews.length == 0, "recovered preview to close");
 			});
 		for (dark in [true, false])
 			scenario(dark, "documents", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
@@ -2861,6 +2891,14 @@ class Snapshots {
 			}
 			copy("extensions/markdown", root + "/.rayde/extensions/markdown");
 			sys.io.File.saveContent(root + "/example.rs", "fn main() {\n    /* comment\n       continued */\n    let answer = 42;\n    println!(\"λ: {answer}\");\n}\n");
+			if (name == "markdownpreview") {
+				var dependency = root + "-dependency";
+				sys.FileSystem.createDirectory(dependency);
+				sys.io.File.saveContent(dependency + "/README.md", "# Dependency readme\n\n![Logo](welcome.png)\n\n[Guide](guide.md)\n");
+				sys.io.File.saveContent(dependency + "/guide.md", "# Dependency guide\n");
+				sys.io.File.copy(root + "/welcome.png", dependency + "/welcome.png");
+				sys.io.File.saveContent(root + "/build.hxml", sys.io.File.getContent(root + "/build.hxml") + "\n-cp ../" + haxe.io.Path.withoutDirectory(dependency) + "\n");
+			}
 		}
 		ThemeState.init(RestrainedTheme.bundle(), dark ? Dark : Light);
 		rayde.ui.Style.use();
