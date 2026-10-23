@@ -1,14 +1,14 @@
 # Writing an extension
 
-RayDE extensions are written in RayScript, run in embedded VMs, and describe what they add in a `.rayext` file. The example is a Markdown preview, in [`tests/fixtures/markdown`](../tests/fixtures/markdown): a **Preview** item in the Explorer's menu opens the file rendered in a tab beside the code, redrawn on each save.
+RayDE extensions are written in RayScript and describe what they add in a `.rayext` file. The example is a Markdown preview, in [`tests/fixtures/markdown`](../tests/fixtures/markdown): a **Preview** item in the Explorer's menu opens the file rendered in a tab beside the code, redrawn on each save.
 
 ![The Explorer's menu for README.md, with Preview at the right end of its item](images/markdown-menu.png)
 
 ## Installed extensions
 
-RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own VM on a runtime thread inside RayDE; opening the Extension Studio is not required.
+RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own VM. Script-only extensions run on a runtime thread inside RayDE. Extensions declaring native libraries run their VM and libraries in a dedicated headless `rayde-extension-host` process, including built-in native extensions; opening the Extension Studio is not required.
 
-Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. The VM uses Krio script fibers; a script exception does not panic RayDE. Native libraries execute inside RayDE and native faults can terminate the application.
+Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. The VM uses Krio script fibers; a script exception does not panic RayDE. A fault in an extension-declared native library can terminate its host without terminating RayDE. Host exit clears the extension's views, tabs and command registrations. A supervised restart starts a fresh VM and does not replay the failed command.
 
 | Scope | Folder |
 | --- | --- |
@@ -107,7 +107,9 @@ The name is the logical library in a RayScript `native "git2"` block. Paths are 
 
 **Settings > Extensions** shows each library's path, hash and approval state. User, workspace and development extensions wait for every library to be approved. **Approve** grants native execution; **Revoke** stops the host and clears its views. Approvals are stored under `extensions.nativeApprovals` in `~/.rayde/settings.json`, bound to the extension id and location, library name, path and hash. Workspace settings cannot grant approval. A changed path, hash or extension location requires approval again. Built-ins are pre-approved and still undergo the same host validation. Validation failures appear in the extension's Output channel and block execution until it is restarted.
 
-Approval trusts the extension's scripts to call native code with your account permissions. It does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. Native libraries currently share RayDE's process and address space, so native faults can terminate RayDE. The current native ABI target is macOS arm64.
+Approval trusts the extension's scripts to call native code with your account permissions. Process isolation contains native memory faults; it does not sandbox C code or verify script declarations against a library's ABI. Hashes cover declared library files; the operating system resolves their dependencies. Ship non-system dependencies as declared libraries, keeping their relative layout. The current native ABI target is macOS arm64.
+
+The host executable is packaged beside RayDE and never resolved through the workspace or `PATH`. Missing hosts fail startup rather than falling back to embedded native execution. Standard output is reserved for the extension protocol; native diagnostics should use standard error. Native host messages are validated and capped at 16 MiB each; transport queues are bounded by bytes and message count. Standard error retains a bounded diagnostic tail. Pipe I/O, process launch and reaping run on workers, and output or exit wakes the UI without an idle polling timer where platform wake support is available.
 
 #### Memory ownership
 
@@ -115,7 +117,7 @@ Third-party native extension authors are responsible for their native allocation
 
 RayDE maintainers are responsible for the VM, the native bridge and resources owned by the editor, including extension presentations, copied messages and decoded images. A bridge or lifecycle defect that retains an extension's resources is a RayDE defect. Our recommended built-in extensions also fall under RayDE's memory and performance maintenance, including their native dependencies.
 
-These ownership requirements are an author contract. The current embedded runtime provides no per-extension native memory limit or process isolation. Stopping an extension requests cleanup; it cannot forcibly reclaim leaked native allocations or interrupt an in-flight native call safely.
+**Settings > Extensions** identifies native hosts by process ID, and their process command lines include the extension ID for memory attribution. Each native host owns its private heap; RayDE does not impose a hard limit on that heap. Stopping, disabling or reloading the extension requests cleanup without blocking the UI. If cleanup has not completed after one second, RayDE terminates and reaps the host, reclaiming its process-owned memory even if a native call or destructor is stuck. Losing the parent input pipe also ends the host after a bounded cleanup period. RayDE's own native renderer, decoders and embedded services remain editor-owned and are outside this extension process boundary.
 
 ## Project starters
 
@@ -456,12 +458,13 @@ The debugger is in the VM and costs nothing without breakpoints: a breakpoint re
 ```sh
 scripts/rayde.sh tests/fixtures/markdown/markdown.rayext   # right-click docs/README.md, choose Preview
 scripts/check.sh                                           # embedded extension VMs, with the workbench's answers played by the test
+scripts/check-native-extensions.sh                         # native crashes, bounded transport, cleanup and idle window waking
 SNAPSHOT_ONLY=markdown scripts/snapshot.sh                 # the menu, the tab, a save, closing it, and the config form, into bin/snapshots
 SNAPSHOT_ONLY=extensions scripts/snapshot.sh               # two installed extensions, commands, restart, configuration and toggles
 SNAPSHOT_ONLY=debug scripts/snapshot.sh                    # a breakpoint, the stop, the variables, stepping and going on
 ```
 
-`native/rayscript` embeds the RayScript host library as `rayscript.hdll`, loaded through Haxe externs. Owned messages cross in-memory queues; VM values and pointers stay on the runtime thread. Queued output and runtime completion wake the UI loop; quiet extension VMs need no supervisor poll timer. Delayed replies, live reload and activation timeouts keep their own deadlines. Platforms without native wake support retain fallback polling. Closing a tab cancels its event fibers and their spawned children, unmounts the view, and requests collection at a safepoint. Late service replies do not resume cancelled fibers. Hiding a sidebar releases its native presentation and requests collection while retaining its mounted view state. Disabling, reloading or closing the workspace cancels all live script fibers, runs view cleanups, and releases the VM and native resources on the runtime thread. Collection requests and shutdown do not block the UI thread; an in-flight native call must return before its library can be released. The standalone `rayscript-host` remains available for backend tooling.
+`native/rayscript` provides `rayscript.hdll`, loaded through Haxe externs, and the headless `rayde-extension-host` executable. Script-only VMs use in-memory queues. Native extension VMs use bounded asynchronous pipes, with VM values and native pointers staying inside their host process. Both modes register RayDE's Markdown and syntax services. Queued output and runtime completion wake the UI loop; quiet extension VMs need no supervisor poll timer. Delayed replies, live reload and activation timeouts keep their own deadlines. Platforms without native wake support retain fallback polling. Closing a tab cancels its event fibers and their spawned children, unmounts the view, and requests collection at a safepoint. Late service replies do not resume cancelled fibers. Hiding a sidebar releases its presentation and requests collection while retaining its mounted view state. Disabling, reloading or closing the workspace requests VM cleanup; isolated native hosts have a bounded shutdown period before forced termination. Collection requests and shutdown do not block the UI thread. The generic standalone `rayscript-host` remains available for backend tooling.
 
 ## Limits
 

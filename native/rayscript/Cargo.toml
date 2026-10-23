@@ -9,6 +9,10 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "rayde-extension-host"
+path = "src/host.rs"
+
 [dependencies]
 hl_abi = { git = "https://github.com/rayzor-blade/hl_abi" }
 rayscript-host = { path = "../../../rayscript/crates/rayscript-host" }

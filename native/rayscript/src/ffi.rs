@@ -23,6 +23,40 @@ fn packed_text(text:&str) -> *mut vbyte {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn extension_open(data:*const vbyte, len:i32) -> i32 {
+    catch_unwind(|| unsafe { text(data,len) }.and_then(|s| super::extension_process::open(s).ok()).unwrap_or(-1)).unwrap_or(-1)
+}
+define_prim!(hlp_extension_open, extension_open, "PBi_i");
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn extension_send(handle:i32, data:*const vbyte, len:i32) -> bool {
+    catch_unwind(|| unsafe { text(data,len) }.is_some_and(|s| super::extension_process::send(handle,s))).unwrap_or(false)
+}
+define_prim!(hlp_extension_send, extension_send, "PiBi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn extension_poll(handle:i32) -> *mut vbyte {
+    catch_unwind(|| super::extension_process::poll(handle).map_or(ptr::null_mut(), |s| packed_text(&s))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_extension_poll, extension_poll, "Pi_B");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn extension_status(handle:i32) -> i32 { catch_unwind(|| super::extension_process::status(handle)).unwrap_or(2) }
+define_prim!(hlp_extension_status, extension_status, "Pi_i");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn extension_pending(handle:i32) -> bool { catch_unwind(|| super::extension_process::pending(handle)).unwrap_or(false) }
+define_prim!(hlp_extension_pending, extension_pending, "Pi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn extension_can_wake(handle:i32) -> bool { catch_unwind(|| super::extension_process::can_wake(handle)).unwrap_or(false) }
+define_prim!(hlp_extension_can_wake, extension_can_wake, "Pi_b");
+
+#[unsafe(no_mangle)]
+pub extern "C" fn extension_close(handle:i32) { let _ = catch_unwind(|| super::extension_process::close(handle)); }
+define_prim!(hlp_extension_close, extension_close, "Pi_v");
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn project_toml(data:*const vbyte, len:i32) -> *mut vbyte {
     catch_unwind(|| unsafe { text(data,len) }.map_or(ptr::null_mut(), |s| packed_text(&super::project::parse(s).to_string()))).unwrap_or(ptr::null_mut())
 }

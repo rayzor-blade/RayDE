@@ -114,6 +114,10 @@ class Connection {
 
 	public function hasEvents():Bool return nextMessage < messages.length || host != null && host.pending();
 	public function canWake():Bool return host != null && host.canWake();
+	public function hostDescription():String {
+		var isolated = manifest != null && manifest.natives.length > 0;
+		return state + (isolated ? " · isolated process" + (host != null && host.processId != null ? " (PID " + host.processId + ")" : "") : " · embedded");
+	}
 
 	/** Deadlines for local delayed events and replies; native output wakes an otherwise quiet window. */
 	public function pollDelay():Null<Float> {
@@ -140,7 +144,7 @@ class Connection {
 			catch (e:Dynamic)
 				note("console", "error", 'Cannot read mocks file: $e');
 		try {
-			host = new ExtensionHost(manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot());
+			host = new ExtensionHost(manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot(),manifest != null && manifest.natives.length > 0,manifest == null ? file : manifest.id);
 			host.start();
 			setState("running");
 			if (manifest != null && manifest.natives.length > 0)
@@ -197,6 +201,15 @@ class Connection {
 	}
 
 	public function tick():Void {
+		var current = host;
+		try advanceHost() catch (error:Dynamic) {
+			if (current == null || !current.isolated) throw error;
+			note("console","error","Cannot process native extension output: " + Std.string(error));
+			stop(); setState("exited");
+		}
+	}
+
+	function advanceHost():Void {
 		if (host == null)
 			return;
 		var now = haxe.Timer.stamp();
@@ -226,6 +239,8 @@ class Connection {
 			var m = messages[nextMessage++];
 			var timing = Timing.start();
 			switch (m.t : String) {
+				case "ready":
+					if (current.isolated && onState != null) onState(state);
 				case "registered":
 					var id = Std.string(m.id);
 					registered.set(id, true);
@@ -267,7 +282,7 @@ class Connection {
 		if (host == current && current.state == "exited" && nextMessage == messages.length) {
 			var err = StringTools.trim(current.errors());
 			note("console", "error", 'Extension host exited with code ${current.exitCode}.' + (err == "" ? "" : "\n" + err));
-			host = null;
+			stop();
 			setState("exited");
 		}
 	}

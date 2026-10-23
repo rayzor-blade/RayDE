@@ -21,7 +21,7 @@ typedef TabView = {root:Int, title:String};
 private typedef Surface = {container:Node, root:Null<Int>, view:Null<String>, attached:Array<Int>};
 
 /**
- * An extension being developed: its embedded VM, the Preview its view is drawn in, and what it said and
+ * An extension being developed: its host, the Preview its view is drawn in, and what it said and
  * did. `reload` starts the extension afresh from the source as the editor holds it, `edited` does so
  * a moment after typing stops, and `tick` moves everything along. The remote modules an extension imports
  * are answered from a mocks file, so it can run with no editor behind it.
@@ -126,6 +126,7 @@ class Studio {
 		this.connection.onState = value -> {
 			state.set(value);
 			if (value != "running") debug.disconnect();
+			if (value == "exited" || value == "blocked") { opsPending = false; clearView(); }
 		};
 		this.connection.onStart = () -> {
 			replacing = true;
@@ -208,7 +209,9 @@ class Studio {
 	public function clearView():Void {
 		if (preview != null) preview.clear();
 		for (surface in surfaces) surface.attached = [];
+		var hadTabs = tabViews.length > 0;
 		tabViews = [];
+		if (hadTabs && onTabs != null) onTabs([]);
 		elements.set(elements.get() + 1);
 	}
 

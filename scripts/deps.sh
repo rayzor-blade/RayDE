@@ -55,6 +55,12 @@ stage_natives() {
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/cterm.hdll" "$out/cterm.hdll"
   bash "$here/scripts/build-rayscript.sh"
   [ "$(cd "$out" && pwd)" = "$here/bin" ] || cp "$here/bin/rayscript.hdll" "$out/rayscript.hdll"
+  local extension_host=rayde-extension-host
+  [ "$ext" != dll ] || extension_host=rayde-extension-host.exe
+  if [ "$(cd "$out" && pwd)" != "$here/bin" ]; then
+    cp "$here/bin/$extension_host" "$out/$extension_host.next"
+    mv -f "$out/$extension_host.next" "$out/$extension_host"
+  fi
   mkdir -p "$out/notices/syntax-markdown"
   cp "$here/native/rayscript/notices/"* "$out/notices/syntax-markdown/"
   mkdir -p "$out/notices/icons"

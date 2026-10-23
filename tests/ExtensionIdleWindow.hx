@@ -13,7 +13,10 @@ class ExtensionIdleWindow {
 		WindowedApp.run({title:"Extension idle wake check", width:640, height:360}, () -> {
 			var app = WindowedApp.current;
 			var root = <div class="p-4"/>;
-			var studio = new Studio(Sys.getCwd() + "bin/idle-extension.rays", () -> "mount(() -> <div>First view</div>, 'first'); trace('started'); await sleep(2200); mount(() -> <div>Late view</div>, 'late'); trace('late-output');", app.tree);
+			var native = Sys.getEnv("RAYDE_IDLE_NATIVE");
+			var manifest = native == null ? null : rayde.ext.Manifest.read(native);
+			var studio = new Studio(Sys.getCwd() + "bin/idle-extension.rays", () -> "mount(() -> <div>First view</div>, 'first'); trace('started'); await sleep(2200); mount(() -> <div>Late view</div>, 'late'); trace('late-output');", app.tree,manifest);
+			if (manifest != null) studio.connection.nativeAllowed = _ -> true;
 			Owner.onCleanup(studio.dispose);
 			studio.attach(root.node);
 			new Watch(() -> studio.console.get(), list -> {

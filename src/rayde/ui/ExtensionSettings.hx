@@ -39,7 +39,7 @@ class ExtensionSettings extends Component<ExtensionSettingsProps> {
 			</div>,
 			<text class="text-xs text-text-secondary">${e.installed.problem ?? (m.description == "" ? e.installed.path : m.description)}</text>,
 			<text class="text-xs text-text-tertiary">${"Activation: " + (e.activation ?? (m.activationEvents ?? ["onStartup"]).join(", "))}</text>,
-			<text class="text-xs text-text-tertiary">${"Host: " + e.connection.state}</text>,
+			<text class="text-xs text-text-tertiary">${"Host: " + e.connection.hostDescription()}</text>,
 			<text class="text-xs text-text-tertiary">${"Capabilities: " + (m.capabilities.length == 0 ? "none" : m.capabilities.join(", "))}</text>
 		];
 		for (library in m.natives) {

@@ -19,6 +19,8 @@ mkdir -p "$mac" "$res"
 stage_natives "$res"
 # Ash loads native libraries beside the executable; data stays under Resources.
 for library in "$res/"*.hdll; do mv "$library" "$mac/"; done
+mv "$res/rayde-extension-host" "$mac/"
+codesign --force --sign - "$mac/rayde-extension-host"
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl "$mac/rayde.hl"
 "$ash" --build "$mac/RayDE" "$mac/rayde.hl"
 rm "$mac/rayde.hl"
