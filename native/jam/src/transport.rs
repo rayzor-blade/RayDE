@@ -1,6 +1,7 @@
 use crate::{
     document::{Document, MAX_SESSION, MAX_UPDATE},
     recovery::Recovery,
+    workspace::{self, Message as WorkspaceMessage, Surface},
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,7 @@ use std::{
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::{Notify, Semaphore, mpsc},
+    sync::{Notify, Semaphore, mpsc, watch},
     task::JoinSet,
 };
 use tokio_tungstenite::{
@@ -27,6 +28,9 @@ use tokio_tungstenite::{
 pub const VERSION: u32 = 3;
 const MAX_WIRE: usize = MAX_UPDATE * 4 / 3 + 4096;
 const MAX_PEERS: usize = 8;
+fn is_false(value: &bool) -> bool {
+    !value
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,7 +47,7 @@ pub struct Viewport {
     pub x: f64,
 }
 impl Viewport {
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         self.top.len() <= 256
             && self.offset.is_finite()
             && (-16.0..1.0).contains(&self.offset)
@@ -60,6 +64,10 @@ pub enum Wire {
         token: String,
         peer: String,
         name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        workspace: bool,
     },
     Welcome {
         v: u32,
@@ -70,6 +78,8 @@ pub enum Wire {
         document_id: String,
         #[serde(default)]
         durable: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        workspace: bool,
     },
     Sync {
         id: u64,
@@ -102,6 +112,9 @@ pub enum Wire {
         code: String,
         message: String,
     },
+    Workspace {
+        message: WorkspaceMessage,
+    },
     RoomClosed,
 }
 
@@ -122,6 +135,8 @@ pub struct Config {
     pub recovery: String,
     #[serde(default)]
     pub restore: bool,
+    #[serde(default)]
+    pub workspace: bool,
 }
 struct Queued {
     message: Wire,
@@ -152,6 +167,11 @@ pub struct Session {
     stopped: AtomicBool,
     cancel: Notify,
     wake: Wake,
+    workspace: bool,
+    host: bool,
+    frame: Mutex<Option<workspace::Frame>>,
+    frame_ready: Notify,
+    desired: Mutex<Option<Surface>>,
 }
 
 fn valid_id(value: &str) -> bool {
@@ -236,6 +256,11 @@ impl Session {
             stopped: AtomicBool::new(false),
             cancel: Notify::new(),
             wake,
+            workspace: config.workspace,
+            host: config.host,
+            frame: Mutex::new(None),
+            frame_ready: Notify::new(),
+            desired: Mutex::new(None),
         });
         let worker = session.clone();
         std::thread::Builder::new()
@@ -262,11 +287,22 @@ impl Session {
     fn push(&self, event: Value) {
         let size = event.to_string().len();
         let mut events = self.events.lock().unwrap();
-        if event["t"] == "cursor"
-            && let Some(index) = events
-                .list
-                .iter()
-                .position(|previous| previous["t"] == "cursor" && previous["peer"] == event["peer"])
+        let cursor = event["t"] == "cursor"
+            || (event["t"] == "workspace" && event["message"]["t"] == "cursor");
+        let frame = event["t"] == "workspace" && event["message"]["t"] == "frame";
+        if (cursor || frame)
+            && let Some(index) = events.list.iter().position(|previous| {
+                if frame {
+                    previous["t"] == "workspace" && previous["message"]["t"] == "frame"
+                } else if event["t"] == "workspace" {
+                    previous["t"] == "workspace"
+                        && previous["message"]["t"] == "cursor"
+                        && previous["message"]["peer"] == event["message"]["peer"]
+                        && previous["message"]["document"] == event["message"]["document"]
+                } else {
+                    previous["t"] == "cursor" && previous["peer"] == event["peer"]
+                }
+            })
         {
             let previous = events.list.remove(index).unwrap();
             events.bytes -= previous.to_string().len();
@@ -312,6 +348,29 @@ impl Session {
             let Ok(message) = serde_json::from_value::<Wire>(value) else {
                 return false;
             };
+            if let Wire::Workspace { message: workspace } = &message {
+                if !self.workspace || !workspace.client_valid() {
+                    return false;
+                }
+                if matches!(
+                    workspace,
+                    WorkspaceMessage::Open { .. }
+                        | WorkspaceMessage::Activate { .. }
+                        | WorkspaceMessage::Frame { .. }
+                ) && !self.host
+                {
+                    return false;
+                }
+                if let WorkspaceMessage::Activate { surface } = workspace {
+                    self.frame.lock().unwrap().take();
+                    *self.desired.lock().unwrap() = Some(surface.clone());
+                }
+                if let WorkspaceMessage::Frame { frame } = workspace {
+                    *self.frame.lock().unwrap() = Some(frame.clone());
+                    self.frame_ready.notify_one();
+                    return true;
+                }
+            }
             let bytes = match &message {
                 Wire::Sync { update, .. } if update.len() <= MAX_WIRE - 4096 => update.len() + 128,
                 Wire::Presence {
@@ -323,6 +382,9 @@ impl Session {
                     && view.as_ref().is_none_or(Viewport::valid) =>
                 {
                     caret.len() + anchor.len() + view.as_ref().map_or(0, |v| v.top.len() + 64) + 128
+                }
+                Wire::Workspace { .. } => {
+                    serde_json::to_vec(&message).map_or(MAX_SESSION + 1, |bytes| bytes.len())
                 }
                 _ => return false,
             };
@@ -364,6 +426,18 @@ impl Session {
     pub fn close(&self) {
         self.stopped.store(true, Ordering::Release);
         self.cancel.notify_one();
+        self.frame.lock().unwrap().take();
+    }
+
+    async fn next_frame(&self) -> Wire {
+        loop {
+            if let Some(frame) = self.frame.lock().unwrap().take() {
+                return Wire::Workspace {
+                    message: WorkspaceMessage::Frame { frame },
+                };
+            }
+            self.frame_ready.notified().await;
+        }
     }
 
     async fn run(
@@ -384,13 +458,35 @@ impl Session {
             &id,
             &config.state,
         )?));
+        let workspace = if config.workspace {
+            Some(Arc::new(Mutex::new(workspace::Store::open(
+                &config.recovery,
+                config.restore,
+            )?)))
+        } else {
+            None
+        };
         if config.restore {
             let saved = recovery.lock().unwrap();
             self.push(json!({"t":"restored","document_id":saved.id,"file":saved.file,"state":saved.doc.state()}));
+            if let Some(workspace) = &workspace {
+                for message in workspace.lock().unwrap().snapshots() {
+                    if let WorkspaceMessage::Document {
+                        document,
+                        file,
+                        state,
+                        ..
+                    } = message
+                    {
+                        self.push(json!({"t":"workspace","message":{"t":"restored","document":document,"file":file,"state":state}}));
+                    }
+                }
+            }
         }
         let mut server = JoinSet::new();
         let mut local_room = None;
         let (fatal_tx, mut fatal_rx) = mpsc::channel(1);
+        let mut owner = None;
         let (url, token) = if config.host {
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
@@ -398,6 +494,13 @@ impl Session {
             let mut secret = [0u8; 32];
             getrandom::fill(&mut secret).map_err(|_| "Cannot create a Jam invitation")?;
             let token: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
+            getrandom::fill(&mut secret).map_err(|_| "Cannot create a Jam host credential")?;
+            owner = Some(
+                secret
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            );
             let invite = format!(
                 "ws://{}/jam/{token}",
                 listener
@@ -414,6 +517,8 @@ impl Session {
                 bytes: 0,
                 recovery: recovery.clone(),
                 fatal: fatal_tx.clone(),
+                owner: owner.clone().unwrap(),
+                workspace: workspace.clone(),
             }));
             local_room = Some(room.clone());
             server.spawn(serve(listener, room));
@@ -423,7 +528,7 @@ impl Session {
             invite_address(&config.invite)?
         };
         let result = tokio::select! {
-            result = self.connect(url, token, peer, config.name, &mut commands, &recovery) => result,
+            result = self.connect(url, token, owner, peer, config.name, &mut commands, &recovery, &workspace) => result,
             Some(error) = fatal_rx.recv() => Err(error),
         };
         // Closing a view is non-blocking; the worker finishes already accepted local writes.
@@ -431,7 +536,7 @@ impl Session {
         let mut paused = true;
         let mut result = result;
         while let Some(command) = commands.recv().await {
-            if let Err(error) = self.local(command, &recovery, &mut paused) {
+            if let Err(error) = self.local(command, &recovery, &workspace, &mut paused) {
                 result = Err(error);
                 break;
             }
@@ -448,6 +553,7 @@ impl Session {
         &self,
         command: Command,
         recovery: &Arc<Mutex<Recovery>>,
+        workspace: &Option<Arc<Mutex<workspace::Store>>>,
         paused: &mut bool,
     ) -> Result<Option<Wire>, String> {
         match command {
@@ -457,6 +563,9 @@ impl Session {
             }
             Command::Checkpoint(id) => {
                 recovery.lock().unwrap().checkpoint()?;
+                if let Some(workspace) = workspace {
+                    workspace.lock().unwrap().checkpoint()?;
+                }
                 self.push(json!({"t":"checkpointed","id":id}));
                 Ok(None)
             }
@@ -468,6 +577,31 @@ impl Session {
                         self.push(json!({"t":"locally_saved","id":id}));
                     }
                 }
+                if let Wire::Workspace { message: operation } = &message.message {
+                    let mut saved = workspace
+                        .as_ref()
+                        .ok_or("This Jam does not share a workspace")?
+                        .lock()
+                        .unwrap();
+                    match operation {
+                        WorkspaceMessage::Open {
+                            document,
+                            file,
+                            state,
+                        } if self.host => saved.adopt(document, file, state)?,
+                        WorkspaceMessage::Sync {
+                            document,
+                            id,
+                            update,
+                        } => {
+                            saved.accept(document, update)?;
+                            if recovery.lock().unwrap().durable() {
+                                self.push(json!({"t":"workspace","message":{"t":"locally_saved","document":document,"id":id}}));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 Ok(Some(message.message.clone()))
             }
         }
@@ -477,10 +611,12 @@ impl Session {
         &self,
         url: String,
         token: String,
+        owner: Option<String>,
         peer: String,
         name: String,
         commands: &mut mpsc::Receiver<Command>,
         recovery: &Arc<Mutex<Recovery>>,
+        workspace: &Option<Arc<Mutex<workspace::Store>>>,
     ) -> Result<(), String> {
         self.push(json!({"t":"identity","peer":peer}));
         let mut paused = false;
@@ -492,7 +628,7 @@ impl Session {
                 tokio::select! {
                     _ = self.cancel.notified() => return Ok(()),
                     next = commands.recv() => match next {
-                        Some(command) => { self.local(command,recovery,&mut paused)?; },
+                        Some(command) => { self.local(command,recovery,workspace,&mut paused)?; },
                         None => return Ok(()),
                     }
                 }
@@ -508,7 +644,7 @@ impl Session {
                     _ = self.cancel.notified() => return Ok(()),
                     result = &mut connecting => break Some(result),
                     next = commands.recv() => match next {
-                        Some(command) => { self.local(command,recovery,&mut paused)?; if paused { break None; } },
+                        Some(command) => { self.local(command,recovery,workspace,&mut paused)?; if paused { break None; } },
                         None => return Ok(()),
                     }
                 }
@@ -519,6 +655,8 @@ impl Session {
                     token: token.clone(),
                     peer: peer.clone(),
                     name: name.clone(),
+                    owner: owner.clone(),
+                    workspace: self.workspace,
                 };
                 if tokio::time::timeout(Duration::from_secs(3), socket.send(packet(&hello)))
                     .await
@@ -527,13 +665,14 @@ impl Session {
                     let mut welcomed = false;
                     let handshake = tokio::time::sleep(Duration::from_secs(5));
                     tokio::pin!(handshake);
-                    loop {
+                    'connection: loop {
                         tokio::select! {
+                            biased;
                             _ = self.cancel.notified() => return Ok(()),
                             _ = &mut handshake, if !welcomed => break,
                             next = commands.recv() => match next {
                                 Some(command) => {
-                                    let message=self.local(command,recovery,&mut paused)?;
+                                    let message=self.local(command,recovery,workspace,&mut paused)?;
                                     if paused { break; }
                                     if let Some(message)=message && welcomed && !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&message))).await.is_ok_and(|r|r.is_ok()) { break; }
                                 },
@@ -544,8 +683,20 @@ impl Session {
                                     Ok(Some(Wire::Error {message,..})) => return Err(message),
                                     Ok(Some(Wire::RoomClosed)) => { self.push(json!({"t":"room_closed"})); return Ok(()); },
                                     Ok(Some(message @ Wire::Welcome {v:VERSION,..})) if !welcomed => {
+                                        if let Wire::Welcome {workspace,..} = &message && *workspace != self.workspace { return Err("This invitation uses a different Jam sharing mode".into()); }
                                         if let Wire::Welcome {document_id,file,state,..} = &message { recovery.lock().unwrap().adopt(document_id,file,state)?; }
                                         welcomed=true; self.push(serde_json::to_value(message).unwrap());
+                                        if let Some(workspace) = workspace {
+                                            let snapshots=workspace.lock().unwrap().snapshots();
+                                            for snapshot in snapshots {
+                                                if let WorkspaceMessage::Document {document,file,state,..} = snapshot {
+                                                    let message=if self.host { WorkspaceMessage::Open {document,file,state} } else { WorkspaceMessage::Request {document} };
+                                                    if !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&Wire::Workspace {message}))).await.is_ok_and(|r|r.is_ok()) { break 'connection; }
+                                                }
+                                            }
+                                            let desired=self.desired.lock().unwrap().clone();
+                                            if let Some(surface)=desired && !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&Wire::Workspace {message:WorkspaceMessage::Activate {surface}}))).await.is_ok_and(|r|r.is_ok()) { break 'connection; }
+                                        }
                                     },
                                     Ok(Some(Wire::Welcome {..})) => return Err("Incompatible Jam protocol".into()),
                                     Ok(Some(message @ Wire::Update {..})) if welcomed => {
@@ -553,9 +704,26 @@ impl Session {
                                         self.push(serde_json::to_value(message).unwrap());
                                     },
                                     Ok(Some(message @ (Wire::Ack {..}|Wire::Peers {..}|Wire::Cursor {..}))) if welcomed => self.push(serde_json::to_value(message).unwrap()),
+                                    Ok(Some(message @ Wire::Workspace {..})) if welcomed && self.workspace => {
+                                        if let Wire::Workspace { message: operation } = &message {
+                                            let mut saved = workspace.as_ref().unwrap().lock().unwrap();
+                                            match operation {
+                                                WorkspaceMessage::Document { document, file, state, .. } => saved.adopt(document,file,state)?,
+                                                WorkspaceMessage::Update { document, update, .. } => saved.accept(document,update)?,
+                                                WorkspaceMessage::Active { surface } if surface.valid() => {},
+                                                WorkspaceMessage::Frame { frame } if frame.valid() => {},
+                                                WorkspaceMessage::Ack { .. } | WorkspaceMessage::Cursor { .. } => {},
+                                                _ => return Err("Unexpected Jam workspace event".into()),
+                                            }
+                                        }
+                                        self.push(serde_json::to_value(message).unwrap());
+                                    },
                                     Ok(None) => {}, _ => break,
                                 }, _ => break,
-                            }
+                            },
+                            frame = self.next_frame(), if welcomed => {
+                                if !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&frame))).await.is_ok_and(|r|r.is_ok()) { break; }
+                            },
                         }
                     }
                 }
@@ -569,7 +737,7 @@ impl Session {
                         _ = self.cancel.notified() => return Ok(()),
                         _ = &mut delay => break,
                         next = commands.recv() => match next {
-                            Some(command) => { self.local(command,recovery,&mut paused)?; if paused { break; } },
+                            Some(command) => { self.local(command,recovery,workspace,&mut paused)?; if paused { break; } },
                             None => return Ok(()),
                         }
                     }
@@ -583,6 +751,9 @@ struct Peer {
     info: PeerInfo,
     tx: mpsc::Sender<Wire>,
     cursor: Option<Wire>,
+    workspace_cursors: HashMap<String, Wire>,
+    visual: watch::Sender<Option<Wire>>,
+    known: std::collections::HashSet<String>,
 }
 struct Room {
     doc: Document,
@@ -592,8 +763,30 @@ struct Room {
     bytes: usize,
     recovery: Arc<Mutex<Recovery>>,
     fatal: mpsc::Sender<String>,
+    owner: String,
+    workspace: Option<Arc<Mutex<workspace::Store>>>,
 }
 impl Room {
+    fn document_to(&mut self, peer: &str, document: &str) -> Result<(), String> {
+        let message = self
+            .workspace
+            .as_ref()
+            .ok_or("This Jam does not share tabs")?
+            .lock()
+            .unwrap()
+            .snapshot(document)?;
+        if let Some(p) = self.peers.get_mut(peer) {
+            p.tx.try_send(Wire::Workspace { message })
+                .map_err(|_| "Jam participant is too slow")?;
+            p.known.insert(document.into());
+        }
+        Ok(())
+    }
+    fn broadcast_document(&mut self, document: &str, message: Wire, except: &str) {
+        self.peers.retain(|id, p| {
+            id == except || !p.known.contains(document) || p.tx.try_send(message.clone()).is_ok()
+        });
+    }
     fn broadcast(&mut self, message: Wire, except: &str) {
         self.peers
             .retain(|id, peer| id == except || peer.tx.try_send(message.clone()).is_ok());
@@ -602,8 +795,13 @@ impl Room {
         let list = self.peers.values().map(|p| p.info.clone()).collect();
         self.broadcast(Wire::Peers { list }, "");
     }
+    #[cfg(test)]
     fn process(&mut self, peer: &str, message: Wire) -> Result<(), String> {
+        self.process_owned(peer, message, false)
+    }
+    fn process_owned(&mut self, peer: &str, message: Wire, owner: bool) -> Result<(), String> {
         match message {
+            Wire::Workspace { message } => self.process_workspace(peer, message, owner)?,
             Wire::Sync { id, update } => {
                 self.bytes += update.len();
                 if self.bytes > MAX_SESSION {
@@ -654,6 +852,170 @@ impl Room {
         }
         Ok(())
     }
+
+    fn process_workspace(
+        &mut self,
+        peer: &str,
+        message: WorkspaceMessage,
+        owner: bool,
+    ) -> Result<(), String> {
+        let store = self
+            .workspace
+            .clone()
+            .ok_or("This Jam does not share a workspace")?;
+        if !message.client_valid() {
+            return Err("Invalid Jam workspace command".into());
+        }
+        if matches!(
+            message,
+            WorkspaceMessage::Open { .. }
+                | WorkspaceMessage::Activate { .. }
+                | WorkspaceMessage::Frame { .. }
+        ) && !owner
+        {
+            return Err("Only the host can share or activate Jam tabs".into());
+        }
+        let wrap = |message| Wire::Workspace { message };
+        let result = match message {
+            WorkspaceMessage::Open {
+                document,
+                file,
+                state,
+            } => {
+                let result = store.lock().unwrap().adopt(&document, &file, &state);
+                result.and_then(|_| self.document_to(peer, &document))
+            }
+            WorkspaceMessage::Request { document } => {
+                if !store.lock().unwrap().shared(&document) {
+                    return Err("This document has not been presented by the host".into());
+                }
+                self.document_to(peer, &document)
+            }
+            WorkspaceMessage::Sync {
+                document,
+                id,
+                update,
+            } => {
+                if !owner && !store.lock().unwrap().shared(&document) {
+                    return Err("This document has not been presented by the host".into());
+                }
+                self.bytes += update.len();
+                if self.bytes > MAX_SESSION * 4 {
+                    return Err("Jam workspace session limit reached".into());
+                }
+                let accepted = store.lock().unwrap().accept(&document, &update);
+                accepted.and_then(|_| {
+                    self.broadcast_document(
+                        &document,
+                        wrap(WorkspaceMessage::Update {
+                            document: document.clone(),
+                            peer: peer.into(),
+                            update,
+                        }),
+                        peer,
+                    );
+                    if let Some(p) = self.peers.get(peer) {
+                        p.tx.try_send(wrap(WorkspaceMessage::Ack { document, id }))
+                            .map_err(|_| "Jam participant is too slow")?;
+                    }
+                    Ok(())
+                })
+            }
+            WorkspaceMessage::Presence {
+                document,
+                caret,
+                anchor,
+                view,
+            } => {
+                if !owner && !store.lock().unwrap().shared(&document) {
+                    return Err("This document has not been presented by the host".into());
+                }
+                store
+                    .lock()
+                    .unwrap()
+                    .presence(&document, &caret, &anchor, &view)?;
+                let message = wrap(WorkspaceMessage::Cursor {
+                    document: document.clone(),
+                    peer: peer.into(),
+                    caret,
+                    anchor,
+                    view,
+                });
+                if let Some(p) = self.peers.get_mut(peer) {
+                    p.workspace_cursors
+                        .insert(document.clone(), message.clone());
+                }
+                self.broadcast_document(&document, message, peer);
+                Ok(())
+            }
+            WorkspaceMessage::Activate { surface } => {
+                let activated = store.lock().unwrap().activate(surface.clone());
+                if let Err(error) = activated {
+                    if store.lock().unwrap().failed {
+                        let _ = self.fatal.try_send(error.clone());
+                    }
+                    return Err(error);
+                }
+                if let Surface::Code { document } = &surface {
+                    let missing: Vec<_> = self
+                        .peers
+                        .iter()
+                        .filter_map(|(id, p)| (!p.known.contains(document)).then_some(id.clone()))
+                        .collect();
+                    for id in missing {
+                        self.document_to(&id, document)?;
+                    }
+                }
+                for p in self.peers.values() {
+                    p.visual.send_replace(None);
+                }
+                self.broadcast(
+                    wrap(WorkspaceMessage::Active {
+                        surface: surface.clone(),
+                    }),
+                    "",
+                );
+                if let Surface::Code { document } = surface {
+                    let cursors: Vec<_> = self
+                        .peers
+                        .values()
+                        .filter_map(|p| p.workspace_cursors.get(&document).cloned())
+                        .collect();
+                    for cursor in cursors {
+                        self.broadcast_document(&document, cursor, "");
+                    }
+                }
+                Ok(())
+            }
+            WorkspaceMessage::Frame { frame } => {
+                let mut saved = store.lock().unwrap();
+                if !matches!(&saved.active, Surface::Preview { id, .. } if id == &frame.view)
+                    || saved
+                        .frame
+                        .as_ref()
+                        .is_some_and(|previous| previous.sequence >= frame.sequence)
+                {
+                    return Ok(());
+                }
+                saved.frame(frame.clone())?;
+                drop(saved);
+                let frame = wrap(WorkspaceMessage::Frame { frame });
+                for (id, p) in &self.peers {
+                    if id != peer {
+                        p.visual.send_replace(Some(frame.clone()));
+                    }
+                }
+                Ok(())
+            }
+            _ => Err("Unexpected Jam workspace command".into()),
+        };
+        if let Err(error) = &result
+            && store.lock().unwrap().failed
+        {
+            let _ = self.fatal.try_send(error.clone());
+        }
+        result
+    }
 }
 async fn serve(listener: TcpListener, room: Arc<Mutex<Room>>) {
     let gate = Arc::new(Semaphore::new(MAX_PEERS));
@@ -686,6 +1048,8 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
         token,
         peer,
         name,
+        owner,
+        workspace,
     })) = parse(first)
     else {
         return;
@@ -696,6 +1060,15 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
         Some("Invalid Jam participant")
     } else if room.lock().unwrap().token != token {
         Some("Invalid Jam invitation")
+    } else if room.lock().unwrap().workspace.is_some() != workspace {
+        Some("This invitation uses a different Jam sharing mode")
+    } else if owner
+        .as_ref()
+        .is_some_and(|owner| owner != &room.lock().unwrap().owner)
+    {
+        Some("Invalid Jam host credential")
+    } else if room.lock().unwrap().peers.contains_key(&peer) {
+        Some("This Jam participant is already connected")
     } else {
         None
     };
@@ -708,8 +1081,13 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
             .await;
         return;
     }
-    let (tx, mut rx) = mpsc::channel(32);
+    let owner = owner
+        .as_ref()
+        .is_some_and(|owner| owner == &room.lock().unwrap().owner);
+    let (tx, mut rx) = mpsc::channel(workspace::MAX_DOCUMENTS + MAX_PEERS * 2 + 8);
+    let (visual, mut preview) = watch::channel(None);
     let connection = tx.clone();
+    let mut known = std::collections::HashSet::new();
     {
         let mut room = room.lock().unwrap();
         let saved = room.recovery.lock().unwrap();
@@ -720,9 +1098,45 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
             vector: room.doc.vector(),
             document_id: saved.id.clone(),
             durable: saved.durable(),
+            workspace: room.workspace.is_some(),
         };
         drop(saved);
         let _ = tx.try_send(welcome);
+        if let Some(workspace) = &room.workspace {
+            let saved = workspace.lock().unwrap();
+            let snapshots = if owner {
+                saved.snapshots()
+            } else if let Surface::Code { document } = &saved.active {
+                vec![saved.snapshot(document).unwrap()]
+            } else {
+                vec![]
+            };
+            for message in snapshots {
+                if let WorkspaceMessage::Document { document, .. } = &message {
+                    known.insert(document.clone());
+                }
+                let _ = tx.try_send(Wire::Workspace { message });
+            }
+            let _ = tx.try_send(Wire::Workspace {
+                message: WorkspaceMessage::Active {
+                    surface: saved.active.clone(),
+                },
+            });
+            if let Some(frame) = &saved.frame {
+                visual.send_replace(Some(Wire::Workspace {
+                    message: WorkspaceMessage::Frame {
+                        frame: frame.clone(),
+                    },
+                }));
+            }
+            if let Surface::Code { document } = &saved.active {
+                for p in room.peers.values() {
+                    if let Some(cursor) = p.workspace_cursors.get(document) {
+                        let _ = tx.try_send(cursor.clone());
+                    }
+                }
+            }
+        }
         for p in room.peers.values() {
             if let Some(cursor) = &p.cursor {
                 let _ = tx.try_send(cursor.clone());
@@ -737,12 +1151,16 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
                 },
                 tx,
                 cursor: None,
+                workspace_cursors: HashMap::new(),
+                visual,
+                known,
             },
         );
         room.presence();
     }
     loop {
         tokio::select! {
+            biased;
             next = rx.recv() => match next {
                 Some(message) => if !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&message))).await.is_ok_and(|r|r.is_ok()) { break; },
                 None => break,
@@ -750,11 +1168,20 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
             next = socket.next() => match next {
                 Some(Ok(message)) => match parse(message) {
                     Ok(Some(message)) => {
-                        let result = room.lock().unwrap().process(&peer,message);
+                        let result = {
+                            let mut room = room.lock().unwrap();
+                            if !room.peers.get(&peer).is_some_and(|p| p.tx.same_channel(&connection)) { break; }
+                            room.process_owned(&peer,message,owner)
+                        };
                         if let Err(message) = result { let _=socket.send(packet(&Wire::Error {code:"invalid_update".into(),message})).await; break; }
                     }, Ok(None) => {}, _ => break,
                 }, _ => break,
-            }
+            },
+            changed = preview.changed() => {
+                if changed.is_err() { break; }
+                let message = preview.borrow_and_update().clone();
+                if let Some(message) = message && !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&message))).await.is_ok_and(|r|r.is_ok()) { break; }
+            },
         }
     }
     let mut room = room.lock().unwrap();
@@ -910,6 +1337,8 @@ mod tests {
             file: "Main.hx".into(),
             peers: HashMap::new(),
             bytes: 0,
+            owner: String::new(),
+            workspace: None,
         }));
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -931,6 +1360,8 @@ mod tests {
                 token: token.into(),
                 peer: Document::new("").unwrap().id(),
                 name: "Test".into(),
+                owner: None,
+                workspace: false,
             }))
             .await
             .unwrap();
@@ -949,6 +1380,8 @@ mod tests {
             token: "0123456789abcdef".into(),
             peer: Document::new("").unwrap().id(),
             name: "Test".into(),
+            owner: None,
+            workspace: false,
         }))
         .await
         .unwrap();
@@ -996,6 +1429,8 @@ mod tests {
             bytes: 0,
             recovery: Arc::new(Mutex::new(recovery)),
             fatal,
+            owner: String::new(),
+            workspace: None,
         };
         room.doc.apply(&seed.state()).unwrap();
         room.peers.insert(
@@ -1007,6 +1442,9 @@ mod tests {
                 },
                 tx,
                 cursor: None,
+                workspace_cursors: HashMap::new(),
+                visual: watch::channel(None).0,
+                known: std::collections::HashSet::new(),
             },
         );
         // Force snapshot compaction to fail after the journal itself has been flushed.
@@ -1044,6 +1482,11 @@ mod tests {
             stopped: AtomicBool::new(false),
             cancel: Notify::new(),
             wake: None,
+            workspace: false,
+            host: false,
+            frame: Mutex::new(None),
+            frame_ready: Notify::new(),
+            desired: Mutex::new(None),
         };
         for index in 0..1000 {
             session.push(json!({"t":"cursor","peer":"peer","caret":index,"anchor":index,"view":{"top":index,"offset":0.5,"x":1.0}}));
@@ -1072,6 +1515,11 @@ mod tests {
             stopped: AtomicBool::new(false),
             cancel: Notify::new(),
             wake: None,
+            workspace: false,
+            host: false,
+            frame: Mutex::new(None),
+            frame_ready: Notify::new(),
+            desired: Mutex::new(None),
         };
         for id in 0..3 {
             assert!(session.send(json!({"t":"sync","id":id,"update":"x".repeat(MAX_UPDATE)})));
@@ -1104,6 +1552,8 @@ mod tests {
             bytes: 0,
             recovery: Arc::new(Mutex::new(recovery)),
             fatal,
+            owner: String::new(),
+            workspace: None,
         };
         room.peers.insert(
             "other".into(),
@@ -1114,6 +1564,9 @@ mod tests {
                 },
                 tx,
                 cursor: None,
+                workspace_cursors: HashMap::new(),
+                visual: watch::channel(None).0,
+                known: std::collections::HashSet::new(),
             },
         );
         let top = room.doc.position(0).unwrap();
@@ -1191,5 +1644,146 @@ mod tests {
             serde_json::from_str::<Wire>(r#"{"t":"sync","id":1,"update":"AA==","extra":true}"#)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn workspace_preview_queues_keep_only_latest_frame_and_preserve_document_edits() {
+        let (commands, _receiver) = mpsc::channel(64);
+        let session = Session {
+            commands,
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
+            events: Mutex::new(Events {
+                list: VecDeque::new(),
+                bytes: 0,
+            }),
+            stopped: AtomicBool::new(false),
+            cancel: Notify::new(),
+            wake: None,
+            workspace: true,
+            host: true,
+            frame: Mutex::new(None),
+            frame_ready: Notify::new(),
+            desired: Mutex::new(None),
+        };
+        let view = Document::new("").unwrap().id();
+        for sequence in 0..1000 {
+            let frame = json!({"t":"workspace","message":{"t":"frame","frame":{"view":view,"sequence":sequence,"width":1,"height":1,"png":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII="}}});
+            assert!(session.send(frame.clone()));
+            session.push(frame);
+            if sequence == 500 {
+                session.push(json!({"t":"workspace","message":{"t":"update","document":view,"peer":"peer","update":"keep this edit"}}));
+            }
+        }
+        assert_eq!(
+            session.frame.lock().unwrap().as_ref().unwrap().sequence,
+            999
+        );
+        assert_eq!(session.queued_bytes.load(Ordering::Relaxed), 0);
+        let events = session.poll();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["message"]["update"], "keep this edit");
+        assert_eq!(events[1]["message"]["frame"]["sequence"], 999);
+        assert!(
+            session.send(
+                json!({"t":"workspace","message":{"t":"activate","surface":{"kind":"idle"}}})
+            )
+        );
+        assert!(session.frame.lock().unwrap().is_none());
+        assert!(!session.stopped.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn workspace_storage_failure_never_acknowledges_or_broadcasts() {
+        let root = std::env::temp_dir().join(format!(
+            "jam-workspace-failure-{}",
+            Document::new("").unwrap().id()
+        ));
+        let mut seed = Document::new("safe").unwrap();
+        let id = seed.id();
+        let mut saved = workspace::Store::open(root.to_str().unwrap(), false).unwrap();
+        saved.adopt(&id, "src/Main.hx", &seed.state()).unwrap();
+        saved
+            .activate(Surface::Code {
+                document: id.clone(),
+            })
+            .unwrap();
+        let saved = Arc::new(Mutex::new(saved));
+        let (fatal, mut errors) = mpsc::channel(1);
+        let (tx, mut replies) = mpsc::channel(8);
+        let mut room = Room {
+            doc: Document::new("").unwrap(),
+            token: String::new(),
+            file: "Workspace".into(),
+            peers: HashMap::new(),
+            bytes: 0,
+            recovery: Arc::new(Mutex::new(
+                Recovery::open(
+                    "",
+                    "Workspace",
+                    false,
+                    &Document::new("").unwrap().id(),
+                    &Document::new("").unwrap().state(),
+                )
+                .unwrap(),
+            )),
+            fatal,
+            owner: String::new(),
+            workspace: Some(saved.clone()),
+        };
+        room.peers.insert(
+            "peer".into(),
+            Peer {
+                info: PeerInfo {
+                    id: "peer".into(),
+                    name: "Peer".into(),
+                },
+                tx,
+                cursor: None,
+                workspace_cursors: HashMap::new(),
+                visual: watch::channel(None).0,
+                known: std::collections::HashSet::new(),
+            },
+        );
+        let blocked = root.join("workspace").join(&id).join("checkpoint.next");
+        std::fs::create_dir(&blocked).unwrap();
+        let update = seed
+            .edit(
+                "safe",
+                &[crate::document::Patch {
+                    from: 4,
+                    removed: String::new(),
+                    inserted: "x".repeat(512 * 1024),
+                }],
+            )
+            .unwrap();
+        assert!(
+            room.process(
+                "peer",
+                Wire::Workspace {
+                    message: WorkspaceMessage::Sync {
+                        document: id.clone(),
+                        id: 7,
+                        update
+                    }
+                }
+            )
+            .is_err()
+        );
+        assert!(replies.try_recv().is_err());
+        assert!(errors.try_recv().is_ok());
+        assert!(saved.lock().unwrap().failed);
+        drop(room);
+        drop(saved);
+        std::fs::remove_dir(blocked).unwrap();
+        let recovered = workspace::Store::open(root.to_str().unwrap(), true).unwrap();
+        if let WorkspaceMessage::Document { state, .. } = recovered.snapshot(&id).unwrap() {
+            let mut text = Document::new("").unwrap();
+            text.apply(&state).unwrap();
+            assert_eq!(text.text(), seed.text());
+        } else {
+            panic!();
+        }
+        drop(recovered);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

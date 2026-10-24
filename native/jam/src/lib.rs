@@ -2,3 +2,4 @@
 pub mod document;
 pub mod recovery;
 pub mod transport;
+pub mod workspace;

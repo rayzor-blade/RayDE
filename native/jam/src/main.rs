@@ -61,6 +61,7 @@ fn run() -> Result<(), String> {
             },
             recovery: first["recovery"].as_str().unwrap_or("").into(),
             restore,
+            workspace: first["workspace"].as_bool().unwrap_or(false),
         },
         None,
     )?;
@@ -118,6 +119,11 @@ fn run() -> Result<(), String> {
             Ok(line) => {
                 let command: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
                 match command["op"].as_str() {
+                    Some("workspace") => {
+                        if !session.send(json!({"t":"workspace","message":command["message"]})) {
+                            return Err("Jam workspace send failed".into());
+                        }
+                    }
                     Some("edit") => {
                         let parts: Vec<Patch> = serde_json::from_value(command["parts"].clone())
                             .map_err(|e| e.to_string())?;
