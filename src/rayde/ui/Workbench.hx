@@ -1,13 +1,12 @@
 package rayde.ui;
 
+import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
 import ashui.components.ContextMenu.ContextMenuTrigger;
 import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
-import rayde.jam.JamSession;
-import rayde.jam.JamEditor;
 import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
@@ -228,8 +227,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final imageViews = new Map<String, ImagePreview.ImageViewState>();
 	final imageTextModes = new Map<String, Signal<Bool>>();
 	final documents = new Map<String, DocumentState>();
-	final jam = Signal.make((null : Null<JamSession>));
-	var jamPoll:Null<ashui.animation.AnimationScheduler.Timer>;
+	/** What the parts of the IDE register: commands, bar items, side views and the moments they follow. */
+	public final contributions = new Contributions();
 	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
@@ -494,7 +493,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
 	public function openFile(file:String):Void {
-		if (jam.get()!=null) jam.get().stopFollowing();
+		contributions.navigated();
 		var fresh = open.get().indexOf(file) < 0;
 		if (fresh)
 			open.set(open.get().concat([file]));
@@ -738,13 +737,13 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function editorFind(replace = false):Void {
-		if (jam.get()!=null) jam.get().stopFollowing();
+		contributions.navigated();
 		var editor = editorOf(active.get());
 		if (editor != null) editor.showFind(replace);
 	}
 
 	function editorFindNext(backward = false):Void {
-		if (jam.get()!=null) jam.get().stopFollowing();
+		contributions.navigated();
 		var editor = editorOf(active.get());
 		if (editor != null) editor.findNext(backward);
 	}
@@ -1272,16 +1271,8 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
-	function commands():Array<CenterAction>
+	function coreCommands():Array<CenterAction>
 		return [
-			{id:"jam.open",label:"Jam: Open Panel",icon:Icons.JAM_JOYSTICK,run:showJam},
-			{id:"jam.stopFollowing",label:"Jam: Stop Following",icon:Icons.USER_LINE,run:() -> { if (jam.get()!=null) jam.get().stopFollowing(); }},
-			{id:"jam.start",label:"Jam: Share Active Document…",icon:Icons.TEAM_LINE,run:askStartJam},
-			{id:"jam.join",label:"Jam: Join Shared Document…",icon:Icons.TEAM_LINE,run:askJoinJam},
-			{id:"jam.resume",label:"Jam: Resume Saved Document…",icon:Icons.TEAM_LINE,run:() -> askRestoreJam(true)},
-			{id:"jam.rejoin",label:"Jam: Rejoin Saved Document…",icon:Icons.TEAM_LINE,run:() -> askRestoreJam(false)},
-			{id:"jam.copy",label:"Jam: Copy Invitation",icon:Icons.LINK_M,run:copyJamInvite},
-			{id:"jam.leave",label:"Jam: Leave",icon:Icons.LOGOUT_BOX_LINE,run:leaveJam},
 			{id:"newwindow", label:"New Window", icon:Icons.WINDOW_LINE, run:() -> if (props.onNewWindow != null) props.onNewWindow()},
 			{id:"closewindow", label:"Close Window", icon:Icons.CLOSE_LINE, run:() -> chrome.close()},
 			{id:"openfolder", label:"Open Folder…", icon:Icons.FOLDER_OPEN_LINE, run:() -> pickProject("folder")},
@@ -1353,7 +1344,57 @@ class Workbench extends Component<WorkbenchProps> {
 			{id: "configuretasks", label: "Configure Tasks", icon: Icons.CODE_BOX_LINE, run: configureTasks},
 			{id: "panel", label: "Toggle Panel", icon: Icons.LAYOUT_BOTTOM_LINE, run: togglePanel},
 			{id: "explorer", label: "Toggle Explorer", icon: Icons.FOLDERS_LINE, run: toggleExplorer}
-		].concat(contributedCommands()).filter(action -> props.empty != true || ["newwindow", "closewindow", "openfolder", "openproject", "newproject", "recentprojects", "commands", "settings", "colorscheme", "keybindings", "keymap", "minimize", "fullscreen", "maximize", "explorer"].indexOf(action.id) >= 0);
+		];
+
+	/** The commands as registered, which in an empty window are only those that do not need a project. */
+	function commands():Array<CenterAction> {
+		var all = contributions.commands();
+		return props.empty != true ? all : all.filter(action -> ["newwindow", "closewindow", "openfolder", "openproject", "newproject", "recentprojects", "commands", "settings", "colorscheme", "keybindings", "keymap", "minimize", "fullscreen", "maximize", "explorer"].indexOf(action.id) >= 0);
+	}
+
+	/** What the workbench itself puts in the bars and the command center, and then what each built-in feature does. */
+	function registerShell():Void {
+		for (command in coreCommands()) contributions.command(command);
+		contributions.commandSource(contributedCommands);
+		contributions.activity({id:"rayde-activity-explorer", title:"Explorer", icon:Icons.FOLDERS_LINE, order:0,
+			on:() -> explorerShown.get() && sideView.get() == "explorer", run:chooseExplorer});
+		contributions.activitySource(() -> {
+			var out:Array<ActivityEntry> = [];
+			for (c in containers) if (c.location != "explorer") {
+				var container = c;
+				out.push({id:"rayde-activity-" + c.id, title:c.title, icon:c.icon, order:200,
+					// Only the view the side panel shows is selected; a view in another part of the layout is toggled from here but is not what the bar is showing.
+					on:() -> container.location == "sidebar" && explorerShown.get() && sideView.get() == container.id, run:() -> chooseContainer(container)});
+			}
+			return out;
+		});
+		contributions.activity({id:"rayde-activity-settings", title:"Settings", icon:Icons.SETTINGS_3_LINE, place:"bottom", order:0,
+			on:() -> active.get() == SETTINGS, run:() -> openSettings()});
+		contributions.status({id:"problems", place:"left", order:300, build:() -> <for {list in [problems.get()]}>${problemCounts(list)}</for>});
+		contributions.status({id:"notice", place:"right", order:100, build:() -> <if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>});
+		contributions.status({id:"run", place:"right", order:200, build:() -> <for {state in [runState.get()]}>${runStatus(state)}</for>});
+		contributions.status({id:"panel", place:"right", order:300, build:() -> <for {on in [panelShown.get()]}>${panelItem(on)}</for>});
+		contributions.status({id:"language-server", place:"right", order:400, build:() -> <for {server in [languageStatus()]}><if {server != null}>${languageServerItem(server)}</if></for>});
+		contributions.status({id:"language", place:"right", order:500, build:() ->
+			<for {name in [LanguageNames.of(realFile(active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>});
+		contributions.status({id:"runtime", place:"right", order:600, build:() -> <if {runtime() != ""}><tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
+			<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
+		</tooltip></if>});
+		if (props.empty != true) Features.installAll(host());
+	}
+
+	/** The surface the built-in features are given of this workbench. */
+	function host():Host
+		return {
+			contributions: contributions, cwd: props.display.cwd, name: props.name ?? haxe.io.Path.withoutDirectory(props.display.cwd),
+			active: active, dirty: dirty, closed: () -> gone,
+			isDocument: file -> file != "" && !isVirtual(file) && !ImagePreview.isRaster(file) && FileOps.inside(props.display.cwd, file),
+			hasBuffer: file -> buffers.exists(file), state: documentState, editorOf: editorOf, open: openFile, say: say, ask: request -> prompt.set(request),
+			edited: edited, releaseDocuments: releaseClosedDocuments,
+			showSidebar: id -> { sideView.set(id); if (!explorerShown.get()) treeWidth.set(ACTIVITY + EXPLORER_WIDTH); },
+			hideSidebar: () -> treeWidth.set(ACTIVITY),
+			sidebarShown: id -> explorerShown.get() && sideView.get() == id
+		};
 
 	function desktopMenuBar():Element {
 		#if ashui_window
@@ -1521,7 +1562,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = open.get(), changed = dirty.get();
-		if (jam.get() != null) opened = opened.concat([jam.get().file]);
+		opened = opened.concat(contributions.retained());
 		if (languageServers != null) languageServers.retain(opened);
 		for (file in imageViews.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageViews.remove(file);
 		for (file in imageTextModes.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) imageTextModes.remove(file);
@@ -1546,7 +1587,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
 	public function edited(file:String):Void {
-		if (jam.get() != null && jam.get().file == file) jam.get().acceptBuffer();
+		contributions.edited(file);
 		checkpointHistory(file);
 		if (dirty.get().indexOf(file) < 0)
 			dirty.set(dirty.get().concat([file]));
@@ -1872,7 +1913,7 @@ class Workbench extends Component<WorkbenchProps> {
 		Extensions.setDisabled(props.display.cwd, id, disabled);
 		extensionManager.setDisabled(id, disabled);
 		containers = makeContainers();
-		if (sideView.get() != "jam" && !Lambda.exists(containers, c -> c.id == sideView.get())) sideView.set("explorer");
+		if (!contributions.hasSidebar(sideView.get()) && !Lambda.exists(containers, c -> c.id == sideView.get())) sideView.set("explorer");
 		open.set([for (f in open.get()) if (!isViewTab(f) || containerOfTab(f) != null) f]);
 		if (open.get().indexOf(active.get()) < 0) active.set(open.get().length == 0 ? "" : open.get()[0]);
 		commandList.splice(0, commandList.length);
@@ -2223,6 +2264,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (props.theme != null)
 			themeStudio = makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
+		registerShell();
 		bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
 		libraries = new LibraryManager(props.display.cwd);
 		setupCodeActions();
@@ -2233,10 +2275,10 @@ class Workbench extends Component<WorkbenchProps> {
 			if (current == tree && !gone && languageServers.hasEvents()) pollLanguages();
 		};
 		ashui.layout.LayoutTree.flushHooks.push(receiveLanguages);
-		var receiveJam:ashui.layout.LayoutTree->Void = current -> { if (current == tree && !gone) pollJam(); };
-		ashui.layout.LayoutTree.flushHooks.push(receiveJam);
+		var receiveFrame:ashui.layout.LayoutTree->Void = current -> { if (current == tree && !gone) contributions.frame(); };
+		ashui.layout.LayoutTree.flushHooks.push(receiveFrame);
 		Owner.onCleanup(() -> {
-			for (i in 0...ashui.layout.LayoutTree.flushHooks.length) if (Reflect.compareMethods(ashui.layout.LayoutTree.flushHooks[i],receiveJam)) {
+			for (i in 0...ashui.layout.LayoutTree.flushHooks.length) if (Reflect.compareMethods(ashui.layout.LayoutTree.flushHooks[i],receiveFrame)) {
 				ashui.layout.LayoutTree.flushHooks.splice(i,1); break;
 			}
 		});
@@ -2253,7 +2295,7 @@ class Workbench extends Component<WorkbenchProps> {
 			if (sessionReady) workspaceSession.save(sessionSnapshot());
 		}, (_, _) -> false);
 		new ashui.reactive.Watch(() -> active.get(), file -> {
-			if (jam.get()!=null && file != jam.get().file) jam.get().stopFollowing();
+			contributions.activeChanged(file);
 			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
 			emit("active.changed", {path: realFile(file)});
 		});
@@ -2273,7 +2315,7 @@ class Workbench extends Component<WorkbenchProps> {
 			ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
-			leaveJam();
+			contributions.closing();
 			if (codeActionTimer != null) codeActionTimer.cancel();
 			if (codeActionPoll != null) codeActionPoll.cancel();
 			codeActionTimer = null; codeActionPoll = null;
@@ -2446,9 +2488,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function sideBody(shown:Bool, view:String):Element {
 		if (!shown)
 			return <div/>;
-		if (view == "jam") return <jam-panel workspace={props.name ?? haxe.io.Path.withoutDirectory(props.display.cwd)} session={jam} active={active} dirty={dirty} canShare={canShareJam}
-			onClose={() -> treeWidth.set(ACTIVITY)} onStart={askStartJam} onJoin={askJoinJam} onResume={() -> askRestoreJam(true)} onRejoin={() -> askRestoreJam(false)}
-			onOpenFile={() -> { if (jam.get()!=null) openFile(jam.get().file); }} onCopy={copyJamInvite} onLeave={leaveJam} onFollow={followJam}/>;
+		var registered = contributions.sidebarView(view);
+		if (registered != null) return registered();
 		var c = Lambda.find(containers, c -> c.id == view && c.location == "sidebar");
 		return c == null ? explorer(shown) : extensionBody(c, "rayde-explorer");
 	}
@@ -2474,43 +2515,17 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
 		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={ACTIVITY}>
-			<for {shown in [explorerShown.get()]}>
-				<for {view in [sideView.get()]}>${containerItems(shown, view)}</for>
-			</for>
+			<for {entry in contributions.activityItems("top")}>${activityItem(entry)}</for>
 			<div class="flex-1"/>
-			<for {on in [active.get() == SETTINGS]}>${settingsItem(on)}</for>
+			<for {entry in contributions.activityItems("bottom")}>${activityItem(entry)}</for>
 		</div>;
 
-	function settingsItem(on:Bool):Element {
-		var item = <div id="rayde-activity-settings" class="rayde-activity-item flex" onClick={_ -> openSettings()}>
-			<icon document={Icons.SETTINGS_3_LINE} class="size-5"/>
+	function activityItem(entry:ActivityEntry):Element {
+		var item = <div id={entry.id} class="rayde-activity-item flex" onClick={_ -> entry.run()}>
+			<icon document={entry.icon} class="size-5"/>
 		</div>;
-		if (on)
-			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
-		return <tooltip label="Settings" side="right">{item}</tooltip>;
-	}
-
-	/** The Explorer's icon and one for each extension view, which an extension that is in the sidebar swaps with the Explorer. */
-	function containerItems(shown:Bool, view:String):Element {
-		var items:Array<Element> = [activityItem("rayde-activity-explorer", "Explorer", Icons.FOLDERS_LINE, shown && view == "explorer", chooseExplorer)];
-		items.push(activityItem("rayde-activity-jam", "Jam", Icons.JAM_JOYSTICK, shown && view == "jam", () -> {
-			if (shown && view == "jam") treeWidth.set(ACTIVITY); else showJam();
-		}));
-		for (c in containers) if (c.location != "explorer") {
-			// Only the view the side panel shows is selected; a view in another part of the layout is toggled from here but is not what the activity bar is showing.
-			var on = c.location == "sidebar" && shown && view == c.id;
-			items.push(activityItem("rayde-activity-" + c.id, c.title, c.icon, on, () -> chooseContainer(c)));
-		}
-		return <div class="flex flex-col items-center gap-1">{items}</div>;
-	}
-
-	function activityItem(id:String, label:String, icon:ashui.svg.SvgDocument, on:Bool, choose:Void->Void):Element {
-		var item = <div id={id} class="rayde-activity-item flex" onClick={_ -> choose()}>
-			<icon document={icon} class="size-5"/>
-		</div>;
-		if (on)
-			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
-		return <tooltip label={label} side="right">{item}</tooltip>;
+		ashui.css.Identity.of(item.tree, item.node.id).bindBooleanAttribute("data-on", Computed.make(() -> entry.on()));
+		return <tooltip label={entry.title} side="right">{item}</tooltip>;
 	}
 
 	/** The Explorer's icon: it takes the side panel back from an extension, or, when it is there already, folds it away. */
@@ -2581,7 +2596,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (layoutKey(m) == before && !moved)
 			return;
 		containers = makeContainers();
-		if (sideView.get() != "jam" && !Lambda.exists(containers, c -> c.id == sideView.get() && c.location == "sidebar")) {
+		if (!contributions.hasSidebar(sideView.get()) && !Lambda.exists(containers, c -> c.id == sideView.get() && c.location == "sidebar")) {
 			var first = Lambda.find(containers, c -> c.location == "sidebar");
 			sideView.set(first == null ? "explorer" : first.id);
 		}
@@ -2657,38 +2672,40 @@ class Workbench extends Component<WorkbenchProps> {
 		return explorerSections.get(id);
 	}
 
-	/** What extensions put at the left of the status bar, in the order they were first set. */
-	final extensionStatus = Signal.make((([]:Array<ExtensionStatus>)));
+	final extensionStatusState = new Map<String, String>();
 
 	/** Sets, replaces or (with a null item) removes one of an extension's status items; a null id removes all of them. */
 	function setExtensionStatus(owner:String, id:Null<String>, item:Dynamic):Void {
-		var items = extensionStatus.get().filter(entry -> entry.owner != owner || id != null && entry.id != id);
-		if (id != null && item != null) {
-			var field = (name:String) -> { var value:Dynamic = Reflect.field(item, name); return value == null ? null : (Std.string(value):Null<String>); };
-			var next:ExtensionStatus = {owner:owner, id:id, text:Std.string(item.text), icon:field("icon"), detail:field("detail"), detailIcon:field("detailIcon"),
-				tooltip:field("tooltip"), view:field("view"), command:field("command")};
-			var at = Lambda.findIndex(extensionStatus.get(), entry -> entry.owner == owner && entry.id == id);
-			if (at < 0) items.push(next);
-			else items.insert(Math.round(Math.min(at, items.length)), next);
+		var prefix = "ext:" + owner + "\n";
+		if (id == null) {
+			for (key in contributions.statusIds()) if (StringTools.startsWith(key, prefix)) { contributions.removeStatus(key); extensionStatusState.remove(key); }
+			return;
 		}
-		if (haxe.Json.stringify(items) != haxe.Json.stringify(extensionStatus.get())) extensionStatus.set(items);
+		var key = prefix + id;
+		if (item == null) {
+			contributions.removeStatus(key);
+			extensionStatusState.remove(key);
+			return;
+		}
+		var field = (name:String) -> { var value:Dynamic = Reflect.field(item, name); return value == null ? null : (Std.string(value):Null<String>); };
+		var next:ExtensionStatus = {owner:owner, id:id, text:Std.string(item.text), icon:field("icon"), detail:field("detail"), detailIcon:field("detailIcon"),
+			tooltip:field("tooltip"), view:field("view"), command:field("command")};
+		var json = haxe.Json.stringify(next);
+		if (extensionStatusState.get(key) == json) return;
+		extensionStatusState.set(key, json);
+		contributions.status({id:key, place:"left", order:200, build:() -> extensionStatusItem(next)});
 	}
 
-	function extensionStatusItems(items:Array<ExtensionStatus>):Element {
-		var out:Array<Element> = [];
-		for (entry in items) {
-			var item = entry;
-			var icon = item.icon == null ? null : ViewIcons.named(null, item.icon), detailIcon = item.detailIcon == null ? null : ViewIcons.named(null, item.detailIcon);
-			var content = <div id={"rayde-status-" + item.id} class="rayde-status-item action flex" onClick={_ -> extensionStatusPressed(item)}>
-				<if {icon != null}><icon document={icon} class="size-3.5"/></if>
-				<text>${item.text}</text>
-				<if {item.detail != null}><div class="flex items-center gap-1 rayde-status-detail">
-					<if {detailIcon != null}><icon document={detailIcon} class="size-3.5"/></if><text>${item.detail}</text>
-				</div></if>
-			</div>;
-			out.push(item.tooltip == null ? content : <tooltip label={item.tooltip} side="top">{content}</tooltip>);
-		}
-		return <div class="flex items-center gap-1">{out}</div>;
+	function extensionStatusItem(item:ExtensionStatus):Element {
+		var icon = item.icon == null ? null : ViewIcons.named(null, item.icon), detailIcon = item.detailIcon == null ? null : ViewIcons.named(null, item.detailIcon);
+		var content = <div id={"rayde-status-" + item.id} class="rayde-status-item action flex" onClick={_ -> extensionStatusPressed(item)}>
+			<if {icon != null}><icon document={icon} class="size-3.5"/></if>
+			<text>${item.text}</text>
+			<if {item.detail != null}><div class="flex items-center gap-1 rayde-status-detail">
+				<if {detailIcon != null}><icon document={detailIcon} class="size-3.5"/></if><text>${item.detail}</text>
+			</div></if>
+		</div>;
+		return item.tooltip == null ? content : <tooltip label={item.tooltip} side="top">{content}</tooltip>;
 	}
 
 	function extensionStatusPressed(item:ExtensionStatus):Void {
@@ -2907,7 +2924,8 @@ class Workbench extends Component<WorkbenchProps> {
 			value: haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path)),
 			check: FileOps.invalid,
 			accept: name -> {
-				if (jam.get() != null && FileOps.inside(path,jam.get().file)) throw "Leave the Jam before renaming its shared document";
+				var refused = contributions.refusal(path, "renaming");
+				if (refused != null) throw refused;
 				var to = FileOps.rename(props.display.cwd, path, name);
 				moveTabs(path, to);
 				refreshExplorer();
@@ -2921,7 +2939,8 @@ class Workbench extends Component<WorkbenchProps> {
 			action: "Delete",
 			destructive: true,
 			accept: _ -> {
-				if (jam.get() != null && FileOps.inside(path,jam.get().file)) throw "Leave the Jam before deleting its shared document";
+				var refused = contributions.refusal(path, "deleting");
+				if (refused != null) throw refused;
 				for (f in FileOps.under(open.get(), path))
 					closeFile(f);
 				FileOps.delete(props.display.cwd, path);
@@ -3253,7 +3272,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function codeEditor(file:String):Element {
 		if (restoredTabs.remove(file)) check(file);
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} readOnly={Computed.make(() -> jam.get() != null && jam.get().file == file && !jam.get().editable())} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={documentState(file)} readOnly={Computed.make(() -> contributions.readOnly(file))} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> definitionAt(file, offset)} hover={offset -> hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				edited(file);
 				assistInput(file);
@@ -3264,7 +3283,7 @@ class Workbench extends Component<WorkbenchProps> {
 		assistWatch(file, editorRef(file).get());
 		var mounted = editorRef(file).get(), state = documents.get(file);
 		watchCodeActions(file, mounted);
-		new JamEditor(mounted,file,() -> jam.get());
+		contributions.editorMade(file, mounted);
 		Owner.onCleanup(() -> { assist.stop(file, mounted); state.compact(); });
 		return editor;
 	}
@@ -3781,124 +3800,10 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The runtime the project runs on, the problem counts, and where the run stands. */
 	function statusBar():Element
 		return <div id="rayde-status-bar" class="rayde-status flex items-center gap-2 px-3 shrink-0" height={28}>
-			<for {current in [jam.get()]}>${jamStatus(current)}</for>
-			<for {items in [extensionStatus.get()]}>${extensionStatusItems(items)}</for>
-			<for {list in [problems.get()]}>${problemCounts(list)}</for>
+			<for {entry in contributions.statusItems("left")}>${entry.build()}</for>
 			<div class="flex-1"/>
-			<if {notice.get() != ""}><text id="rayde-notice">${notice}</text></if>
-			<for {state in [runState.get()]}>${runStatus(state)}</for>
-			<for {on in [panelShown.get()]}>${panelItem(on)}</for>
-			<for {server in [languageStatus()]}><if {server != null}>${languageServerItem(server)}</if></for>
-			<for {name in [LanguageNames.of(realFile(active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>
-			<if {runtime() != ""}><tooltip label={"This project runs on the " + runtime() + " runtime"} side="top">
-				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
-			</tooltip></if>
+			<for {entry in contributions.statusItems("right")}>${entry.build()}</for>
 		</div>;
-
-	function canShareJam():Bool {
-		var file=active.get();
-		return file != "" && !isVirtual(file) && !ImagePreview.isRaster(file) && FileOps.inside(props.display.cwd,file);
-	}
-	function showJam():Void {
-		sideView.set("jam");
-		if (!explorerShown.get()) treeWidth.set(ACTIVITY + EXPLORER_WIDTH);
-	}
-	function followJam(id:String):Void {
-		var current=jam.get();
-		if (current == null) return;
-		openFile(current.file);
-		if (!current.follow(id)) say("Wait for this participant's position before following");
-	}
-
-	function jamFile():String {
-		var file=active.get();
-		if (jam.get() != null) throw "Leave the current Jam before starting another";
-		if (file == "" || isVirtual(file) || ImagePreview.isRaster(file) || !FileOps.inside(props.display.cwd,file))
-			throw "Open a text document in this workspace first";
-		return file;
-	}
-
-	function askStartJam():Void {
-		try {
-			var file=jamFile();
-			prompt.set({title:"Share " + haxe.io.Path.withoutDirectory(file),description:"Share this document in a local Jam. Participants can edit it. Save writes changes to your local copy. Closing the host window ends the room. Starting a fresh Jam replaces this file's previous Jam checkpoint; use Resume Saved Document to recover it.",action:"Start Jam",hasInput:true,value:Sys.getEnv("USER") ?? "Host",placeholder:"Your display name",
-				check:name -> StringTools.trim(name) == "" || haxe.io.Bytes.ofString(name).length > 64 ? "Enter a name of 1–64 bytes" : null,
-				accept:name -> beginJam(file,true,name,"")});
-		} catch (error:Dynamic) say(Std.string(error));
-	}
-
-	function askJoinJam():Void {
-		try {
-			var file=jamFile();
-			if (dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
-			prompt.set({title:"Join a local Jam",description:"Open the matching file in your own workspace copy. Joining replaces its editor buffer with the shared document. Your disk copy changes only when you save. Joining fresh replaces its previous Jam checkpoint; use Rejoin Saved Document to retain offline edits.",action:"Join Jam",hasInput:true,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,false,Sys.getEnv("USER") ?? "Guest",StringTools.trim(invitation))});
-		} catch (error:Dynamic) say(Std.string(error));
-	}
-
-	function jamRecovery(file:String):String return props.display.cwd + "/.rayde/jam/" + haxe.crypto.Sha256.encode(file);
-
-	function askRestoreJam(host:Bool):Void {
-		try {
-			var file=jamFile();
-			if (dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before restoring a Jam";
-			prompt.set({title:host ? "Resume saved Jam" : "Rejoin saved Jam",description:host ? "Restore this file's saved shared document into the editor and create a new invitation. Participants can rejoin using that invitation. Your disk copy changes only when you save." : "Restore this file's saved shared document and merge its offline edits into the original Jam. Ask the host for the current invitation. Your disk copy changes only when you save.",action:host ? "Resume Jam" : "Rejoin Jam",hasInput:!host,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,host,Sys.getEnv("USER") ?? "Peer",host ? "" : StringTools.trim(invitation),true)});
-		} catch (error:Dynamic) say(Std.string(error));
-	}
-
-	function beginJam(file:String,host:Bool,name:String,invitation:String,restore:Bool=false):Void {
-		if (jam.get() != null || !buffers.exists(file)) throw "Open the document and leave any existing Jam first";
-		if ((!host || restore) && dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
-		var current=new JamSession(file,documentState(file),host,name,invitation,() -> { if (!gone) edited(file); },jamRecovery(file),restore);
-		jam.set(current);
-		var editor=editorOf(file);
-		if (editor != null) current.moved(editor.editing.caret.get(),editor.editing.anchor.get());
-		pollJam(); scheduleJam(); showJam();
-	}
-
-	function pollJam():Void {
-		var current=jam.get();
-		if (current == null || !current.pending()) return;
-		var editor=editorOf(current.file);
-		if (editor != null && editor.editing.composing.get() != "") return;
-		if (editor != null) current.remember(editor.editing.caret.get(),editor.editing.anchor.get());
-		current.poll();
-	}
-
-	function scheduleJam():Void {
-		var current=jam.get();
-		if (gone || current == null || current.canWake() || current.failure.get() != "") return;
-		jamPoll=ashui.animation.AnimationScheduler.main.after(.05,() -> { jamPoll=null; pollJam(); scheduleJam(); });
-	}
-
-	function copyJamInvite():Void {
-		var current=jam.get();
-		if (current == null || current.invite.get() == "") { say("No local Jam invitation is available"); return; }
-		ashui.input.Clipboard.setText(current.invite.get()); say("Jam invitation copied");
-	}
-
-	function leaveJam():Void {
-		if (jamPoll != null) jamPoll.cancel(); jamPoll=null;
-		var current=jam.get();
-		if (current != null) current.dispose();
-		jam.set(null);
-		if (!gone) releaseClosedDocuments();
-	}
-
-	function jamStatus(current:Null<JamSession>):Element {
-		var label=Computed.make(() -> {
-			if (current == null) return "Jam";
-			var person=Lambda.find(current.people.get(),p -> p.id == current.following.get());
-			return "Jam · " + (person == null ? current.status.get() : "following " + person.name) + (current.people.get().length > 0 ? " · " + current.people.get().length : "");
-		});
-		var live=Computed.make(() -> current != null && current.status.get() == "connected" && current.failure.get() == "");
-		var symbol:Element = <icon document={Icons.JAM_JOYSTICK} class="size-4 rayde-jam-icon"/>;
-		var identity=ashui.css.Identity.of(symbol.tree,symbol.node.id);
-		identity.bindBooleanAttribute("data-live",live);
-		identity.setAttribute("data-idle",current == null ? "" : null);
-		var picture:Element = <div class="relative size-4 shrink-0"><if {live}><icon document={Icons.JAM_JOYSTICK} class="absolute inset-0 size-4 rayde-jam-shadow"/></if>{symbol}</div>;
-		var description=Computed.make(() -> current == null ? "Open Jam" : current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.recoveryStatus.get() + " — " + current.people.get().map(p -> p.name).join(", "));
-		return <tooltip label={description} side="top"><button id="rayde-jam-status" variant={Ghost} class="rayde-status-item" onClick={_ -> showJam()}>{picture}<text class="rayde-jam-status-label">${label}</text></button></tooltip>;
-	}
 
 	function languageStatus():Null<LanguageServerStatus> {
 		languageStatusRevision.get(); languageRevision.get();
