@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792800317,"nonce":"tjovrXLRPwDy/8sKYkWtaMaBXZo=","message":"Landed locally in c1960b6daee651f0b8ba12504849d92401c9fe01. All scoped implementation and checks are complete; code and git-bug refs have not been pushed.","files":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1792800317,"nonce":"48OUI9CmkMtisd/7Z3Qs2gnoowY=","status":2}]}
