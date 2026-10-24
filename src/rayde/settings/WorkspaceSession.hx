@@ -2,7 +2,11 @@ package rayde.settings;
 
 import rayde.run.Worker;
 
-typedef TabSession = {files:Array<String>, active:String};
+typedef EditorLayoutSession = {
+	?files:Array<String>, ?active:String,
+	?direction:String, ?ratio:Float, ?first:EditorLayoutSession, ?second:EditorLayoutSession
+};
+typedef TabSession = {files:Array<String>, active:String, ?layout:EditorLayoutSession, ?group:Int};
 private typedef Write = {file:String, temporary:String, session:TabSession, mutex:sys.thread.Mutex};
 
 /** Workspace tab metadata, independent of editor instances and document contents. */
@@ -26,8 +30,22 @@ class WorkspaceSession {
 			if (data.version != 1 || !Std.isOfType(data.files, Array) || !Std.isOfType(data.active, String)) return null;
 			var files:Array<String> = [];
 			for (entry in (data.files:Array<Dynamic>)) if (Std.isOfType(entry, String) && entry != "" && files.indexOf(entry) < 0) files.push(entry);
-			return {files:files, active:files.indexOf(data.active) < 0 ? files.length == 0 ? "" : files[0] : data.active};
+			var layout = readLayout(data.layout);
+			var active = files.indexOf(data.active) >= 0 || data.active == "" && layout != null ? data.active : files.length == 0 ? "" : files[0];
+			return {files:files, active:active, layout:layout, group:Std.isOfType(data.group, Int) ? data.group : 0};
 		} catch (_:Dynamic) return null;
+	}
+
+	static function readLayout(value:Dynamic, depth = 0):Null<EditorLayoutSession> {
+		if (value == null || depth > 8 || !Reflect.isObject(value) || Std.isOfType(value, Array)) return null;
+		if (value.direction == "horizontal" || value.direction == "vertical") {
+			var first = readLayout(value.first, depth + 1), second = readLayout(value.second, depth + 1);
+			if (first == null || second == null) return null;
+			var ratio:Float = Std.isOfType(value.ratio, Float) && Math.isFinite(value.ratio) ? value.ratio : .5;
+			return {direction:value.direction, ratio:Math.max(.1, Math.min(.9, ratio)), first:first, second:second};
+		}
+		if (!Std.isOfType(value.files, Array) || !Std.isOfType(value.active, String)) return null;
+		return {files:[for (entry in (value.files:Array<Dynamic>)) if (Std.isOfType(entry, String)) entry], active:value.active};
 	}
 
 	public function save(session:TabSession):Void worker.submit("tabs", {file:file, temporary:temporary, session:session, mutex:mutex});
@@ -44,7 +62,7 @@ class WorkspaceSession {
 		try {
 			if (!cancelled()) {
 				sys.FileSystem.createDirectory(haxe.io.Path.directory(request.file));
-				sys.io.File.saveContent(request.temporary, haxe.Json.stringify({version:1, files:request.session.files, active:request.session.active}));
+				sys.io.File.saveContent(request.temporary, haxe.Json.stringify({version:1, files:request.session.files, active:request.session.active, layout:request.session.layout, group:request.session.group}));
 				sys.FileSystem.rename(request.temporary, request.file);
 			}
 		} catch (_:Dynamic) { request.mutex.release(); return false; }

@@ -335,6 +335,8 @@ class Workbench extends Component<WorkbenchProps> {
 			open.set(files);
 			var selected = sessionPath(saved.active);
 			active.set(files.indexOf(selected) >= 0 ? selected : files.length == 0 ? "" : files[0]);
+			if (saved.layout != null && saved.active == "") active.set("");
+			editorPart.groups.restore(saved.layout,files,saved.group ?? 0,sessionPath);
 			sessionReady = true;
 			if (active.get() != "" && !isVirtual(active.get())) { restoredTabs.remove(active.get()); languagesPart.check(active.get()); }
 			if (extension != null) { extensionsPart.extensionStudio(); revealViews(true); }
@@ -393,16 +395,22 @@ class Workbench extends Component<WorkbenchProps> {
 	function sessionSnapshot():TabSession {
 		var files = [for (file in open.get()) if (persistableTab(file)) isVirtual(file) ? file : relative(file)];
 		var selected = active.get(), key = isVirtual(selected) ? selected : relative(selected);
-		return {files:files, active:files.indexOf(key) >= 0 ? key : files.length == 0 ? "" : files[0]};
+		var groups = editorPart.groups;
+		return {files:files, active:selected == "" ? "" : files.indexOf(key) >= 0 ? key : files.length == 0 ? "" : files[0],
+			layout:groups.snapshot(file -> persistableTab(file) ? isVirtual(file) ? file : relative(file) : null), group:groups.all().indexOf(groups.current())};
 	}
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
 	public function openFile(file:String):Void {
 		contributions.navigated();
+		editorPart.groups.sync(open.get(),active.get());
+		var previousGroup = editorPart.groups.current();
 		var fresh = open.get().indexOf(file) < 0;
 		if (fresh)
 			open.set(open.get().concat([file]));
 		active.set(file);
+		editorPart.groups.sync(open.get(),file);
+		if (editorPart.groups.current() != previousGroup) editorPart.focusCurrent();
 		if (isVirtual(file))
 			return;
 		remember(file);
@@ -476,6 +484,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
 	public function closeFile(file:String):Void {
+		var wasActive = active.get() == file;
 		if (languagesPart.diagnosticJobs != null) languagesPart.diagnosticJobs.cancel(file);
 		var files = open.get(), at = files.indexOf(file);
 		if (at < 0)
@@ -497,9 +506,13 @@ class Workbench extends Component<WorkbenchProps> {
 			if (owner != null)
 				owner.closeTab(tabRoot(file));
 		}
-		if (active.get() == file)
-			active.set(rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
+		if (active.get() == file) {
+			var neighbor = editorPart.groups.neighbor(file);
+			active.set(neighbor != "" ? neighbor : rest.length == 0 ? "" : rest[at < rest.length ? at : rest.length - 1]);
+		}
 		open.set(rest);
+		editorPart.groups.sync(rest,active.get());
+		if (wasActive) editorPart.focusCurrent();
 		if (!isVirtual(file))
 			emit("file.closed", {path: file});
 	}
@@ -525,6 +538,7 @@ class Workbench extends Component<WorkbenchProps> {
 			active.set(added[added.length - 1]);
 		else if (before.indexOf(active.get()) >= 0 && kept.indexOf(active.get()) < 0)
 			active.set(kept.length == 0 ? "" : kept[kept.length - 1]);
+		editorPart.groups.sync(open.get(),active.get());
 	}
 
 	/** The title an extension gave the tab `file`. */
@@ -666,7 +680,7 @@ class Workbench extends Component<WorkbenchProps> {
 			editor.value.get();
 			editor.editing.caret.get();
 			0;
-		}, _ -> assist.moved(file, editor), (_, _) -> false);
+		}, _ -> { if (active.get() == file) assist.moved(file, editor); }, (_, _) -> false);
 	}
 
 	/** Opens the completion list at the caret of the Haxe file in front. */
@@ -752,6 +766,7 @@ class Workbench extends Component<WorkbenchProps> {
 	public function closeAll():Void {
 		active.set("");
 		closeExcept([]);
+		editorPart.groups.sync([],""); editorPart.groups.join();
 	}
 
 	/** Bulk actions use the same teardown as a tab's close button, including extension view unmounts. */
@@ -894,12 +909,16 @@ class Workbench extends Component<WorkbenchProps> {
 		explorerPart.refreshFileIndex();
 		keymapPart.refreshShortcuts();
 		if (props.empty != true) loadRecent();
+		new ashui.reactive.Watch(() -> { open.get(); active.get(); 0; }, _ -> editorPart.groups.sync(open.get(),active.get()), (_, _) -> false);
 		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> documentsPart.releaseClosedDocuments(), (_, _) -> false);
 		new ashui.reactive.Watch(() -> panelsPart.problemsHeight.get(), h -> if (h > 40) panelsPart.panelHeight = h);
-		new ashui.reactive.Watch(() -> { open.get(); active.get(); 0; }, _ -> {
+		new ashui.reactive.Watch(() -> { open.get(); active.get(); editorPart.groups.revision.get(); 0; }, _ -> {
 			if (sessionReady) workspaceSession.save(sessionSnapshot());
 		}, (_, _) -> false);
+		var previousActive = "";
 		new ashui.reactive.Watch(() -> active.get(), file -> {
+			if (previousActive != "" && previousActive != file) assist.stop(previousActive,editorOf(previousActive));
+			previousActive = file;
 			contributions.activeChanged(file);
 			extensionsPart.activeStudio.set(extension != null ? extensionsPart.extensionStudio() : extensionsPart.studios.get(file));
 			emit("active.changed", {path: realFile(file)});

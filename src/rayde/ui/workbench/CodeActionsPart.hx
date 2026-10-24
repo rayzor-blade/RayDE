@@ -102,7 +102,7 @@ class CodeActionsPart {
 
 	var codeActionFile = "";
 
-	var codeActionMount = 0;
+	var codeActionEditor:Null<CodeEditor>;
 
 	var codeActionTimer:Null<ashui.animation.AnimationScheduler.Timer>;
 
@@ -140,7 +140,6 @@ class CodeActionsPart {
 	}
 
 	function watchCodeActions(file:String, editor:CodeEditor):Void {
-		var mount = ++codeActionMount;
 		var previous = editor.onGutterClick;
 		editor.onGutterClick = (line, event) -> {
 			if (event.button != null && !event.button.match(Left)) return;
@@ -152,6 +151,7 @@ class CodeActionsPart {
 			} else if (previous != null) previous(line, event);
 		};
 		new ashui.reactive.Watch(() -> editor.value.get(), _ -> queueCodeActions(file, editor));
+		new ashui.reactive.Watch(() -> wb.active.get() == file, on -> { if (on) queueCodeActions(file,editor); else editor.markers("code-actions",[]); });
 		new ashui.reactive.Watch(() -> [for (p in wb.problems.get()) if (p.file == file) p], _ -> queueCodeActions(file, editor, codeActionPicker != null && wb.quickOpen.get()), LspProtocol.sameDiagnostics);
 		new ashui.reactive.Watch(() -> codeActionRevision.get(), _ -> {
 			var seen = new Map<Int, Bool>(), marks:Array<ashui.components.code.CodeAnnotations.CodeMarker> = [];
@@ -167,7 +167,8 @@ class CodeActionsPart {
 		});
 		Owner.onCleanup(() -> {
 			editor.markers("code-actions", []);
-			if (codeActionFile != file || codeActionMount != mount) return;
+			if (codeActionFile != file || codeActionEditor != editor) return;
+			codeActionEditor = null;
 			if (codeActionTimer != null) codeActionTimer.cancel(); codeActionTimer = null;
 			codeActionVersion++; codeActionFile = ""; codeActionPicker = null; codeActions.clear();
 		});
@@ -175,6 +176,7 @@ class CodeActionsPart {
 
 	function queueCodeActions(file:String, editor:CodeEditor, manual = false):Void {
 		if (wb.gone || wb.active.get() != file) return;
+		codeActionEditor = editor;
 		if (codeActionTimer != null) codeActionTimer.cancel();
 		codeActionVersion++; codeActionFile = file;
 		requestingActions = true; codeActions.clear(); requestingActions = false;

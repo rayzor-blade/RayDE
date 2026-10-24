@@ -8,7 +8,7 @@ Closing a window with edited files offers **Save and Close**, **Don't Save** and
 
 Launching without arguments reopens the previous session's windows, workspaces and tabs. A supplied workspace path takes precedence. Before a session has been saved, RayDE resumes the most recent workspace; a first launch opens Welcome with Explorer collapsed.
 
-Each project remembers its tab order and active tab, including Settings and available extension view tabs. Unsaved text and undo history recover through local history. Closing all tabs keeps that project empty next time.
+Each project remembers its editor groups, split directions, divider proportions and each group's tab order and active tab, including Settings and available extension view tabs. Unsaved text and undo history recover through local history. Closing all tabs keeps that project empty next time.
 
 Quitting preserves all open windows. Closing one removes it from the next session; closing the last window preserves its workspace for the next launch.
 

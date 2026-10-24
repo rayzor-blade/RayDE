@@ -13,15 +13,20 @@ typedef Keymap = {id:String, label:String, note:String, platform:String, keys:Ar
  * Keymaps for the commands RayDE has, as the editors people know bind them. A command an editor has no key for
  * has none here, and a command RayDE has that the editor lacks keeps none. `mod` is Command on a Mac and Control
  * elsewhere. Chord sequences, such as Sublime's and VS Code's Cmd+K Cmd+S, are not expressible, so those commands
- * go without a key.
+ * go without a key. Editor group commands have shared defaults across presets.
  */
 class Keymaps {
 	public static inline var DEFAULT = "vscode";
 
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
+		"splitright", "splitdown", "focusnextgroup", "focuspreviousgroup", "moveeditorgroup", "joingroups", "closeeditorgroup",
 		"newwindow", "closewindow", "quickopen", "commands", "gotoline", "find", "replace", "findnext", "findprevious", "codeactions", "buildproject", "run", "stop", "save", "close", "definition", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
 		"splitterminal", "settings", "minimize", "fullscreen", "togglebreakpoint", "pause", "stepover", "stepinto", "stepout", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
+	];
+	static final editorGroups = [
+		k("splitright","mod+\\"), k("splitdown","mod+alt+\\"),
+		k("focusnextgroup","mod+alt+right"), k("focuspreviousgroup","mod+alt+left")
 	];
 
 	/** The commands that act on the file or folder selected in the Explorer, which run only while the Explorer has the keyboard. */
@@ -50,7 +55,7 @@ class Keymaps {
 				k("codeactions", "mod+."),
 				k("newwindow", "mod+shift+n"), k("closewindow", "mod+shift+w"), k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("find", "mod+f"), k("replace", "ctrl+h", "alt+cmd+f"), k("findnext", "f3", "cmd+g"), k("findprevious", "shift+f3", "shift+cmd+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("suggest", "ctrl+space"), k("parameterhints", "mod+shift+space"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
-				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5", "mod+\\"), k("settings", "mod+,"),
+				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5"), k("settings", "mod+,"),
 				k("minimize", "", "cmd+m"), k("fullscreen", "alt+shift+enter", "ctrl+cmd+f"), k("togglebreakpoint", "f9"), k("pause", "f6"), k("stepover", "f10"),
 				k("stepinto", "f11"), k("stepout", "shift+f11")
 			].concat(files("f2", k("filecopypath", "shift+alt+c", "alt+cmd+c"), k("filereveal", "shift+alt+r", "alt+cmd+r")))
@@ -124,9 +129,12 @@ class Keymaps {
 	public static function available(mac:Bool):Array<Keymap>
 		return [for (m in all) if (m.platform == "" || m.platform == (mac ? "mac" : "other")) m];
 
+	public static function commands(keymap:Keymap):Array<String>
+		return [for (entry in keymap.keys.concat(editorGroups)) entry.command];
+
 	/** The chord text `keymap` gives `command` here, or null. */
 	public static function key(keymap:Keymap, command:String, mac:Bool):Null<String> {
-		var entry = Lambda.find(keymap.keys, e -> e.command == command);
+		var entry = Lambda.find(keymap.keys, e -> e.command == command) ?? Lambda.find(editorGroups, e -> e.command == command);
 		if (entry == null)
 			return null;
 		var text = mac && entry.mac != null ? entry.mac : entry.key;

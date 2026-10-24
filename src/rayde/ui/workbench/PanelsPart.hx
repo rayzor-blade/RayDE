@@ -195,7 +195,7 @@ class PanelsPart {
 					<dropdown-menu-content>
 						<if {wb.terminalPart.profilesMenu.get() != null && wb.terminalPart.profilesMenu.get().opened.get()}>
 						<dropdown-menu-item id="rayde-menu-new-terminal" shortcut="Ctrl+Shift+`" onSelect={() -> wb.terminalPart.newTerminal()}>New Terminal</dropdown-menu-item>
-						<dropdown-menu-item id="rayde-menu-split-terminal" shortcut={mod + "\\"} onSelect={() -> wb.terminalPart.splitTerminal()}>Split Terminal</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-menu-split-terminal" shortcut={wb.keymapPart.bindings.label("splitterminal")} onSelect={() -> wb.terminalPart.splitTerminal()}>Split Terminal</dropdown-menu-item>
 						<dropdown-menu-separator/>
 						<dropdown-menu-label>Profiles</dropdown-menu-label>
 						{wb.terminalPart.profileItems()}

@@ -111,6 +111,13 @@ class ShellPart {
 			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: wb.runPart.stopRun},
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: wb.runPart.saveAll},
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (wb.active.get() != "") wb.closeFile(wb.active.get())},
+			{id:"splitright", label:"Split Editor Right (Vertical)", icon:Icons.LAYOUT_COLUMN_LINE, run:() -> wb.editorPart.splitEditor("horizontal")},
+			{id:"splitdown", label:"Split Editor Down (Horizontal)", icon:Icons.LAYOUT_ROW_LINE, run:() -> wb.editorPart.splitEditor("vertical")},
+			{id:"focusnextgroup", label:"Focus Next Editor Group", icon:Icons.ARROW_RIGHT_LINE, run:() -> wb.editorPart.focusGroup()},
+			{id:"focuspreviousgroup", label:"Focus Previous Editor Group", icon:Icons.ARROW_LEFT_LINE, run:() -> wb.editorPart.focusGroup(true)},
+			{id:"moveeditorgroup", label:"Move Editor to Next Group", icon:Icons.ARROW_RIGHT_LINE, run:wb.editorPart.moveEditor},
+			{id:"joingroups", label:"Join All Editor Groups", icon:Icons.LAYOUT_LINE, run:wb.editorPart.joinGroups},
+			{id:"closeeditorgroup", label:"Close Editor Group", icon:Icons.CLOSE_LINE, run:wb.editorPart.closeGroup},
 			{id: "definition", label: "Go to Definition", icon: Icons.CORNER_DOWN_RIGHT_LINE, run: wb.goToDefinition},
 			{id: "suggest", label: "Trigger Suggest", icon: Icons.LIGHTBULB_LINE, run: wb.triggerSuggest},
 			{id:"codeactions", label:"Show Code Actions", icon:Icons.LIGHTBULB_LINE, run:wb.codeActionsPart.showCodeActions},
@@ -193,13 +200,13 @@ class ShellPart {
 		wb.contributions.status({id:"problems", place:"left", order:300, build:() -> <for {list in [wb.problems.get()]}>${wb.panelsPart.problemCounts(list)}</for>});
 		wb.contributions.status({id:"notice", place:"right", order:100, build:() -> <if {wb.notice.get() != ""}><text id="rayde-notice">${wb.notice}</text></if>});
 		wb.contributions.status({id:"run", place:"right", order:200, build:() -> <for {state in [wb.runPart.runState.get()]}>${wb.runPart.runStatus(state)}</for>});
-		wb.contributions.status({id:"panel", place:"right", order:300, build:() -> <for {on in [wb.panelsPart.panelShown.get()]}>${wb.panelItem(on)}</for>});
 		wb.contributions.status({id:"language-server", place:"right", order:400, build:() -> <for {server in [wb.languagesPart.languageStatus()]}><if {server != null}>${wb.languagesPart.languageServerItem(server)}</if></for>});
 		wb.contributions.status({id:"language", place:"right", order:500, build:() ->
 			<for {name in [LanguageNames.of(wb.realFile(wb.active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>});
 		wb.contributions.status({id:"runtime", place:"right", order:600, build:() -> <if {wb.runtime() != ""}><tooltip label={"This project runs on the " + wb.runtime() + " runtime"} side="top">
 			<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${wb.runtime() + " runtime"}</text></div>
 		</tooltip></if>});
+		wb.contributions.status({id:"panel", place:"right", order:300, build:() -> <for {on in [wb.panelsPart.panelShown.get()]}>${wb.panelItem(on)}</for>});
 		if (wb.props.empty != true) Features.installAll(host());
 	}
 

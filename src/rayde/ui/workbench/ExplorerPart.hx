@@ -477,6 +477,7 @@ class ExplorerPart {
 		}
 		var remap = (f:String) -> moved.exists(f) ? moved.get(f) : f;
 		var front = wb.active.get();
+		wb.editorPart.groups.remap(remap);
 		wb.open.set([for (f in wb.open.get()) remap(f)]);
 		wb.dirty.set([for (f in wb.dirty.get()) FileOps.moved([f], from, to).exists(f) ? FileOps.moved([f], from, to).get(f) : f]);
 		wb.active.set(remap(front));

@@ -78,6 +78,10 @@ import rayde.ui.Welcome;
 import rayde.ui.CommandCenter;
 import rayde.ui.*;
 import rayde.ui.workbench.Types;
+import rayde.ui.EditorGroups;
+import rayde.ui.EditorGroups.EditorGroup;
+import rayde.ui.EditorGroups.EditorNode;
+import rayde.ui.EditorGroups.EditorSplit;
 
 using StringTools;
 
@@ -87,8 +91,13 @@ using StringTools;
 class EditorPart {
 	final wb:Workbench;
 
-	public function new(wb:Workbench)
+	public function new(wb:Workbench) {
 		this.wb = wb;
+		groups = new EditorGroups(wb.active);
+	}
+
+	public final groups:EditorGroups;
+	var focusHook:Null<ashui.layout.LayoutTree->Void>;
 
 	final imageViews = new Map<String, ImagePreview.ImageViewState>();
 
@@ -100,10 +109,80 @@ class EditorPart {
 
 	/** The open files' tabs, the path to the file in front, and its editor; with nothing open, the welcome page alone. */
 	function editorCard():Element
-		return <div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0">
-			<for {has in [wb.open.get().length > 0]}>${tabStrip(has)}</for>
-			<for {has in [wb.open.get().length > 0]}>${has ? editors() : welcome()}</for>
+	{
+		Owner.onCleanup(cancelFocus);
+		return <div id="rayde-editor-area" class="flex flex-col flex-1 min-h-0 min-w-0">
+			<for {layout in [groups.layout.get()]}>${groupLayout(layout)}</for>
 		</div>;
+	}
+
+	function groupLayout(node:EditorNode):Element return switch node {
+		case Group(group): groupCard(group);
+		case Split(split):
+			var size = Signal.make(Math.NaN);
+			// An unsized panel must still fill the remainder when its sibling gets a pixel size.
+			var view = <resizable direction={split.direction} class="rayde-editor-split flex-1 min-h-0 min-w-0">
+				<resizable-panel size={size} grow={100 * split.ratio.get()} minSize={100}>${groupLayout(split.first)}</resizable-panel>
+				<resizable-panel grow={100 * (1 - split.ratio.get())} minSize={100}>${groupLayout(split.second)}</resizable-panel>
+			</resizable>;
+			new ashui.reactive.Watch(() -> size.get(), value -> {
+				var box = view.tree.getBounds(view.node);
+				if (box == null || Math.isNaN(value)) return;
+				var total = (split.direction == "vertical" ? box.height : box.width) - 8;
+				if (total > 0) groups.resize(split, value / total);
+			});
+			view;
+	};
+
+	function groupCard(group:EditorGroup):Element {
+		var view = <div id={"rayde-editor-group-" + group.id} class="rayde-editor-group flex flex-col flex-1 min-h-0 min-w-0" onPointerDown={_ -> groups.select(group)} onKeyDown={e -> { if (!e.defaultPrevented) groups.select(group); }}>
+			<div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0 min-w-0">
+				<for {has in [group.files.get().length > 0 || groups.all().length > 1]}>${tabStrip(has,group)}</for>
+				<for {has in [group.files.get().length > 0]}>${has ? editors(group) : groups.all().length == 1 ? welcome() : emptyGroup()}</for>
+			</div>
+		</div>;
+		ashui.css.Identity.of(view.tree,view.node.id).bindBooleanAttribute("data-focused",Computed.make(() -> groups.focused.get() == group.id))
+			.bindBooleanAttribute("data-split",Computed.make(() -> groups.all().length > 1));
+		ashui.input.Interaction.of(view.node).setFocusable(true);
+		return view;
+	}
+
+	function emptyGroup():Element return <div class="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-4">
+		<text class="text-sm text-text-secondary">Open a file in this group</text>
+		<button variant={Ghost} size={Sm} onClick={_ -> wb.openCenter()}>Go to File…</button>
+	</div>;
+
+	public function splitEditor(direction:String):Void { groups.sync(wb.open.get(),wb.active.get()); groups.split(direction); focusCurrent(); }
+	public function focusGroup(backward = false):Void { groups.focusNext(backward); focusCurrent(); }
+	public function moveEditor():Void { groups.moveNext(); focusCurrent(); }
+	public function joinGroups():Void { groups.join(); focusCurrent(); }
+	public function closeGroup():Void { groups.closeGroup(); focusCurrent(); }
+	function focusCurrent():Void {
+		cancelFocus();
+		var group = groups.current();
+		var passed = false;
+		focusHook = current -> {
+			if (current != wb.tree) return;
+			// The second flush-hook pass follows the reactions that replace the old pane.
+			if (!passed) { passed = true; return; }
+			cancelFocus();
+			if (wb.gone || groups.current() != group) return;
+			var editor = wb.editorOf(group.active.get());
+			if (editor != null) editor.focus();
+			else {
+				var nodes = ashui.css.Css.query(wb.tree,wb.node.id,"#rayde-editor-group-"+group.id);
+				if (nodes.length > 0) ashui.input.Focus.set(ashui.input.Interaction.byId(wb.tree,nodes[0]),true);
+			}
+		};
+		ashui.layout.LayoutTree.flushHooks.push(focusHook);
+		ashui.core.Work.notify();
+	}
+	function cancelFocus():Void {
+		if (focusHook == null) return;
+		var hooks = ashui.layout.LayoutTree.flushHooks;
+		for (i in 0...hooks.length) if (Reflect.compareMethods(hooks[i],focusHook)) { hooks.splice(i,1); break; }
+		focusHook = null;
+	}
 
 	function tabLabel(file:String):String
 		return file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
@@ -126,26 +205,32 @@ class EditorPart {
 	function fileIcon(file:String):ashui.svg.SvgDocument
 		return FileIcons.of(file);
 
-	function tabStrip(has:Bool):Element {
+	function tabStrip(has:Bool, group:EditorGroup):Element {
 		if (!has)
 			return <div/>;
-		return <file-tabs files={wb.open} active={wb.active} dirty={wb.dirty} onClose={wb.closeFile} label={tabLabel} icon={tabIcon} trailing={wb.menusPart.editorMenu()}/>;
+		var actions = <div class="flex items-center gap-1">
+			<tooltip label={"Split Editor Right (Vertical)" + shortcut("splitright")} side="bottom"><button id="rayde-split-right" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("horizontal"); }}><icon document={Icons.LAYOUT_COLUMN_LINE} class="size-4"/></button></tooltip>
+			<tooltip label={"Split Editor Down (Horizontal)" + shortcut("splitdown")} side="bottom"><button id="rayde-split-down" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("vertical"); }}><icon document={Icons.LAYOUT_ROW_LINE} class="size-4"/></button></tooltip>
+			${wb.menusPart.editorMenu(group)}
+		</div>;
+		return <file-tabs files={group.files} active={group.active} dirty={wb.dirty} onActivate={file -> groups.select(group,file)} onClose={file -> { groups.select(group); wb.closeFile(file); }} label={tabLabel} icon={tabIcon} trailing={actions}/>;
 	}
+	function shortcut(command:String):String { wb.keymapPart.bindingsRevision.get(); var label = wb.keymapPart.bindings.label(command); return label == null ? "" : " · " + label; }
 
-	function editors():Element {
+	function editors(group:EditorGroup):Element {
 		return <div class="flex flex-col flex-1 min-h-0">
-			<for {file in [wb.active.get() == Workbench.SETTINGS ? Workbench.SETTINGS + ":" + wb.settingsCategory.get() : wb.active.get()]}>${breadcrumb(wb.active.get())}</for>
-			<tabs id="rayde-tabs" value={wb.active} class="flex-1 min-h-0">
+			<for {file in [group.active.get() == Workbench.SETTINGS ? Workbench.SETTINGS + ":" + wb.settingsCategory.get() : group.active.get()]}>${breadcrumb(group.active.get())}</for>
+			<tabs id="rayde-tabs" value={group.active} class="flex-1 min-h-0">
 				<tabs-list indicator={false} class="rayde-nolist"/>
-				<for {file in wb.open}>${retainedPage(file)}</for>
+				<for {file in group.files}>${retainedPage(file,group.active)}</for>
 			</tabs>
 		</div>;
 	}
 
 	/** A keyed page keeps its tab shell and extension controls; code views mount only while active. */
-	function retainedPage(file:String):Element {
-		var content:TabsContent = cast page(file);
-		content.tabs.set(wb.active);
+	function retainedPage(file:String, selected:Signal<String>):Element {
+		var content:TabsContent = cast page(file,selected);
+		content.tabs.set(selected);
 		return content;
 	}
 
@@ -186,8 +271,8 @@ class EditorPart {
 	}
 
 	/** One open file's editor, which checks the file as it is typed. */
-	function page(file:String):Element {
-		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {wb.active.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;
+	function page(file:String, selected:Signal<String>):Element {
+		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;
 		if (file == Workbench.THEME_TAB && wb.themePart.themeStudio != null)
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<theme-studio-view studio={wb.themePart.themeStudio} appearance={wb.appearance} revision={wb.terminalPart.settingsRevision} onScheme={wb.themePart.pickScheme} onText={wb.themePart.openThemeText} onOpen={name -> wb.openFile(haxe.io.Path.join([wb.props.display.cwd, name]))}/>
@@ -195,7 +280,7 @@ class EditorPart {
 		if (Workbench.isTab(file)) {
 			var owner = wb.extensionsPart.studios.get(Workbench.tabStudio(file));
 			return <tabs-content value={file} class="flex-1 min-h-0">
-				<if {wb.active.get() == file}>{owner == null ? <div/> : <studio-tab studio={owner} root={Workbench.tabRoot(file)}/>}</if>
+				<if {selected.get() == file}>{owner == null ? <div/> : <studio-tab studio={owner} root={Workbench.tabRoot(file)}/>}</if>
 			</tabs-content>;
 		}
 		if (Workbench.isViewTab(file)) {
@@ -218,22 +303,24 @@ class EditorPart {
 					manager={wb.extensionsPart.extensionManager} extensionChanges={wb.extensionsPart.extensionRevision} onExtensionToggle={wb.extensionsPart.toggleExtension}
 					listening={() -> wb.extension == null ? [] : wb.extensionsPart.extensionStudio().listening()}/>
 			</tabs-content>;
-		return pageOfFile(file);
+		return pageOfFile(file,selected);
 	}
 
 	/** The grammar the editor highlights `file` by. */
 	static function languageOf(file:String):String
 		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") || StringTools.endsWith(file, ".rayext") || StringTools.endsWith(file, ".raytheme") ? "json" : "plain";
 
-	function pageOfFile(file:String):Element {
-		if (ImagePreview.supports(file)) return <tabs-content value={file} class="flex-1 min-h-0"><if {wb.active.get() == file}>${imagePage(file)}</if></tabs-content>;
+	function pageOfFile(file:String, selected:Signal<String>):Element {
+		if (ImagePreview.supports(file)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${imagePage(file)}</if></tabs-content>;
 		if (ExtensionsPart.isExtension(file) && wb.extension == null)
-			return wb.extensionsPart.studioPage(file);
-		return <tabs-content value={file} class="flex-1 min-h-0">${activeCodeEditor(file)}</tabs-content>;
+			return wb.extensionsPart.studioPage(file,selected);
+		return <tabs-content value={file} class="flex-1 min-h-0">${activeCodeEditor(file,selected)}</tabs-content>;
 	}
 
-	function activeCodeEditor(file:String):Element
-		return <if {wb.active.get() == file}>${codeEditor(file)}</if>;
+	function activeCodeEditor(file:String, ?selected:Signal<String>):Element {
+		var front = selected ?? wb.active;
+		return <if {front.get() == file}>${codeEditor(file)}</if>;
+	}
 
 	function imageTextMode(file:String):Signal<Bool> {
 		if (!imageTextModes.exists(file)) imageTextModes.set(file, Signal.make(false));
@@ -261,7 +348,8 @@ class EditorPart {
 		if (wb.restoredTabs.remove(file)) wb.languagesPart.check(file);
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
 		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={wb.documentsPart.documentState(file)} readOnly={Computed.make(() -> wb.contributions.readOnly(file))} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
-			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> wb.definitionAt(file, offset)} hover={offset -> wb.editorMarksPart.hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
+			onKey={wb.keymapPart.editorKey}
+			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} onNavigate={offset -> { var group = groups.owner(file); if (group != null) groups.select(group); wb.definitionAt(file, offset); }} hover={offset -> wb.editorMarksPart.hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				wb.documentsPart.edited(file);
 				wb.assistInput(file);
 			}}
@@ -270,6 +358,7 @@ class EditorPart {
 		wb.editorMarksPart.annotate(file, editorRef(file).get());
 		wb.assistWatch(file, editorRef(file).get());
 		var mounted = editorRef(file).get(), state = wb.documentsPart.documents.get(file);
+		mounted.editing.interaction.onFocus(_ -> { var group = groups.owner(file); if (group != null) groups.select(group,file); });
 		wb.codeActionsPart.watchCodeActions(file, mounted);
 		wb.contributions.editorMade(file, mounted);
 		Owner.onCleanup(() -> { wb.assist.stop(file, mounted); state.compact(); });

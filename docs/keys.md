@@ -12,6 +12,10 @@ Bindings follow VS Code. On Windows and Linux, read Ctrl for Cmd unless the tabl
 | Cmd+G / Cmd+Shift+G (F3 / Shift+F3 elsewhere) | Next / previous match. |
 | Cmd+S | Save every edited file. |
 | Cmd+W | Close the tab. |
+| Cmd+\\ | Split editor right (vertical). |
+| Cmd+Option+\\ (Ctrl+Alt+\\ elsewhere) | Split editor down (horizontal). |
+| Cmd+Option+Right / Left (Ctrl+Alt+Right / Left elsewhere) | Focus next / previous editor group. |
+| Ctrl+Shift+5 | Split terminal. |
 | F12 | Go to the definition of the name under the cursor. Command-click a symbol on macOS, or Control-click elsewhere, to go to its definition. |
 | Ctrl+Space | Completion list at the caret (**Trigger Suggest**). |
 | Cmd+Shift+Space | Signature of the call the caret is in (**Trigger Parameter Hints**). |

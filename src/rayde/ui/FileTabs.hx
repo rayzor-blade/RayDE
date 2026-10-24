@@ -25,6 +25,7 @@ typedef FileTabsProps = {
 	/** The files with edits not yet saved. */
 	dirty:Signal<Array<String>>,
 	onClose:String->Void,
+	?onActivate:String->Void,
 	/** What a tab says and shows for the entry `file`, which is a path or one of the workbench's own pages. */
 	label:String->String,
 	icon:String->ashui.svg.SvgDocument,
@@ -104,7 +105,7 @@ class FileTabs extends Component<FileTabsProps> {
 		var selected = Computed.make(() -> props.active.get() == file);
 		var name = Computed.make(() -> { props.files.get(); props.label(file); });
 		var id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name.get(), "-");
-		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> props.active.set(file)}>
+		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> { if (props.onActivate != null) props.onActivate(file); else props.active.set(file); }}>
 			<if {selected.get()}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, props.files.get()[0] == file)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">
 				<icon document={props.icon(file)} class="rayde-tab-icon size-4"/>

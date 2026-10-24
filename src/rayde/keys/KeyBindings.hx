@@ -44,11 +44,11 @@ class KeyBindings {
 		var map = Keymaps.find(id);
 		preset = map.id;
 		base = new Map();
-		for (e in map.keys) {
-			var text = Keymaps.key(map, e.command, mac),
+		for (command in Keymaps.commands(map)) {
+			var text = Keymaps.key(map, command, mac),
 				chord = text == null ? null : Chord.parse(text, mac);
 			if (chord != null)
-				base.set(e.command, chord);
+				base.set(command, chord);
 		}
 	}
 

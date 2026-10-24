@@ -91,7 +91,7 @@ class TerminalPart {
 		this.wb = wb;
 
 	/** The commands whose keys the terminal leaves to the workbench while it has the keyboard; any other key is the program's. */
-	static final terminalKeepsOut = ["terminal", "newterminal", "splitterminal", "panel", "quickopen", "commands", "settings"];
+	static final terminalKeepsOut = ["terminal", "newterminal", "splitterminal", "panel", "quickopen", "commands", "settings", "splitright", "splitdown", "focusnextgroup", "focuspreviousgroup"];
 
 	/** The program the terminal runs, the user's login shell unless a test names one. */
 	public var terminalProgram:Null<String>;

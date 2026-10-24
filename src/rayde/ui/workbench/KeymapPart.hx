@@ -113,6 +113,14 @@ class KeymapPart {
 		return id != null && TerminalPart.terminalKeepsOut.indexOf(id) >= 0;
 	}
 
+	/** Group navigation takes precedence over the editor's caret movement keys. */
+	function editorKey(e:KeyEvent):Bool {
+		var chord = Chord.ofEvent(e.key,e.shift,e.control,e.alt,e.superKey);
+		var id = chord == null ? null : bindings.commandFor(chord);
+		if (["splitright","splitdown","focusnextgroup","focuspreviousgroup","moveeditorgroup","joingroups","closeeditorgroup"].indexOf(id) < 0) return false;
+		key(e); return e.defaultPrevented;
+	}
+
 	/** Takes the keys of the keymap `id`, keeps the choice, and shows it everywhere keys are shown. */
 	public function useKeymap(id:String):Void {
 		bindings.setPreset(id);

@@ -4,9 +4,13 @@ User instructions are in [Editor](../editor.md).
 
 ## Documents and editor lifetime
 
-Only the active code tab mounts an editor. Inactive tabs keep text, undo/redo, selection, scroll and folded regions; their completed syntax caches are packed together in memory and reused when revisiting an unchanged file.
+Only the active code tab in each editor group mounts an editor. Inactive tabs keep text, undo/redo, selection, scroll and folded regions; their completed syntax caches are packed together in memory and reused when revisiting an unchanged file.
 
 Hover documentation is requested from the language server; revisiting an unchanged open tab keeps its existing LSP document version.
+
+## Editor groups
+
+`EditorGroups` owns a binary layout of groups and resizable splits. Each tab belongs to one group: document state, history and extension-mounted roots remain singular. `Workbench.open` is the union used by workspace services; `Workbench.active` follows the focused group's active tab. Group-local signals control page visibility so focusing another pane does not remount a visible editor. Group shortcuts are intercepted before caret navigation, and completion/code-action ownership follows focus. Sessions retain the layout, proportions and group selections alongside the existing flat tab catalog; older sessions still open as one group.
 
 ## Command center
 

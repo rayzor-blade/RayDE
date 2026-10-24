@@ -90,27 +90,38 @@ class MenusPart {
 	public function new(wb:Workbench)
 		this.wb = wb;
 
-	final menuRef = new Ref<DropdownMenu>();
+	final menuRefs = new Map<Int,Ref<DropdownMenu>>();
 
 	/** Opens or closes the editor actions menu, as its button does. */
-	public function showEditorMenu(on:Bool):Void
-		if (menuRef.get() != null)
-			menuRef.get().opened.set(on);
+	public function showEditorMenu(on:Bool):Void {
+		var ref = menuRefs.get(wb.editorPart.groups.current().id);
+		if (ref != null && ref.get() != null) ref.get().opened.set(on);
+	}
 
 	/** The editor's actions, from the button at the end of the tab strip. */
-	function editorMenu():Element {
+	function editorMenu(group:rayde.ui.EditorGroups.EditorGroup):Element {
+		var menuRef = new Ref<DropdownMenu>();
+		menuRefs.set(group.id,menuRef);
+		Owner.onCleanup(() -> { if (menuRefs.get(group.id) == menuRef) menuRefs.remove(group.id); });
 		var noFile = Computed.make(() -> wb.active.get() == ""), noSaved = Computed.make(() -> wb.open.get().length == wb.dirty.get().length);
+		var noGroups = Computed.make(() -> wb.editorPart.groups.all().length < 2);
 		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
 		return <tooltip label="Editor actions" side="bottom">
 			<dropdown-menu ref={menuRef} id="rayde-editor-menu">
 				<dropdown-menu-trigger id="rayde-editor-menu-trigger" variant={Ghost} size={Icon} class="rayde-more"><icon document={Icons.MORE_FILL} class="size-4"/></dropdown-menu-trigger>
 				<dropdown-menu-content>
+					<dropdown-menu-item id="rayde-menu-split-right" shortcut={wb.keymapPart.bindings.label("splitright")} onSelect={() -> wb.editorPart.splitEditor("horizontal")}>Split Editor Right</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-split-down" shortcut={wb.keymapPart.bindings.label("splitdown")} onSelect={() -> wb.editorPart.splitEditor("vertical")}>Split Editor Down</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-move-editor" disabled={noGroups} onSelect={wb.editorPart.moveEditor}>Move Editor to Next Group</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-join-groups" disabled={noGroups} onSelect={wb.editorPart.joinGroups}>Join All Editor Groups</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-close-group" disabled={noGroups} onSelect={wb.editorPart.closeGroup}>Close Editor Group</dropdown-menu-item>
+					<dropdown-menu-separator/>
 					<dropdown-menu-item id="rayde-menu-save" shortcut={mod + "S"} onSelect={wb.runPart.saveAll}>Save All</dropdown-menu-item>
 					<dropdown-menu-separator/>
 					<dropdown-menu-item id="rayde-menu-close" shortcut={mod + "W"} disabled={noFile} onSelect={() -> wb.closeFile(wb.active.get())}>Close Tab</dropdown-menu-item>
 					<dropdown-menu-item id="rayde-menu-close-others" disabled={noFile} onSelect={wb.closeOthers}>Close Others</dropdown-menu-item>
 					<dropdown-menu-item id="rayde-menu-close-saved" disabled={noSaved} onSelect={wb.closeSaved}>Close Saved</dropdown-menu-item>
-					<dropdown-menu-item id="rayde-menu-close-all" disabled={noFile} onSelect={wb.closeAll}>Close All</dropdown-menu-item>
+					<dropdown-menu-item id="rayde-menu-close-all" disabled={Computed.make(() -> wb.open.get().length == 0)} onSelect={wb.closeAll}>Close All</dropdown-menu-item>
 					<dropdown-menu-separator/>
 					<dropdown-menu-item id="rayde-menu-copy-path" disabled={noFile} onSelect={() -> wb.copyPath(false)}>Copy Path</dropdown-menu-item>
 					<dropdown-menu-item id="rayde-menu-copy-relative" disabled={noFile} onSelect={() -> wb.copyPath(true)}>Copy Relative Path</dropdown-menu-item>
@@ -147,6 +158,8 @@ class MenusPart {
 
 	function desktopMenus():Array<ashui.app.ApplicationMenu.MenuGroup> {
 		var labels = ["save" => "Save", "close" => "Close Tab", "find" => "Find", "replace" => "Replace",
+			"splitright" => "Split Editor Right", "splitdown" => "Split Editor Down", "focusnextgroup" => "Focus Next Editor Group", "focuspreviousgroup" => "Focus Previous Editor Group",
+			"moveeditorgroup" => "Move Editor to Next Group", "joingroups" => "Join All Editor Groups", "closeeditorgroup" => "Close Editor Group",
 			"quickopen" => "Go to File…", "gotoline" => "Go to Line…", "definition" => "Go to Definition",
 			"run" => "Run Project", "buildproject" => "Build Project", "stop" => "Stop", "runtask" => "Run Task…", "build" => "Build Settings",
 			"terminal" => "Toggle Terminal", "newterminal" => "New Terminal", "splitterminal" => "Split Terminal",
@@ -174,7 +187,7 @@ class MenusPart {
 			{label:"Edit", items:[edit("undo","Undo","z"), edit("redo","Redo","z",true), separator,
 				edit("cut","Cut","x"), edit("copy","Copy","c"), edit("paste","Paste","v"), separator, edit("selectall","Select All","a"), separator,
 				item("find"), item("replace"), item("codeactions"), separator, item("settings")]},
-			{label:"View", items:[item("commands"), item("explorer"), item("panel"), separator, item("problems"), item("output"), item("extensions"), item("fullscreen")]},
+			{label:"View", items:[item("commands"), item("explorer"), item("panel"), separator, item("splitright"), item("splitdown"), item("focusnextgroup"), item("focuspreviousgroup"), item("moveeditorgroup"), item("joingroups"), item("closeeditorgroup"), separator, item("problems"), item("output"), item("extensions"), item("fullscreen")]},
 			{label:"Go", items:[item("quickopen"), item("gotoline"), item("definition")]},
 			{label:"Run", items:[item("buildproject"), item("run"), item("stop"), separator, item("runtask"), item("build")]},
 			{label:"Terminal", items:[item("terminal"), item("newterminal"), item("splitterminal")]},
@@ -186,7 +199,7 @@ class MenusPart {
 	function installDesktopMenus():Void {
 		var menu = new ashui.app.ApplicationMenu("RayDE", ProjectWindows.quit);
 		new ashui.reactive.Watch(() -> {
-			wb.active.get(); wb.dirty.get(); wb.keymapPart.bindingsRevision.get(); wb.runPart.runState.get(); wb.buildRevision.get(); ashui.app.WindowedApp.windowRevision.get(); ashui.input.WindowState.active.get();
+			wb.active.get(); wb.dirty.get(); wb.editorPart.groups.layout.get(); wb.keymapPart.bindingsRevision.get(); wb.runPart.runState.get(); wb.buildRevision.get(); ashui.app.WindowedApp.windowRevision.get(); ashui.input.WindowState.active.get();
 			return 0;
 		}, _ -> { var groups = desktopMenus(); menuGroups.set(groups); menu.update(groups); }, (_, _) -> false);
 	}

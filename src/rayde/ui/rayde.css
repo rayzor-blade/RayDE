@@ -85,6 +85,8 @@
 /* Three tiers: the window on the background, the editor lifted on the surface, the side panels sunk below it, so the page being edited reads as the focus. */
 #rayde .rayde-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; }
 #rayde .rayde-card.panel { background: var(--surface-overlay); --ui-code-bg: transparent; --ui-code-gutter-bg: transparent; }
+#rayde .rayde-editor-group[data-split][data-focused] > .rayde-card { border-color: var(--border-focus); }
+#rayde .rayde-editor-split { min-width: 0; min-height: 0; }
 
 /* The editor and the console sit flush in their cards, and a gutter is not walled off from the text. */
 #rayde .ui-code { border-width: 0; border-radius: 0; }

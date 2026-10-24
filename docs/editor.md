@@ -25,6 +25,14 @@ Use the minimap to navigate and fold controls to hide code regions. **Show Code 
 
 Tabs retain their selection, scroll position, folds and undo history when you switch away. Reopening RayDE restores your previous [windows and tabs](window.md#restoring-a-session).
 
+## Split view
+
+Use the split buttons beside the tab menu to place editors **right** (vertical split) or **below** (horizontal split). Drag the divider to resize; splits can be nested. Each group has its own tabs, and editor commands follow the group you click.
+
+Splitting moves the current tab when other tabs remain in its group; with one tab, it opens an empty group for another file. The tab menu also offers **Move Editor to Next Group**, **Close Editor Group** (keeps its tabs in a neighbor) and **Join All Editor Groups**. Opening an already open file focuses its group.
+
+**Cmd+\\** splits right; **Cmd+Option+\\** splits down. **Cmd+Option+Right/Left** focuses the next/previous group. On Windows and Linux use Ctrl and Alt. These commands also appear in **View**, the command center and shortcut settings.
+
 ## Find and replace
 
 Press Enter / Shift+Enter in Find to move to the next / previous match. Enter in Replace replaces one match; Cmd+Enter or Ctrl+Enter replaces all in one undo operation. Escape closes the panel.

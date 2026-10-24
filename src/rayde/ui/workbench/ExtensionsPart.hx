@@ -540,11 +540,11 @@ class ExtensionsPart {
 	}
 
 	/** An extension: its code, and beside it the Preview of what it draws. */
-	function studioPage(file:String):Element {
+	function studioPage(file:String, ?selected:Signal<String>):Element {
 		var studio = studioOf(file);
 		return <tabs-content value={file} class="flex-1 min-h-0">
 			<resizable id="rayde-studio-columns" class="flex-1 min-h-0">
-				<resizable-panel minSize={200}>${wb.editorPart.activeCodeEditor(file)}</resizable-panel>
+				<resizable-panel minSize={200}>${wb.editorPart.activeCodeEditor(file,selected)}</resizable-panel>
 				<resizable-panel size={wb.previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> showOutput(studio)}/></resizable-panel>
 			</resizable>
 		</tabs-content>;

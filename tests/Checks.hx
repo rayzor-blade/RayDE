@@ -875,6 +875,7 @@ class Checks {
 		settingsChecks();
 		RecentProjectsChecks.run();
 		WorkspaceSessionChecks.run();
+		EditorGroupsChecks.run();
 		ProjectChecks.run();
 		ProjectStarterChecks.run();
 		CodeActionChecks.run();
