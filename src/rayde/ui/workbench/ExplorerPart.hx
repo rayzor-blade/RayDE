@@ -167,7 +167,7 @@ class ExplorerPart {
 		if (!shown)
 			return <div/>;
 		if (wb.props.empty == true) return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 gap-3 p-3">
-			<text class="rayde-heading">Explorer</text><text class="text-sm text-text-secondary">No folder wb.open</text>
+			<text class="rayde-heading">Explorer</text><text class="text-sm text-text-secondary">No folder open</text>
 			<button id="rayde-empty-open-folder" onClick={_ -> wb.projectPart.pickProject("folder")}>Open Folder…</button>
 		</div>;
 		var files = () -> <context-menu ref={explorerMenu} id="rayde-explorer-menu">
@@ -198,7 +198,7 @@ class ExplorerPart {
 			<tooltip label="Manage libraries" side="bottom"><button id="rayde-dependencies-settings" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> wb.openSettings("libraries")}><icon document={Icons.SETTINGS_3_LINE} class="size-3"/></button></tooltip>
 		]));
 		return <div id="rayde-files" class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
-			<div class="flex items-center px-3 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
+			<div class="rayde-side-bar flex items-center pl-3 pr-2 shrink-0" height={36}><text class="rayde-heading">Explorer</text></div>
 			<resizable id="rayde-explorer-sections" direction="vertical" class="flex-1 min-h-0">{sections}</resizable>
 		</div>;
 	}

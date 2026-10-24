@@ -303,7 +303,9 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .rayde-keycap-small { min-width: 48px; border: 1px solid var(--border); border-radius: var(--radius-md); corner-shape: squircle; background: var(--surface-elevated); color: var(--text-primary); }
 
 /* Extension Studio: the Preview's bar and surface, and the lists in the Extension panel. */
-#rayde .rayde-studio-bar { border-bottom: 1px solid var(--border); }
+/* A side panel is a header on the panel's own tone over content on the page tone: the extension views' (.rayde-studio-bar over .rayde-studio-surface), and the Explorer's and Jam's after them. */
+#rayde .rayde-studio-bar, #rayde .rayde-side-bar { border-bottom: 1px solid var(--border); }
+#rayde #rayde-explorer-sections { background: var(--background); }
 #rayde .rayde-studio-more .ui-dropdown-menu-chevron { display: none; }
 #rayde .rayde-dot { flex-shrink: 0; }
 #rayde .rayde-stale { background: color-mix(in srgb, var(--warning) 14%, transparent); border-bottom: 1px solid var(--border); }
@@ -485,9 +487,9 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 
 #rayde .rayde-jam-icon[data-idle] { color: var(--text-secondary); }
 #rayde-jam-panel {overflow: auto; border-left: 1px solid var(--border);}
-#rayde-jam-panel .rayde-jam-heading { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
+#rayde-jam-panel .rayde-jam-heading { flex-direction: row; align-items: center; gap: 8px; height: 36px; flex-shrink: 0; padding: 0 8px 0 12px; font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border); }
 #rayde-jam-panel .rayde-jam-heading .ui-button { --ui-button-height: 24px; --ui-button-width: 24px; }
-#rayde-jam-panel .rayde-jam-scroll { flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 12px; gap: 12px; }
+#rayde-jam-panel .rayde-jam-scroll { background: var(--background); flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 12px; gap: 12px; }
 #rayde-jam-panel .rayde-jam-section { flex-direction: column; gap: 10px; flex-shrink: 0; min-width: 0; }
 #rayde-jam-panel .rayde-jam-title { font-size: 13px; font-weight: 600; }
 #rayde-jam-panel .rayde-jam-muted { font-size: 11px; color: var(--text-secondary); white-space: normal; }

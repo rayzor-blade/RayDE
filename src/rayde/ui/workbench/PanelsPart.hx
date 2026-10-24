@@ -216,7 +216,7 @@ class PanelsPart {
 
 	function problemsPane(list:Array<Diagnostic>):Element {
 		var pane = <div id="rayde-problems" class="flex flex-col flex-1 min-h-0 overflow-auto">
-			<if {list.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">No wb.problems in the wb.open files.</text></div></if>
+			<if {list.length == 0}><div class="px-2 py-1"><text class="text-xs text-text-tertiary">No problems in the open files.</text></div></if>
 		</div>;
 		var scroll = ashui.input.Scroll.attach(pane.node, false, true);
 		if (list.length == problemScrollCount) scroll.y.set(problemScrollY);
