@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792869476,"nonce":"XC3ORgLQPYaiTNC5AFGpsdeyroM=","added":["debt","area:ui"],"removed":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792869477,"nonce":"FdS/fdhEdRf0MEz2htMqQMWYlhw=","message":"Landed in e3a671d84e250bef35c202d553c458f74e635b7d. 23 snapshot scenarios and the real window pass; check.sh's runner fixture fails as it did before.","files":null}]}
