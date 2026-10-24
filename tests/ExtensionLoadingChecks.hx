@@ -68,6 +68,18 @@ class ExtensionLoadingChecks {
 			sys.io.File.saveContent(source,good); studio.reload(); settle();
 			check(studio.failure.get()=="" && count("#rayde-extensions-loading")==1,"Retry retained a stale failure or hid preparation");
 			until(() -> studio.hasView("main") && studio.progress.get()=="","Retry did not restore the view");
+			// Command-only extensions can be inspected without promising a view that they never declare.
+			var config=root+"/commands.rayext";
+			sys.io.File.saveContent(config,haxe.Json.stringify({name:"Commands only",main:"commands.rays",views:[]}));
+			sys.io.File.saveContent(root+"/commands.rays",'registerCommand("ready", () -> trace("ready"));');
+			var detached=new LayoutTree(), release:Void->Void=null;
+			var commands=new rayde.ext.Studio(root+"/commands.rays",() -> sys.io.File.getContent(root+"/commands.rays"),detached,rayde.ext.Manifest.read(config));
+			var inspected=Owner.root(detached,dispose -> {release=dispose;return new rayde.ui.StudioView({studio:commands,onMocks:() -> {},onConsole:() -> {}});});
+			commands.reload();
+			until(() -> {commands.tick();return !commands.connection.starting;},"Command-only extension did not start");
+			detached.flush();detached.computeLayout(inspected.node,320,400);
+			check(commands.loadingMessage()=="" && Css.query(detached,inspected.node.id,"#rayde-studio-loading .ui-spinner").length==0,"Command-only extension kept an idle spinner alive");
+			release();commands.dispose();detached.dispose();
 			studio.reload(); settle(); clean(); clean=null;
 			check(entry.connection.progress()=="" && !entry.connection.running(),"Closing during startup retained preparation or its host");
 		} catch (error:Dynamic) {if (clean!=null) clean();tree.dispose();compiler.stop();throw error;}

@@ -288,6 +288,7 @@ class Studio {
 		if (preparing != "") return preparing;
 		surfaceRevision.get(); elements.get();
 		if (state.get() != "running" || failure.get() != "") return "";
+		if (manifest != null && manifest.views.length == 0) return "";
 		return Lambda.exists(surfaces,s -> s.root == null ? !hasView(s.view) : preview == null || !Lambda.exists(preview.roots,r -> r.id == s.root && r.node != null)) ? "Opening extension view…" : "";
 	}
 

@@ -71,10 +71,11 @@ class StudioView extends Component<StudioViewProps> {
 	}
 
 	function waiting(state:String,progress:String,failure:String):Element {
-		var loading=state == "running" && failure == "";
+		var expected=props.view != null || props.studio.manifest == null || props.studio.manifest.views.length > 0;
+		var loading=state == "running" && failure == "" && (expected || progress != "");
 		return <div id="rayde-studio-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 bg-surface">
 			<if {loading}><spinner size={Sm}/></if>
-			<text widthPercent={1} class="text-center text-sm text-text-secondary">${failure != "" ? "The extension could not load this view." : loading ? (progress == "" ? "Opening extension view…" : progress) : "The extension is stopped."}</text>
+			<text widthPercent={1} class="text-center text-sm text-text-secondary">${failure != "" ? "The extension could not load this view." : loading ? (progress == "" ? "Opening extension view…" : progress) : state == "running" ? "This extension has not opened a view." : "The extension is stopped."}</text>
 			<if {!loading}><button id="rayde-studio-loading-output" variant={Outline} size={Sm} onClick={_ -> { if (props.onOutput != null) props.onOutput(); else props.onConsole(); }}>Show Output</button></if>
 		</div>;
 	}
