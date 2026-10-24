@@ -4,6 +4,7 @@
   "description": "One extension, a view in each of three parts of the layout",
   "main": "ext/main.rays",
   "sources": ["ext"],
+  "styles": ["styles/dashboard.css"],
   "views": [
     {
       "id": "main",

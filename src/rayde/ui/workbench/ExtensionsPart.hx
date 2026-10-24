@@ -441,7 +441,7 @@ class ExtensionsPart {
 
 	/** What decides where the extension's views are and how their headers look: when it changes, the layout is made again. */
 	static function layoutKey(m:Manifest):String
-		return haxe.Json.stringify(m.views);
+		return haxe.Json.stringify({views:m.views, styles:m.styles, id:m.id});
 
 	/** The form changed the extension's config, which has been read again: the Studio and, if the view moved or looks different, the layout follow. */
 	function extensionChanged(m:Manifest):Void {

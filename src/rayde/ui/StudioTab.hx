@@ -4,6 +4,7 @@ import ashui.layout.Element;
 import ashui.ui.Component;
 import ashui.ui.Div;
 import ashui.ui.Ref;
+import rayde.ext.ExtensionStyles;
 import rayde.ext.Studio;
 
 typedef StudioTabProps = {studio:Studio, root:Int};
@@ -16,6 +17,8 @@ class StudioTab extends Component<StudioTabProps> {
 		var node = surface.get().node, studio = props.studio;
 		studio.attach(node, props.root);
 		ashui.reactive.Owner.onCleanup(() -> studio.detach(node));
+		ExtensionStyles.mark(body, studio.manifest);
+		ashui.reactive.Owner.onCleanup(ExtensionStyles.use(studio.manifest, problem -> studio.connection.note("console", "error", problem)));
 		return body;
 	}
 }

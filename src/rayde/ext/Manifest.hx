@@ -91,6 +91,9 @@ class Manifest {
 	public final sources:Array<String>;
 	public final mocks:String;
 	public final capabilities:Array<String>;
+
+	/** The stylesheets the extension ships for its views, as written: paths inside its folder, applied in order. */
+	public final styles:Array<String> = [];
 	public final natives:Array<NativeLibrary> = [];
 
 	/**
@@ -159,6 +162,12 @@ class Manifest {
 		sources = listed.length > 0 ? listed : [folder == "" ? "." : folder];
 		mocks = text(json, "mocks", haxe.io.Path.join([folder, "studio.mocks.json"]));
 		capabilities = strings(json, "capabilities");
+		for (path in strings(json, "styles")) {
+			if (!StringTools.endsWith(path, ".css") || haxe.io.Path.isAbsolute(path) || path.split("/").indexOf("..") >= 0 || path.indexOf("\\") >= 0)
+				problems.push('Style "$path" must be a .css file inside the extension folder.');
+			else if (styles.indexOf(path) < 0)
+				styles.push(path);
+		}
 		readNatives(json);
 		var view:Dynamic = Reflect.field(json, "view");
 		if (view != null && (Std.isOfType(view, String) || Std.isOfType(view, Array) || !Reflect.isObject(view)))

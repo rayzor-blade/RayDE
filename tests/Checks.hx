@@ -369,6 +369,44 @@ class Checks {
 		check(refused(() -> FileOps.move(root, root + "/pkg/Main.hx", "/tmp")) == "That is outside the project.", "nothing is moved out of the project");
 	}
 
+	/** Extension selectors and manifest paths, without mounting a view. */
+	static function extensionStyleChecks():Void {
+		var problems:Array<String> = [];
+		function scoped(css:String):String return rayde.ext.ExtensionStyles.scope(css, "notes", problems, "s.css");
+		var base = rayde.ext.ExtensionStyles.base("notes");
+		check(base == '#rayde [data-extension="notes"]', "the views of an extension are found by an attribute under #rayde, above RayDE's own rules");
+		check(scoped(".a, .b > c { color: red }") == '$base .a, $base .b > c { color: red }\n', 'each selector of a list is scoped: ${scoped(".a, .b > c { color: red }")}');
+		check(StringTools.startsWith(scoped(":view { --background: #fff }"), base + " {"), "`:view` is the view itself");
+		check(StringTools.startsWith(scoped(":root .x { top: 0 }"), base + " .x {"), "`:root` is the view, with what follows it");
+		check(scoped(".a:not(.b, .c) { top: 0 }").indexOf(base + " .a:not(.b, .c) {") == 0, "a comma inside a pseudo-class is not a split");
+		var media = scoped("@media (min-width: 100px) { .a { top: 0 } .b { top: 1 } }");
+		check(media.indexOf("@media (min-width: 100px) {") == 0 && media.indexOf(base + " .a") > 0 && media.indexOf(base + " .b") > 0, 'rules inside @media are scoped: $media');
+		var animated = scoped(".a { animation: spin 1s linear infinite; animation-name: spin } @keyframes spin { from { top: 0 } to { top: 1 } }");
+		var name = "rayde-ext-" + haxe.crypto.Sha256.encode("notes").substr(0,16) + "-spin";
+		check(animated.indexOf("@keyframes " + name + " {") >= 0 && animated.indexOf("animation: " + name + " 1s linear infinite") >= 0 && animated.indexOf("animation-name: " + name) >= 0, "keyframes and forward references share an extension-local name");
+		check(scoped(".a { animation: var(--spin) } @keyframes --spin { from { opacity: 0 } to { opacity: 1 } }").indexOf("animation: var(--spin)") >= 0, "animation rewriting leaves function arguments and custom property names intact");
+		check(problems.length == 0, 'good rules have no problems: $problems');
+		check(scoped("@import url(a.css); .x { top: 0 }").indexOf("@import") < 0 && problems.length == 1, 'an @import is refused: $problems');
+		var kept = scoped(".x { background: url(a.png); color: red }");
+		check(kept.indexOf("url") < 0 && kept.indexOf("color: red") > 0 && problems.length == 2, 'url() is dropped and the rest kept: $kept $problems');
+		check(scoped("@font-face { font-family: x }") == "" && problems.length == 3, 'an @font-face is refused: $problems');
+		check(scoped("/* .x { top: 0 } */ .y { top: 1 }").indexOf(".x") < 0, "comments are gone");
+		check(scoped(':view + #outside, :view:hover ~ #outside, + #outside { color: red }') == "", "root sibling combinators cannot escape the view");
+		check(scoped(':view { & + #outside { color: red } }').indexOf("#outside") < 0, "nested rules cannot escape the root either");
+		check(scoped(':view > .a + .b { color: red }').indexOf(base + ' > .a + .b') == 0, "siblings inside a view remain available");
+		check(scoped('[title="a,b"] { content: "/* { , } */ url(x)"; color: red }').indexOf('[title="a,b"]') >= 0, "quoted punctuation does not split selectors or comments");
+		check(scoped('.a { background: u\\72l(x); color: red }').indexOf('background') < 0, "escaped url functions are dropped too");
+		var dir = Sys.getCwd() + "bin/check-styles";
+		if (!sys.FileSystem.exists(dir)) sys.FileSystem.createDirectory(dir);
+		sys.io.File.saveContent(dir + "/main.rays", "");
+		sys.io.File.saveContent(dir + "/themed.rayext", '{"name":"Themed","main":"main.rays","styles":["a.css","../escape.css","/abs.css","readme.txt","a.css","sub/b.css"]}');
+		var m = Manifest.read(dir + "/themed.rayext");
+		check(m.styles.join(",") == "a.css,sub/b.css", 'only .css files inside the folder are styles, once each: ${m.styles}');
+		check(m.problems.length == 3, 'the others are problems: ${m.problems}');
+		sys.io.File.saveContent(dir + "/bad.rayext", '{"main":"main.rays","styles":"a.css"}');
+		check(Manifest.read(dir + "/bad.rayext").problems[0] == '"styles" must be an array of strings.', "styles have a checked manifest type");
+	}
+
 	/** The .rayext config file: what it says, what it defaults to, and what is wrong with one that is wrong. */
 	static function manifestChecks():Void {
 		var dir = Sys.getCwd() + "bin/check-manifest";
@@ -845,6 +883,8 @@ class Checks {
 		BuildChecks.run();
 		terminalChecks();
 		manifestChecks();
+		extensionStyleChecks();
+		ExtensionStylesChecks.run();
 		iconChecks();
 		fileOpsChecks();
 		gitIgnoreChecks();

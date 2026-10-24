@@ -32,6 +32,10 @@ Inactive image tabs release their decoded pixels, vector documents and cached GP
 
 `Connection.progress()` distinguishes host/script startup from commands queued until registration. Its progress callback updates Studio and extension status without a polling loop. `Studio.loadingMessage()` also follows visible surfaces awaiting mounted roots. View tools bind their disabled state to readiness; stopped or failed empty views link to Output. A reload can keep the previous successful view while the replacement starts.
 
+## Extension styles
+
+`ExtensionStyles` owns one parsed sheet per canonical manifest path in each `UiContext`. View and tab wrappers carry both the extension id and a manifest-path token; selectors and keyframe names are rewritten before the native CSS parser receives them. Each mount holds a disposer tied to its original manifest and context. The last disposer removes the sheet. A content digest detects reloads without depending on filesystem timestamp resolution, and failed reads/parses retain the last successful sheet. Manifest id or stylesheet-list changes rebuild the wrappers. The author-facing format is in [Stylesheets](../extensions.md#stylesheets).
+
 ## Windows and startup
 
 Windows share the GPU and desktop event loop while keeping project services and appearance separate. On macOS, file and folder browsers open as asynchronous sheets attached to the requesting window. Other platforms run their native picker on a worker. Project creation continues on a worker after selecting a location.

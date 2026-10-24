@@ -4,12 +4,12 @@ var lines = signal(['started']);
 // Each view is mounted under the id the config declares it with, and goes where its location says.
 mount(() -> <div class="flex flex-col gap-2 p-4">
   <h2 class="text-xl font-semibold">Overview</h2>
-  <p class="text-sm text-text-secondary">{refreshes} refreshes</p>
+  <p class="text-sm dashboard-caption">{refreshes} refreshes</p>
 </div>, 'main');
 
 mount(() -> <div class="flex flex-col gap-2 p-4">
   <h2 class="text-lg font-semibold">Inspector</h2>
-  <p class="text-sm text-text-secondary">{lines.value.length} lines logged</p>
+  <p class="text-sm dashboard-caption">{lines.value.length} lines logged</p>
 </div>, 'inspector');
 
 mount(() -> <div class="flex flex-col gap-1 p-3">

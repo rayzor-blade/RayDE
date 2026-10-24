@@ -262,6 +262,7 @@ class Studio {
 		problems = [];
 		if (onProblems != null) onProblems(problems);
 		unhosted.resize(0);
+		if (manifest != null) tree.context.run(() -> ExtensionStyles.refresh(manifest, problem -> connection.note("console", "error", problem)));
 		connection.start();
 		activeNow();
 	}

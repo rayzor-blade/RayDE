@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Button;
+import rayde.ext.ExtensionStyles;
 import ashui.components.DropdownMenu;
 import ashui.components.Icon;
 import ashui.components.Spinner;
@@ -50,9 +51,12 @@ class StudioView extends Component<StudioViewProps> {
 		var node = surface.get().node;
 		studio.attach(node, null, viewId());
 		ashui.reactive.Owner.onCleanup(() -> studio.detach(node));
-		if (props.framed == false)
-			return <div id="rayde-studio" class="flex flex-col flex-1 min-h-0 min-w-0">{body}</div>;
-		return <div id="rayde-studio" class="rayde-card flex flex-col flex-1 min-h-0 min-w-0">{body}</div>;
+		var view:Element = props.framed == false ? <div id="rayde-studio" class="flex flex-col flex-1 min-h-0 min-w-0">{body}</div>
+			: <div id="rayde-studio" class="rayde-card flex flex-col flex-1 min-h-0 min-w-0">{body}</div>;
+		// The stylesheets the extension ships apply to this view, header and content included.
+		ExtensionStyles.mark(view, studio.manifest);
+		ashui.reactive.Owner.onCleanup(ExtensionStyles.use(studio.manifest, problem -> studio.connection.note("console", "error", problem)));
+		return view;
 	}
 
 	function viewId():Null<String>

@@ -237,6 +237,30 @@ The **Views** card of the Extension page declares, edits and removes views, each
 
 ![The Views card, with a block for each view](images/views-config.png)
 
+### Stylesheets
+
+An extension can ship local CSS for its content and surrounding view headers. List files relative to the `.rayext` file; later files take precedence:
+
+```json
+"styles": ["styles/base.css", "styles/dashboard.css"]
+```
+
+Selectors are relative to the extension's views and tabs. `:view` (also `:root`, `html` or `body` at the start of a selector) selects the wrapper itself:
+
+```css
+:view { --panel-tint: #102030; --text-primary: #e0efff; }
+.rayde-studio-bar { background: #203040; }
+.rayde-studio-surface { background: var(--panel-tint); }
+.rayde-heading { color: #ffee00; }
+.caption { color: #b0c0d0; }
+```
+
+These rules override RayDE's shared header and surface CSS within that extension. Explicit element properties, including RayDE's compiled Tw styles, still take precedence; RayScript utility classes participate in the normal CSS cascade. Use theme variables such as `var(--text-primary)` for colors that should follow the user's theme.
+
+`@media`, `@supports`, `@container`, `@layer` and `@keyframes` are supported. Write full selectors; nested style rules using `&` are skipped. Keyframe names and literal references in `animation`/`animation-name` are local to the extension; use identifiers directly rather than passing animation names through custom properties. `@import`, `@font-face`, other at-rules and declarations containing `url()` are skipped with a message in the extension's Output channel. Each sheet must be a `.css` file inside the extension folder, including resolved symlink targets, and no larger than 256 KiB.
+
+**Reload extension** rereads the sheets. Invalid or missing CSS keeps the last working version and reports the problem in Output. Closing the last mounted view or tab releases the sheets; other extensions and windows keep their own styles. See the [dashboard fixture](../tests/fixtures/views/styles/dashboard.css) for a complete example.
+
 ## Commands and menus
 
 A command is an id the script registers a handler for:

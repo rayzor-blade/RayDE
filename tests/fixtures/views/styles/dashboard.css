@@ -1,0 +1,9 @@
+/* An extension's own styles: relative to its views, above RayDE's rules. */
+:view { --background: #102030; --text-primary: #e0efff; }
+.rayde-studio-bar { background: #203040; }
+.rayde-studio-surface { background: var(--background); }
+.rayde-heading { color: #ffee00; }
+.dashboard-caption { color: #b0c0d0; }
+@media (min-width: 100px) {
+	.rayde-studio-bar { border-bottom-color: #ff0000; }
+}

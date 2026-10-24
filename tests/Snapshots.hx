@@ -1242,6 +1242,21 @@ class Snapshots {
 				for (selector in ["#rayde-view-ext #rayde-studio-surface", "#rayde-secondary #rayde-studio-surface", "#rayde-view-ext-log #rayde-studio-surface"])
 					if (!has(selector))
 						throw 'each view should be drawn in its own part: $selector';
+				// The extension ships a stylesheet: it restyles the panel chrome around its view, wins over RayDE's own rules, and stays inside its views.
+				function resolved(selector:String, property:String):Null<String> {
+					var found = Css.query(tree, bench.node.id, selector);
+					return found.length == 0 ? null : ashui.css.Css.resolved(ashui.css.Identity.of(tree, found[0]), property);
+				}
+				settle(10);
+				for (selector in ["#rayde-view-ext", "#rayde-secondary", "#rayde-view-ext-log"]) {
+					if (resolved(selector + " #rayde-studio-surface", "background") != "#102030"
+						|| resolved(selector + " #rayde-studio-bar", "background") != "#203040"
+						|| resolved(selector + " #rayde-studio-title", "color") != "#ffee00"
+						|| resolved(selector + " #rayde-studio-bar", "border-bottom-color") != "#ff0000")
+						throw 'extension stylesheet did not override the header/content of $selector';
+				}
+				if (resolved("#rayde-view-ext .dashboard-caption", "color") != "#b0c0d0" || resolved("#rayde-view-ext h2", "color") != "#e0efff" || resolved("#rayde-file-tabs", "background") == "#102030")
+					throw "stylesheet content or scope did not match the fixture";
 				if (!has("#rayde-view-ext-log #rayde-studio-title"))
 					throw "the panel view has its own header";
 				shot("views");
@@ -1249,6 +1264,13 @@ class Snapshots {
 				click("#rayde-tool-refresh");
 				until(() -> says("refresh 1") && Lambda.exists(studio.preview.outline(), o -> o.text == "2") && Lambda.exists(studio.preview.outline(), o -> o.text == "1"), "the action to be answered in the views");
 				shot("views-refreshed");
+				var stylesheet = root + "/styles/dashboard.css", originalStyle = sys.io.File.getContent(stylesheet);
+				sys.io.File.saveContent(stylesheet, StringTools.replace(originalStyle, "#203040", "#304050"));
+				studio.reload();
+				until(() -> says("Overview") && resolved("#rayde-view-ext #rayde-studio-bar", "background") == "#304050", "reloaded extension CSS to update the existing header");
+				sys.io.File.saveContent(stylesheet, originalStyle);
+				studio.reload();
+				until(() -> says("Overview") && resolved("#rayde-view-ext #rayde-studio-bar", "background") == "#203040", "the fixture stylesheet to be restored");
 				// The form lists each view with its own controls, and declares another. The right side bar and the panel are put away first, so the form has room.
 				@:privateAccess bench.panelsPart.closePanel();
 				@:privateAccess bench.secondaryWidth.set(0);
@@ -1263,9 +1285,21 @@ class Snapshots {
 				click("#rayde-ext-newview-add");
 				until(() -> sys.io.File.getContent(config).indexOf('"id": "extra"') > 0 && has("#rayde-activity-ext-extra"), "the new view to be written to the config and given its icon");
 				var written = sys.io.File.getContent(config);
-				if (written.indexOf('"id": "inspector"') < 0 || written.indexOf('"refresh"') < 0)
+				if (written.indexOf('"id": "inspector"') < 0 || written.indexOf('"refresh"') < 0 || written.indexOf('styles/dashboard.css') < 0)
 					throw "the form should leave the other views as they were: " + written;
 				shot("views-added");
+				var withoutStyles:Dynamic = haxe.Json.parse(written);
+				Reflect.setField(withoutStyles, "styles", []);
+				sys.io.File.saveContent(config, haxe.Json.stringify(withoutStyles));
+				@:privateAccess bench.extensionsPart.extensionChanged(Manifest.read(config));
+				settle(10);
+				if (resolved("#rayde-view-ext #rayde-studio-bar", "background") == "#203040")
+					throw "removing the manifest styles left the old override in force";
+				sys.io.File.saveContent(config, written);
+				@:privateAccess bench.extensionsPart.extensionChanged(Manifest.read(config));
+				settle(10);
+				if (resolved("#rayde-view-ext #rayde-studio-bar", "background") != "#203040")
+					throw "restoring the manifest styles did not remount its overrides";
 			});
 		for (dark in [true, false])
 			scenario(dark, "chrome", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
