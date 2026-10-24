@@ -161,15 +161,39 @@ class EditorGroups {
 		var groups = all(), source = current(), file = source.active.get();
 		if (groups.length < 2 || file == "")
 			return;
-		var target = groups[(groups.indexOf(source) + 1) % groups.length];
-		source.files.set(source.files.get().filter(f -> f != file));
-		source.active.set(source.files.get().length == 0 ? "" : source.files.get()[0]);
-		target.files.set(target.files.get().concat([file]));
-		target.active.set(file);
-		if (source.files.get().length == 0)
+		move(file, groups[(groups.indexOf(source) + 1) % groups.length]);
+	}
+
+	/** `index` is an insertion slot with the dragged tab excluded; null appends to another group. */
+	public function move(file:String, target:EditorGroup, ?index:Int):Bool {
+		var source = owner(file);
+		if (source == null || all().indexOf(target) < 0 || source == target && index == null)
+			return false;
+		var before = target.files.get(), next = before.filter(f -> f != file);
+		var at = index == null ? next.length : Std.int(Math.max(0, Math.min(next.length, index)));
+		next.insert(at, file);
+		if (source == target) {
+			var same = true;
+			for (i in 0...before.length)
+				if (before[i] != next[i]) {
+					same = false;
+					break;
+				}
+			if (same)
+				return false;
+		}
+		if (source != target) {
+			var neighbor = neighbor(file);
+			source.files.set(source.files.get().filter(f -> f != file));
+			if (source.active.get() == file)
+				source.active.set(neighbor);
+		}
+		target.files.set(next);
+		if (source != target && source.files.get().length == 0)
 			layout.set(remove(layout.get(), source.id));
-		select(target);
+		select(target, file);
 		changed();
+		return true;
 	}
 
 	public function join():Void {

@@ -20,6 +20,27 @@ class EditorGroupsChecks {
 			ashui.reactive.Watch.runQueued();
 		watch.stop();
 		check(reactions == 1, "an empty group invalidated its own synchronization effect while idle");
+		var drag = new EditorGroups(Signal.make("b"));
+		drag.sync(["a", "b", "c"], "b");
+		var first = drag.current();
+		check(drag.move("a", first, 2) && first.files.get().join(",") == "b,c,a", "same-group insertion used the old tab index");
+		check(drag.move("a", first, 0) && first.files.get().join(",") == "a,b,c", "reordering left lost tab order");
+		var revision = drag.revision.get();
+		check(!drag.move("a", first, 0) && !drag.move("a", first) && drag.revision.get() == revision, "a no-op drop rewrote group state");
+		drag.select(first, "c");
+		drag.split("horizontal");
+		var second = drag.current();
+		check(drag.move("b", second, 0)
+			&& second.files.get().join(",") == "b,c"
+			&& first.active.get() == "a", "cross-group insertion lost source selection");
+		check(drag.move("a", second) && drag.all().length == 1 && second.files.get().join(",") == "b,c,a",
+			"body drop did not append or collapse an empty source");
+		check(!drag.move("missing", second)
+			&& !drag.move("a", new rayde.ui.EditorGroups.EditorGroup(999), 0), "a stale drag target accepted a tab");
+		var ordered = drag.snapshot(path -> path),
+			orderRestore = new EditorGroups(Signal.make("a"));
+		orderRestore.restore(ordered, ["a", "b", "c"], 0, path -> path);
+		check(orderRestore.current().files.get().join(",") == "b,c,a", "reordered tabs did not survive layout restoration");
 		var active = Signal.make("c"),
 			model = new EditorGroups(active),
 			files = ["a", "b", "c"];

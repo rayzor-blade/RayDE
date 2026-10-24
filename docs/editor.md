@@ -25,6 +25,8 @@ Use the minimap to navigate and fold controls to hide code regions. **Show Code 
 
 Tabs retain their selection, scroll position, folds and undo history when you switch away. Reopening RayDE restores your previous [windows and tabs](window.md#restoring-a-session).
 
+Drag a tab along its strip to reorder it, or onto another split pane to move it. A thumbnail of its page follows the pointer. The insertion marker shows its position; dropping on a pane's content appends it. Crowded strips scroll when you hold the dragged tab near an edge. Press Escape or drop outside the editor to cancel. Tab order is restored with your workspace.
+
 ## Split view
 
 Use the split buttons beside the tab menu to place editors **right** (vertical split) or **below** (horizontal split). Drag the divider to resize; splits can be nested. Each group has its own tabs, and editor commands follow the group you click.

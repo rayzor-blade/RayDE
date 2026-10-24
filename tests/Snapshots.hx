@@ -27,6 +27,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "tab-drag") {
+			TabDragChecks.main();
+			return;
+		}
 		if (Sys.getEnv("SNAPSHOT_ONLY") == "splits") {
 			EditorGroupsLayoutChecks.main();
 			return;

@@ -26,6 +26,8 @@ typedef FileTabsProps = {
 	dirty:Signal<Array<String>>,
 	onClose:String->Void,
 	?onActivate:String->Void,
+	?drag:EditorTabDrag,
+	?group:rayde.ui.EditorGroups.EditorGroup,
 	/** What a tab says and shows for the entry `file`, which is a path or one of the workbench's own pages. */
 	label:String->String,
 	icon:String->ashui.svg.SvgDocument,
@@ -61,8 +63,8 @@ class FileTabs extends Component<FileTabsProps> {
 				<div class="shrink-0" width={SWEEP}/>
 			</div>
 		</div>;
-		new Watch(() -> {props.files.get(); props.active.get(); 0;}, _ -> reveal(), (_, _) -> false);
-		ashui.reactive.Owner.onCleanup(() -> { if (revealHook != null) LayoutTree.flushHooks.remove(revealHook); });
+		new Watch(() -> {props.files.get(); props.active.get(); if (props.drag != null) props.drag.file.get(); 0;}, _ -> reveal(), (_, _) -> false);
+		ashui.reactive.Owner.onCleanup(cancelReveal);
 		// A mouse wheel only moves up and down, which scrolls a row of tabs along.
 		Interaction.of(scroller.node).onWheel(e -> {
 			var scroll = ashui.input.Scroll.of(scroller.node);
@@ -77,7 +79,8 @@ class FileTabs extends Component<FileTabsProps> {
 
 	/** Scrolls the row of tabs so the tab in front shows, once layout has placed it. */
 	function reveal():Void {
-		if (revealHook != null) LayoutTree.flushHooks.remove(revealHook);
+		cancelReveal();
+		if (props.drag != null && props.drag.file.get() != "") return;
 		var tries = 0, hook:LayoutTree->Void = null;
 		hook = tree -> {
 			var front = Css.query(scroller.tree, scroller.node.id, ".rayde-tab[data-front]");
@@ -86,11 +89,10 @@ class FileTabs extends Component<FileTabsProps> {
 			// A tab not yet laid out reads as no width at all.
 			if (box == null || box.width <= 0 || view == null || scroll == null) {
 				if (++tries > 20)
-					{ LayoutTree.flushHooks.remove(hook); revealHook = null; }
+					cancelReveal();
 				return;
 			}
-			LayoutTree.flushHooks.remove(hook);
-			revealHook = null;
+			cancelReveal();
 			var left = box.x - view.x, right = left + box.width;
 			if (left < 0)
 				scroll.scrollTo(scroll.x.get() + left - 8, 0);
@@ -101,11 +103,20 @@ class FileTabs extends Component<FileTabsProps> {
 		revealHook = hook;
 	}
 
+	function cancelReveal():Void {
+		if (revealHook == null) return;
+		var hooks=LayoutTree.flushHooks;
+		for (i in 0...hooks.length) if (Reflect.compareMethods(hooks[i],revealHook)) { hooks.splice(i,1); break; }
+		revealHook=null;
+	}
+
 	function tab(file:String):Element {
 		var selected = Computed.make(() -> props.active.get() == file);
 		var name = Computed.make(() -> { props.files.get(); props.label(file); });
 		var id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name.get(), "-");
-		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4} onClick={_ -> { if (props.onActivate != null) props.onActivate(file); else props.active.set(file); }}>
+		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4}
+			onPointerDown={event -> { if (props.drag != null && props.group != null) props.drag.begin(props.group,file,event); }}
+			onClick={_ -> { if (props.drag == null || !props.drag.suppressClick()) { if (props.onActivate != null) props.onActivate(file); else props.active.set(file); } }}>
 			<if {selected.get()}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, props.files.get()[0] == file)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">
 				<icon document={props.icon(file)} class="rayde-tab-icon size-4"/>
@@ -121,6 +132,8 @@ class FileTabs extends Component<FileTabsProps> {
 		</div>;
 		// State the stylesheet reads: a class list has to be a literal, an attribute does not.
 		var identity = ashui.css.Identity.of(element.tree, element.node.id);
+		identity.setAttribute("data-tab-file",file);
+		if (props.drag != null) identity.bindBooleanAttribute("data-dragging",Computed.make(() -> props.drag.file.get() == file));
 		identity.bindBooleanAttribute("data-front", selected);
 		identity.bindBooleanAttribute("data-dirty", Computed.make(() -> props.dirty.get().indexOf(file) >= 0));
 		identity.bindBooleanAttribute("data-first", Computed.make(() -> props.files.get()[0] == file));
@@ -134,7 +147,7 @@ class FileTabs extends Component<FileTabsProps> {
 	 * flare into, so its left side goes straight down. The canvas fills the
 	 * tab's box, which keeps a sweep clear on each side that has a foot.
 	 */
-	function notch(ctx:DrawContext, first:Bool):Void {
+	static function notch(ctx:DrawContext, first:Bool):Void {
 		var theme = ThemeState.get();
 		theme.revision.get();
 		var k = theme.shape().effectiveMathExponent();
@@ -152,6 +165,17 @@ class FileTabs extends Component<FileTabsProps> {
 		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
 		path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
+	}
+
+	/** The dragged tab uses the strip's shape above its captured page. */
+	public static function preview(label:String, icon:ashui.svg.SvgDocument, dirty:Bool, first:Bool):Element {
+		return <div id="rayde-tab-drag-label" class="rayde-tab-drag-label relative flex items-center" height={HEIGHT - 4} paddingLeft={first ? 0 : SWEEP} paddingRight={SWEEP}>
+			<canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx,first)}/>
+			<div class="relative flex items-center gap-2 px-2 min-w-0">
+				<icon document={icon} class="size-4 shrink-0"/><text class="text-sm truncate">${label}</text>
+				<if {dirty}><div class="rounded-full bg-text-secondary shrink-0" width={8} height={8}/><else><icon document={Icons.CLOSE_LINE} class="size-3.5 text-text-tertiary shrink-0"/></if>
+			</div>
+		</div>;
 	}
 
 	/** Lines along the superellipse of exponent `k` and radius `r` about (cx, cy), from angle `from` to `to` (screen angles: y grows down). */

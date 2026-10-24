@@ -159,6 +159,13 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
 #rayde .rayde-tab-icon { flex-shrink: 0; }
 #rayde .rayde-tab-name { color: var(--text-secondary); }
+#rayde .rayde-tab[data-dragging] { opacity: .45; cursor: grabbing; }
+#rayde .rayde-editor-group[data-tab-drop] > .rayde-card { border-color: var(--primary); }
+#rayde .rayde-tab-drop-marker { width: 2px; background: var(--primary); border-radius: 1px; }
+#rayde .rayde-tab-page { background: var(--surface); }
+#rayde .rayde-tab-drag-preview { max-width: 320px; color: var(--text-primary); }
+#rayde .rayde-tab-drag-label { align-self: flex-start; max-width: 100%; }
+#rayde .rayde-tab-drag-page { border-radius: 0 0 var(--radius-md) var(--radius-md); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-lg); }
 #rayde .rayde-tab:hover .rayde-tab-name { color: var(--text-primary); }
 #rayde .rayde-tab[data-front] .rayde-tab-name { color: var(--text-primary); }
 #rayde .ui-tooltip-trigger { align-self: center; }

@@ -94,9 +94,11 @@ class EditorPart {
 	public function new(wb:Workbench) {
 		this.wb = wb;
 		groups = new EditorGroups(wb.active);
+		tabDrag = new EditorTabDrag(groups, (group,file) -> groups.select(group,file), (file,group,index) -> { groups.move(file,group,index); focusCurrent(); });
 	}
 
 	public final groups:EditorGroups;
+	public final tabDrag:EditorTabDrag;
 	var focusHook:Null<ashui.layout.LayoutTree->Void>;
 
 	final imageViews = new Map<String, ImagePreview.ImageViewState>();
@@ -111,9 +113,31 @@ class EditorPart {
 	function editorCard():Element
 	{
 		Owner.onCleanup(cancelFocus);
-		return <div id="rayde-editor-area" class="flex flex-col flex-1 min-h-0 min-w-0">
+		Owner.onCleanup(tabDrag.cancel);
+		new ashui.reactive.Watch(() -> ashui.input.WindowState.active.get() && ashui.input.WindowState.visible.get(), on -> { if (!on) tabDrag.cancel(); });
+		var area = new Ref<ashui.ui.Div>();
+		return <div ref={area} id="rayde-editor-area" class="relative flex flex-col flex-1 min-h-0 min-w-0">
 			<for {layout in [groups.layout.get()]}>${groupLayout(layout)}</for>
+			<if {tabDrag.file.get() != ""}>
+				<div id="rayde-tab-drag-preview" class="rayde-tab-drag-preview flex flex-col" position={Absolute} zIndex={1000} pointerEvents={PointerEvents.None}
+					left={Computed.make(() -> (tabDrag.x.get() - dragOrigin(area,true) + 12:Single))}
+					top={Computed.make(() -> (tabDrag.y.get() - dragOrigin(area,false) + 12:Single))}>
+					${dragLabel()}
+					<for {image in [tabDrag.snapshot.get()]}><if {image != null}><div class="rayde-tab-drag-page flex"><canvas id="rayde-tab-drag-thumbnail" width={image.width} height={image.height} paint={image.paint}/></div></if></for>
+				</div>
+				<if {tabDrag.markerHeight.get() > 0}><div id="rayde-tab-drop-marker" class="rayde-tab-drop-marker" position={Absolute} zIndex={1001} pointerEvents={PointerEvents.None}
+					left={Computed.make(() -> (tabDrag.markerX.get() - dragOrigin(area,true):Single))}
+					top={Computed.make(() -> (tabDrag.markerY.get() - dragOrigin(area,false):Single))} height={tabDrag.markerHeight}/></if>
+			</if>
 		</div>;
+	}
+	function dragOrigin(area:Ref<ashui.ui.Div>, horizontal:Bool):Float {
+		var view=area.get(), box=view == null ? null : view.tree.getScrolledBounds(view.node);
+		return box == null ? 0 : horizontal ? box.x : box.y;
+	}
+	function dragLabel():Element {
+		var file = tabDrag.file.get(), group = groups.owner(file);
+		return FileTabs.preview(tabLabel(file),tabIcon(file),wb.dirty.get().indexOf(file) >= 0,group != null && group.files.get()[0] == file);
 	}
 
 	function groupLayout(node:EditorNode):Element return switch node {
@@ -135,14 +159,16 @@ class EditorPart {
 	};
 
 	function groupCard(group:EditorGroup):Element {
-		var view = <div id={"rayde-editor-group-" + group.id} class="rayde-editor-group flex flex-col flex-1 min-h-0 min-w-0" onPointerDown={_ -> groups.select(group)} onKeyDown={e -> { if (!e.defaultPrevented) groups.select(group); }}>
+		var view = <div id={"rayde-editor-group-" + group.id} class="rayde-editor-group flex flex-col flex-1 min-h-0 min-w-0" onPointerDown={_ -> groups.select(group)} onKeyDown={e -> { if (!tabDrag.key(e) && !e.defaultPrevented) groups.select(group); }}>
 			<div id="rayde-editor-card" class="rayde-card flex flex-col flex-1 min-h-0 min-w-0">
 				<for {has in [group.files.get().length > 0 || groups.all().length > 1]}>${tabStrip(has,group)}</for>
 				<for {has in [group.files.get().length > 0]}>${has ? editors(group) : groups.all().length == 1 ? welcome() : emptyGroup()}</for>
 			</div>
 		</div>;
 		ashui.css.Identity.of(view.tree,view.node.id).bindBooleanAttribute("data-focused",Computed.make(() -> groups.focused.get() == group.id))
-			.bindBooleanAttribute("data-split",Computed.make(() -> groups.all().length > 1));
+			.bindBooleanAttribute("data-split",Computed.make(() -> groups.all().length > 1))
+			.bindBooleanAttribute("data-tab-drop",Computed.make(() -> tabDrag.target.get() == group.id));
+		Owner.onCleanup(tabDrag.register(group,view));
 		ashui.input.Interaction.of(view.node).setFocusable(true);
 		return view;
 	}
@@ -213,17 +239,20 @@ class EditorPart {
 			<tooltip label={"Split Editor Down (Horizontal)" + shortcut("splitdown")} side="bottom"><button id="rayde-split-down" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("vertical"); }}><icon document={Icons.LAYOUT_ROW_LINE} class="size-4"/></button></tooltip>
 			${wb.menusPart.editorMenu(group)}
 		</div>;
-		return <file-tabs files={group.files} active={group.active} dirty={wb.dirty} onActivate={file -> groups.select(group,file)} onClose={file -> { groups.select(group); wb.closeFile(file); }} label={tabLabel} icon={tabIcon} trailing={actions}/>;
+		return <file-tabs files={group.files} active={group.active} dirty={wb.dirty} drag={tabDrag} group={group} onActivate={file -> groups.select(group,file)} onClose={file -> { groups.select(group); wb.closeFile(file); }} label={tabLabel} icon={tabIcon} trailing={actions}/>;
 	}
 	function shortcut(command:String):String { wb.keymapPart.bindingsRevision.get(); var label = wb.keymapPart.bindings.label(command); return label == null ? "" : " · " + label; }
 
 	function editors(group:EditorGroup):Element {
+		// The inner page starts at its parent's origin for capture; the outer wrapper follows the strip.
 		return <div class="flex flex-col flex-1 min-h-0">
+			<div class="rayde-tab-page flex flex-col flex-1 min-h-0 min-w-0">
 			<for {file in [group.active.get() == Workbench.SETTINGS ? Workbench.SETTINGS + ":" + wb.settingsCategory.get() : group.active.get()]}>${breadcrumb(group.active.get())}</for>
 			<tabs id="rayde-tabs" value={group.active} class="flex-1 min-h-0">
 				<tabs-list indicator={false} class="rayde-nolist"/>
 				<for {file in group.files}>${retainedPage(file,group.active)}</for>
 			</tabs>
+			</div>
 		</div>;
 	}
 
