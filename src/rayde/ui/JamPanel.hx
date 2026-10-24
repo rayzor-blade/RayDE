@@ -31,7 +31,6 @@ class JamPanel extends Component<JamPanelProps> {
 	function render():Element return <div id="rayde-jam-panel" class="flex flex-col flex-1 min-w-0 min-h-0">
 		<div class="rayde-jam-heading">
 			<icon document={Icons.JAM_JOYSTICK} class="size-4 shrink-0"/><text class="flex-1">Jam</text>
-			<tooltip label="Hide Jam" side="bottom"><button id="rayde-jam-hide" variant={Ghost} size={Icon} onClick={_ -> props.onClose()}><icon document={Icons.CLOSE_LINE} class="size-4"/></button></tooltip>
 		</div>
 		<div class="rayde-jam-scroll">
 			<text id="rayde-jam-workspace" class="rayde-jam-muted">${props.workspace}</text>

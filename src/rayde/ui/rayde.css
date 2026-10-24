@@ -484,7 +484,7 @@
 .rayde-code-editor { padding-left: 6px; }
 
 #rayde .rayde-jam-icon[data-idle] { color: var(--text-secondary); }
-#rayde-jam-panel { background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; }
+#rayde-jam-panel {overflow: auto; border-left: 1px solid var(--border);}
 #rayde-jam-panel .rayde-jam-heading { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
 #rayde-jam-panel .rayde-jam-heading .ui-button { --ui-button-height: 24px; --ui-button-width: 24px; }
 #rayde-jam-panel .rayde-jam-scroll { flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 12px; gap: 12px; }
