@@ -7,6 +7,8 @@ if [ -z "${SNAPSHOT_ONLY:-}" ] || [ "${SNAPSHOT_ONLY:-}" = git ] || [ "${SNAPSHO
   "$here/scripts/build-libgit2.sh"
 fi
 stage_natives bin
-haxe "${ui_args[@]}" -cp tests -main Snapshots -hl bin/snapshots.hl
+main=Snapshots
+[ "${SNAPSHOT_ONLY:-}" != readiness ] || main=ExtensionLoadingChecks
+haxe "${ui_args[@]}" -cp tests -main "$main" -hl bin/snapshots.hl
 export ASHUI_SNAPSHOT_DIR=${ASHUI_SNAPSHOT_DIR:-$here/bin/snapshots}
 exec "$ash" --preset application bin/snapshots.hl "$@"

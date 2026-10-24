@@ -102,6 +102,8 @@ class Manager {
 				}
 			};
 			var previousState = c.onState;
+			var previousProgress = c.onProgress;
+			c.onProgress = () -> { if (previousProgress != null) previousProgress(); changed(); };
 			c.onState = state -> {
 				if (previousState != null)
 					previousState(state);

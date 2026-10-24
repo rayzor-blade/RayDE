@@ -210,7 +210,7 @@ class ExplorerPart {
 	function explorerView(c:Container):Element {
 		wb.extensionsPart.extensionManager.view(c.extension.id, c.view.id);
 		var studio = wb.extensionsPart.studioOf(c.extension.mainPath());
-		return <studio-view studio={studio} framed={false} header={false} view={c.view} onMocks={() -> wb.extensionsPart.openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")}/>;
+		return <studio-view studio={studio} framed={false} header={false} view={c.view} onMocks={() -> wb.extensionsPart.openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> wb.extensionsPart.showOutput(studio)}/>;
 	}
 
 	function explorerSection(id:String, open:Bool, size:Float):ExplorerSection {

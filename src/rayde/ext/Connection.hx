@@ -45,6 +45,9 @@ class Connection {
 	public var onEntry:Null<(String, HostEntry) -> Void>;
 	public var onWake:Null<Void->Void>;
 	public var onStart:Null<Void->Void>;
+	/** Startup and commands waiting for registration changed. */
+	public var onProgress:Null<Void->Void>;
+	public var starting(default, null) = false;
 	public var nativeAllowed:Manifest->Bool = m -> NativeTrust.allApproved(m);
 	public var useMocks = false;
 
@@ -112,6 +115,14 @@ class Connection {
 	public function running():Bool
 		return host != null && host.running();
 
+	public function progress():String {
+		if (starting) return "Starting extension…";
+		if (queued.length == 0) return "";
+		var id = queued[0].id, command = manifest == null ? null : Lambda.find(manifest.commands, c -> c.id == id);
+		return "Preparing " + (command == null ? id : command.title) + "…";
+	}
+	function progressChanged():Void { if (onProgress != null) onProgress(); }
+
 	public function hasEvents():Bool return nextMessage < messages.length || host != null && host.pending();
 	public function canWake():Bool return host != null && host.canWake();
 	public function hostDescription():String {
@@ -144,6 +155,7 @@ class Connection {
 			catch (e:Dynamic)
 				note("console", "error", 'Cannot read mocks file: $e');
 		try {
+			starting = true; progressChanged();
 			host = new ExtensionHost(manifest == null ? haxe.io.Path.directory(file) : manifest.importRoot(),manifest != null && manifest.natives.length > 0,manifest == null ? file : manifest.id);
 			host.start();
 			setState("running");
@@ -166,6 +178,7 @@ class Connection {
 			send({t: "run", name: file, source: source()});
 			note("activity", "info", "Started");
 		} catch (e:Dynamic) {
+			starting = false; progressChanged();
 			if (host != null)
 				host.stop();
 			host = null;
@@ -181,6 +194,7 @@ class Connection {
 		subscribed.clear();
 		registered.clear();
 		queued = [];
+		starting = false; progressChanged();
 		pending.clear();
 		replies = [];
 		messages = []; nextMessage = 0;
@@ -232,6 +246,7 @@ class Connection {
 			queued.remove(q);
 			note("console", "error", 'Command ${q.id} was not registered before its activation timed out.');
 		}
+		if (expired.length > 0) progressChanged();
 		var current = host;
 		if (nextMessage == messages.length) { messages = current.poll(); nextMessage = 0; }
 		var deadline = haxe.Timer.stamp() + .004;
@@ -241,6 +256,8 @@ class Connection {
 			switch (m.t : String) {
 				case "ready":
 					if (current.isolated && onState != null) onState(state);
+				case "started":
+					starting = false; progressChanged();
 				case "registered":
 					var id = Std.string(m.id);
 					registered.set(id, true);
@@ -249,7 +266,9 @@ class Connection {
 							queued.remove(q);
 							command(q.id, q.args);
 						}
+					progressChanged();
 				case "error":
+					if (m.kind == "syntax" || m.kind == "compile") { starting = false; queued = []; progressChanged(); }
 					failed(m);
 					if (m.kind == "native") {
 						stop();
@@ -315,6 +334,7 @@ class Connection {
 		}
 		if (!registered.exists(id)) {
 			queued.push({id: id, args: args, deadline: haxe.Timer.stamp() + 5});
+			progressChanged();
 			if (onWake != null)
 				onWake();
 			return;

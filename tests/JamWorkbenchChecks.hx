@@ -71,12 +71,19 @@ class JamWorkbenchChecks {
 			check(rayde.jam.JamFeature.of(a.contributions).session.get()==null && rayde.jam.JamFeature.of(b.contributions).session.get()==null && b.sideView.get()!="jam","Opening Jam started a session or affected another window");
 			check(Css.query(ta,a.node.id,"#rayde-jam-start:disabled").length==1,"Welcome offered to share a nonexistent document");
 			Snapshot.capture('jam-idle-${dark ? "dark" : "light"}',ta,a.node,1100,760);
-			click(a,ta,"#rayde-jam-hide"); check(Css.query(ta,a.node.id,"#rayde-jam-panel").length==0,"Hidden Jam retained presentation");
+			a.openFile(fa); settle();
+			for (name in ["start","join","resume","rejoin"]) check(Css.query(ta,a.node.id,"#rayde-jam-"+name+":disabled").length==0,"Jam control stayed disabled after opening a document: "+name);
+			a.openSettings(); settle();
+			for (name in ["start","join","resume","rejoin"]) check(Css.query(ta,a.node.id,"#rayde-jam-"+name+":disabled").length==1,"Jam control accepted Settings as a document: "+name);
+			a.openFile(fa); settle();
+			click(a,ta,"#rayde-jam-start"); check(a.prompt.get()!=null,"Restored document required recreating the panel before Jam was usable"); a.prompt.set(null);
+			click(a,ta,"#rayde-activity-jam"); check(Css.query(ta,a.node.id,"#rayde-jam-panel").length==0,"Hidden Jam retained presentation");
 			a.openFile(fa); b.openFile(fb); settle();
 			for (id in ["jam.start","jam.join","jam.copy","jam.leave","jam.resume","jam.rejoin","jam.open","jam.stopFollowing"]) check(Lambda.exists(a.commandList,c -> c.id==id),"Missing command "+id);
 			a.runCommand("jam.open"); settle(); click(a,ta,"#rayde-jam-start"); check(a.prompt.get()!=null && a.prompt.get().action=="Start Jam","Share command did not request explicit consent");
 			a.prompt.get().accept("Host"); a.prompt.set(null);
 			until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().initialized.get() && rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()!="","Host did not connect");
+			for (name in ["copy","checkpoint"]) check(Css.query(ta,a.node.id,"#rayde-jam-"+name+":disabled").length==0,"Jam control stayed disabled after asynchronous initialization: "+name);
 			b.runCommand("jam.open"); settle(); click(b,tb,"#rayde-jam-join"); check(b.prompt.get()!=null,"Join command did not request an invitation");
 			var user=Sys.getEnv("USER"); Sys.putEnv("USER",StringTools.rpad("Guest ","W",64));
 			b.prompt.get().accept(rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()); b.prompt.set(null); Sys.putEnv("USER",user);
@@ -98,7 +105,7 @@ class JamWorkbenchChecks {
 			Snapshot.capture('jam-follow-${dark ? "dark" : "light"}',ta,a.node,1100,760);
 			Css.setViewport(720,480); ta.flush(); ta.computeLayout(a.node,720,480);
 			Snapshot.capture('jam-small-${dark ? "dark" : "light"}',ta,a.node,720,480); settle();
-			click(a,ta,"#rayde-jam-hide");
+			click(a,ta,"#rayde-activity-jam");
 			check(ja.following.get()==jb.peer && ja.status.get()=="connected" && Css.query(ta,a.node.id,"#rayde-jam-panel").length==0,"Hiding the panel ended follow or the session");
 			rayde.jam.JamFeature.of(a.contributions).showJam(); settle();
 			ea.focus(); ashui.input.Keyboard.input(ta,window.KeyEvent.Input(Unidentified(Unidentified),Named(ArrowLeft),None,Standard,Pressed,false,Unavailable)); settle();
@@ -180,7 +187,7 @@ class JamWorkbenchChecks {
 			a.editorFor(fa).applyEdits([{from:0,to:0,text:"isolated "}]);
 			until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().synced.get(),"Independent room edit was not acknowledged");
 			check(b.documentsPart.buffer(fb).get()==otherRoom && rayde.jam.JamFeature.of(b.contributions).session.get().following.get()=="","One room changed another window's document or follow state");
-			click(a,ta,"#rayde-jam-hide"); rayde.jam.JamFeature.of(a.contributions).leaveJam(); settle();
+			click(a,ta,"#rayde-activity-jam"); rayde.jam.JamFeature.of(a.contributions).leaveJam(); settle();
 			check(rayde.jam.JamFeature.of(b.contributions).session.get().status.get()=="connected" && Css.query(tb,b.node.id,"#rayde-jam-panel").length==1,"Closing one room affected another window");
 			rayde.jam.JamFeature.of(b.contributions).leaveJam(); settle();
 			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Independent rooms wrote source files");

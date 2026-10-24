@@ -39,21 +39,25 @@ class JamPanel extends Component<JamPanelProps> {
 	</div>;
 
 	function body(current:Null<JamSession>):Element {
-		if (current == null) return <div class="rayde-jam-section">
+		if (current == null) {
+			var unavailable=Computed.make(() -> !props.canShare());
+			return <div class="rayde-jam-section">
 			<text class="rayde-jam-title">Code together</text>
 			<text class="rayde-jam-muted">Share a document or join someone else's Jam.</text>
 			<text id="rayde-jam-selected" class="rayde-jam-file">${props.canShare() ? haxe.io.Path.withoutDirectory(props.active.get()) : "Open a text document to get started."}</text>
 			<div class="rayde-jam-actions">
-				<button id="rayde-jam-start" size={Sm} disabled={!props.canShare()} onClick={_ -> props.onStart()}>Start Jam…</button>
-				<button id="rayde-jam-join" variant={Outline} size={Sm} disabled={!props.canShare()} onClick={_ -> props.onJoin()}>Join Jam…</button>
+				<button id="rayde-jam-start" size={Sm} disabled={unavailable} onClick={_ -> props.onStart()}>Start Jam…</button>
+				<button id="rayde-jam-join" variant={Outline} size={Sm} disabled={unavailable} onClick={_ -> props.onJoin()}>Join Jam…</button>
 			</div>
 			<text class="rayde-jam-muted">Continue a saved Jam for this document.</text>
 			<div class="rayde-jam-actions">
-				<button id="rayde-jam-resume" variant={Outline} size={Sm} disabled={!props.canShare()} onClick={_ -> props.onResume()}>Resume…</button>
-				<button id="rayde-jam-rejoin" variant={Outline} size={Sm} disabled={!props.canShare()} onClick={_ -> props.onRejoin()}>Rejoin…</button>
+				<button id="rayde-jam-resume" variant={Outline} size={Sm} disabled={unavailable} onClick={_ -> props.onResume()}>Resume…</button>
+				<button id="rayde-jam-rejoin" variant={Outline} size={Sm} disabled={unavailable} onClick={_ -> props.onRejoin()}>Rejoin…</button>
 			</div>
 		</div>;
+		}
 		var failure=current.failure, following=current.following;
+		var failed=Computed.make(() -> failure.get()!="");
 		var summary=<div id="rayde-jam-connection" class="rayde-jam-connection"><icon document={Icons.CIRCLE_FILL} class="size-2 shrink-0"/><text>${status(current.status.get())}</text></div>;
 		ashui.css.Identity.of(summary.tree,summary.node.id).bindBooleanAttribute("data-connected",Computed.make(() -> current.status.get()=="connected" && failure.get()==""));
 		return <div class="rayde-jam-section">
@@ -67,10 +71,10 @@ class JamPanel extends Component<JamPanelProps> {
 			</div>
 			<if {failure.get()!=""}><text id="rayde-jam-error" class="rayde-jam-error">${failure.get()}</text><text class="rayde-jam-muted">Leave this session, then Resume or Rejoin to continue from recovery.</text></if>
 			<div class="rayde-jam-actions">
-				<if {current.host}><button id="rayde-jam-copy" variant={Outline} size={Sm} disabled={current.invite.get()=="" || failure.get()!=""} onClick={_ -> props.onCopy()}><icon document={Icons.LINK_M} class="size-3.5"/>Copy Invitation</button></if>
-				<button id="rayde-jam-reconnect" variant={Outline} size={Sm} disabled={failure.get()!=""} onClick={_ -> current.pause(false)}>Reconnect</button>
+				<if {current.host}><button id="rayde-jam-copy" variant={Outline} size={Sm} disabled={Computed.make(() -> current.invite.get()=="" || failed.get())} onClick={_ -> props.onCopy()}><icon document={Icons.LINK_M} class="size-3.5"/>Copy Invitation</button></if>
+				<button id="rayde-jam-reconnect" variant={Outline} size={Sm} disabled={failed} onClick={_ -> current.pause(false)}>Reconnect</button>
 			</div>
-			<button id="rayde-jam-checkpoint" variant={Outline} size={Sm} disabled={failure.get()!="" || !current.initialized.get()} onClick={_ -> current.checkpoint()}>Save Recovery Checkpoint</button>
+			<button id="rayde-jam-checkpoint" variant={Outline} size={Sm} disabled={Computed.make(() -> failed.get() || !current.initialized.get())} onClick={_ -> current.checkpoint()}>Save Recovery Checkpoint</button>
 			<div class="rayde-jam-section rayde-jam-participants">
 				<text class="rayde-jam-title">${"Participants · " + current.people.get().length}</text>
 				<for {person in current.people.get()}>${participant(current,person)}</for>

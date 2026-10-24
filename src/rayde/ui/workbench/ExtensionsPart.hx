@@ -10,6 +10,7 @@ import ashui.components.CodeEditor;
 import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
+import ashui.components.Spinner;
 import ashui.components.Resizable;
 import ashui.components.Select;
 import ashui.components.Tabs;
@@ -193,6 +194,7 @@ class ExtensionsPart {
 	function startExtensions():Void {
 		extensionManager = new Manager(wb.props.display.cwd, {builtins: Extensions.builtins(), user: haxe.io.Path.join([Extensions.home(), ".rayde", "extensions"]),
 			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
+		wb.contributions.status({id:"extensions-loading",place:"right",order:350,build:loadingStatus});
 		wb.projectPart.projectStarters.onChanged = () -> wb.projectPart.starterRevision.set(wb.projectPart.starterRevision.get() + 1);
 		extensionManager.onDiscover = entry -> {
 			var m = entry.connection.manifest, dev = entry.installed.scope == "Development";
@@ -227,6 +229,21 @@ class ExtensionsPart {
 			}
 		};
 		if (wb.props.empty != true) discoverExtensions(true);
+	}
+
+	function loadingStatus():Element {
+		function pending():Array<String> {
+			extensionRevision.get();
+			var messages=[];
+			for (entry in extensionManager.extensions) {
+				var studio=studios.get(entry.connection.file), message=studio == null ? entry.connection.progress() : studio.loadingMessage();
+				if (message != "") messages.push(entry.installed.name + " · " + message);
+			}
+			return messages;
+		}
+		return <for {items in [pending()]}><if {items.length > 0}>
+			<tooltip label={items.join("\n")} side="top"><div id="rayde-extensions-loading" class="rayde-status-item flex gap-1.5"><spinner size={Sm}/><text maxWidth={240} class="truncate">${items.length == 1 ? items[0] : "Preparing extensions…"}</text></div></tooltip>
+		</if></for>;
 	}
 
 	function discoverExtensions(start:Bool):Void {
@@ -333,6 +350,14 @@ class ExtensionsPart {
 		view.scroll.scrollTo(0, 1e12);
 	}
 
+	function showOutput(studio:Studio):Void {
+		if (!studio.managed || studio.manifest == null) { wb.panelsPart.showPanel("extension"); return; }
+		outputChannel.set("ext:" + studio.manifest.id);
+		refreshExtensionOutput();
+		wb.panelsPart.showPanel("console");
+		ashui.animation.AnimationScheduler.main.after(.01, () -> revealExtensionOutput());
+	}
+
 	/** What an extension may ask of the workbench through `rayde.workspace`. */
 	function services():Services
 		return {
@@ -410,7 +435,7 @@ class ExtensionsPart {
 		if (studio == null)
 			return <div/>;
 		return <div id={"rayde-view-" + c.id} class="rayde-explorer flex flex-col flex-1 min-w-0 min-h-0">
-			<studio-view studio={studio} framed={false} view={c.view} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")}/>
+			<studio-view studio={studio} framed={false} view={c.view} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> showOutput(studio)}/>
 		</div>;
 	}
 
@@ -520,7 +545,7 @@ class ExtensionsPart {
 		return <tabs-content value={file} class="flex-1 min-h-0">
 			<resizable id="rayde-studio-columns" class="flex-1 min-h-0">
 				<resizable-panel minSize={200}>${wb.editorPart.activeCodeEditor(file)}</resizable-panel>
-				<resizable-panel size={wb.previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")}/></resizable-panel>
+				<resizable-panel size={wb.previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> showOutput(studio)}/></resizable-panel>
 			</resizable>
 		</tabs-content>;
 	}

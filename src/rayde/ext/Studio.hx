@@ -38,6 +38,9 @@ class Studio {
 
 	/** True while the view shown is the last that ran and the source as it is now does not: it has a mistake in it. */
 	public final stale = Signal.make(false);
+	/** Empty when ready; otherwise the startup or command preparation being awaited. */
+	public final progress = Signal.make("");
+	public final failure = Signal.make("");
 
 	/** The heading of the view: the config's title, which the extension can change. */
 	public final title:Signal<String>;
@@ -87,6 +90,9 @@ class Studio {
 	public var manifest(default, null):Null<Manifest>;
 	final tree:LayoutTree;
 	final surfaces:Array<Surface> = [];
+	final surfaceRevision = Signal.make(0);
+	// Attaching a surface must not subscribe its parent to this revision.
+	var surfaceSerial = 0;
 
 	/** The names of mounted views the config gives no place, said once each. */
 	final unhosted:Array<String> = [];
@@ -130,8 +136,11 @@ class Studio {
 		};
 		this.connection.onStart = () -> {
 			replacing = true;
+			failure.set("");
 			debug.connect(m -> this.connection.send(m));
 		};
+		this.connection.onProgress = () -> progress.set(this.connection.progress());
+		progress.set(this.connection.progress());
 		this.connection.onWake = activeNow;
 		receive = current -> {
 			if (current != tree || disposed || !this.connection.hasEvents()) return;
@@ -180,6 +189,7 @@ class Studio {
 			preview.show();
 		}
 		adopt();
+		surfaceRevision.set(++surfaceSerial);
 		if (root == null && view != null) hook("view.visibility", {id:view, visible:true});
 	}
 
@@ -187,6 +197,7 @@ class Studio {
 	function release(s:Surface):Void {
 		tree.detachChildren(s.container.id);
 		surfaces.remove(s);
+		surfaceRevision.set(++surfaceSerial);
 		if (s.root == null && s.view != null && !Lambda.exists(surfaces, other -> other.root == null && other.view == s.view))
 			hook("view.visibility", {id:s.view, visible:false});
 		if (surfaces.length == 0 && preview != null)
@@ -265,6 +276,20 @@ class Studio {
 	public function stop():Void connection.stop();
 
 	public function running():Bool return connection.running();
+
+	/** Reads the view revision so a waiting surface follows asynchronously mounted roots. */
+	public function hasView(?view:String):Bool {
+		elements.get();
+		return preview != null && Lambda.exists(preview.roots,r -> r.node != null && !isTab(r.name) && (view == null || viewFor(r.name) == view));
+	}
+
+	public function loadingMessage():String {
+		var preparing = progress.get();
+		if (preparing != "") return preparing;
+		surfaceRevision.get(); elements.get();
+		if (state.get() != "running" || failure.get() != "") return "";
+		return Lambda.exists(surfaces,s -> s.root == null ? !hasView(s.view) : preview == null || !Lambda.exists(preview.roots,r -> r.id == s.root && r.node != null)) ? "Opening extension view…" : "";
+	}
 
 	/** The buttons the extension's config puts in its header. */
 	public function tools(?view:String):Array<rayde.ext.Manifest.ViewTool> {
@@ -455,6 +480,7 @@ class Studio {
 	public function command(id:String, args:Dynamic):Void connection.command(id, args);
 
 	function failed(m:Dynamic):Void {
+		failure.set(Std.string(m.message));
 		var items:Array<Dynamic> = m.items == null ? [] : m.items;
 		var kind:String = m.kind;
 		if (kind == "syntax" || kind == "compile") {
