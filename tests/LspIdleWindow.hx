@@ -6,6 +6,22 @@ import rayde.ui.Workbench;
 
 /** A delayed server notification must wake a native window with no LSP poll timer. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.lang.LspClient)
 class LspIdleWindow {
 	static function main():Void {
@@ -24,28 +40,28 @@ class LspIdleWindow {
 				try fn() catch (error:Dynamic) { failure = error; app.quit(); }
 			});
 			var requested = false, answered = false, sentAt = 0.;
-			bench.languageServers.register("fixture", {id:"fixture", lazy:true, languages:["haxe"], fileExtensions:[".hx"],
+			bench.languagesPart.languageServers.register("fixture", {id:"fixture", lazy:true, languages:["haxe"], fileExtensions:[".hx"],
 				transport:{kind:"stdio", command:"python3", args:[Sys.getCwd() + "tests/lsp_server_fixture.py", root + "/events"]}}, (_, text) -> {
 				if (text != "fixture: idle-notification") return;
-				if (!requested || !answered || bench.languagesScheduled || haxe.Timer.stamp() - sentAt > 1.5) {
+				if (!requested || !answered || bench.languagesPart.languagesScheduled || haxe.Timer.stamp() - sentAt > 1.5) {
 					failure = "Delayed server notification did not wake a sleeping window";
 				} else passed = true;
 				app.quit();
 			});
 			bench.openFile(file);
-			var client = bench.languageServers.client(file);
+			var client = bench.languagesPart.languageServers.client(file);
 			function ready():Void {
-				if (client.state != "ready" || bench.languagesScheduled || bench.editorFor(file) == null) { later(.05, ready); return; }
+				if (client.state != "ready" || bench.languagesPart.languagesScheduled || bench.editorFor(file) == null) { later(.05, ready); return; }
 				if (!client.transport.canWake()) throw "Native LSP wake primitive was not found";
 				var editor = bench.editorFor(file);
 				editor.editing.readOnly = true; editor.editing.stopBlink();
 				later(2, () -> {
-					if (bench.languagesScheduled || bench.languagePollTimer != null) throw "Idle code retained an LSP poll timer";
+					if (bench.languagesPart.languagesScheduled || bench.languagesPart.languagePollTimer != null) throw "Idle code retained an LSP poll timer";
 					requested = true; sentAt = haxe.Timer.stamp();
 					client.request("test/notifyLater", {delay:.6, message:"idle-notification"}, _ -> {
 						answered = true;
 						later(.2, () -> {
-							if (bench.languagesScheduled || bench.languagePollTimer != null) throw "Completed request retained a poll timer";
+							if (bench.languagesPart.languagesScheduled || bench.languagesPart.languagePollTimer != null) throw "Completed request retained a poll timer";
 						});
 					});
 				});

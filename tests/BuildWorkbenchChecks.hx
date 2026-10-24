@@ -9,6 +9,22 @@ import rayde.project.ProjectFile;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class BuildWorkbenchChecks {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
 	static function main():Void {
@@ -33,32 +49,32 @@ class BuildWorkbenchChecks {
 		function until(done:Void->Bool):Void {
 			var deadline = haxe.Timer.stamp() + 12;
 			while (!done() && haxe.Timer.stamp() < deadline) { settle(); Sys.sleep(.005); }
-			check(done(), "Build UI did not settle: " + bench.runner.console); settle();
+			check(done(), "Build UI did not settle: " + bench.runPart.runner.console); settle();
 		}
 		try {
 			bench.openProject(); settle();
 			check(nodes("#rayde-build").length == 1 && nodes("#rayde-run").length == 1, "Build and Run are not separate controls");
 			check(Lambda.exists(bench.commandList, c -> c.id == "buildproject") && Lambda.exists(bench.commandList, c -> c.id == "build"), "Build replaced Build Settings");
-			check(bench.bindings.commandFor(rayde.keys.Chord.parse("mod+shift+b", Sys.systemName() == "Mac")) == "buildproject", "Default Build shortcut is missing");
+			check(bench.keymapPart.bindings.commandFor(rayde.keys.Chord.parse("mod+shift+b", Sys.systemName() == "Mac")) == "buildproject", "Default Build shortcut is missing");
 			var build = box("#rayde-build"), bar = box("#rayde-status-bar");
 			check(build.y >= bar.y && build.y + build.height <= bar.y + bar.height, "Build button exceeds the toolbar");
-			bench.buffer(file).set(good); bench.dirty.set([file]);
+			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
 			click("#rayde-build");
-			check(bench.runState.get() == "building", "Build did not publish background progress: " + bench.runState.get() + "\n" + bench.runner.console);
+			check(bench.runPart.runState.get() == "building", "Build did not publish background progress: " + bench.runPart.runState.get() + "\n" + bench.runPart.runner.console);
 			settle(1);
 			check(nodes("#rayde-stop").length == 1, "Build did not expose Stop");
-			until(() -> !bench.runner.active());
-			check(bench.runState.get() == "built" && bench.runner.exitCode == 0 && sys.FileSystem.exists(project + "/bin/app.js"), "Toolbar Build did not compile the declared target");
+			until(() -> !bench.runPart.runner.active());
+			check(bench.runPart.runState.get() == "built" && bench.runPart.runner.exitCode == 0 && sys.FileSystem.exists(project + "/bin/app.js"), "Toolbar Build did not compile the declared target");
 			check(sys.io.File.getContent(file) == good && bench.dirty.get().length == 0, "Build did not save edited buffers first");
-			check(bench.runner.console.indexOf("DO_NOT_RUN") < 0 && !compiler.running(), "Build ran the program or started an idle compiler server");
-			check(bench.bottom.get() == "console" && bench.panelShown.get(), "Build output was not opened");
+			check(bench.runPart.runner.console.indexOf("DO_NOT_RUN") < 0 && !compiler.running(), "Build ran the program or started an idle compiler server");
+			check(bench.panelsPart.bottom.get() == "console" && bench.panelsPart.panelShown.get(), "Build output was not opened");
 			Snapshot.capture('build-toolbar-${dark ? "dark" : "light"}', tree, bench.node, 1100, 760);
-			bench.buffer(file).set("class Main { static function main() { var broken:Int = 'text'; } }\n"); bench.dirty.set([file]);
-			bench.runCommand("buildproject"); until(() -> !bench.runner.active());
-			check(bench.runState.get() == "failed" && bench.problems.get().length > 0 && bench.bottom.get() == "problems", "Failed build did not surface its diagnostic");
-			bench.buffer(file).set(good); bench.dirty.set([file]);
-			click("#rayde-build"); until(() -> !bench.runner.active());
-			check(bench.runState.get() == "built" && bench.problems.get().length == 0, "Successful rebuild retained the previous build diagnostic");
+			bench.documentsPart.buffer(file).set("class Main { static function main() { var broken:Int = 'text'; } }\n"); bench.dirty.set([file]);
+			bench.runCommand("buildproject"); until(() -> !bench.runPart.runner.active());
+			check(bench.runPart.runState.get() == "failed" && bench.problems.get().length > 0 && bench.panelsPart.bottom.get() == "problems", "Failed build did not surface its diagnostic");
+			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
+			click("#rayde-build"); until(() -> !bench.runPart.runner.active());
+			check(bench.runPart.runState.get() == "built" && bench.problems.get().length == 0, "Successful rebuild retained the previous build diagnostic");
 		} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? ""); throw error; }
 		stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? "");
 	}

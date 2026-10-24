@@ -10,6 +10,22 @@ private typedef Step = {name:String, run:Void->Void, ready:Void->Bool, wait:Floa
 
 /** Real workspace files and services, opened by group and closed in the same order. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.ext.Preview)
 @:access(rayde.ext.BridgeControl)
 @:access(rayde.lang.LanguageServers)
@@ -57,12 +73,12 @@ class MixedWorkspaceMemoryProbe {
 			}
 			var bench = new Workbench({display:Display.ofProject(compiler, root + "/build.hxml"), name:"RayDE", runtime:"ash", chrome:rayde.ui.WindowChrome.ofApp()});
 			// Leave session restoration off; the workload owns only the tabs it opens.
-			for (key => studio in bench.studios) {
+			for (key => studio in bench.extensionsPart.studios) {
 				var previous = studio.connection.onMessage;
 				studio.connection.onMessage = message -> { if (message.t == "collected") vms.set(key, message); if (previous != null) previous(message); };
 			}
 			function count<T>(values:Iterator<T>):Int { var total = 0; for (_ in values) total++; return total; }
-			function gitStudio():rayde.ext.Studio return Lambda.find([for (studio in bench.studios) studio], studio -> studio.manifest != null && studio.manifest.id == "git");
+			function gitStudio():rayde.ext.Studio return Lambda.find([for (studio in bench.extensionsPart.studios) studio], studio -> studio.manifest != null && studio.manifest.id == "git");
 			function control(id:String):rayde.ext.BridgeControl {
 				var studio = gitStudio();
 				if (studio == null || studio.preview == null) return null;
@@ -70,7 +86,7 @@ class MixedWorkspaceMemoryProbe {
 				return null;
 			}
 			function lspPending():Int {
-				var pending = 0; for (entry in bench.languageServers.entries) pending += count(entry.client.pending.iterator()); return pending;
+				var pending = 0; for (entry in bench.languagesPart.languageServers.entries) pending += count(entry.client.pending.iterator()); return pending;
 			}
 			function sample(name:String):Void {
 				var canvases = 0, canvasCpu = 0, canvasGpu = 0, editors = 0, watches = 0, owners = 0, textures = 0, staging = 0, color = 0, imageAtlas = 0;
@@ -87,14 +103,14 @@ class MixedWorkspaceMemoryProbe {
 					textures += renderer.recordRows * 2048 * 16;
 				}
 				var servers:Array<Dynamic> = [];
-				for (entry in bench.languageServers.entries) {
+				for (entry in bench.languagesPart.languageServers.entries) {
 					var client = entry.client, chars = 0, indexing = 0;
 					for (doc in client.documents) chars += doc.text.length;
 					for (file in client.files()) if (client.indexing(file)) indexing++;
 					servers.push({id:entry.id, command:client.config.command, state:client.state, documents:client.files().length, documentCharacters:chars, pending:count(client.pending.iterator()), indexing:indexing});
 				}
 				var parts:Array<Dynamic> = [];
-				for (key => studio in bench.studios) { var chars = 0, logChars = 0; for (entry in studio.activity.get()) chars += entry.text.length;
+				for (key => studio in bench.extensionsPart.studios) { var chars = 0, logChars = 0; for (entry in studio.activity.get()) chars += entry.text.length;
 					for (entry in studio.console.get()) logChars += entry.text.length;
 					parts.push({extension:studio.manifest == null ? key : studio.manifest.id, roots:studio.tabViews.length, parts:studio.preview == null ? 0 : studio.preview.count(), activityCharacters:chars, consoleEntries:studio.console.get().length, consoleCharacters:logChars}); }
 				var heap = hl.Gc.stats();
@@ -102,19 +118,19 @@ class MixedWorkspaceMemoryProbe {
 					nodes:app.tree.order().length, editors:editors, owners:owners, watches:watches, canvases:canvases, canvasCpuBytes:canvasCpu, canvasGpuBytes:canvasGpu,
 					gcHeapBytes:heap.currentMemory, totalAllocatedBytes:heap.totalAllocated, knownRendererTextureBytes:textures, atlasStagingBytes:staging, colorAtlasBytes:color, imageAtlasBytes:imageAtlas,
 					editorRows:Css.query(app.tree,bench.node.id,".ui-code-line").length, editorTokens:Css.query(app.tree,bench.node.id,".ui-code-token").length, problems:bench.problems.get().length,
-					buffers:count(bench.buffers.iterator()), documents:count(bench.documents.iterator()), editorRefs:count(bench.editorRefs.iterator()), syntax:count(bench.nativeSyntax.iterator()), images:count(bench.imageViews.iterator()),
+					buffers:count(bench.documentsPart.buffers.iterator()), documents:count(bench.documentsPart.documents.iterator()), editorRefs:count(bench.editorPart.editorRefs.iterator()), syntax:count(bench.editorPart.nativeSyntax.iterator()), images:count(bench.editorPart.imageViews.iterator()),
 					ownedSvgDocuments:count(rayde.ui.SvgDocuments.owned.iterator()), lsp:servers, lspRequests:requests, lspReplies:replies, lspAnswers:answers, parts:parts,
 					vmHeaps:[for (key => value in vms) {extension:key, stats:value}]})); Sys.stdout().flush();
 				if (Sys.getEnv("MEMORY_PROBE_DUMP") == "1" && (name == "baseline" || name.indexOf("collected") >= 0)) hl.Gc.dumpMemory(ack + "." + name + ".heap");
 			}
 			var steps:Array<Step> = [];
 			function step(name:String, run:Void->Void, ready:Void->Bool, wait = .8, sample = false):Void steps.push({name:name, run:run, ready:ready, wait:wait, sample:sample});
-			function collect():Void { for (extension in bench.extensionManager.extensions) extension.connection.collect(); hl.Gc.major(); app.device.poll(); }
+			function collect():Void { for (extension in bench.extensionsPart.extensionManager.extensions) extension.connection.collect(); hl.Gc.major(); app.device.poll(); }
 			function checkpoint(name:String):Void { step(name, () -> {}, () -> true, 2, true); step(name + "-collected", collect, () -> true, 2, true); }
-			step("baseline", collect, () -> bench.extensionManager.find("markdown") != null && bench.languageServers.status(haxeFiles[0]) != null, 3, true);
+			step("baseline", collect, () -> bench.extensionsPart.extensionManager.find("markdown") != null && bench.languagesPart.languageServers.status(haxeFiles[0]) != null, 3, true);
 			for (file in markdown) {
 				var previous:Array<String> = [];
-				step("open-markdown:" + file, () -> { previous = bench.open.get().copy(); bench.extensionManager.command("markdown", "markdown.preview", {path:file}); },
+				step("open-markdown:" + file, () -> { previous = bench.open.get().copy(); bench.extensionsPart.extensionManager.command("markdown", "markdown.preview", {path:file}); },
 					() -> { var tabs = bench.open.get().filter(tab -> previous.indexOf(tab) < 0); if (tabs.length != 1 || Css.query(app.tree, bench.node.id, ".rayde-markdown").length == 0) return false;
 						if (!Lambda.exists(ledger, entry -> entry.file == tabs[0])) ledger.push({kind:"markdown", file:tabs[0]}); return true; }, .7);
 			}
@@ -122,7 +138,7 @@ class MixedWorkspaceMemoryProbe {
 			for (file in haxeFiles) {
 				var issued = false;
 				step("open-haxe:" + file, () -> { bench.openFile(file); rememberWritten(); ledger.push({kind:"haxe", file:file}); }, () -> {
-					var client = bench.languageServers.client(file);
+					var client = bench.languagesPart.languageServers.client(file);
 					if (client == null || client.state != "ready" || bench.editorFor(file) == null) return false;
 					if (!issued) { issued = true; requests++; client.request("textDocument/documentSymbol", {textDocument:{uri:LspProtocol.uri(file)}}, result -> { replies++; if (result != null) answers++; }, file + "#memory-probe", 90); }
 					return true;
@@ -131,10 +147,10 @@ class MixedWorkspaceMemoryProbe {
 			step("lsp-requests-drained", () -> {}, () -> lspPending() == 0 && requests == replies, 3, true);
 			checkpoint("haxe-open");
 			step("git-sidebar-open", () -> {
-				var container = Lambda.find(bench.containers, c -> c.extension.id == "git" && c.view.id == "scm");
-				if (container == null) throw "Git SCM container is missing"; bench.chooseContainer(container);
+				var container = Lambda.find(bench.extensionsPart.containers, c -> c.extension.id == "git" && c.view.id == "scm");
+				if (container == null) throw "Git SCM container is missing"; bench.shellPart.chooseContainer(container);
 			}, () -> { var canvas = control("git-scm-canvas"); return canvas != null && canvas.scene.get().labels.length > 0; }, 2, true);
-			step("git-graph-open", () -> bench.extensionManager.command("git", "git.history", null), () -> {
+			step("git-graph-open", () -> bench.extensionsPart.extensionManager.command("git", "git.history", null), () -> {
 				var studio = gitStudio(), canvas = control("git-history-canvas");
 				if (studio == null || studio.tabViews.length != 1 || canvas == null || canvas.scene.get().labels.length == 0) return false;
 				if (!Lambda.exists(ledger, e -> e.kind == "graph")) ledger.push({kind:"graph", file:bench.active.get()}); return true;
@@ -164,8 +180,8 @@ class MixedWorkspaceMemoryProbe {
 			}
 			step("closed-idle-30s", () -> {}, () -> bench.open.get().length == 0, 30, true);
 			step("closed-idle-collected", collect, () -> true, 3, true);
-			step("lsp-stopped", () -> { for (entry in bench.languageServers.entries) bench.languageServers.control(entry.id, "stop"); },
-				() -> Lambda.foreach(bench.languageServers.entries, e -> e.client.state == "stopped"), 2, true);
+			step("lsp-stopped", () -> { for (entry in bench.languagesPart.languageServers.entries) bench.languagesPart.languageServers.control(entry.id, "stop"); },
+				() -> Lambda.foreach(bench.languagesPart.languageServers.entries, e -> e.client.state == "stopped"), 2, true);
 			step("after-lsp-stop-collected", collect, () -> true, 3, true);
 			Sys.println("mixed-plan:" + haxe.Json.stringify({markdown:markdown, haxe:haxeFiles, images:images, svg:vectors})); Sys.stdout().flush();
 			function next():Void {

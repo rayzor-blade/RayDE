@@ -9,6 +9,22 @@ import rayde.project.ProjectFile;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.ui.CommandCenter)
 class CodeActionWorkbenchChecks {
 	static function check(ok:Bool,message:String):Void { if (!ok) throw message; }
@@ -32,7 +48,7 @@ class CodeActionWorkbenchChecks {
 		function until(done:Void->Bool):Void {
 			var end = haxe.Timer.stamp() + 20;
 			while (!done() && haxe.Timer.stamp() < end) { settle(); Sys.sleep(.004); }
-			check(done(),"Actions did not settle: " + bench.runner.console); settle();
+			check(done(),"Actions did not settle: " + bench.runPart.runner.console); settle();
 		}
 		function nodes(selector:String) return Css.query(tree,bench.node.id,selector);
 		function click(selector:String):Void {
@@ -42,32 +58,32 @@ class CodeActionWorkbenchChecks {
 			ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
 		}
 		try {
-			bench.openProject(); settle(); check(bench.codeActions.list().length == 0,"Welcome retained document actions");
-			bench.openFile(file); until(() -> bench.codeActions.list().length == 2 && !bench.codeActions.busy());
+			bench.openProject(); settle(); check(bench.codeActionsPart.codeActions.list().length == 0,"Welcome retained document actions");
+			bench.openFile(file); until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 			check(nodes(".rayde-code-action").length == 2 && nodes(".ui-code-marker-icon").length == 2,"Providers did not share SVG gutter hints");
-			check(Lambda.exists(bench.commandList,c -> c.id == "codeactions") && bench.bindings.of("codeactions") != null,"Code actions command or shortcut is missing");
+			check(Lambda.exists(bench.commandList,c -> c.id == "codeactions") && bench.keymapPart.bindings.of("codeactions") != null,"Code actions command or shortcut is missing");
 			Snapshot.capture('code-actions-${dark ? "dark" : "light"}',tree,bench.node,1100,760);
-			var editor = bench.editorFor(file), item = Lambda.find(bench.codeActions.list(),i -> i.action.kind == "quickfix"), version = bench.codeActionVersion;
+			var editor = bench.editorFor(file), item = Lambda.find(bench.codeActionsPart.codeActions.list(),i -> i.action.kind == "quickfix"), version = bench.codeActionsPart.codeActionVersion;
 			click('.rayde-code-action[title="Set value to one"]');
 			check(editor.value.get().indexOf("n = 1") >= 0 && StringTools.endsWith(editor.value.get(),"// fixed") && bench.dirty.get().indexOf(file) >= 0,"Hint did not apply its edits or mark the buffer dirty");
-			check(!bench.executeCodeAction(item.key,version),"Consumed/stale action ran a second time");
+			check(!bench.codeActionsPart.executeCodeAction(item.key,version),"Consumed/stale action ran a second time");
 			editor.undo(); settle(); check(editor.value.get() == source,"Action edits did not undo together");
-			until(() -> bench.codeActions.list().length == 2 && !bench.codeActions.busy());
-			bench.showCodeActions(); until(() -> bench.centerRequest.get().picker.items.length == 2 && !bench.codeActions.busy());
+			until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
+			bench.codeActionsPart.showCodeActions(); until(() -> bench.centerRequest.get().picker.items.length == 2 && !bench.codeActionsPart.codeActions.busy());
 			check(bench.quickOpen.get() && bench.centerRequest.get().picker.items[0].label == "Run Project","Manual chooser lost provider actions");
 			click("#rayde-command-input"); ashui.input.Keyboard.text(tree,"Set"); settle();
 			var inputNode = nodes("#rayde-command-input"), query = inputNode.length == 0 ? "missing" : ashui.ui.Input.at(tree,inputNode[0]).value.get();
 			check(nodes(".rayde-cc-item").length == 1,"Code-action chooser did not filter typed text: " + nodes(".rayde-cc-item").length + " rows, query=" + query + ", open=" + bench.quickOpen.get());
-			bench.updateCodeActionPicker(); settle();
+			bench.codeActionsPart.updateCodeActionPicker(); settle();
 			check(nodes(".rayde-cc-item").length == 1 && nodes("#center-action-code-action-1").length == 1,"Asynchronous action updates reset the chooser query");
 			bench.quickOpen.set(false); settle();
-			bench.openFile(other); settle(); until(() -> !bench.codeActions.busy() && bench.codeActions.current(other,bench.codeActionVersion));
-			check(bench.codeActions.list().length == 0 && nodes(".rayde-code-action").length == 0,"Inactive tab retained its actions or Run hint");
-			bench.openFile(file); until(() -> bench.codeActions.list().length == 2 && !bench.codeActions.busy());
-			click('.rayde-code-action[title="Run Project"]'); until(() -> !bench.runner.active());
-			check(bench.runner.console.indexOf("ACTION_RAN") >= 0 && bench.runner.exitCode == 0,"Run provider did not route through the project runner");
-			bench.saveAll(); bench.closeFile(file); bench.closeFile(other); settle();
-			check(bench.codeActions.list().length == 0 && !bench.codeActions.busy(),"Closed tabs retained action data");
+			bench.openFile(other); settle(); until(() -> !bench.codeActionsPart.codeActions.busy() && bench.codeActionsPart.codeActions.current(other,bench.codeActionsPart.codeActionVersion));
+			check(bench.codeActionsPart.codeActions.list().length == 0 && nodes(".rayde-code-action").length == 0,"Inactive tab retained its actions or Run hint");
+			bench.openFile(file); until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
+			click('.rayde-code-action[title="Run Project"]'); until(() -> !bench.runPart.runner.active());
+			check(bench.runPart.runner.console.indexOf("ACTION_RAN") >= 0 && bench.runPart.runner.exitCode == 0,"Run provider did not route through the project runner");
+			bench.runPart.saveAll(); bench.closeFile(file); bench.closeFile(other); settle();
+			check(bench.codeActionsPart.codeActions.list().length == 0 && !bench.codeActionsPart.codeActions.busy(),"Closed tabs retained action data");
 		} catch(error:Dynamic) { stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS",previous ?? ""); throw error; }
 		stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS",previous ?? "");
 	}

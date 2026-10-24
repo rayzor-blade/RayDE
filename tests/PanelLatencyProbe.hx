@@ -10,6 +10,22 @@ import rayde.ui.Workbench;
 
 /** Frame-stage timings around panel transitions; no image readback or server dependency. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class PanelLatencyProbe {
 	static function main():Void {
 		var root = Sys.getCwd() + "bin/panel-latency-workspace";
@@ -22,7 +38,7 @@ class PanelLatencyProbe {
 		ThemeState.init(RestrainedTheme.bundle(), Dark); rayde.ui.Style.use();
 		var compiler = new CompilerServer(), tree = new LayoutTree(), stop:Void->Void = null;
 		var bench = Owner.root(tree, cleanup -> { stop = cleanup; return new Workbench({display:Display.ofHxml(compiler, root + "/build.hxml"), name:"Panel latency", runtime:"ash"}); });
-		bench.terminalProgram = "/bin/sh"; bench.terminalArgs = ["-c", "printf 'ready\\n'; read value"];
+		bench.terminalPart.terminalProgram = "/bin/sh"; bench.terminalPart.terminalArgs = ["-c", "printf 'ready\\n'; read value"];
 		var renderer = Snapshot.renderer(), texture = renderer.createTexture(1280,800), target = texture.createView(new gpu.GpuTextureViewDescriptor());
 		var last = haxe.Timer.stamp();
 		function frame():Dynamic {
@@ -41,11 +57,11 @@ class PanelLatencyProbe {
 		bench.openFile(file); settle(30);
 		var count = Std.parseInt(Sys.getEnv("RAYDE_PANEL_PROBLEMS") ?? "200");
 		bench.problems.set([for(i in 0...count) {file:file,severity:1,message:'Problem $i',range:{start:{line:i%2000,character:0},end:{line:i%2000,character:1}}}]);
-		bench.consoleText.set([for(i in 0...10000) 'Output line $i with content to measure.'].join("\n"));
+		bench.runPart.consoleText.set([for(i in 0...10000) 'Output line $i with content to measure.'].join("\n"));
 		settle(20);
 		for(cycle in 0...3) for(tab in ["problems","console","terminal"]) for(open in [true,false]) {
 			var before=hl.Gc.stats().totalAllocated, at=haxe.Timer.stamp();
-			if(open) bench.showPanel(tab); else bench.closePanel();
+			if(open) bench.showPanel(tab); else bench.panelsPart.closePanel();
 			var call=(haxe.Timer.stamp()-at)*1000, frames=[];
 			for(_ in 0...10) { frames.push(frame()); Sys.sleep(.005); }
 			Sys.println("panel-latency:"+haxe.Json.stringify({cycle:cycle,tab:tab,open:open,call:call,frames:frames,

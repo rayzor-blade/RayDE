@@ -9,6 +9,22 @@ import rayde.ui.Icons;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(ashui.ui.Component)
 class ExplorerFileChecks {
 	static function main():Void {
@@ -39,7 +55,7 @@ class ExplorerFileChecks {
 		try {
 			bench.openProject(); settle();
 			if (Css.query(tree, bench.node.id, '[data-path="$dependency"]').length != 0) throw "External class path appeared in the workspace tree";
-			var services = bench.services();
+			var services = bench.extensionsPart.services();
 			if (services.readFile(dependency + "/README.md") != "# Dependency\n" || haxe.crypto.Base64.decode(services.readBytes(dependency + "/.env")).toString() != "LOCAL=true\n") throw "Declared dependency reads failed";
 			function refused(run:Void->Void):String { try run() catch (error:Dynamic) return Std.string(error); throw "Expected path refusal"; }
 			var denied = refused(() -> services.readFile(unrelated));
@@ -66,7 +82,7 @@ class ExplorerFileChecks {
 			click("#rayde-library-file-" + haxe.crypto.Md5.encode(dependency + "/README.md") + " > .ui-tree-row");
 			if (bench.active.get() != dependency + "/README.md") throw "Selecting a dependency did not open its editor tab";
 			var deadline = haxe.Timer.stamp() + 8;
-			while (bench.dependencyReadRoots.indexOf(library) < 0 && haxe.Timer.stamp() < deadline) { settle(); Sys.sleep(.01); }
+			while (bench.explorerPart.dependencyReadRoots.indexOf(library) < 0 && haxe.Timer.stamp() < deadline) { settle(); Sys.sleep(.01); }
 			if (services.readFile(library + "/README.md") != "# Dependency\n") throw "Resolved library source read failed";
 			services.openFile(library + "/README.md"); settle();
 			if (bench.active.get() != library + "/README.md") throw "Library source navigation failed";
@@ -74,14 +90,14 @@ class ExplorerFileChecks {
 			if (services.readFile(library + "/README.md") != "# Dependency\n") throw "Collapsing Dependencies revoked the active preview's source";
 			for (name in files) if (Css.query(tree, bench.node.id, '[data-path="$root/src/$name"]').length != 1) throw "Explorer hid " + name;
 			if (Css.query(tree, bench.node.id, '[data-path="$root/.config"]').length != 1) throw "Explorer hid dotfolder";
-			var rows = bench.explorerEntries(root + "/src");
+			var rows = bench.explorerPart.explorerEntries(root + "/src");
 			if (rows[0].path != root + "/src/z.HX") throw "Haxe file priority was lost";
-			var before = bench.active.get(); bench.openExplorerFile(root + "/.config");
+			var before = bench.active.get(); bench.explorerPart.openExplorerFile(root + "/.config");
 			if (bench.active.get() != before) throw "Folder selection opened an editor";
 			for (name in ["a.py", "config.json", ".env", "unknown.custom", "README"]) {
 				var path = root + "/src/" + name;
-				bench.openExplorerFile(path); settle();
-				if (bench.active.get() != path || bench.editorFor(path) == null || bench.buffer(path).get() != "// " + name) throw "Cannot edit " + name;
+				bench.explorerPart.openExplorerFile(path); settle();
+				if (bench.active.get() != path || bench.editorFor(path) == null || bench.documentsPart.buffer(path).get() != "// " + name) throw "Cannot edit " + name;
 			}
 			if (FileIcons.of("unknown.custom") != Icons.FILE_CODE_LINE || FileIcons.of("a.py") != Icons.DEVICON_PYTHON || FileIcons.of("z.HX") != Icons.HAXE || FileIcons.of("settings.yml") != Icons.FILE_SETTINGS_LINE || FileIcons.of("page.HTML") != Icons.HTML5_LINE || FileIcons.of("theme.css") != Icons.CSS3_LINE || FileIcons.of(".env") != Icons.FILE_SETTINGS_LINE) throw "File icon mapping failed";
 			for (extension in ["c", "cpp", "cs", "py", "ts", "rs", "go", "rb", "kt", "swift", "dart", "lua", "pl", "scala", "hs", "ex", "erl", "ml", "fs", "clj", "jl", "r", "zig", "elm", "nim", "f90", "coffee", "svelte", "nix", "gql", "tex", "m", "mm", "groovy", "sol"]) if (FileIcons.of("sample." + extension) == null) throw "Language SVG failed to load: " + extension;

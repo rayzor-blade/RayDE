@@ -7,6 +7,22 @@ import rayde.lang.Display;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class RayzorSampleViews {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
 	public static function main():Void {
@@ -41,7 +57,7 @@ class RayzorSampleViews {
 		}
 		function shot(suffix:String):Void ashui.core.render.Snapshot.capture('rayzor-sample-${dark ? "dark" : "light"}-${sample.split("/").join("-")}-$suffix', tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
 		try {
-			bench.openProject(); settle(); bench.openExplorerFile(entry); settle();
+			bench.openProject(); settle(); bench.explorerPart.openExplorerFile(entry); settle();
 			check(bench.active.get() == Workbench.SETTINGS && Css.query(tree, bench.node.id, "#rayde-rayzor-error").length == 0, sample + ": form failed to open");
 			check((Css.query(tree, bench.node.id, "#rayde-run").length > 0) == display.project.runnable, sample + ": wrong Run visibility");
 			node(before.workspace() ? "#rayde-rayzor-workspace-section" : "#rayde-rayzor-project-section"); shot("build");

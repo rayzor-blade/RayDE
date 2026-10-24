@@ -11,6 +11,22 @@ import rayde.ui.Workbench;
 	`MARKDOWN_PROBE_SIMULATE=1` retains document payloads for the native-control comparison; omit it for tab-retention measurements.
 **/
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class MarkdownMemoryProbe {
 	static function document(index:Int, sections:Int):String {
 		var out = new StringBuf();
@@ -47,7 +63,7 @@ class MarkdownMemoryProbe {
 			var steps:Array<{name:String, run:Void->Void, ready:Void->Bool, wait:Float}> = [];
 			var captured:Array<Dynamic> = [], controls:Array<rayde.ext.BridgeControl> = [], holder = new ashui.ui.Div({});
 			var vms = new Map<String, Dynamic>();
-			for (key => studio in bench.studios) {
+			for (key => studio in bench.extensionsPart.studios) {
 				var previous = studio.connection.onMessage;
 				studio.connection.onMessage = message -> {
 					if (message.t == "collected") vms.set(key, message);
@@ -56,7 +72,7 @@ class MarkdownMemoryProbe {
 			}
 			function record(name:String):Void {
 				var stats = hl.Gc.stats(), parts:Array<String> = [];
-				for (key => studio in bench.studios) {
+				for (key => studio in bench.extensionsPart.studios) {
 					var activity = studio.activity.get(), console = studio.console.get(), chars = 0, logChars = 0;
 					for (e in activity) chars += e.text.length;
 					for (e in console) logChars += e.text.length;
@@ -79,16 +95,16 @@ class MarkdownMemoryProbe {
 				if (Sys.getEnv("MEMORY_PROBE_DUMP") == "1" && (name == "baseline" || name.indexOf("collected") >= 0)) hl.Gc.dumpMemory(ack + "." + name + ".heap");
 			}
 			steps.push({name:"baseline", run:() -> {}, ready:() -> true, wait:3});
-			for (i in 0...count) steps.push({name:"open-" + (i + 1), run:() -> bench.extensionManager.command("markdown", "markdown.preview", {path:root + '/doc$i.md'}),
+			for (i in 0...count) steps.push({name:"open-" + (i + 1), run:() -> bench.extensionsPart.extensionManager.command("markdown", "markdown.preview", {path:root + '/doc$i.md'}),
 				ready:() -> tabs().length == i + 1 && rendered() > 0, wait:2});
 			steps.push({name:"capture", run:() -> {
-				for (studio in bench.studios) if (studio.preview != null) for (part in @:privateAccess studio.preview.parts) {
+				for (studio in bench.extensionsPart.studios) if (studio.preview != null) for (part in @:privateAccess studio.preview.parts) {
 					var control:rayde.ext.BridgeControl = part.control;
 					if (control != null && control.kind == "markdown-view") captured.push(@:privateAccess control.markdownSource);
 				}
 			}, ready:() -> true, wait:1});
 			steps.push({name:"closed", run:() -> { for (t in tabs()) bench.closeFile(t); }, ready:() -> tabs().length == 0, wait:3});
-			steps.push({name:"collected", run:() -> { for (extension in bench.extensionManager.extensions) extension.connection.collect(); hl.Gc.major(); app.device.poll(); }, ready:() -> true, wait:3});
+			steps.push({name:"collected", run:() -> { for (extension in bench.extensionsPart.extensionManager.extensions) extension.connection.collect(); hl.Gc.major(); app.device.poll(); }, ready:() -> true, wait:3});
 			steps.push({name:"sim-open", run:() -> {
 				for (doc in captured) {
 					var control = new rayde.ext.BridgeControl(app.tree, "markdown-view", (_, _) -> {}, null, null);
@@ -104,7 +120,7 @@ class MarkdownMemoryProbe {
 			steps.push({name:"sim-collected", run:() -> { hl.Gc.major(); app.device.poll(); }, ready:() -> true, wait:3});
 			steps.push({name:"idle-15s", run:() -> {}, ready:() -> true, wait:15});
 			for (round in 2...4) {
-				for (i in 0...count) steps.push({name:'round$round-open-' + (i + 1), run:() -> bench.extensionManager.command("markdown", "markdown.preview", {path:root + '/doc$i.md'}),
+				for (i in 0...count) steps.push({name:'round$round-open-' + (i + 1), run:() -> bench.extensionsPart.extensionManager.command("markdown", "markdown.preview", {path:root + '/doc$i.md'}),
 					ready:() -> tabs().length == i + 1 && rendered() > 0, wait:2});
 				steps.push({name:'round$round-closed', run:() -> { for (t in tabs()) bench.closeFile(t); }, ready:() -> tabs().length == 0, wait:3});
 				steps.push({name:'round$round-collected', run:() -> { hl.Gc.major(); hl.Gc.major(); app.device.poll(); }, ready:() -> true, wait:3});

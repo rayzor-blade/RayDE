@@ -60,7 +60,7 @@ class LspMemoryProbe {
 		}
 		function ready():Void {
 			var until = haxe.Timer.stamp()+30;
-			while (mode!="off" && (bench.languageServers.client(files[0])==null || bench.languageServers.client(files[0]).state!="ready")) {
+			while (mode!="off" && (bench.languagesPart.languageServers.client(files[0])==null || bench.languagesPart.languageServers.client(files[0]).state!="ready")) {
 				frame(); Sys.sleep(.01);
 				if(haxe.Timer.stamp()>until) throw "LSP did not initialize";
 			}
@@ -68,7 +68,7 @@ class LspMemoryProbe {
 		var sequence = 0, completionPeakRows = 0;
 		function emit(phase:String, allocated:Float=0., ms:Float=0.):Void {
 			var retained=0, chars=0, pending=0, completionItems=0, completionRows=0, editors=0, watches=0;
-			var client = bench.languageServers.client(files[0]);
+			var client = bench.languagesPart.languageServers.client(files[0]);
 			if (client!=null) {
 				@:privateAccess for(doc in client.documents) { retained++; chars+=doc.text.length; }
 				@:privateAccess for(_ in client.pending) pending++;
@@ -100,27 +100,27 @@ class LspMemoryProbe {
 		hl.Gc.major(); emit("idle-collected");
 		if (Sys.getEnv("RAYDE_LSP_DIAGNOSTICS") == "1") {
 			var diagnostics:Array<Dynamic> = [for(i in 0...200) {severity:1,message:'Diagnostic $i',range:{start:{line:0,character:0},end:{line:0,character:1}}}];
-			function publish():Void bench.languageServers.onDiagnostics({uri:rayde.lang.LspProtocol.uri(files[0]),diagnostics:diagnostics});
+			function publish():Void bench.languagesPart.languageServers.onDiagnostics({uri:rayde.lang.LspProtocol.uri(files[0]),diagnostics:diagnostics});
 			phase("diagnostics-hidden", () -> { publish(); drive(.5); });
 			hl.Gc.major(); emit("diagnostics-hidden-collected");
 			phase("diagnostics-repeat", () -> { publish(); drive(.5); });
 			phase("diagnostics-shown", () -> { bench.showPanel("problems"); drive(.5); var id=Css.query(tree,bench.node.id,"#rayde-problems")[0]; ashui.input.Scroll.at(id,tree).scrollTo(0,240); drive(.1); });
-			phase("diagnostics-close", () -> { bench.closePanel(); drive(.5); });
+			phase("diagnostics-close", () -> { bench.panelsPart.closePanel(); drive(.5); });
 			hl.Gc.major(); emit("diagnostics-closed-collected");
 			bench.showPanel("problems"); drive(.2);
 			var restored = ashui.input.Scroll.at(Css.query(tree,bench.node.id,"#rayde-problems")[0],tree);
 			if (Math.abs(restored.y.get()-240)>1) throw "Problems scroll offset was lost on remount";
-			bench.closePanel(); drive(.2);
-			phase("diagnostics-clear", () -> { bench.languageServers.onDiagnostics({uri:rayde.lang.LspProtocol.uri(files[0]),diagnostics:[]}); drive(.3); });
+			bench.panelsPart.closePanel(); drive(.2);
+			phase("diagnostics-clear", () -> { bench.languagesPart.languageServers.onDiagnostics({uri:rayde.lang.LspProtocol.uri(files[0]),diagnostics:[]}); drive(.3); });
 			bench.closeAll(); drive(.5); hl.Gc.major(); emit("closed-collected");
 			stop(); compiler.stop(); tree.dispose(); target.destroy(); texture.destroy();
 			return;
 		}
-		phase("poll-10000", () -> { for(_ in 0...10000) bench.languageServers.tick(); });
+		phase("poll-10000", () -> { for(_ in 0...10000) bench.languagesPart.languageServers.tick(); });
 		phase("tab-switches", () -> { for(i in 0...30) { bench.openFile(files[i%files.length]); frame(); } bench.openFile(files[0]); drive(.3); });
 		hl.Gc.major(); emit("switches-collected");
 		phase("edits-30", () -> {
-			for(i in 0...30) { bench.buffer(files[0]).set(main+'// edit $i\n'); bench.edited(files[0]); frame(); }
+			for(i in 0...30) { bench.documentsPart.buffer(files[0]).set(main+'// edit $i\n'); bench.documentsPart.edited(files[0]); frame(); }
 			drive(1);
 		});
 		hl.Gc.major(); emit("edits-collected");
@@ -136,7 +136,7 @@ class LspMemoryProbe {
 		hl.Gc.major(); emit("completions-collected");
 		phase("hover-5", () -> {
 			for(_ in 0...5) {
-				var client=bench.languageServers.client(files[0]);
+				var client=bench.languagesPart.languageServers.client(files[0]);
 				if(client!=null) client.request("textDocument/hover",rayde.lang.LspProtocol.at(files[0],editor.value.get(),caret+2), result -> {
 					if(result!=null) editor.showHint({from:caret,to:caret+4,renderDocs:() -> rayde.ui.HoverDocumentation.render(result.contents)},true);
 				},files[0]+"#hover");
@@ -144,7 +144,7 @@ class LspMemoryProbe {
 			}
 		});
 		hl.Gc.major(); emit("hovers-collected");
-		phase("close-tabs", () -> { editor=null; bench.buffer(files[0]).set(main); bench.edited(files[0]); bench.saveAll(); bench.closeAll(); drive(1); });
+		phase("close-tabs", () -> { editor=null; bench.documentsPart.buffer(files[0]).set(main); bench.documentsPart.edited(files[0]); bench.runPart.saveAll(); bench.closeAll(); drive(1); });
 		hl.Gc.major(); emit("closed-collected");
 		drive(3); hl.Gc.major(); emit("closed-idle-collected");
 		stop(); compiler.stop(); tree.dispose(); target.destroy(); texture.destroy();

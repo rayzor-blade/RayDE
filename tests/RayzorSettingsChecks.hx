@@ -8,6 +8,22 @@ import rayde.project.ProjectFile;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class RayzorSettingsChecks {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
 	public static function main():Void {
@@ -60,7 +76,7 @@ class RayzorSettingsChecks {
 		function read():RayzorFile return new RayzorFile(entry);
 		try {
 			bench.openProject(); settle();
-			bench.openExplorerFile(entry); settle();
+			bench.explorerPart.openExplorerFile(entry); settle();
 			check(bench.active.get() == Workbench.SETTINGS && bench.settingsSection() == "build" && count("#rayde-rayzor-build") == 1 && bench.editorFor(entry) == null, "Explorer did not open the Rayzor settings form");
 			shot(workspace ? "workspace" : "project");
 			if (workspace) {
@@ -99,15 +115,15 @@ class RayzorSettingsChecks {
 				check(read().text(["custom", "value"]) == "external" && sys.io.File.getContent(entry).indexOf("# keep dependency") >= 0 && sys.io.File.getContent(entry).indexOf("# keep tier") >= 0, "Editing dropped unrelated or externally edited TOML");
 				click("#rayde-rayzor-edit-text");
 				check(bench.active.get() == entry && bench.editorFor(entry) != null, "Edit as Text did not open the manifest source");
-				bench.buffer(entry).set(sys.io.File.getContent(entry) + "# unsaved\n"); bench.edited(entry); settle();
+				bench.documentsPart.buffer(entry).set(sys.io.File.getContent(entry) + "# unsaved\n"); bench.documentsPart.edited(entry); settle();
 				bench.openBuild(); settle();
 				var before = sys.io.File.getContent(entry);
 				type("#rayde-rayzor-project-version", "0.3.0");
 				check(sys.io.File.getContent(entry) == before && count("#rayde-rayzor-error") == 1, "Form overwrote an unsaved source tab");
-				bench.dirty.set([]); bench.buffer(entry).set(before); settle();
+				bench.dirty.set([]); bench.documentsPart.buffer(entry).set(before); settle();
 				click("#rayde-rayzor-reload");
 				type("#rayde-rayzor-project-version", "0.3.0");
-				check(bench.buffer(entry).get() == sys.io.File.getContent(entry), "Saved source buffer did not follow form changes");
+				check(bench.documentsPart.buffer(entry).get() == sys.io.File.getContent(entry), "Saved source buffer did not follow form changes");
 				before = sys.io.File.getContent(entry); sys.io.File.saveContent(entry, "[project\ninvalid");
 				click("#rayde-rayzor-reload");
 				check(count("#rayde-rayzor-error") == 1 && count("#rayde-rayzor-edit-text") == 1 && count("#rayde-rayzor-project-name") == 0, "Malformed source has no recovery UI");

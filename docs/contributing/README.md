@@ -10,7 +10,8 @@
 
 | Path | Contents |
 | --- | --- |
-| `src/rayde/ui` | Workbench and its parts, written with ashui's HXX markup; `rayde.css` is the stylesheet. |
+| `src/rayde/ui` | The workbench and the views it shows, written with ashui's HXX markup; `rayde.css` is the stylesheet. `Contributions` is the registry that commands, bar items, side views and editor hooks register in; `Features` lists the built-in features that install through a `Host`. |
+| `src/rayde/ui/workbench` | The workbench's parts, one module each: terminal, explorer, panels, run and build, extensions, language servers, code actions, debugging, menus, projects, themes, key maps, the editor and its documents, and the shell (layout, bars, commands). `Workbench` owns the shared state and creates them; a part reaches the rest through `wb`. |
 | `src/rayde/ext` | Extensions: manifest, host process, Studio, debugger, hooks. |
 | `src/rayde/theme` | Theme bundles: file model, builder, CSS scoping, install, Studio model. |
 | `src/rayde/lang` | The Haxe compiler server and the display requests. |

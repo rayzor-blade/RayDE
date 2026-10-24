@@ -6,6 +6,22 @@ import rayde.lang.Display;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class LspPollingLifecycle {
 	public static function main():Void {
 		var root = Sys.getCwd() + "bin/lsp-polling-lifecycle", file = root + "/Main.hx", entry = root + "/build.hxml";
@@ -27,21 +43,21 @@ class LspPollingLifecycle {
 			while (!done() && haxe.Timer.stamp() < deadline) { settle(); Sys.sleep(.005); }
 			if (!done()) throw "LSP workbench polling did not settle";
 		}
-		function paused():Bool return !bench.languagesScheduled && bench.languagePollTimer == null && !bench.languageServers.busy();
+		function paused():Bool return !bench.languagesPart.languagesScheduled && bench.languagesPart.languagePollTimer == null && !bench.languagesPart.languageServers.busy();
 		try {
-			bench.languageServers.register("fixture", {id:"fixture", lazy:true, languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3",
+			bench.languagesPart.languageServers.register("fixture", {id:"fixture", lazy:true, languages:["haxe"], fileExtensions:[".hx"], transport:{kind:"stdio", command:"python3",
 				args:[Sys.getCwd() + "tests/lsp_server_fixture.py", root + "/events"]}}, (_, _) -> {});
 			settle();
-			var client = bench.languageServers.client(file);
+			var client = bench.languagesPart.languageServers.client(file);
 			if (!paused() || client.state != "idle") throw "Welcome page polled an unused lazy language server";
 			bench.openFile(file);
 			until(() -> client.state == "ready");
 			@:privateAccess var canWake = client.transport != null && client.transport.canWake();
 			if (canWake) {
-				until(() -> !bench.languagesScheduled && !bench.languageServers.hasEvents());
-				if (bench.languagePollTimer != null || client.files().indexOf(file) < 0)
+				until(() -> !bench.languagesPart.languagesScheduled && !bench.languagesPart.languageServers.hasEvents());
+				if (bench.languagesPart.languagePollTimer != null || client.files().indexOf(file) < 0)
 					throw "A settled code tab kept polling its event-driven language server";
-			} else if (!bench.languagesScheduled) throw "Opening code did not schedule fallback language polling";
+			} else if (!bench.languagesPart.languagesScheduled) throw "Opening code did not schedule fallback language polling";
 			bench.closeFile(file); settle();
 			if (!paused() || client.state != "ready" || client.files().length != 0) throw "Closing the last code tab left an LSP poll scheduled";
 			for (_ in 0...30) settle();
@@ -50,7 +66,7 @@ class LspPollingLifecycle {
 			client.request("test/state", {}, _ -> answered = true);
 			until(() -> answered); settle();
 			if (!paused()) throw "Documentless request left language polling scheduled after its reply";
-			bench.languageServers.control("fixture", "restart");
+			bench.languagesPart.languageServers.control("fixture", "restart");
 			until(() -> client.state == "ready"); settle();
 			if (!paused()) throw "Explicit restart did not finish and pause on the welcome page";
 			bench.openFile(file); settle();

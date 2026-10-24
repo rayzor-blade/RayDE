@@ -9,6 +9,22 @@ import rayde.ui.Workbench;
 
 /** Footprint of the Explorer on this project: mode `full` shows it, `no-explorer` folds it away, `expanded` opens every folder, `icons` loads every file type's icon document in an otherwise empty window. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class ExplorerMemoryProbe {
 	static final EXTENSIONS = ["7z", "aac", "adoc", "aiff", "avi", "avif", "bash", "bat", "bib", "bmp", "bz2", "c", "cc", "cer", "cfg", "cjs", "class", "clj", "cljc", "cljs", "cls", "cmd", "coffee", "conf", "config", "cpp", "crt", "cs", "css", "csv", "csx", "cts", "cxx", "dart", "db", "doc", "docx", "editorconfig", "edn", "elm", "erl", "ex", "exs", "f", "f03", "f08", "f90", "f95", "fish", "flac", "for", "fs", "fsi", "fsx", "gemspec", "gif", "go", "gql", "gradle", "graphql", "groovy", "gvy", "gz", "h", "heic", "hh", "hpp", "hrl", "hs", "htm", "html", "hx", "hxml", "hxx", "icns", "ico", "ini", "ipynb", "jar", "java", "jl", "jpe", "jpeg", "jpg", "js", "json", "json5", "jsonc", "jsx", "key", "kt", "kts", "less", "lhs", "litcoffee", "lock", "log", "lua", "m", "m4a", "m4v", "markdown", "mat", "md", "mdown", "mdx", "mid", "midi", "mjs", "mkd", "mkv", "ml", "mli", "mm", "mov", "mp3", "mp4", "mts", "nim", "nims", "nix", "odp", "ods", "odt", "ogg", "otf", "p12", "pdf", "pem", "pfx", "php", "phtml", "pl", "pm", "png", "pod", "ppt", "pptx", "properties", "ps1", "py", "pyi", "pyw", "r", "rake", "rar", "rayext", "rays", "raytheme", "rb", "rmd", "rs", "rst", "rtf", "sass", "sc", "scala", "scss", "sh", "sol", "sql", "sqlite", "sqlite3", "sty", "svelte", "svg", "swift", "tar", "tex", "tgz", "tif", "tiff", "toml", "ts", "tsv", "tsx", "ttf", "txt", "vue", "wav", "webm", "webp", "woff", "woff2", "xhtml", "xls", "xlsx", "xz", "yaml", "yml", "zig", "zip", "zon", "zsh"];
 	static final NAMES = ["dockerfile", "makefile", "license", "package.json", ".env", ".gitignore"];
@@ -22,7 +38,7 @@ class ExplorerMemoryProbe {
 		for (name in sys.FileSystem.readDirectory(dir)) {
 			var path = dir + "/" + name;
 			if (name == ".git" || name == ".deps" || name == "bin" || name == "target" || name == "node_modules" || !sys.FileSystem.isDirectory(path) || depth > 8) continue;
-			bench.folderState(path, true).set(true);
+			bench.explorerPart.folderState(path, true).set(true);
 			count += 1 + expand(bench, path, depth + 1);
 		}
 		return count;
@@ -83,7 +99,7 @@ class ExplorerMemoryProbe {
 				element = bench;
 			}
 			AnimationScheduler.main.after(6, () -> {
-				if (bench != null) for (extension in bench.extensionManager.extensions) extension.connection.collect();
+				if (bench != null) for (extension in bench.extensionsPart.extensionManager.extensions) extension.connection.collect();
 				if (mode == "icons") {
 					hl.Gc.major(); var before = heap(), documents = [];
 					for (extension in EXTENSIONS) { var icon = FileIcons.of("file." + extension); if (documents.indexOf(icon) < 0) documents.push(icon); }
@@ -105,7 +121,7 @@ class ExplorerMemoryProbe {
 					if (bench != null) rows = ashui.css.Css.query(app.tree, bench.node.id, "[data-path]").length;
 					Sys.println("welcome-memory:" + haxe.Json.stringify({mode:mode, nodes:app.tree.order().length, treeRows:rows, expandedFolders:folders,
 						knownRendererTextureBytes:gpu, atlasStagingBytes:staging, colorAtlasBytes:color, gcHeapBytes:heap(), icons:icons, parts:parts,
-						indexedPaths:bench == null ? 0 : bench.fileIndex.paths.length}));
+						indexedPaths:bench == null ? 0 : bench.explorerPart.fileIndex.paths.length}));
 					Sys.stdout().flush();
 					var finish:Void->Void = null;
 					finish = () -> {

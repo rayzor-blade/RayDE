@@ -8,6 +8,22 @@ import rayde.settings.Store;
 import rayde.ui.WorkspaceWindow;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.ui.ProjectPicker)
 class WorkspaceWelcomeChecks {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
@@ -58,7 +74,7 @@ class WorkspaceWelcomeChecks {
 			settle();
 			var fresh = host.bench;
 			check(fresh.open.get().length == 0 && !fresh.explorerShown.get(), "Fresh launch restored tabs or expanded Explorer");
-			check(!fresh.fileIndex.busy() && fresh.projectFiles().length == 0 && fresh.extensionManager.extensions.length == 0 && !fresh.languageServers.busy() && !server.running(), "Fresh launch started workspace services");
+			check(!fresh.explorerPart.fileIndex.busy() && fresh.explorerPart.projectFiles().length == 0 && fresh.extensionsPart.extensionManager.extensions.length == 0 && !fresh.languagesPart.languageServers.busy() && !server.running(), "Fresh launch started workspace services");
 			check(count("#welcome-open-folder, #welcome-open-project, #welcome-new-project") == 3 && count("#welcome-project-0") == 1, "Welcome omitted workspace opening choices or recents");
 			check(count("#rayde-runtime, #rayde-run, #welcome-build") == 0, "Empty Welcome advertises a build or runtime");
 			var projectList = Css.query(tree, host.node.id, "#welcome-projects")[0];
@@ -68,28 +84,28 @@ class WorkspaceWelcomeChecks {
 			check(count("#rayde-empty-open-folder") == 1 && count("#rayde-explorer-tree") == 0, "Empty Explorer browses the user home");
 			click("#rayde-activity-explorer");
 			click("#welcome-project-0");
-			until(() -> host.bench != fresh && host.bench.projectFiles().length == 4);
+			until(() -> host.bench != fresh && host.bench.explorerPart.projectFiles().length == 4);
 			var opened = host.bench;
 			check(fresh.gone && count("#rayde") == 1 && opened.display().cwd == folder && opened.display().project.kind == "folder", "Recent folder did not replace the workspace owner");
-			check(opened.explorerShown.get() && opened.projectEntry() == null && count("#rayde-runtime, #rayde-run, #welcome-build") == 0, "Folder workspace assumes a Haxe project");
+			check(opened.explorerShown.get() && opened.explorerPart.projectEntry() == null && count("#rayde-runtime, #rayde-run, #welcome-build") == 0, "Folder workspace assumes a Haxe project");
 			for (file in ["app.js", "main.py", "package.json", "README.md"]) check(count('[data-path="' + folder + "/" + file + '"]') == 1, "Explorer omitted " + file);
 			shot("folder");
 			opened.openFile(code); settle();
 			check(opened.editorFor(code) != null, "Folder source did not open in an editor tab");
-			opened.buffer(code).set("changed\n"); opened.edited(code); settle();
-			opened.openWorkspace(entry); settle();
+			opened.documentsPart.buffer(code).set("changed\n"); opened.documentsPart.edited(code); settle();
+			opened.projectPart.openWorkspace(entry); settle();
 			check(host.bench == opened && opened.prompt.get() != null, "Switching discarded an unsaved buffer");
 			click("#rayde-prompt-cancel");
 			check(host.bench == opened && sys.io.File.getContent(code) == "hello\n", "Cancelling changed the workspace or file");
-			opened.openWorkspace(entry); settle(); click("#rayde-prompt-accept");
+			opened.projectPart.openWorkspace(entry); settle(); click("#rayde-prompt-accept");
 			until(() -> host.bench != opened);
 			check(opened.gone && sys.io.File.getContent(code) == "changed\n" && host.bench.display().project.file == entry, "Save and Open lost changes or the project entry");
 			var project = host.bench;
-			project.openWorkspace(folder); settle();
-			check(project.gone && host.bench.active.get() == code && host.bench.buffer(code).get() == "changed\n", "Folder workspace tabs did not restore");
+			project.projectPart.openWorkspace(folder); settle();
+			check(project.gone && host.bench.active.get() == code && host.bench.documentsPart.buffer(code).get() == "changed\n", "Folder workspace tabs did not restore");
 			check(count("#rayde") == 1, "Switching retained an old workbench");
 			host.bench.closeAll(); settle(); shot("folder-returned");
-			host.bench.openWorkspace(root + "/missing"); settle();
+			host.bench.projectPart.openWorkspace(root + "/missing"); settle();
 			check(host.bench.display().cwd == folder && !host.bench.gone, "Invalid workspace replaced the current one");
 		} catch (error:Dynamic) { stop(); tree.dispose(); server.stop(); throw error; }
 		stop(); tree.dispose(); server.stop();

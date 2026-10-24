@@ -8,6 +8,22 @@ import rayde.lang.Display;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.jam.JamSession)
 class JamWorkbenchChecks {
 	static function check(ok:Bool,message:String):Void { if (!ok) throw message; }
@@ -103,37 +119,37 @@ class JamWorkbenchChecks {
 			rayde.jam.JamFeature.of(a.contributions).followJam(jb.peer); settle();
 			ea.applyEdits([{from:0,to:0,text:"A: "},{from:8,to:8,text:"!"}]);
 			check(ja.following.get()=="","Editing did not stop following");
-			until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Exact multi-range edits did not arrive");
+			until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Exact multi-range edits did not arrive");
 			check(jb.serial==guestSerial,"Remote apply echoed as a local transaction");
-			ea.undo(); until(() -> a.buffer(fa).get()==source && b.buffer(fb).get()==source,"Multi-range action did not undo together");
+			ea.undo(); until(() -> a.documentsPart.buffer(fa).get()==source && b.documentsPart.buffer(fb).get()==source,"Multi-range action did not undo together");
 			ea.select(8,8); ea.editing.replace(" A");
-			until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Typed edit did not arrive");
+			until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Typed edit did not arrive");
 			eb.select(0,0); eb.editing.replace("B: ");
-			until(() -> a.buffer(fa).get()==b.buffer(fb).get(),"Guest edit did not arrive");
-			ea.undo(); until(() -> a.buffer(fa).get()=="B: "+source && b.buffer(fb).get()==a.buffer(fa).get(),"Author undo removed another participant's edit");
-			ea.redo(); until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Author redo did not arrive");
+			until(() -> a.documentsPart.buffer(fa).get()==b.documentsPart.buffer(fb).get(),"Guest edit did not arrive");
+			ea.undo(); until(() -> a.documentsPart.buffer(fa).get()=="B: "+source && b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Author undo removed another participant's edit");
+			ea.redo(); until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Author redo did not arrive");
 			eb.select(1,1); ea.applyEdits([{from:0,to:0,text:"Z"}]);
-			until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Remote edit did not arrive after moving the local caret");
+			until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Remote edit did not arrive after moving the local caret");
 			check(eb.editing.caret.get()==2,"Throttled presence moved the local caret back to its previous location");
-			ea.undo(); until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Caret fixture did not undo");
+			ea.undo(); until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Caret fixture did not undo");
 			eb.select(0,3); jb.moved(3,0);
-			until(() -> Lambda.exists(a.documentState(fa).peers.get(),p -> p.caret==3 && p.anchor==0),"Remote selection did not arrive");
-			check(Css.query(ta,a.node.id,".ui-code-peer-caret").length==1 && Css.query(ta,a.node.id,".ui-code-peer-selection").length>=1,"Remote caret or selection was not rendered: caret="+Css.query(ta,a.node.id,".ui-code-peer-caret").length+", selection="+Css.query(ta,a.node.id,".ui-code-peer-selection").length+", marks="+haxe.Json.stringify(a.documentState(fa).peers.get()));
+			until(() -> Lambda.exists(a.documentsPart.documentState(fa).peers.get(),p -> p.caret==3 && p.anchor==0),"Remote selection did not arrive");
+			check(Css.query(ta,a.node.id,".ui-code-peer-caret").length==1 && Css.query(ta,a.node.id,".ui-code-peer-selection").length>=1,"Remote caret or selection was not rendered: caret="+Css.query(ta,a.node.id,".ui-code-peer-caret").length+", selection="+Css.query(ta,a.node.id,".ui-code-peer-selection").length+", marks="+haxe.Json.stringify(a.documentsPart.documentState(fa).peers.get()));
 			Snapshot.capture('jam-${dark ? "dark" : "light"}',ta,a.node,1100,760);
-			var before=b.buffer(fb).get(); eb.editing.composing.set("文"); settle();
+			var before=b.documentsPart.buffer(fb).get(); eb.editing.composing.set("文"); settle();
 			ea.applyEdits([{from:0,to:0,text:"remote "}]);
 			for (_ in 0...8) { settle(); Sys.sleep(.01); }
-			check(b.buffer(fb).get()==before,"Remote update disturbed an active IME composition");
-			eb.editing.composing.set(""); until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Deferred update did not arrive after composition");
+			check(b.documentsPart.buffer(fb).get()==before,"Remote update disturbed an active IME composition");
+			eb.editing.composing.set(""); until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Deferred update did not arrive after composition");
 			jb.pause(true); until(() -> jb.status.get()=="paused","Pause did not disconnect");
 			eb.applyEdits([{from:0,to:0,text:"offline "}]);
-			jb.pause(false); until(() -> jb.status.get()=="connected" && b.buffer(fb).get()==a.buffer(fa).get(),"Offline edits did not reconcile");
-			var state=a.documentState(fa); a.openFile(root+"/host/other.txt"); settle();
+			jb.pause(false); until(() -> jb.status.get()=="connected" && b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Offline edits did not reconcile");
+			var state=a.documentsPart.documentState(fa); a.openFile(root+"/host/other.txt"); settle();
 			check(!state.mounted,"Inactive shared document retained its editor");
-			eb.applyEdits([{from:0,to:0,text:"hidden "}]); until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Inactive document stopped synchronizing");
-			a.openFile(fa); settle(); check(a.editorFor(fa).value.get()==b.buffer(fb).get(),"Reopened editor lost the shared document");
+			eb.applyEdits([{from:0,to:0,text:"hidden "}]); until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Inactive document stopped synchronizing");
+			a.openFile(fa); settle(); check(a.editorFor(fa).value.get()==b.documentsPart.buffer(fb).get(),"Reopened editor lost the shared document");
 			until(() -> ja.recoveryStatus.get()=="saved locally" && jb.recoveryStatus.get()=="saved locally","Edits were not checkpointed");
-			var finalText=a.buffer(fa).get(), firstInvite=ja.invite.get();
+			var finalText=a.documentsPart.buffer(fa).get(), firstInvite=ja.invite.get();
 			a.runCommand("jam.leave");
 			until(() -> jb.failure.get()!="","Host closure was not reported to the guest");
 			b.runCommand("jam.leave"); settle();
@@ -143,16 +159,16 @@ class JamWorkbenchChecks {
 			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Jam wrote files without Save");
 			// Recovery replaces only a clean buffer and never needs an active old presentation.
 			a.runCommand("jam.resume"); settle(); check(a.prompt.get()==null,"Recovery offered to replace unsaved editor changes");
-			a.documentState(fa).value.set(source); b.documentState(fb).value.set(source); a.saveAll(); b.saveAll(); settle();
+			a.documentsPart.documentState(fa).value.set(source); b.documentsPart.documentState(fb).value.set(source); a.runPart.saveAll(); b.runPart.saveAll(); settle();
 			a.editorFor(fa).select(source.length,source.length);
 			a.runCommand("jam.resume"); settle(); check(a.prompt.get()!=null && a.prompt.get().action=="Resume Jam","Resume command did not request explicit consent");
 			a.prompt.get().accept(""); a.prompt.set(null);
 			until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().status.get()=="connected","Host did not resume");
-			check(a.buffer(fa).get()==finalText && rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()!=firstInvite,"Resume reseeded text or reused an invitation");
+			check(a.documentsPart.buffer(fa).get()==finalText && rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()!=firstInvite,"Resume reseeded text or reused an invitation");
 			b.runCommand("jam.rejoin"); settle(); check(b.prompt.get()!=null,"Rejoin did not request an invitation");
 			b.prompt.get().accept(rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()); b.prompt.set(null);
 			until(() -> rayde.jam.JamFeature.of(b.contributions).session.get().status.get()=="connected" && rayde.jam.JamFeature.of(a.contributions).session.get().people.get().length==2,"Guest did not restore and rejoin");
-			check(b.buffer(fb).get()==finalText,"Restored peers diverged");
+			check(b.documentsPart.buffer(fb).get()==finalText,"Restored peers diverged");
 			rayde.jam.JamFeature.of(a.contributions).session.get().checkpoint(); until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().recoveryStatus.get()=="saved locally","Explicit checkpoint failed");
 			a.runCommand("jam.leave"); b.runCommand("jam.leave"); settle();
 			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Jam wrote files without Save");
@@ -160,13 +176,13 @@ class JamWorkbenchChecks {
 			rayde.jam.JamFeature.of(a.contributions).begin(fa,true,"Room A",""); rayde.jam.JamFeature.of(b.contributions).begin(fb,true,"Room B","");
 			until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().status.get()=="connected" && rayde.jam.JamFeature.of(b.contributions).session.get().status.get()=="connected","Independent rooms did not connect");
 			check(rayde.jam.JamFeature.of(a.contributions).session.get().invite.get()!=rayde.jam.JamFeature.of(b.contributions).session.get().invite.get() && rayde.jam.JamFeature.of(a.contributions).session.get().people.get().length==1 && rayde.jam.JamFeature.of(b.contributions).session.get().people.get().length==1,"Windows shared a room unexpectedly");
-			var otherRoom=b.buffer(fb).get();
+			var otherRoom=b.documentsPart.buffer(fb).get();
 			a.editorFor(fa).applyEdits([{from:0,to:0,text:"isolated "}]);
 			until(() -> rayde.jam.JamFeature.of(a.contributions).session.get().synced.get(),"Independent room edit was not acknowledged");
-			check(b.buffer(fb).get()==otherRoom && rayde.jam.JamFeature.of(b.contributions).session.get().following.get()=="","One room changed another window's document or follow state");
-			click(a,ta,"#rayde-jam-hide"); a.leaveJam(); settle();
+			check(b.documentsPart.buffer(fb).get()==otherRoom && rayde.jam.JamFeature.of(b.contributions).session.get().following.get()=="","One room changed another window's document or follow state");
+			click(a,ta,"#rayde-jam-hide"); rayde.jam.JamFeature.of(a.contributions).leaveJam(); settle();
 			check(rayde.jam.JamFeature.of(b.contributions).session.get().status.get()=="connected" && Css.query(tb,b.node.id,"#rayde-jam-panel").length==1,"Closing one room affected another window");
-			b.leaveJam(); settle();
+			rayde.jam.JamFeature.of(b.contributions).leaveJam(); settle();
 			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Independent rooms wrote source files");
 
 		} catch (error:Dynamic) { sa(); sb(); ta.dispose(); tb.dispose(); ca.stop(); cb.stop(); throw error; }

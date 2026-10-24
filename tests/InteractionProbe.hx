@@ -19,7 +19,7 @@ class InteractionProbe {
 				sys.FileSystem.createDirectory(dir);
 				for (j in 0...10) sys.io.File.saveContent(dir + '/File$j.hx', 'class File$j {}\n');
 			}
-			bench.refreshExplorer();
+			bench.explorerPart.refreshExplorer();
 		}
 		var frames = 0;
 		var checkpoint = 0;
@@ -44,7 +44,7 @@ class InteractionProbe {
 			}
 			if (editors > 1) throw 'inactive tabs retained editor views at $label: $editors';
 			var documents = 0, mountedDocuments = 0, documentCharacters = 0, documentLines = 0;
-			@:privateAccess for (state in bench.documents) {
+			@:privateAccess for (state in bench.documentsPart.documents) {
 				documents++;
 				if (state.mounted) mountedDocuments++;
 				documentCharacters += state.value.get().length;
@@ -129,9 +129,9 @@ class InteractionProbe {
 			files.push(path);
 		}
 		for (path in files) step("open-" + haxe.io.Path.withoutDirectory(path), () -> bench.openFile(path));
-		var scm = @:privateAccess Lambda.find(bench.containers, c -> c.extension.id == "git" && c.location == "sidebar");
-		step("open-sidebar", () -> bench.chooseContainer(scm));
-		var git = bench.extensionManager.find("git"), studio = @:privateAccess bench.studios.get(git.connection.manifest.mainPath());
+		var scm = @:privateAccess Lambda.find(bench.extensionsPart.containers, c -> c.extension.id == "git" && c.location == "sidebar");
+		step("open-sidebar", () -> bench.shellPart.chooseContainer(scm));
+		var git = bench.extensionsPart.extensionManager.find("git"), studio = @:privateAccess bench.extensionsPart.studios.get(git.connection.manifest.mainPath());
 		ready(() -> studio.preview.outline().length > 10, "interaction sidebar");
 		step("sidebar-ready", () -> {});
 		step("open-history", () -> git.connection.command("git.history", null));

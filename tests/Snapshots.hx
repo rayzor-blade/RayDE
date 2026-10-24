@@ -66,14 +66,14 @@ class Snapshots {
 			Haxelib.refresh();
 			scenario(dark, "lsp", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var root = bench.display().cwd;
-				var installed = bench.extensionManager.find("rayzor");
+				var installed = bench.extensionsPart.extensionManager.find("rayzor");
 				if (installed == null || installed.disabled || installed.installed.scope != "Built-in") throw "Rayzor must be a built-in default";
-				until(() -> bench.languageServers.client(file) != null, "Rayzor extension registration");
-				var client = bench.languageServers.client(file);
+				until(() -> bench.languagesPart.languageServers.client(file) != null, "Rayzor extension registration");
+				var client = bench.languagesPart.languageServers.client(file);
 				bench.openFile(file);
 				until(() -> client.state == "ready", "LSP initialization");
 				bench.openFile(file); settle();
-				if(!bench.languageServers.status(file).indexing || Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 1)
+				if(!bench.languagesPart.languageServers.status(file).indexing || Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 1)
 					throw "The Rayzor icon should animate while the active file is indexing";
 				hover("#rayde-lsp-status"); settle(40);
 				if(!Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — indexing Main.hx")) throw "Indexing tooltip did not name the active file";
@@ -89,14 +89,14 @@ class Snapshots {
 				client.request("test/notify", {notifications:[{method:"rayzor/analysisStatus", params:{uri:LspProtocol.uri(file), version:client.version(file), state:"ready"}}]}, _ -> {});
 				var analyzed = false;
 				client.request("test/diagnostics", {}, _ -> analyzed = true);
-				until(() -> analyzed && !bench.languageServers.status(file).indexing, "active-file analysis completion");
+				until(() -> analyzed && !bench.languagesPart.languageServers.status(file).indexing, "active-file analysis completion");
 				if(Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 0) throw "The Rayzor icon kept spinning after analysis completed";
 				if(Css.query(bench.tree, bench.node.id, "#rayde-lsp-status")[0] != indexingControl) throw "Activity completion rebuilt the status controls";
 				if(ashui.css.Animations.active(indexingIcon)) throw "The ready logo retained its animation";
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — ready"), "open indexing tooltip to update in place");
 				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
 				var source = "class Main {\n\tstatic function main() {\n\t\tvar greeting = 'hello';\n\t\tgreeting.\n\t}\n}\n";
-				bench.buffer(file).set(source); bench.edited(file); settle();
+				bench.documentsPart.buffer(file).set(source); bench.documentsPart.edited(file); settle();
 				var editor = bench.editorFor(file), caret = source.indexOf("greeting.") + "greeting.".length;
 				editor.select(caret, caret); editor.focus();
 				bench.runCommand("suggest");
@@ -111,13 +111,13 @@ class Snapshots {
 				ashui.input.Pointer.wheel(bench.tree, 0, -10000); settle();
 				if(completionDocsScroll.y.get() <= 0 || editor.scroll.y.get() != editorScrollY || !editor.completionsOpen()) throw "Completion docs wheel moved the editor or closed the popup";
 				shot("completion-docs-scrolled"); press(Named(Enter));
-				if (bench.buffer(file).get().indexOf("greeting.fixtureMember") < 0) throw "LSP completion was not applied";
+				if (bench.documentsPart.buffer(file).get().indexOf("greeting.fixtureMember") < 0) throw "LSP completion was not applied";
 				bench.goToDefinition();
 				until(() -> bench.caret(file) == 6, "LSP definition navigation");
 				var mac = Sys.systemName() == "Mac";
 				var navigationModifiers = window.Modifiers.State(false, !mac, false, mac, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
 				var releasedModifiers = window.Modifiers.State(false, false, false, false, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
-				var completed = bench.buffer(file).get();
+				var completed = bench.documentsPart.buffer(file).get();
 				for(offset in [completed.indexOf("Main") + 1, completed.indexOf("fixtureMember") + 3]) {
 					editor.select(0, 0); editor.focus(); settle();
 					var target = editor.rectAt(offset);
@@ -143,8 +143,8 @@ class Snapshots {
 				click("#rayde-explorer-toggle-outline");
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, "#rayde-outline-tree text"), id -> ashui.ui.Text.at(id).text() == "LspMain"), "LSP Outline");
 				shot("outline");
-				var call = StringTools.replace(bench.buffer(file).get(), "greeting.fixtureMember", "greet(");
-				bench.buffer(file).set(call); bench.edited(file); settle();
+				var call = StringTools.replace(bench.documentsPart.buffer(file).get(), "greeting.fixtureMember", "greet(");
+				bench.documentsPart.buffer(file).set(call); bench.documentsPart.edited(file); settle();
 				var open = call.indexOf("greet(") + "greet(".length;
 				editor.select(open, open); editor.focus();
 				bench.runCommand("parameterhints");
@@ -174,13 +174,13 @@ class Snapshots {
 				shot("hover-scroll"); editor.hideHint();
 				analyzed = false;
 				client.request("test/diagnostics", {}, _ -> analyzed = true);
-				until(() -> analyzed && !bench.languageServers.status(file).indexing, "edited-file analysis completion");
+				until(() -> analyzed && !bench.languagesPart.languageServers.status(file).indexing, "edited-file analysis completion");
 				var other = root + "/HoverOther.hx";
 				sys.io.File.saveContent(other, "class HoverOther {}\n");
 				bench.openFile(other); settle(); bench.openFile(file); settle();
 				analyzed = false;
 				client.request("test/diagnostics", {}, _ -> analyzed = true);
-				until(() -> analyzed && !bench.languageServers.status(file).indexing, "both open files indexed");
+				until(() -> analyzed && !bench.languagesPart.languageServers.status(file).indexing, "both open files indexed");
 				editor = bench.editorFor(file);
 				ashui.input.Pointer.move(bench.tree, 5, 5); settle();
 				spot = editor.rectAt(6);
@@ -191,7 +191,7 @@ class Snapshots {
 				bench.openFile(other); settle(); bench.openFile(file); settle();
 				editor = bench.editorFor(file);
 				if(editor == oldEditor) throw "Tab-return test did not remount the code editor";
-				if(client.version(file) != version || bench.languageServers.status(file).indexing) throw "Tab return reindexed an unchanged document";
+				if(client.version(file) != version || bench.languagesPart.languageServers.status(file).indexing) throw "Tab return reindexed an unchanged document";
 				spot = editor.rectAt(6);
 				ashui.input.Pointer.move(bench.tree, spot.x + spot.width / 4, spot.y + spot.height / 2);
 				until(() -> Css.query(bench.tree, bench.node.id, ".rayde-hover-markdown").length > 0, "server documentation after editor remount");
@@ -207,7 +207,7 @@ class Snapshots {
 				click("#rayde-lsp-status"); shot("server-menu");
 				click("#rayde-lsp-stop");
 				until(() -> client.state == "stopped", "status menu to stop LSP");
-				if (bench.languageServers.client(file) != null) throw "Stopped server still routes language requests";
+				if (bench.languagesPart.languageServers.client(file) != null) throw "Stopped server still routes language requests";
 				hover("#rayde-lsp-status"); settle(40);
 				until(() -> Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — stopped"), "stopped server tooltip");
 				shot("server-stopped-tooltip");
@@ -217,8 +217,8 @@ class Snapshots {
 				click("#rayde-lsp-status"); click("#rayde-lsp-restart");
 				until(() -> client.state == "ready", "status menu to restart LSP");
 				click("#rayde-lsp-status"); click("#rayde-lsp-output"); settle();
-				if ((@:privateAccess bench.outputChannel.get()) != "ext:rayzor" || Css.query(bench.tree, bench.node.id, "#rayde-extension-output").length == 0) throw "LSP Show Output did not select its extension's channel";
-				shot("server-output"); bench.closePanel(); settle();
+				if ((@:privateAccess bench.extensionsPart.outputChannel.get()) != "ext:rayzor" || Css.query(bench.tree, bench.node.id, "#rayde-extension-output").length == 0) throw "LSP Show Output did not select its extension's channel";
+				shot("server-output"); bench.panelsPart.closePanel(); settle();
 				var gotPid = false, pid = 0;
 				client.request("test/state", {}, result -> { pid = result.pid; gotPid = true; });
 				until(() -> gotPid, "LSP process identity");
@@ -227,14 +227,14 @@ class Snapshots {
 				gotPid = false;
 				client.request("test/state", {}, result -> { if (result.pid != pid) throw "Tab lifecycle restarted the LSP"; gotPid = true; });
 				until(() -> gotPid, "persistent LSP after close and reopen");
-				if (bench.languageServers.client(file) != client) throw "Reopening replaced the LSP client";
+				if (bench.languagesPart.languageServers.client(file) != client) throw "Reopening replaced the LSP client";
 				editor = bench.editorFor(file);
 				bench.problems.set([
 					{file:file, severity:1, range:{start:{line:0,character:0},end:{line:0,character:5}},
 						message:"**Initialization macro** `ashui.core.render.UiFramework.register()`: undefined variable in macro: `Extensions`\n\n```haxe\nvar example:Int = 1;\n```\n\nSee [documentation](https://haxe.org/manual/)."},
 					{file:file, severity:2, range:{start:{line:0,character:2},end:{line:0,character:7}}, message:"Related **warning** with `inline code`."}
 				]); settle();
-				var diagnosticHint = @:privateAccess bench.hintAt(file, 3);
+				var diagnosticHint = @:privateAccess bench.editorMarksPart.hintAt(file, 3);
 				if(diagnosticHint == null || diagnosticHint.from != 0 || diagnosticHint.to != 7 || diagnosticHint.className != "ui-code-hint-error" || diagnosticHint.renderDocs == null)
 					throw "Diagnostic hover did not combine overlapping ranges with severity and rich documentation";
 				var diagnosticSpot = editor.rectAt(3);
@@ -280,16 +280,16 @@ class Snapshots {
 				var recoveredState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make(undone.text));
 				rayde.ui.DocumentHistory.restore(recoveredState, haxe.Json.parse(json));
 				if (recoveredState.history.apply("ab", true).text != "abc" || recoveredState.history.apply("abc", false).text != "ab" || recoveredState.history.apply("ab", false).text != "a") throw "persisted undo and redo did not round-trip";
-				var source = bench.buffer(file).get();
-				bench.buffer(file).set(StringTools.replace(source, "main()", "changed()"));
+				var source = bench.documentsPart.buffer(file).get();
+				bench.documentsPart.buffer(file).set(StringTools.replace(source, "main()", "changed()"));
 				until(() -> label("changed"), "Outline from the unsaved buffer");
 				if (sys.io.File.getContent(file) != source) throw "Outline wrote the source file";
-				bench.buffer(file).set(source);
+				bench.documentsPart.buffer(file).set(source);
 				until(() -> label("main"), "restored Outline");
-				var git = bench.extensionManager.find("git");
-				bench.extensionManager.setNativeApproved("git", "git2", true);
+				var git = bench.extensionsPart.extensionManager.find("git");
+				bench.extensionsPart.extensionManager.setNativeApproved("git", "git2", true);
 				click("#rayde-explorer-toggle-timeline");
-				var studio = bench.studioFor(git.connection.file);
+				var studio = bench.extensionsPart.studioFor(git.connection.file);
 				function says(word:String):Bool return studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
 				until(() -> { if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get()); return says("Prepare extension runtime 1"); }, "file Timeline to search bounded pages for the initial commit");
 				shot("timeline");
@@ -345,13 +345,13 @@ class Snapshots {
 				if (!has("#rayde-history-preview") || sys.io.File.getContent(file) != source) throw "local revision should open read-only without writing the source";
 				shot("local-revision");
 				click("#rayde-history-restore");
-				until(() -> bench.active.get() == file && bench.buffer(file).get() == source, "restore into the unsaved editor buffer");
+				until(() -> bench.active.get() == file && bench.documentsPart.buffer(file).get() == source, "restore into the unsaved editor buffer");
 				bench.editorFor(file).undo(); settle();
-				if (bench.buffer(file).get().indexOf("never staged") < 0) throw "restoring a local revision was not undoable";
-				@:privateAccess bench.localHistory.flush(file);
+				if (bench.documentsPart.buffer(file).get().indexOf("never staged") < 0) throw "restoring a local revision was not undoable";
+				@:privateAccess bench.documentsPart.localHistory.flush(file);
 				var recovered = new rayde.history.LocalHistory(root);
-				if (recovered.recover(file, source) != bench.buffer(file).get()) throw "unsaved work did not survive a new history instance";
-				var restoredState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make(bench.buffer(file).get()));
+				if (recovered.recover(file, source) != bench.documentsPart.buffer(file).get()) throw "unsaved work did not survive a new history instance";
+				var restoredState = new ashui.components.code.CodeEditorState(ashui.reactive.Signal.make(bench.documentsPart.buffer(file).get()));
 				rayde.ui.DocumentHistory.restore(restoredState, recovered.undo(file, restoredState.value.get()));
 				if (restoredState.history.apply(restoredState.value.get(), true).text != source) throw "redo after restart did not restore the selected local revision";
 				recovered.dispose();
@@ -367,13 +367,13 @@ class Snapshots {
 				shot("missing-library");
 				click('#rayde-outline-tree [data-symbol-kind="method"] > .ui-tree-row');
 				until(() -> bench.caretLine(file) == 3, "full fixture Outline declaration navigation");
-				var original = bench.buffer(file).get();
-				bench.buffer(file).set("/* unterminated"); settle(1);
+				var original = bench.documentsPart.buffer(file).get();
+				bench.documentsPart.buffer(file).set("/* unterminated"); settle(1);
 				if (!has("main")) throw "Outline cleared while waiting for an edited buffer";
 				until(() -> has("Showing the last outline"), "last successful Outline during a syntax error");
 				if (!has("main")) throw "syntax error discarded the last Outline";
 				shot("syntax-error");
-				bench.buffer(file).set(StringTools.replace(original, "function main", "function edited"));
+				bench.documentsPart.buffer(file).set(StringTools.replace(original, "function main", "function edited"));
 				until(() -> has("edited") && !has("Showing the last outline"), "Outline recovery from an unsaved syntax error");
 				if (sys.io.File.getContent(file) != original) throw "Outline saved an unsaved buffer";
 				bench.openFile(root + "/lib/Util.hx");
@@ -392,7 +392,7 @@ class Snapshots {
 
 			scenario(dark, "find", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openFile(file); settle();
-				var ed = bench.editorFor(file), original = bench.buffer(file).get(), state = ed.state;
+				var ed = bench.editorFor(file), original = bench.documentsPart.buffer(file).get(), state = ed.state;
 				click(".ui-code-viewport"); press(Character("f"), false, Sys.systemName() != "Mac", false, Sys.systemName() == "Mac"); settle();
 				if (!state.search.opened.get()) throw "Find shortcut did not open the component search bar";
 				click(".ui-code-find-regex"); type(".ui-code-find-query", "item(12|34)"); click(".ui-code-find-query"); settle();
@@ -409,11 +409,11 @@ class Snapshots {
 				press(Named(Enter), true); settle(); if (ed.editing.anchor.get() != first) throw "Shift+Enter did not select the previous result";
 				bench.runCommand("replace"); settle(); type(".ui-code-find-replacement", "entry$1"); settle();
 				shot("replace-captures"); click(".ui-code-find-replace"); settle();
-				if (ed.search.result.get().matches.length != 3 || bench.buffer(file).get().indexOf("entry12") < 0) throw "Replace did not change just the selected captured match";
-				ed.undo(); settle(); if (bench.buffer(file).get() != original) throw "Replace did not undo";
+				if (ed.search.result.get().matches.length != 3 || bench.documentsPart.buffer(file).get().indexOf("entry12") < 0) throw "Replace did not change just the selected captured match";
+				ed.undo(); settle(); if (bench.documentsPart.buffer(file).get() != original) throw "Replace did not undo";
 				click(".ui-code-find-replace-all"); settle();
-				if (bench.buffer(file).get().indexOf("item12") >= 0 || bench.buffer(file).get().indexOf("entry34") < 0 || bench.dirty.get().indexOf(file) < 0) throw "Replace All did not use captured text or mark the buffer dirty";
-				shot("replaced"); ed.focus(); ed.undo(); settle(); if (bench.buffer(file).get() != original) throw "Replace All was not one undo step";
+				if (bench.documentsPart.buffer(file).get().indexOf("item12") >= 0 || bench.documentsPart.buffer(file).get().indexOf("entry34") < 0 || bench.dirty.get().indexOf(file) < 0) throw "Replace All did not use captured text or mark the buffer dirty";
+				shot("replaced"); ed.focus(); ed.undo(); settle(); if (bench.documentsPart.buffer(file).get() != original) throw "Replace All was not one undo step";
 				var other = haxe.io.Path.directory(file) + "/Other.hx";
 				bench.openFile(other); settle();
 				if (state.mounted || Css.query(bench.tree, bench.node.id, ".ui-code-find").length > 0) throw "inactive search retained mounted controls";
@@ -433,14 +433,14 @@ class Snapshots {
 				sys.io.File.copy("assets/rayde-welcome.png", png);
 				sys.io.File.saveContent(root + "/broken.png", "not an image");
 				sys.io.File.saveContent(root + "/broken.svg", "<svg><invalid");
-				bench.refreshExplorer(); settle();
+				bench.explorerPart.refreshExplorer(); settle();
 				function has(selector:String):Bool return Css.query(tree, bench.node.id, selector).length > 0;
 				function viewer():rayde.ui.ImagePreview {
 					for (component in (@:privateAccess ashui.ui.Component.hosts)) if (Std.isOfType(component, rayde.ui.ImagePreview)) return cast component;
 					return null;
 				}
 				click('[data-path$="Photo.PNG"] > .ui-tree-row'); settle();
-				if (!has("#rayde-image-canvas") || bench.editorFor(png) != null || (@:privateAccess bench.buffers.exists(png))) throw "raster image opened as a text document";
+				if (!has("#rayde-image-canvas") || bench.editorFor(png) != null || (@:privateAccess bench.documentsPart.buffers.exists(png))) throw "raster image opened as a text document";
 				shot("raster-fit");
 				var raster = @:privateAccess viewer().bitmap, view = viewer().viewport, initialZoom = view.zoom.get();
 				click("#rayde-image-in"); settle();
@@ -467,7 +467,7 @@ class Snapshots {
 					bench.openFile(root + "/" + name); settle();
 					until(() -> has("#rayde-image-canvas") || has("#rayde-image-error"), 'decode $name');
 					if (!has("#rayde-image-canvas") || (@:privateAccess viewer().bitmap) == null) throw 'missing raster preview for $name';
-					if (bench.editorFor(root + "/" + name) != null || (@:privateAccess bench.buffers.exists(root + "/" + name))) throw 'raster $name opened as text';
+					if (bench.editorFor(root + "/" + name) != null || (@:privateAccess bench.documentsPart.buffers.exists(root + "/" + name))) throw 'raster $name opened as text';
 					shot("raster-" + StringTools.replace(name, ".", "-"));
 				}
 				bench.active.set(file); settle(); bench.active.set(root + "/sample.avif"); bench.active.set(file); settle(20);
@@ -483,7 +483,7 @@ class Snapshots {
 				bench.openFile(svg); settle();
 				if (!has("#rayde-image-edit") || bench.editorFor(svg) != null) throw "SVG did not open as a preview";
 				shot("svg-preview");
-				var original = bench.buffer(svg).get(), owned = @:privateAccess rayde.ui.SvgDocuments.owned;
+				var original = bench.documentsPart.buffer(svg).get(), owned = @:privateAccess rayde.ui.SvgDocuments.owned;
 				if ([for (_ in owned) 1].length != 1) throw "SVG preview is not owned";
 				var shared = rayde.ui.SvgDocuments.acquire(original);
 				click("#rayde-image-edit"); settle();
@@ -492,7 +492,7 @@ class Snapshots {
 				if (owned.iterator().hasNext()) throw "SVG editor retained a preview document";
 				var from = original.indexOf("SVG preview");
 				bench.editorFor(svg).applyEdits([{from:from,to:from+11,text:"Edited vector"}]); settle();
-				var edited = bench.buffer(svg).get();
+				var edited = bench.documentsPart.buffer(svg).get();
 				if (edited == original || bench.dirty.get().indexOf(svg) < 0) throw "SVG edit was not tracked";
 				shot("svg-source");
 				click("#rayde-image-show-preview"); settle();
@@ -500,11 +500,11 @@ class Snapshots {
 				if (!Lambda.exists(owned, entry -> entry.document.markup.indexOf("Edited vector") >= 0)) throw "SVG preview used stale source";
 				shot("svg-unsaved-preview");
 				click("#rayde-image-edit"); settle(); bench.editorFor(svg).undo(); settle();
-				if (bench.buffer(svg).get() != original) throw "SVG mode switch lost undo history";
-				bench.buffer(svg).set("<svg><invalid"); click("#rayde-image-show-preview"); settle();
+				if (bench.documentsPart.buffer(svg).get() != original) throw "SVG mode switch lost undo history";
+				bench.documentsPart.buffer(svg).set("<svg><invalid"); click("#rayde-image-show-preview"); settle();
 				if (!has("#rayde-image-error") || !has("#rayde-image-edit")) throw "invalid SVG cannot return to source";
 				shot("invalid-svg");
-				click("#rayde-image-edit"); settle(); bench.buffer(svg).set(original); click("#rayde-image-show-preview"); settle();
+				click("#rayde-image-edit"); settle(); bench.documentsPart.buffer(svg).set(original); click("#rayde-image-show-preview"); settle();
 				if (!has("#rayde-image-canvas")) throw "SVG did not recover after correcting its source";
 				bench.openFile(root + "/broken.png"); settle(); if (!has("#rayde-image-error")) throw "invalid raster image crashed or opened as text";
 				shot("invalid-raster");
@@ -513,7 +513,7 @@ class Snapshots {
 			});
 
 			scenario(dark, "basic", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
-				if (bench.panelOpen())
+				if (bench.panelsPart.panelOpen())
 					throw "the bottom panel should start closed";
 				shot("empty");
 				// The guide lines of the Explorer's tree are hidden until the pointer is over it.
@@ -572,7 +572,7 @@ class Snapshots {
 					throw "Paste should put a copy of Main.hx in the folder under a free name";
 				// What is cut moves, and the tab of a moved file follows it.
 				sys.FileSystem.createDirectory(haxe.io.Path.join([folder, "sub"]));
-				bench.refreshExplorer();
+				bench.explorerPart.refreshExplorer();
 				settle();
 				bench.openFile(copyOf);
 				menuOn("src/Renamed copy.hx");
@@ -582,21 +582,21 @@ class Snapshots {
 				var cutTo = haxe.io.Path.join([folder, "sub", "Renamed copy.hx"]);
 				if (sys.FileSystem.exists(copyOf) || !sys.FileSystem.exists(cutTo) || bench.active.get() != cutTo)
 					throw "Cut and paste should move the file, and its tab with it";
-				bench.folderState(folder + "/sub").set(false);
-				bench.refreshExplorer();
+				bench.explorerPart.folderState(folder + "/sub").set(false);
+				bench.explorerPart.refreshExplorer();
 				settle();
 				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 0)
 					throw "a closed folder built its file rows before expansion";
-				bench.folderState(folder + "/sub").set(true);
+				bench.explorerPart.folderState(folder + "/sub").set(true);
 				settle();
 				var loaded = Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]');
-				if (loaded.length != 1 || bench.treeSelected.get() != cutTo)
+				if (loaded.length != 1 || bench.explorerPart.treeSelected.get() != cutTo)
 					throw "expanding a folder did not load and select its active file";
-				bench.folderState(folder + "/sub").set(false);
+				bench.explorerPart.folderState(folder + "/sub").set(false);
 				settle();
 				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 0)
 					throw "a closed folder kept its file rows mounted";
-				bench.folderState(folder + "/sub").set(true);
+				bench.explorerPart.folderState(folder + "/sub").set(true);
 				settle();
 				if (Css.query(bench.tree, bench.node.id, '[data-path="$cutTo"]').length != 1)
 					throw "reopening a folder did not show its files again";
@@ -612,9 +612,9 @@ class Snapshots {
 				bench.openFile(file);
 				bench.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), "Util.hx"]));
 				bench.active.set(file);
-				var buffer = bench.buffer(file), original = buffer.get();
+				var buffer = bench.documentsPart.buffer(file), original = buffer.get();
 				buffer.set(StringTools.replace(original, 'var greeting = "hello";', 'var greeting:Int = "hello";'));
-				bench.edited(file);
+				bench.documentsPart.edited(file);
 				until(() -> bench.problems.get().length == 2, "background diagnostics for the edited file");
 				if (bench.problems.get().length != 2)
 					throw 'the edited file should show two problems, not ${bench.problems.get().length}';
@@ -624,10 +624,10 @@ class Snapshots {
 					throw 'each problem should be underlined in the editor, not $wavy';
 				// Resting the pointer on a name shows what the compiler knows of it: its type, and its documentation.
 				var text = buffer.get(), at = text.indexOf("greet(greeting") + 2;
-				var hint = @:privateAccess bench.hintAt(file, at);
+				var hint = @:privateAccess bench.editorMarksPart.hintAt(file, at);
 				if (hint == null || hint.signature.indexOf("times:Int") < 0 || hint.docs == null || hint.docs.indexOf("Says hello") < 0)
 					throw 'the hint on greet should have its type and documentation: ${hint == null ? "none" : hint.signature + " / " + hint.docs}';
-				var diagnosticHint = @:privateAccess bench.hintAt(file, text.indexOf('"hello"') + 2);
+				var diagnosticHint = @:privateAccess bench.editorMarksPart.hintAt(file, text.indexOf('"hello"') + 2);
 				if (diagnosticHint == null || diagnosticHint.renderDocs == null || diagnosticHint.signature != null || diagnosticHint.className != "ui-code-hint-error")
 					throw "an underlined problem should show Markdown diagnostic documentation instead of compiler hover";
 				var spot = @:privateAccess bench.editorOf(file).rectAt(at);
@@ -640,7 +640,7 @@ class Snapshots {
 				shot("problems");
 				// Put the edit back; from the call on line 8, go to where it is defined.
 				buffer.set(original);
-				bench.check(file);
+				bench.languagesPart.check(file);
 				bench.goTo(file, 7, 4);
 				settle();
 				if (bench.caretLine(file) != 7)
@@ -658,11 +658,11 @@ class Snapshots {
 				ashui.input.Pointer.move(bench.tree, 5, 5, window.Modifiers.State(false, false, false, false, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown)); settle();
 				if(bench.caretLine(file) != 2) throw "Modifier-click compiler definition navigation did not reach the declaration";
 				// Run the program.
-				bench.run();
+				bench.runPart.run();
 				wait(bench);
 				settle();
-				if (bench.runner.state != "finished" || bench.runner.console.indexOf("hello") < 0)
-					throw 'the program did not run: ${bench.runner.state}: ${bench.runner.console}';
+				if (bench.runPart.runner.state != "finished" || bench.runPart.runner.console.indexOf("hello") < 0)
+					throw 'the program did not run: ${bench.runPart.runner.state}: ${bench.runPart.runner.console}';
 				shot("run");
 				bench.openCenter();
 				shot("command-center");
@@ -673,27 +673,27 @@ class Snapshots {
 				var folder = haxe.io.Path.directory(file);
 				bench.openFile(haxe.io.Path.join([folder, "Names.hx"]));
 				shot("tab-last");
-				bench.showEditorMenu(true);
+				bench.menusPart.showEditorMenu(true);
 				shot("editor-menu");
-				bench.showEditorMenu(false);
+				bench.menusPart.showEditorMenu(false);
 				bench.active.set(haxe.io.Path.join([folder, "Util.hx"]));
 				shot("tab-middle");
 				// Choosing a folder in the Explorer leaves the open files and the one in front alone, and the selection on that file.
 				var front = bench.active.get();
-				bench.treeSelected.set(folder);
+				bench.explorerPart.treeSelected.set(folder);
 				settle();
-				if (front == "" || bench.open.get().length != 3 || bench.active.get() != front || bench.treeSelected.get() != front)
-					throw 'choosing a folder changed what is open or selected: ${bench.open.get().length} files, in front "${bench.active.get()}", selected "${bench.treeSelected.get()}"';
+				if (front == "" || bench.open.get().length != 3 || bench.active.get() != front || bench.explorerPart.treeSelected.get() != front)
+					throw 'choosing a folder changed what is open or selected: ${bench.open.get().length} files, in front "${bench.active.get()}", selected "${bench.explorerPart.treeSelected.get()}"';
 				// With the folder above the file closed, the selection rests on the folder; opened again, it goes back to the file.
-				bench.folderState(folder).set(false);
+				bench.explorerPart.folderState(folder).set(false);
 				settle();
-				if (bench.treeSelected.get() != folder || bench.active.get() != front)
-					throw 'a closed folder should carry the selection: selected "${bench.treeSelected.get()}"';
+				if (bench.explorerPart.treeSelected.get() != folder || bench.active.get() != front)
+					throw 'a closed folder should carry the selection: selected "${bench.explorerPart.treeSelected.get()}"';
 				shot("folder-closed");
-				bench.folderState(folder).set(true);
+				bench.explorerPart.folderState(folder).set(true);
 				settle();
-				if (bench.treeSelected.get() != front)
-					throw 'the selection should return to the file: "${bench.treeSelected.get()}"';
+				if (bench.explorerPart.treeSelected.get() != front)
+					throw 'the selection should return to the file: "${bench.explorerPart.treeSelected.get()}"';
 				// Twelve more files, which do not fit the strip: it scrolls to keep the one in front in view.
 				for (n in 1...13) {
 					var more = haxe.io.Path.join([folder, 'Module$n.hx']);
@@ -706,38 +706,38 @@ class Snapshots {
 				bench.openBuild();
 				shot("build-tab");
 				// A terminal in the panel, running a script that prints in colour and then waits.
-				bench.terminalProgram = "/bin/sh";
-				bench.terminalArgs = [
+				bench.terminalPart.terminalProgram = "/bin/sh";
+				bench.terminalPart.terminalArgs = [
 					"-c",
 					"printf '\\033[32mrayde\\033[0m on \\033[35mmain\\033[0m \\033[2m10:42\\033[0m\\n'; printf '\\033[1mls\\033[0m\\n'; printf '\\033[34msrc\\033[0m  \\033[34mbin\\033[0m  \\033[36mbuild.hxml\\033[0m  README.md\\n'; "
 					+ "printf '\\033[31merror\\033[0m: \\033[4munderlined\\033[0m \\033[7minverse\\033[0m  box ┌─┬─┐ ╔═╦═╗ ┃ ▀▄█ ░▒▓ ▖▟ ✓\\n'; printf '\\033[38;5;208morange\\033[0m \\033[38;2;120;200;255mtruecolor\\033[0m \\033[1;33mbold yellow\\033[0m\\n'; printf '$ '; sleep 60"
 				];
 				bench.showPanel("terminal");
 				var waiting = haxe.Timer.stamp() + 8;
-				while ((bench.terminal() == null || bench.terminal().line(4).indexOf("orange") < 0) && haxe.Timer.stamp() < waiting) {
+				while ((bench.terminalPart.terminal() == null || bench.terminalPart.terminal().line(4).indexOf("orange") < 0) && haxe.Timer.stamp() < waiting) {
 					Sys.sleep(.03);
 					settle(1);
 				}
-				if (bench.terminal() == null || bench.terminal().line(0).indexOf("rayde on main") < 0)
-					throw 'the terminal did not show what the program printed: "${bench.terminal() == null ? "no terminal" : bench.terminal().line(0)}"';
+				if (bench.terminalPart.terminal() == null || bench.terminalPart.terminal().line(0).indexOf("rayde on main") < 0)
+					throw 'the terminal did not show what the program printed: "${bench.terminalPart.terminal() == null ? "no terminal" : bench.terminalPart.terminal().line(0)}"';
 				settle(12);
 				shot("terminal");
 				// With the keyboard in it, and something typed: the cursor is a block behind the text, after it.
-				bench.focusTerminal();
-				bench.terminal().write("echo typed");
+				bench.terminalPart.focusTerminal();
+				bench.terminalPart.terminal().write("echo typed");
 				var typing = haxe.Timer.stamp() + 4;
-				while (bench.terminal().line(5).indexOf("typed") < 0 && haxe.Timer.stamp() < typing) {
+				while (bench.terminalPart.terminal().line(5).indexOf("typed") < 0 && haxe.Timer.stamp() < typing) {
 					Sys.sleep(.03);
 					settle(1);
 				}
 				settle(4);
 				shot("terminal-typing");
 				// A second terminal beside the first, which keeps running; the list of terminals, and the menu of profiles.
-				var first = bench.terminal();
-				bench.newTerminal();
-				var second = bench.terminal();
-				if (bench.terminalCount() != 2 || second == null || first == null || second.handle == first.handle || first.exitCode() != -1)
-					throw 'a new terminal should start beside the first: ${bench.terminalCount()} running';
+				var first = bench.terminalPart.terminal();
+				bench.terminalPart.newTerminal();
+				var second = bench.terminalPart.terminal();
+				if (bench.terminalPart.terminalCount() != 2 || second == null || first == null || second.handle == first.handle || first.exitCode() != -1)
+					throw 'a new terminal should start beside the first: ${bench.terminalPart.terminalCount()} running';
 				var until = haxe.Timer.stamp() + 6;
 				while (second.line(4).indexOf("orange") < 0 && haxe.Timer.stamp() < until) {
 					Sys.sleep(.03);
@@ -745,15 +745,15 @@ class Snapshots {
 				}
 				settle(8);
 				shot("terminals");
-				bench.showTerminalMenu(true);
+				bench.terminalPart.showTerminalMenu(true);
 				shot("terminal-profiles");
-				bench.showTerminalMenu(false);
+				bench.terminalPart.showTerminalMenu(false);
 				// Split the screen of the second terminal, which sits beside it; the list shows both under one.
-				var before = bench.terminalCount();
-				bench.splitTerminal();
-				if (bench.terminalCount() != before + 1)
+				var before = bench.terminalPart.terminalCount();
+				bench.terminalPart.splitTerminal();
+				if (bench.terminalPart.terminalCount() != before + 1)
 					throw "splitting should start another terminal";
-				var third = bench.terminal();
+				var third = bench.terminalPart.terminal();
 				until = haxe.Timer.stamp() + 6;
 				while (third.line(4).indexOf("orange") < 0 && haxe.Timer.stamp() < until) {
 					Sys.sleep(.03);
@@ -761,12 +761,12 @@ class Snapshots {
 				}
 				settle(10);
 				shot("terminal-split");
-				bench.killTerminal();
+				bench.terminalPart.killTerminal();
 				// The pickers of the menu, in the command center.
-				bench.splitWithProfile();
+				bench.terminalPart.splitWithProfile();
 				shot("terminal-split-profile");
 				bench.quickOpen.set(false);
-				bench.selectDefaultProfile();
+				bench.terminalPart.selectDefaultProfile();
 				shot("terminal-default-profile");
 				bench.quickOpen.set(false);
 				// A task of the project's own, from .rayde/tasks.json, run in a terminal of its own that keeps its output after it ends.
@@ -776,7 +776,7 @@ class Snapshots {
 				var tasks = rayde.run.Tasks.list(bench.display());
 				if (!Lambda.exists(tasks, t -> t.label == "Say hello") || !Lambda.exists(tasks, t -> t.label == "Build build.hxml") || !Lambda.exists(tasks, t -> StringTools.startsWith(t.label, "Run build.hxml")))
 					throw 'the project should offer its own tasks and the hxml ones: ${[for (t in tasks) t.label]}';
-				bench.runTaskPicker();
+				bench.runPart.runTaskPicker();
 				shot("tasks");
 				bench.quickOpen.set(false);
 				bench.openCenter("task ");
@@ -790,11 +790,11 @@ class Snapshots {
 					throw "the center asked for while it was closing should open once it has closed";
 				bench.quickOpen.set(false);
 				settle(40);
-				var before = bench.terminalCount();
-				bench.runTask(Lambda.find(tasks, t -> t.label == "Say hello"));
-				if (bench.terminalCount() != before + 1)
+				var before = bench.terminalPart.terminalCount();
+				bench.runPart.runTask(Lambda.find(tasks, t -> t.label == "Say hello"));
+				if (bench.terminalPart.terminalCount() != before + 1)
 					throw "a task should run in a terminal of its own";
-				var ran = bench.terminal();
+				var ran = bench.terminalPart.terminal();
 				until = haxe.Timer.stamp() + 6;
 				while ((ran.line(0).indexOf("hello from a task") < 0 || ran.exitCode() == -1) && haxe.Timer.stamp() < until) {
 					Sys.sleep(.03);
@@ -804,29 +804,29 @@ class Snapshots {
 					throw 'the task did not run: "${ran.line(0)}", exit ${ran.exitCode()}';
 				settle(10);
 				shot("terminal-task");
-				bench.killTerminal();
+				bench.terminalPart.killTerminal();
 				// The file the menu's Configure Tasks opens, as JSON.
-				bench.configureTasks();
+				bench.runPart.configureTasks();
 				shot("tasks-file");
 				// The terminal's settings page, and a profile made the default is kept in the project.
-				bench.openTerminalSettings();
-				bench.setDefaultProfile("bash");
+				bench.terminalPart.openTerminalSettings();
+				bench.terminalPart.setDefaultProfile("bash");
 				shot("terminal-settings");
 				if (sys.io.File.getContent(haxe.io.Path.join([haxe.io.Path.directory(haxe.io.Path.directory(file)), ".rayde", "settings.json"])).indexOf('"bash"') < 0)
 					throw "the default profile was not kept";
 				// Choosing the first brings it to the front, still running with what it printed; killing the one in front leaves the other.
-				bench.selectTerminal(bench.terminalIds()[0]);
-				if (bench.terminal() == null || bench.terminal().handle != first.handle)
+				bench.terminalPart.selectTerminal(bench.terminalPart.terminalIds()[0]);
+				if (bench.terminalPart.terminal() == null || bench.terminalPart.terminal().handle != first.handle)
 					throw "choosing a terminal in the list should bring it to the front";
 				settle(8);
 				shot("terminals-first");
-				bench.killTerminal();
-				if (bench.terminalCount() != 1 || bench.terminal() == null || bench.terminal().handle != second.handle)
-					throw 'killing a terminal should leave the other in front: ${bench.terminalCount()} running';
-				bench.closeTerminals();
-				if (bench.terminalCount() != 0)
+				bench.terminalPart.killTerminal();
+				if (bench.terminalPart.terminalCount() != 1 || bench.terminalPart.terminal() == null || bench.terminalPart.terminal().handle != second.handle)
+					throw 'killing a terminal should leave the other in front: ${bench.terminalPart.terminalCount()} running';
+				bench.terminalPart.closeTerminals();
+				if (bench.terminalPart.terminalCount() != 0)
 					throw "every terminal should be ended";
-				bench.closePanel();
+				bench.panelsPart.closePanel();
 				// The other sections of the Settings page, reached from its list, and the extensions folder empty.
 				click("#rayde-activity-settings");
 				if (bench.settingsSection() != "terminal" || bench.active.get() != Workbench.SETTINGS)
@@ -844,7 +844,7 @@ class Snapshots {
 				bench.closeAll();
 				for (i in 0...40)
 					sys.io.File.saveContent(folder + '/NumberGaugeSizing${StringTools.lpad(Std.string(i), "0", 2)}.hx', "");
-				bench.refreshExplorer();
+				bench.explorerPart.refreshExplorer();
 				settle();
 				function explorerViewport() {
 					var panel = bench.boundsOf("#rayde-files"), viewport = bench.boundsOf("#rayde-explorer-scroll");
@@ -984,7 +984,7 @@ class Snapshots {
 					throw "choosing a keymap did not write it";
 				shot("settings-keymap-intellij");
 				// The command center offers the same choice, and a keymap chosen there is shown on the page.
-				bench.selectKeymap();
+				bench.keymapPart.selectKeymap();
 				shot("keymap-picker");
 				bench.quickOpen.set(false);
 				click("#rayde-keys-filter");
@@ -994,7 +994,7 @@ class Snapshots {
 				press(Character("p"), false, !mac, false, mac);
 				if (bench.quickOpen.get())
 					throw "a key of the keymap left behind still did its command";
-				bench.useKeymap("sublime");
+				bench.keymapPart.useKeymap("sublime");
 				click("#rayde-keys-filter");
 				shot("settings-keymap-sublime");
 				if (Store.section(root, "keymap").preset != "sublime")
@@ -1056,18 +1056,18 @@ class Snapshots {
 			});
 			scenario(dark, "broken", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openFile(file);
-				bench.run();
+				bench.runPart.run();
 				wait(bench);
 				settle();
-				if (bench.runner.state != "failed" || bench.runner.problems.length != 1)
-					throw 'the build should have failed with one problem: ${bench.runner.state}, ${bench.runner.problems.length}';
+				if (bench.runPart.runner.state != "failed" || bench.runPart.runner.problems.length != 1)
+					throw 'the build should have failed with one problem: ${bench.runPart.runner.state}, ${bench.runPart.runner.problems.length}';
 				shot("build-failed");
 			});
 		}
 		for (dark in [true, false])
 			scenario(dark, "extension", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
-				var studio = bench.studioFor(rays);
+				var studio = bench.extensionsPart.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
 				var says = (text:String) -> studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text == text);
@@ -1106,16 +1106,16 @@ class Snapshots {
 				shot("extension-config-edited");
 				bench.openFile(rays);
 				// A mistake as it is typed: the view stays as it was, the error lands in Problems, and the line opens from the Console.
-				var buffer = bench.buffer(rays), good = buffer.get();
+				var buffer = bench.documentsPart.buffer(rays), good = buffer.get();
 				buffer.set(StringTools.replace(good, "var count = signal(0);", "var = signal(0);"));
-				bench.edited(rays);
+				bench.documentsPart.edited(rays);
 				until(() -> bench.problems.get().length > 0, "the typed mistake to be found");
 				if (!says("ext/main.rays"))
 					throw "the last view that ran should stay while the source has a mistake";
 				bench.showPanel("problems");
 				shot("extension-error");
 				buffer.set(good);
-				bench.edited(rays);
+				bench.documentsPart.edited(rays);
 				until(() -> bench.problems.get().length == 0 && !studio.stale.get() && says("ext/main.rays"), "the fixed extension to run again");
 				shot("extension-fixed");
 				var nextMain = haxe.io.Path.directory(rays) + "/other.rays";
@@ -1125,12 +1125,12 @@ class Snapshots {
 				type("#rayde-ext-main", "ext/other.rays");
 				press(Named(Enter));
 				until(() -> studio.file == nextMain && studio.connection.file == nextMain && studio.running(), "changing the main script to retarget the managed host");
-				if (bench.extensionManager.extensions.length != 1 || bench.studioFor(nextMain) != studio) throw "changing the main script should keep one managed connection and Studio";
+				if (bench.extensionsPart.extensionManager.extensions.length != 1 || bench.extensionsPart.studioFor(nextMain) != studio) throw "changing the main script should keep one managed connection and Studio";
 			});
 		for (dark in [true, false])
 			scenario(dark, "markdown", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
-				var studio = bench.studioFor(rays);
+				var studio = bench.extensionsPart.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), readme = root + "/docs/README.md", tree = bench.tree;
@@ -1175,10 +1175,10 @@ class Snapshots {
 				if (previews().length != 1 || studio.tabViews.length != 1)
 					throw "a file should have one preview";
 				// Saving the file brings the tab up to date, from the editor's text.
-				var text = bench.buffer(readme);
+				var text = bench.documentsPart.buffer(readme);
 				text.set("# Rewritten heading\n\nA line, with `code` and **weight**.\n");
-				bench.edited(readme);
-				bench.saveAll();
+				bench.documentsPart.edited(readme);
+				bench.runPart.saveAll();
 				until(() -> says("Rewritten") && !says("Markdown"), "the saved text to reach the tab");
 				shot("markdown-saved");
 				// Closing the tab tells the extension, which unmounts the view.
@@ -1228,7 +1228,7 @@ class Snapshots {
 		for (dark in [true, false])
 			scenario(dark, "views", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
-				var studio = bench.studioFor(rays);
+				var studio = bench.extensionsPart.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
@@ -1250,7 +1250,7 @@ class Snapshots {
 				until(() -> says("refresh 1") && Lambda.exists(studio.preview.outline(), o -> o.text == "2") && Lambda.exists(studio.preview.outline(), o -> o.text == "1"), "the action to be answered in the views");
 				shot("views-refreshed");
 				// The form lists each view with its own controls, and declares another. The right side bar and the panel are put away first, so the form has room.
-				@:privateAccess bench.closePanel();
+				@:privateAccess bench.panelsPart.closePanel();
 				@:privateAccess bench.secondaryWidth.set(0);
 				settle(10);
 				bench.openSettings("extension");
@@ -1352,10 +1352,10 @@ class Snapshots {
 			});
 		for (dark in [true, false])
 			scenario(dark, "git", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
-				var manager = bench.extensionManager, git = manager.find("git"), tree = bench.tree;
+				var manager = bench.extensionsPart.extensionManager, git = manager.find("git"), tree = bench.tree;
 				if (git == null) throw "Git fixture extension missing";
 				manager.setNativeApproved("git", "git2", true);
-				var studio = bench.studioFor(git.connection.file);
+				var studio = bench.extensionsPart.studioFor(git.connection.file);
 				function says(word:String):Bool
 					return studio != null && studio.preview != null && Lambda.exists(studio.preview.outline(), o -> o.text.indexOf(word) >= 0);
 				function within(id:String, word:String):Bool {
@@ -1449,7 +1449,7 @@ class Snapshots {
 				if (runtimeBounds.x < bench.boundsOf("#rayde-panel-toggle").x) throw "the runtime notice belongs at the right end of the status bar";
 				if (bench.boundsOf("#rayde-language") != null) throw "the status bar named a language with no file in front";
 				shot("status-branch");
-				@:privateAccess bench.setExtensionStatus(git.connection.file, "branch", {text:"main", icon:"branch", detail:"0\u2193 3\u2191", detailIcon:"refresh", tooltip:"main: 0 behind and 3 ahead of its upstream", view:"scm"});
+				@:privateAccess bench.extensionsPart.setExtensionStatus(git.connection.file, "branch", {text:"main", icon:"branch", detail:"0\u2193 3\u2191", detailIcon:"refresh", tooltip:"main: 0 behind and 3 ahead of its upstream", view:"scm"});
 				settle(10); shot("status-branch-sync");
 				click("#rayde-status-branch"); settle(10);
 				for (label in ["Merge conflicts", "Staged", "Changes", "Untracked", "renamed-file.txt", "main"])
@@ -1795,9 +1795,9 @@ class Snapshots {
 				if (Css.query(tree, bench.node.id, "#git-scm-error").length != 0) throw "Git error was embedded in the sidebar";
 				shot("error-toast");
 				click(".ui-toast .ui-button");
-				if ((@:privateAccess bench.outputChannel.get()) != "ext:git" || !bench.panelOpen()) throw "notification action did not open Git Output";
-				until(() -> (@:privateAccess bench.extensionOutputView.get()) != null && (@:privateAccess bench.extensionOutputView.get()).scroll.y.get() > 0, "notification Output to reveal its latest message");
-				var log = @:privateAccess bench.extensionOutputView.get();
+				if ((@:privateAccess bench.extensionsPart.outputChannel.get()) != "ext:git" || !bench.panelsPart.panelOpen()) throw "notification action did not open Git Output";
+				until(() -> (@:privateAccess bench.extensionsPart.extensionOutputView.get()) != null && (@:privateAccess bench.extensionsPart.extensionOutputView.get()).scroll.y.get() > 0, "notification Output to reveal its latest message");
+				var log = @:privateAccess bench.extensionsPart.extensionOutputView.get();
 				var failure = Lambda.find(log.document.lines, line -> line.text.indexOf("No remote configured") >= 0);
 				if (failure == null || failure.tokens[0].kind != "keyword") throw "Git error lost its severity in Output: " + haxe.Json.stringify({
 					lines: [for (line in log.document.lines) if (line.text.indexOf("No remote configured") >= 0) {text:line.text, tokens:line.tokens}],
@@ -1808,17 +1808,17 @@ class Snapshots {
 				log.select(failure.start, failure.start + failure.text.length);
 				git.log("Fetch completed.", "success");
 				git.log("Upstream changed.\r\nFetch again before pushing.", "warning");
-				@:privateAccess bench.refreshExtensionOutput();
+				@:privateAccess bench.extensionsPart.refreshExtensionOutput();
 				settle();
-				if ((@:privateAccess bench.extensionOutputView.get()) != log || log.editing.anchor.get() != failure.start) throw "appending Output replaced its view or selection";
+				if ((@:privateAccess bench.extensionsPart.extensionOutputView.get()) != log || log.editing.anchor.get() != failure.start) throw "appending Output replaced its view or selection";
 				for (expected in [{text:"Fetch completed.", kind:"string"}, {text:"Upstream changed.", kind:"number"}, {text:"Fetch again before pushing.", kind:"number"}]) {
 					var line = Lambda.find(log.document.lines, line -> line.text == expected.text);
 					if (line == null || line.tokens[0].kind != expected.kind) throw "multiline Output severity: " + expected.text + ": " + haxe.Json.stringify([for (line in log.document.lines.slice(-8)) {text:line.text, tokens:line.tokens}]);
 				}
-				@:privateAccess bench.revealExtensionOutput(); settle();
+				@:privateAccess bench.extensionsPart.revealExtensionOutput(); settle();
 				shot("output-severities");
 				git.log("\x1b[36mFormatted extension log\x1b[0m plain text", "info");
-				@:privateAccess bench.refreshExtensionOutput();
+				@:privateAccess bench.extensionsPart.refreshExtensionOutput();
 				until(() -> log.value.get().indexOf("Formatted extension log plain text") >= 0, "ANSI extension Output worker");
 				var formatted = Lambda.find(log.document.lines, line -> line.text == "Formatted extension log plain text");
 				if (formatted == null || formatted.tokens[0].style == null || formatted.tokens[0].style.color != "var(--rayde-ansi-6)"
@@ -1827,9 +1827,9 @@ class Snapshots {
 
 				// The bounded log can replace text with identical text of another severity.
 				for (_ in 0...1000) git.log("Repeated message", "error");
-				@:privateAccess bench.refreshExtensionOutput(); settle();
+				@:privateAccess bench.extensionsPart.refreshExtensionOutput(); settle();
 				for (_ in 0...1000) git.log("Repeated message", "warning");
-				@:privateAccess bench.refreshExtensionOutput(); settle();
+				@:privateAccess bench.extensionsPart.refreshExtensionOutput(); settle();
 				if (git.output.length != 1000 || git.outputKinds.length != 1000 || log.document.lines[0].tokens[0].kind != "number") throw "retained Output severities were stale after eviction";
 				var build = new ashui.components.code.CodeDocument("Main.hx:2: characters 1-4 : Unknown identifier\n  additional detail\nMain.hx:3: characters 1-4 : Warning : Deprecated\nBuilding…\nExited with 1.\nExited with 0.", new rayde.ui.OutputHighlighter());
 				var expected = ["keyword", "keyword", "number", "plain", "keyword", "string"];
@@ -1838,7 +1838,7 @@ class Snapshots {
 			});
 		for (dark in [true, false])
 			scenario(dark, "extensions", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
-				var manager = bench.extensionManager, markdown = manager.find("markdown"), dashboard = manager.find("dashboard");
+				var manager = bench.extensionsPart.extensionManager, markdown = manager.find("markdown"), dashboard = manager.find("dashboard");
 				if (markdown == null || dashboard == null) throw "both workspace extensions should be discovered";
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(file));
 				var has = (selector:String) -> Css.query(bench.tree, bench.node.id, selector).length > 0;
@@ -1866,13 +1866,13 @@ class Snapshots {
 				dashboard.connection.send({t: "shutdown"});
 				until(() -> dashboard.restarts.length == 1 && dashboard.connection.running(), "the exited extension to restart");
 				bench.showPanel("console");
-				bench.setPanelHeight(260);
-				@:privateAccess bench.outputChannel.set("ext:dashboard");
-				@:privateAccess bench.refreshExtensionOutput();
+				bench.panelsPart.setPanelHeight(260);
+				@:privateAccess bench.extensionsPart.outputChannel.set("ext:dashboard");
+				@:privateAccess bench.extensionsPart.refreshExtensionOutput();
 				if (dashboard.output.join("\n").indexOf("Restarting extension") < 0) throw "restart should be reported in the extension's Output channel";
 				shot("restart-output");
 				bench.openSettings("extensions");
-				bench.setPanelHeight(0);
+				bench.panelsPart.setPanelHeight(0);
 				settle(10);
 				click("#rayde-extension-setting-dashboard-dashboard-compact");
 				if (Reflect.field(Store.section(root, "extension.dashboard"), "dashboard.compact") != true) throw "a contributed setting should be saved in its extension's section";
@@ -1899,7 +1899,7 @@ class Snapshots {
 		for (dark in [true, false])
 			scenario(dark, "debug", (bench, rays, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle();
-				var studio = bench.studioFor(rays);
+				var studio = bench.extensionsPart.studioFor(rays);
 				if (studio == null)
 					throw "opening an extension project should start its extension";
 				var d = studio.debug, root = haxe.io.Path.directory(haxe.io.Path.directory(rays)), tree = bench.tree;
@@ -1911,7 +1911,7 @@ class Snapshots {
 				bench.openFile(rays);
 				bench.goTo(rays, 6, 0);
 				settle(5);
-				@:privateAccess bench.toggleBreakpoint();
+				@:privateAccess bench.debugPart.toggleBreakpoint();
 				if (d.linesOf(rays).join(",") != "7")
 					throw 'the breakpoint should be on line 7: ${d.linesOf(rays)}';
 				settle(5);
@@ -1951,7 +1951,7 @@ class Snapshots {
 				if (!has(".ui-code-line-current"))
 					throw "the line the extension is stopped on should be marked";
 				// The editor goes to the line and the panel shows the stop.
-				if (bench.active.get() != rays || bench.caretLine(rays) != 6 || bench.bottom.get() != "extension" || studio.panel.get() != "debug")
+				if (bench.active.get() != rays || bench.caretLine(rays) != 6 || bench.panelsPart.bottom.get() != "extension" || studio.panel.get() != "debug")
 					throw "a stop should show its line in the editor and open the Debug panel";
 				if (!has("#rayde-debug-continue") || has("#rayde-debug-pause"))
 					throw "while stopped the toolbar offers Continue, not Pause";
@@ -1990,7 +1990,7 @@ class Snapshots {
 				// A breakpoint comes off with the same command and is not kept.
 				bench.goTo(rays, 6, 0);
 				settle(5);
-				@:privateAccess bench.toggleBreakpoint();
+				@:privateAccess bench.debugPart.toggleBreakpoint();
 				if (d.linesOf(rays).length != 0 || sys.io.File.getContent(root + "/.rayde/settings.json").indexOf('"ext/main.rays"') >= 0)
 					throw "removing the breakpoint should remove it from the project's settings";
 				click("#rayde-tool-add");
@@ -2000,7 +2000,7 @@ class Snapshots {
 				// A breakpoint moves with the text: a line put in above it moves it down, in the editor and for the host.
 				bench.goTo(rays, 6, 0);
 				settle(5);
-				@:privateAccess bench.toggleBreakpoint();
+				@:privateAccess bench.debugPart.toggleBreakpoint();
 				settle(5);
 				var typing = @:privateAccess bench.editorOf(rays);
 				typing.select(0, 0);
@@ -2109,7 +2109,7 @@ class Snapshots {
 		for (dark in [true, false])
 			scenario(dark, "themestudio", (bench, theme, shot, settle, scroll, click, type, hover, press, until) -> {
 				settle(10);
-				var studio = bench.themeModel();
+				var studio = bench.themePart.themeModel();
 				if (studio == null)
 					throw "opening a .raytheme should start the Theme Studio";
 				var root = haxe.io.Path.directory(theme), read = () -> sys.io.File.getContent(theme);
@@ -2137,7 +2137,7 @@ class Snapshots {
 				until(() -> read().indexOf("#ff5533") > 0, "the colour to be written to the theme file");
 				if (primary() != 0xff5533 || read().indexOf('"extends": "restrained"') < 0 || read().indexOf('"fonts": [{"family"') < 0)
 					throw "the colour should be in use and the rest of the file left as written: " + read();
-				if (bench.buffer(theme).get() != read())
+				if (bench.documentsPart.buffer(theme).get() != read())
 					throw "the editor should hold what was written";
 				shot("palette-edited");
 				click("#rayde-token-reset-primary");
@@ -2206,9 +2206,9 @@ class Snapshots {
 				Sys.putEnv("RAYDE_THEMES", "");
 				// Typing in the editor: broken text keeps the last theme in force, and a mistake in the content is a problem on its line.
 				bench.openFile(theme);
-				var buffer = bench.buffer(theme), good = buffer.get();
+				var buffer = bench.documentsPart.buffer(theme), good = buffer.get();
 				buffer.set("{nope");
-				bench.edited(theme);
+				bench.documentsPart.edited(theme);
 				until(() -> studio.stale.get(), "the broken text to be seen");
 				if (primary() != base)
 					throw "the last readable theme should stay on the window";
@@ -2216,21 +2216,21 @@ class Snapshots {
 					throw "text that is not JSON is an error of the theme file";
 				shot("text-broken");
 				buffer.set(StringTools.replace(good, '"extends": "restrained"', '"extends": "gothic", "tint": 1'));
-				bench.edited(theme);
+				bench.documentsPart.edited(theme);
 				until(() -> !studio.stale.get() && studio.problems.get().length >= 2, "the mistakes in the content to be found");
 				if (!Lambda.exists(bench.problems.get(), p -> p.file == theme && p.message.indexOf("gothic") >= 0 && p.range.start.line == 6))
 					throw "a problem is on the line of the entry it names: " + bench.problems.get().map(p -> p.message + "@" + p.range.start.line).join("; ");
 				shot("problems-text");
-				bench.openThemeStudio();
+				bench.themePart.openThemeStudio();
 				settle(10);
 				shot("problems");
 				click("#rayde-theme-problems .rayde-entry");
 				if (bench.active.get() != theme)
 					throw "a problem opens the theme as text";
 				buffer.set(good);
-				bench.edited(theme);
+				bench.documentsPart.edited(theme);
 				until(() -> studio.problems.get().length == 0 || Lambda.foreach(studio.problems.get(), p -> p.message.indexOf("not-a-property") >= 0), "the fixed text to read again");
-				bench.openThemeStudio();
+				bench.themePart.openThemeStudio();
 				settle(20);
 				reveal("#rayde-theme-gallery");
 				shot("gallery");
@@ -2240,7 +2240,7 @@ class Snapshots {
 		for (dark in [true, false])
 			scenario(dark, "markdownpreview", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				var root = haxe.io.Path.directory(haxe.io.Path.directory(file)), readme = root + "/README.md";
-				var manager = bench.extensionManager, entry = manager.find("markdown"), tree = bench.tree;
+				var manager = bench.extensionsPart.extensionManager, entry = manager.find("markdown"), tree = bench.tree;
 				function row(path:String):String return '[data-path="$path"] > .ui-tree-row';
 				for (path in [readme, root + "/other.md", root + "/src/notes.MD"])
 					if (Css.query(tree, bench.node.id, row(path)).length != 1) throw 'Explorer skipped Markdown file $path';
@@ -2265,7 +2265,7 @@ class Snapshots {
 				if (Math.abs(openBounds.height - previewBounds.height) > 1) throw "Explorer menu icon added extra row height";
 				hover("#rayde-explorer-open-preview"); settle();
 				shot("context-preview-menu"); click("#rayde-explorer-open-preview");
-				var studio = bench.studioFor(entry.connection.file);
+				var studio = bench.extensionsPart.studioFor(entry.connection.file);
 				function ready():Bool return Css.query(tree, bench.node.id, ".rayde-markdown").length > 0;
 				until(() -> {
 					if (Lambda.exists(studio.console.get(), e -> e.kind == "error")) throw haxe.Json.stringify(studio.console.get());
@@ -2305,8 +2305,8 @@ class Snapshots {
 				var watchCount = watches();
 				var textCount = texts();
 				var previousDocument = @:privateAccess control.markdownDocument.get();
-				var source = bench.buffer(readme).get();
-				bench.buffer(readme).set(StringTools.replace(source, "Markdown, rendered", "Markdown, refreshed")); bench.edited(readme);
+				var source = bench.documentsPart.buffer(readme).get();
+				bench.documentsPart.buffer(readme).set(StringTools.replace(source, "Markdown, rendered", "Markdown, refreshed")); bench.documentsPart.edited(readme);
 				until(() -> (@:privateAccess control.markdownDocument.get()) != previousDocument, "an edit to replace the document"); settle();
 				if (watches() != watchCount) throw 'Markdown refresh retained text layout watches: $watchCount -> ${watches()}';
 				if (texts() != textCount) throw 'Markdown refresh retained text layout entries: $textCount -> ${texts()}';
@@ -2364,7 +2364,7 @@ class Snapshots {
 				scroll("#markdown-scroll", 1600); shot("gfm-images");
 				var tab = bench.active.get();
 				var originalSvgCount = [for (_ in (@:privateAccess rayde.ui.SvgDocuments.owned)) 1].length;
-				bench.buffer(readme).set(source + "\nAn update.\n"); bench.edited(readme);
+				bench.documentsPart.buffer(readme).set(source + "\nAn update.\n"); bench.documentsPart.edited(readme);
 				until(() -> Css.query(tree, bench.node.id, ".rayde-md-word").length > 0 && (@:privateAccess control.markdownDocument.get()) != null
 					&& haxe.Json.stringify(@:privateAccess control.markdownDocument.get()).indexOf("An update.") >= 0, "a document replacement"); settle();
 				if ([for (_ in (@:privateAccess rayde.ui.SvgDocuments.owned)) 1].length != originalSvgCount) throw "document refresh retained old vector images";
@@ -2376,13 +2376,13 @@ class Snapshots {
 				manager.command("markdown", "markdown.preview", {path:readme});
 				until(() -> bench.active.get() == tab, "reuse and focus an existing preview tab");
 				if (studio.tabViews.length != 1) throw "duplicate Markdown preview";
-				var buffer = bench.buffer(readme);
+				var buffer = bench.documentsPart.buffer(readme);
 				buffer.set("# Unsaved live preview\n\n$\\frac{1}{2}$\n\n```mermaid\nsequenceDiagram\n A->>B: Hello\n```\n");
-				bench.edited(readme);
+				bench.documentsPart.edited(readme);
 				until(() -> Css.query(tree, bench.node.id, '[data-md-heading="unsaved-live-preview"]').length > 0, "unsaved Markdown edits in the preview");
 				scroll("#markdown-scroll", 0); shot("live-sequence");
 				buffer.set("# Recoverable errors\n\n$\\invalidMathCommand{x}$\n\n```mermaid\nnot-a-diagram\n```\n\nStill readable\n");
-				bench.edited(readme);
+				bench.documentsPart.edited(readme);
 				until(() -> Css.query(tree, bench.node.id, ".rayde-md-error").length == 2, "malformed blocks to show errors without losing the document");
 				shot("invalid-blocks");
 				bench.closeAll();
@@ -2395,7 +2395,7 @@ class Snapshots {
 				if (!Lambda.exists(editor.document.lines[0].tokens, t -> t.kind == ashui.components.code.CodeHighlighter.CodeTokenKind.Keyword))
 					throw "ordinary Rust files did not receive TextMate highlighting";
 				shot("editor-textmate");
-				var syntax = @:privateAccess bench.nativeSyntax.get(root + "/example.rs");
+				var syntax = @:privateAccess bench.editorPart.nativeSyntax.get(root + "/example.rs");
 				bench.closeFile(root + "/example.rs"); settle();
 				if ((@:privateAccess syntax.handle) != -1) throw "closing a saved document retained its native lexical session";
 				bench.closeAll(); until(() -> studio.tabViews.length == 0, "old previews to close");
@@ -2531,7 +2531,7 @@ class Snapshots {
 				var line = document.lines[1], highlighted = document.highlighted;
 				var tokens = haxe.Json.stringify(line.tokens), brackets = document.matchingBrackets(source.indexOf("{") + 1);
 				bench.openFile(b); settle();
-				var state = @:privateAccess bench.documents.get(a);
+				var state = @:privateAccess bench.documentsPart.documents.get(a);
 				if (bench.editorFor(a) != null || state.mounted || state.document != document || state.caret != 7 || state.anchor != 1 || state.scrollY != y)
 					throw "inactive tabs must retain document/navigation data without an editor view";
 				if (document.lines[1] == line || haxe.Json.stringify(document.lines[1].tokens) != tokens || document.highlighted != highlighted
@@ -2553,20 +2553,20 @@ class Snapshots {
 				editor = bench.editorFor(a);
 				shot("restored");
 				editor.undo(); settle();
-				if (bench.buffer(a).get() != source) throw "undo must survive editor disposal";
+				if (bench.documentsPart.buffer(a).get() != source) throw "undo must survive editor disposal";
 				editor.redo(); settle();
-				if (bench.buffer(a).get() != source + "// edit\n") throw "redo must survive editor disposal";
+				if (bench.documentsPart.buffer(a).get() != source + "// edit\n") throw "redo must survive editor disposal";
 				bench.closeAll(); settle();
-				var buffers = @:privateAccess bench.buffers, documents = @:privateAccess bench.documents, refs = @:privateAccess bench.editorRefs;
+				var buffers = @:privateAccess bench.documentsPart.buffers, documents = @:privateAccess bench.documentsPart.documents, refs = @:privateAccess bench.editorPart.editorRefs;
 				if (!buffers.exists(a) || !documents.exists(a)) throw "closing must preserve unsaved document data";
 				if (buffers.exists(b) || documents.exists(b) || refs.exists(b)) throw "closing a saved file must release its caches";
 				if (state.mounted || bench.editorFor(a) != null) throw "closing all tabs must release every editor";
 				bench.openFile(a); settle();
 				bench.editorFor(a).undo(); settle();
-				if (bench.buffer(a).get() != source) throw "reopening unsaved text must retain undo";
+				if (bench.documentsPart.buffer(a).get() != source) throw "reopening unsaved text must retain undo";
 				bench.editorFor(a).redo(); settle();
 				bench.closeFile(a); settle();
-				bench.saveAll(); settle();
+				bench.runPart.saveAll(); settle();
 				if (sys.io.File.getContent(a) != source + "// edit\n" || buffers.exists(a) || documents.exists(a))
 					throw "saving closed unsaved text must write it and release the cache";
 				shot("closed-released");
@@ -2579,7 +2579,7 @@ class Snapshots {
 		// Every key an editor keymap gives a command reaches the command it names, with nothing but a freshly opened window to take the keys.
 		scenario(true, "keys", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 			settle();
-			var tree = bench.tree, bindings = @:privateAccess bench.bindings, mac = bindings.mac;
+			var tree = bench.tree, bindings = @:privateAccess bench.keymapPart.bindings, mac = bindings.mac;
 			if (ashui.input.Focus.of(tree) == null) throw "with nothing focused the workbench must keep the keyboard, or no shortcut is heard";
 			function keyOf(name:String):window.Key {
 				var named:Map<String, window.NamedKey> = ["enter" => Enter, "escape" => Escape, "tab" => Tab, "backspace" => Backspace, "delete" => Delete, "insert" => Insert,
@@ -2635,7 +2635,7 @@ class Snapshots {
 		for (dark in [true, false])
 			scenario(dark, "panels", (bench, file, shot, settle, scroll, click, type, hover, press, until) -> {
 				bench.openFile(file); settle();
-				@:privateAccess bench.diagnosticJobs.cancel(file);
+				@:privateAccess bench.languagesPart.diagnosticJobs.cancel(file);
 				bench.problems.set([for (i in 0...200) {file:file, severity:1, message:'Problem $i',
 					range:{start:{line:i % 8, character:0}, end:{line:i % 8, character:1}}}]);
 				bench.showPanel("problems"); settle();
@@ -2649,7 +2649,7 @@ class Snapshots {
 					throw "Virtual Problems could not reach the last diagnostic";
 				shot("problems-end");
 				var y = problemScroll.y.get();
-				bench.closePanel(); settle();
+				bench.panelsPart.closePanel(); settle();
 				if (Css.query(tree, root, ".rayde-problem").length != 0) throw "Hidden Problems retained rows";
 				bench.showPanel("problems"); settle();
 				problemScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-problems")[0], tree);
@@ -2660,24 +2660,24 @@ class Snapshots {
 				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
 				if (bench.caretLine(file) != 7) throw "Virtual diagnostic click lost its source location";
 
-				@:privateAccess bench.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n"));
+				@:privateAccess bench.runPart.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n"));
 				bench.showPanel("console"); settle();
-				var state = @:privateAccess bench.outputState("build");
+				var state = @:privateAccess bench.extensionsPart.outputState("build");
 				var outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
 				outputScroll.jumpTo(0, 280); settle();
 				var outputY = outputScroll.y.get();
 				shot("output");
-				bench.closePanel(); settle();
+				bench.panelsPart.closePanel(); settle();
 				if (state.mounted || Css.query(tree, root, "#rayde-console").length != 0) throw "Hidden Output retained its code view";
 				var cached = state.document;
-				for (i in 0...50) @:privateAccess bench.consoleText.set('Latest hidden output $i');
+				for (i in 0...50) @:privateAccess bench.runPart.consoleText.set('Latest hidden output $i');
 				settle();
 				if (state.document != cached || state.document.text.indexOf("Output line 1999") < 0) throw "Hidden Output processed intermediate updates";
 				bench.showPanel("console"); settle();
 				if (state.document.text != "Latest hidden output 49") throw "Reopened Output did not catch up";
-				@:privateAccess bench.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n")); settle();
+				@:privateAccess bench.runPart.consoleText.set([for (i in 0...2000) 'Output line $i'].join("\n")); settle();
 				outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
-				outputScroll.jumpTo(0, outputY); settle(); bench.closePanel(); settle(); bench.showPanel("console"); settle();
+				outputScroll.jumpTo(0, outputY); settle(); bench.panelsPart.closePanel(); settle(); bench.showPanel("console"); settle();
 				outputScroll = ashui.input.Scroll.at(Css.query(tree, root, "#rayde-console .ui-code-viewport")[0], tree);
 				if (Math.abs(outputScroll.y.get() - outputY) > 1) throw "Output lost its scroll position";
 				shot("output-restored");
@@ -2689,12 +2689,12 @@ class Snapshots {
 					"\x1b[97;44m highlighted background \x1b[0m normal text\n" +
 					"\x1b[1mbold\x1b[22m \x1b[3mitalic\x1b[23m \x1b[4munderline\x1b[24m \x1b[9mstrikethrough\x1b[29m\n" +
 					"Default text after reset";
-				@:privateAccess bench.runner.console = ansi;
-				@:privateAccess bench.runner.revision++;
-				bench.tick();
+				@:privateAccess bench.runPart.runner.console = ansi;
+				@:privateAccess bench.runPart.runner.revision++;
+				bench.runPart.tick();
 				until(() -> state.value.get().indexOf("Default text after reset") >= 0, "ANSI build Output worker");
 				if (state.value.get().indexOf("\x1b") >= 0 || state.document.text != state.value.get()) throw "Output retained raw escape bytes";
-				bench.setPanelHeight(340);
+				bench.panelsPart.setPanelHeight(340);
 				outputScroll.scrollTo(0, 0); settle();
 				var colored = false;
 				for (id in Css.query(tree, root, "#rayde-console .ui-code-token")) {
@@ -2703,7 +2703,7 @@ class Snapshots {
 				}
 				if (!colored) throw "ANSI Output colors did not reach visible text spans";
 				shot("output-ansi");
-				bench.closePanel(); settle(); bench.showPanel("console"); settle();
+				bench.panelsPart.closePanel(); settle(); bench.showPanel("console"); settle();
 				if (state.value.get().indexOf("\x1b") >= 0 || state.document.lines[1].tokens[0].style == null) throw "Reopening Output lost ANSI formatting";
 
 			});
@@ -2713,7 +2713,7 @@ class Snapshots {
 				settle();
 				bench.openFile(file);
 				settle(20);
-				var tree = bench.tree, text = () -> bench.buffer(file).get();
+				var tree = bench.tree, text = () -> bench.documentsPart.buffer(file).get();
 				var count = (selector:String) -> ashui.css.Css.query(tree, bench.node.id, selector).length;
 				var typed = (s:String) -> {
 					ashui.input.Keyboard.text(tree, s);
@@ -2779,11 +2779,11 @@ class Snapshots {
 	/** Ticks the workbench until its run ends, or a minute and a half passes. */
 	static function wait(bench:Workbench):Void {
 		var end = haxe.Timer.stamp() + 90;
-		while (bench.runner.active() && haxe.Timer.stamp() < end) {
-			bench.tick();
+		while (bench.runPart.runner.active() && haxe.Timer.stamp() < end) {
+			bench.runPart.tick();
 			Sys.sleep(.02);
 		}
-		bench.tick();
+		bench.runPart.tick();
 	}
 
 	/** A copy of the fixture project `name` under bin/fixtures, which a run may change. */
@@ -2924,7 +2924,7 @@ class Snapshots {
 			var home = root + "/snapshot-home";
 			sys.FileSystem.createDirectory(home);
 			Store.save(home, "extensions", {});
-			@:privateAccess bench.extensionManager.options.trustHome = home;
+			@:privateAccess bench.extensionsPart.extensionManager.options.trustHome = home;
 		}
 		function settle(?frames:Int):Void
 			for (_ in 0...(frames == null ? 20 : frames)) {

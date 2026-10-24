@@ -7,6 +7,22 @@ import rayde.settings.WorkspaceSession;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class WorkspaceSessionLifecycle {
 	public static function main():Void {
 		var root = Sys.getCwd() + "bin/session-lifecycle", entry = root + "/build.hxml";
@@ -28,15 +44,15 @@ class WorkspaceSessionLifecycle {
 			ashui.core.render.Offscreen.advance(1/60); Css.update(); tree.flush(); tree.computeLayout(bench.node, 1280, 800);
 		}
 		start(); for (file in files) bench.openFile(file); bench.active.set(files[1]); settle();
-		var recovered = bench.buffer(files[1]).get() + "// unsaved session edit\n";
-		bench.buffer(files[1]).set(recovered); bench.edited(files[1]); settle();
+		var recovered = bench.documentsPart.buffer(files[1]).get() + "// unsaved session edit\n";
+		bench.documentsPart.buffer(files[1]).set(recovered); bench.documentsPart.edited(files[1]); settle();
 		stop(); tree.dispose();
 		sys.FileSystem.deleteFile(files[2]);
 		start(); settle();
-		bench.languageServers.onChanged(); settle();
+		bench.languagesPart.languageServers.onChanged(); settle();
 		if (bench.open.get().join(",") != files.slice(0,2).join(",") || bench.active.get() != files[1]) throw "Tabs lost order or active selection, or restored a missing file";
-		if (bench.buffer(files[1]).get() != recovered || bench.dirty.get().indexOf(files[1]) < 0) throw "Tab restore lost unsaved local-history recovery";
-		if (bench.buffers.exists(files[0]) || Lambda.count(bench.documents) != 1) throw "Restore eagerly loaded inactive documents";
+		if (bench.documentsPart.buffer(files[1]).get() != recovered || bench.dirty.get().indexOf(files[1]) < 0) throw "Tab restore lost unsaved local-history recovery";
+		if (bench.documentsPart.buffers.exists(files[0]) || Lambda.count(bench.documentsPart.documents) != 1) throw "Restore eagerly loaded inactive documents";
 		bench.active.set(files[0]); settle();
 		if (bench.editorFor(files[0]) == null) throw "Restored inactive tab did not open its code editor";
 		ashui.core.render.Snapshot.capture("workspace-tabs-restored", tree, bench.node, 1280, 800);

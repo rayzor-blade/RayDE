@@ -9,6 +9,22 @@ import rayde.project.ProjectFile;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class ProjectStarterWorkbenchChecks {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
 	static function main():Void {
@@ -34,12 +50,12 @@ class ProjectStarterWorkbenchChecks {
 		}
 		function wait(done:Void->Bool):Void {
 			var until = haxe.Timer.stamp() + 8;
-			while (!done() && haxe.Timer.stamp() < until) { bench.extensionManager.tick(); settle(2); Sys.sleep(.005); }
+			while (!done() && haxe.Timer.stamp() < until) { bench.extensionsPart.extensionManager.tick(); settle(2); Sys.sleep(.005); }
 			check(done(), "Welcome starter did not complete"); settle();
 		}
 		try {
-			settle(); check(bench.extensionManager.extensions.length == 0 && !compiler.running(), "Welcome discovered or started workspace services before New Project");
-			bench.newProject(); wait(() -> bench.projectStarters.list().length == 1);
+			settle(); check(bench.extensionsPart.extensionManager.extensions.length == 0 && !compiler.running(), "Welcome discovered or started workspace services before New Project");
+			bench.projectPart.newProject(); wait(() -> bench.projectPart.projectStarters.list().length == 1);
 			check(nodes(".rayde-project-template").length == rayde.project.ProjectTemplates.all.length + 1 && !compiler.running(), "Welcome gallery did not adopt the extension starter without starting the compiler");
 			ashui.input.Scroll.at(nodes("#rayde-project-catalog")[0], tree).scrollTo(0, 1e9); settle();
 			click("#" + rayde.ui.NewProject.templateId("ext:console-starter:console"));
@@ -51,8 +67,8 @@ class ProjectStarterWorkbenchChecks {
 			check(StringTools.endsWith(ashui.ui.Text.at(nodes("#rayde-project-destination")[0]).text(), "/extension-project"), "Destination preview did not follow the project name");
 			click("#rayde-project-create"); wait(() -> chosen != "");
 			check(chosen == root + "/extension-project/build.hxml" && ProjectFile.read(chosen).runtime == "ash", "Welcome did not create and open the extension starter with its chosen runner");
-			check(!bench.creatingProject.get() && nodes("#rayde-project-modal").length == 0, "Created starter retained the gallery");
-			bench.extensionManager.setDisabled("console-starter", true); settle(); check(bench.projectStarters.list().length == 0, "Disabled starter remained in the workbench registry");
+			check(!bench.projectPart.creatingProject.get() && nodes("#rayde-project-modal").length == 0, "Created starter retained the gallery");
+			bench.extensionsPart.extensionManager.setDisabled("console-starter", true); settle(); check(bench.projectPart.projectStarters.list().length == 0, "Disabled starter remained in the workbench registry");
 		} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); throw error; }
 		stop(); tree.dispose(); compiler.stop();
 		Sys.println("Welcome starters: deferred extension discovery, live RayScript registration, selection, worker creation, runner preference and disposal");

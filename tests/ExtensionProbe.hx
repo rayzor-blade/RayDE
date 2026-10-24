@@ -9,7 +9,7 @@ class ExtensionProbe {
 		var texture = renderer.createTexture(1280, 800);
 		var target = texture.createView(new gpu.GpuTextureViewDescriptor());
 		var last = haxe.Timer.stamp();
-		var git = bench.extensionManager.find("git"), studio = bench.studioFor(git.connection.file);
+		var git = bench.extensionsPart.extensionManager.find("git"), studio = bench.extensionsPart.studioFor(git.connection.file);
 		var stages:Array<Dynamic> = [];
 		function stage(name:String, work:Void->Void):Float {
 			var at = haxe.Timer.stamp(); work();
@@ -71,8 +71,8 @@ class ExtensionProbe {
 			ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree);
 		}
 		measure("baseline", () -> {}, () -> true);
-		var scm = @:privateAccess Lambda.find(bench.containers, c -> c.extension.id == "git" && c.location == "sidebar");
-		measure("sidebar-cold", () -> bench.chooseContainer(scm), () -> has("#git-scm-canvas") && text("#git-scm-selection").indexOf("Fixture") >= 0);
+		var scm = @:privateAccess Lambda.find(bench.extensionsPart.containers, c -> c.extension.id == "git" && c.location == "sidebar");
+		measure("sidebar-cold", () -> bench.shellPart.chooseContainer(scm), () -> has("#git-scm-canvas") && text("#git-scm-selection").indexOf("Fixture") >= 0);
 		measure("graph-cold", () -> click("#git-scm-expand"), () -> text("#git-history-count") == "100 commits");
 		var history = bench.active.get();
 		measure("graph-close", () -> bench.closeFile(history), () -> studio.tabViews.length == 0);
@@ -91,12 +91,12 @@ class ExtensionProbe {
 		var assets = haxe.io.Path.join([haxe.io.Path.directory(mdSource), "assets"]);
 		if (sys.FileSystem.exists(assets)) copy(assets, root + "/assets");
 		sys.io.File.copy("tests/fixtures/markdownpreview/sample.svg", root + "/sample.svg");
-		measure("markdown-cold", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
+		measure("markdown-cold", () -> { bench.extensionsPart.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
 		var markdown = bench.active.get();
 		measure("markdown-hide", () -> bench.active.set(history), () -> !has(".rayde-markdown"));
 		measure("markdown-reopen", () -> bench.active.set(markdown), () -> has(".rayde-markdown [data-md-ready=true]"));
 		measure("markdown-close", () -> bench.closeFile(markdown), () -> !has(".rayde-markdown"));
-		measure("markdown-remount", () -> { bench.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
+		measure("markdown-remount", () -> { bench.extensionsPart.extensionManager.command("markdown", "markdown.preview", {path:readme}); }, () -> has(".rayde-markdown [data-md-ready=true]"));
 		target.destroy(); texture.destroy();
 	}
 }

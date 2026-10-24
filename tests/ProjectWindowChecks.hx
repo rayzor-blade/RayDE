@@ -9,6 +9,22 @@ import rayde.settings.WindowSession;
 
 @:access(rayde.ui.ProjectWindows)
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class ProjectWindowChecks {
 	static var failure:Dynamic;
 	static var completed = false;
@@ -81,17 +97,17 @@ class ProjectWindowChecks {
 				case 0:
 					if (ProjectWindows.live.length != 2 || WindowedApp.windows().length != 2) { later(.05, poll); return; }
 					a = ProjectWindows.live[0].host; b = ProjectWindows.live[1].host;
-					if (Lambda.count(a.bench.documents) != 1 || Lambda.count(b.bench.documents) != 1) { later(.05, poll); return; }
+					if (Lambda.count(a.bench.documentsPart.documents) != 1 || Lambda.count(b.bench.documentsPart.documents) != 1) { later(.05, poll); return; }
 					check(a.bench.display().cwd != b.bench.display().cwd, "workspace roots are separate");
 					check(a.bench.open.get().join(",") == [codeA, codeOther].join(",") && a.bench.active.get() == codeOther, "startup restores ordered tabs and active file");
-					check(!a.bench.buffers.exists(codeA) && Lambda.count(a.bench.documents) == 1, "startup leaves inactive editors unloaded");
+					check(!a.bench.documentsPart.buffers.exists(codeA) && Lambda.count(a.bench.documentsPart.documents) == 1, "startup leaves inactive editors unloaded");
 					check(b.bench.open.get().join(",") == codeB && b.bench.active.get() == codeB, "second window restores its own tabs");
-					b.tree.context.run(() -> b.bench.openWorkspace(root + "/missing"));
+					b.tree.context.run(() -> b.bench.projectPart.openWorkspace(root + "/missing"));
 					check(!b.bench.gone && WindowedApp.windows().length == 2, "invalid project opening leaves existing windows intact");
 					a.tree.context.run(() -> {
 						a.bench.openFile(codeA);
-						a.bench.buffer(codeA).set("class First { var edited = true; }\n");
-						a.bench.edited(codeA);
+						a.bench.documentsPart.buffer(codeA).set("class First { var edited = true; }\n");
+						a.bench.documentsPart.edited(codeA);
 					});
 					phase = 1; later(.2, poll);
 				case 1:
@@ -116,7 +132,7 @@ class ProjectWindowChecks {
 					if (WindowedApp.windows().length != 2 || ProjectWindows.live.length != 2) { later(.05, poll); return; }
 					var welcome = WindowedApp.windows()[1];
 					check(ashui.css.Css.query(welcome.tree, ProjectWindows.live[1].host.node.id, "#welcome-open-folder").length == 1, "New Window stays on Welcome even with recent projects");
-					check(b.bench.buffer(codeB).get() == "class Second {}\n", "surviving editor remains intact");
+					check(b.bench.documentsPart.buffer(codeB).get() == "class Second {}\n", "surviving editor remains intact");
 					phase = 4; completed = true;
 					ProjectWindows.quit();
 				case _:

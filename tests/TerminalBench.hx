@@ -37,12 +37,12 @@ class TerminalBench {
 		for (_ in 0...5)
 			frame();
 		var colourful = "\\033[31mred \\033[1;32mgreen\\033[0m plain text with some more words to fill the line out \\033[38;5;208morange\\033[0m \\033[4munder\\033[0m \\033[7minv\\033[0m end";
-		bench.terminalProgram = "/bin/sh";
-		bench.terminalArgs = ["-c", 'while :; do printf "$colourful\\n"; done'];
+		bench.terminalPart.terminalProgram = "/bin/sh";
+		bench.terminalPart.terminalArgs = ["-c", 'while :; do printf "$colourful\\n"; done'];
 		bench.showPanel("terminal");
-		bench.setPanelHeight(560);
+		bench.panelsPart.setPanelHeight(560);
 		var wait = haxe.Timer.stamp() + 8;
-		while ((bench.terminal() == null || bench.terminal().line(10).indexOf("orange") < 0) && haxe.Timer.stamp() < wait) {
+		while ((bench.terminalPart.terminal() == null || bench.terminalPart.terminal().line(10).indexOf("orange") < 0) && haxe.Timer.stamp() < wait) {
 			Sys.sleep(.03);
 			frame();
 		}
@@ -61,12 +61,12 @@ class TerminalBench {
 				encode.push((c - b) * 1000);
 			}
 		}
-		var screen = bench.terminal().screen();
+		var screen = bench.terminalPart.terminal().screen();
 		Sys.println('terminal ${screen.cols} x ${screen.rows}, ${offscreen.primitives} primitives in the last frame');
 		report("poll, layout", update);
 		report("encode", encode);
 		report("total", [for (i in 0...update.length) update[i] + encode[i]]);
-		bench.killTerminal();
+		bench.terminalPart.killTerminal();
 		target.destroy();
 		texture.destroy();
 		tree.dispose();

@@ -7,6 +7,22 @@ import rayde.lang.Display;
 import rayde.ui.Workbench;
 
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.CodeActionsPart)
+@:access(rayde.ui.workbench.DebugPart)
+@:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.EditorMarksPart)
+@:access(rayde.ui.workbench.EditorPart)
+@:access(rayde.ui.workbench.ExplorerPart)
+@:access(rayde.ui.workbench.ExtensionsPart)
+@:access(rayde.ui.workbench.KeymapPart)
+@:access(rayde.ui.workbench.LanguagesPart)
+@:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.PanelsPart)
+@:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.ShellPart)
+@:access(rayde.ui.workbench.TerminalPart)
+@:access(rayde.ui.workbench.ThemePart)
 class ProjectWorkbenchChecks {
 	static function main():Void {
 		var root = Sys.getCwd() + "bin/project-ui-checks-" + Std.random(0x3fffffff);
@@ -23,15 +39,15 @@ class ProjectWorkbenchChecks {
 			try {
 				bench.openProject(); settle();
 				if (kind == "hxml") {
-					bench.newProject(); settle();
+					bench.projectPart.newProject(); settle();
 					if (bench.quickOpen.get() || bench.prompt.get() != null || Css.query(tree, bench.node.id, ".rayde-project-template").length != rayde.project.ProjectTemplates.all.length) throw "New Project did not open the dedicated template modal";
 					var panel = tree.getScrolledBounds(new ashui.layout.Node(Css.query(tree, bench.node.id, "#rayde-project-modal")[0]));
 					if (panel.width < 700 || panel.height < 500 || panel.y < 0 || panel.y + panel.height > 800) throw "Workbench project modal is not visible within the viewport";
 					ashui.core.render.Snapshot.capture("project-templates-workbench", tree, bench.node, 1280, 800);
-					bench.creatingProject.set(false); settle();
+					bench.projectPart.creatingProject.set(false); settle();
 					if (Css.query(tree, bench.node.id, "#rayde-project-modal").length != 0) throw "Workbench retained the closed project catalog";
 				}
-				if (bench.projectEntry() != entry || bench.classpaths().length == 0) throw "Workbench lost manifest identity or source folders";
+				if (bench.explorerPart.projectEntry() != entry || bench.explorerPart.classpaths().length == 0) throw "Workbench lost manifest identity or source folders";
 				if (Css.query(tree, bench.node.id, '[data-path="$entry"]').length != 1) throw "Project entry is missing or duplicated in the Explorer";
 				if (kind == "haxelib") {
 					if (bench.active.get() != "" || Css.query(tree, bench.node.id, "#welcome-run, #rayde-run").length != 0) throw "Library welcome page offers an application run";
@@ -41,7 +57,7 @@ class ProjectWorkbenchChecks {
 					if (bench.editorFor(bench.active.get()) == null) throw "New application cannot open Main.hx";
 				}
 				bench.openFile(entry); settle();
-				if (bench.editorFor(entry) == null || bench.buffer(entry).get() != sys.io.File.getContent(entry)) throw "Project descriptor cannot be edited as code";
+				if (bench.editorFor(entry) == null || bench.documentsPart.buffer(entry).get() != sys.io.File.getContent(entry)) throw "Project descriptor cannot be edited as code";
 			} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); throw error; }
 			stop(); tree.dispose(); compiler.stop();
 		}
