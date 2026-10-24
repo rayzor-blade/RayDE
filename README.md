@@ -36,11 +36,7 @@ Requirements: `haxe`, `ash` on `PATH` (or `ASH=<path>`), and a Rust toolchain fo
 
 | Chapter | Contents |
 | --- | --- |
-| [Editor and keys](docs/editor.md) | Command center, shortcuts, hover, debugging keys. |
-| [Syntax highlighting](docs/syntax.md) | Shared TextMate grammars, file detection and extension API. |
-| [Markdown preview](docs/markdown.md) | GFM, mathematical LaTeX, Mermaid, images and live preview. |
-| [Window](docs/window.md) | Title bar, controls, rounded corners. |
+| [User guides](docs/README.md#user-guides) | Projects, editing, Explorer, builds, previews, Git, Jam and settings. |
 | [Writing an extension](docs/extensions.md) | Config, commands, menus, hooks, tabs, Extension Studio, debugger. |
-| [Git](docs/git.md) | Interactive commit history, pinned libgit2 build and RayScript bindings. |
 | [Theme bundles](docs/themes.md) | File format, fonts, CSS, installing, Theme Studio. |
-| [Contributing](docs/contributing/README.md) | Building, checks and snapshots, packaging, issue tracking. |
+| [Contributing](docs/contributing/README.md) | Implementation, building, checks, benchmarks, packaging and issue tracking. |

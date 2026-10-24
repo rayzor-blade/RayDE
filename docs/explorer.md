@@ -1,25 +1,23 @@
-# Explorer views
+# Explorer
 
-Use **Open Folder** on Welcome to browse any workspace folder without a Haxe project file. A fresh editor starts with Explorer collapsed; expanding it offers Open Folder until a workspace is selected. **Open Project** selects a build file or manifest instead. Both choices are also in the command center, along with recent workspaces.
+Explorer lists every file type, including dotfiles, with folders first and Haxe files ahead of other files. Select a file to open it. Git-ignored entries are muted. Use the arrow keys to navigate; Right and Left expand or collapse folders.
 
-**New Project** opens a template grid on Welcome or from the File menu. Choose an application, game or library starter, enter a name and parent folder, then select **Create Project**. The dialog shows the template's requirements and first build command. Starters are generated locally; framework dependencies are installed separately with Haxelib. Each project includes a README with setup instructions. Existing directories are never overwritten.
+Drag the horizontal dividers to resize the file tree, Outline, Timeline and Dependencies. The three lower panes can collapse; reopening a pane restores its height.
 
-Ash and Ashui starters select Ash as their runner. HashLink starters use Ash automatically on Apple Silicon and `hl` on other platforms. **Settings > Run** can choose Automatic, Ash or HashLink for this workspace; the preference is stored as `run.runner` in `.rayde/settings.json`. Runner changes apply to the next run. Rayzor projects use Rayzor's own runner. Extensions can add [custom starters](extensions.md#project-starters) to the same gallery.
+## Outline
 
-The Tink Web Application starter includes a reactive Coconut browser UI and an optional Tink Web API for Node.js, with separate `build.hxml` and `server.hxml` targets. Its README covers installing the pinned Haxelib dependencies and running each part. The Ceramic starter opens as a folder workspace with `ceramic.yml`, app settings and a scene; use Ceramic's CLI to set up and build web or native targets.
+Outline shows symbols in the active file, including unsaved changes. Select a type, method or field to jump to its declaration. Available symbols depend on the file's language support.
 
-The file tree occupies the top pane. Drag the horizontal dividers to resize it and the Outline, Timeline and Dependencies panes. Outline, Timeline and Dependencies have collapsible headers; reopening restores their height. Their state survives switching between Explorer and another sidebar. Focus a divider and use the arrow keys to resize with the keyboard.
+## Timeline
 
-The tree mounts only the rows in view, with a few above and below, from a flat list of what is shown; scrolling, opening and closing folders change that list and leave the cost of the screen as it was. A closed folder holds nothing, and its entries are read again when it opens. A file that comes forward is scrolled into view when its folders are open, and the arrow keys, Home, End, Page Up and Page Down move through the rows with Right and Left opening and closing folders and stepping in and out, as in any tree.
+Timeline keeps local revisions, including changes never staged in Git. Select a revision to preview it; **Restore** replaces the editor buffer as an undoable change. Save separately to write it to disk.
 
-Files and folders that git ignores are muted in the tree, as is everything inside an ignored folder. The rules come from the repository's `.git/info/exclude` and the `.gitignore` of each folder above the entry, the last matching pattern deciding, with `!` negation, anchored and directory-only patterns, `*`, `?`, `[...]` and `**`; a file inside an ignored folder cannot be re-included. The `.git` folder is always muted. Whether a file is tracked, and global excludes, are not considered. Outside a repository nothing is muted. An edited `.gitignore` applies to rows built after the edit.
+Unsaved work can recover when you reopen the workspace. If the file changed externally, RayDE keeps that disk version and leaves earlier revisions available in Timeline. Local history belongs to this workspace.
 
-Outline follows the active Haxe buffer, including unsaved edits. Its symbols come from the compiler's module-symbols request and include types, fields, methods, parameters and local variables. Select a symbol to navigate to its declaration. Other file types show an empty-state message.
+With the [Git extension](git.md), Timeline also shows commits for the active file. **Load more history** fetches older entries.
 
-Timeline contains local history independently of source control. Selecting a local revision opens a read-only tab. Its Restore icon replaces the source's unsaved buffer as an undoable edit; saving remains a separate action. Local checkpoints preserve text patches and the bounded editor undo/redo stacks without retaining editor instances or render resources. They include edits that were never staged and intermediate states later abandoned after Undo.
+## Dependencies
 
-Checkpoints are written atomically under `.rayde/history` after at most 350 ms of continuous editing, and flushed on close and workbench shutdown. Reopening a file restores unsaved work when its on-disk text still matches the last saved baseline. An external disk change is left in place; earlier local revisions remain available in Timeline. Explorer renames carry the history to the new path. Each file retains up to 200 changes plus its oldest retained baseline, within an 8 MiB checkpoint limit. Older patches are compacted into that baseline. Files beyond the size limit cannot be checkpointed and report the failure in the status bar. History is local to this workspace and should not be committed.
+Dependencies contains external class paths and Haxelib libraries. Expand one to browse its sources, documentation and configuration. Selecting a file opens a tab; Markdown files also offer **Open Preview**.
 
-With the Git extension enabled and its native library approved, Timeline also shows commits for the active file on the current branch, follows renames along first-parent history, and reveals changed files when a commit is selected. It searches in bounded pages; **Load more history** continues from the cursor. Collapsing Timeline or switching sidebars closes the cursor and clears its rendered history. Local recovery remains available without Git.
-
-Dependencies lists external class paths and the libraries declared by the current build, with selected versions or `dev` labels. External class paths appear here instead of under the workspace tree. Expand a folder or library to browse its sources, documentation and configuration files with the same icons as Explorer. Folder rows load on first expansion; selecting a file opens it in an editor tab, where Markdown's Open Preview action is also available. The header icons refresh the list or open Libraries settings. Resolution runs in background jobs from the workspace directory, including its local haxelib repository.
+The header buttons refresh dependencies or open Libraries settings. To open or create a workspace, see [Projects](projects.md).

@@ -8,15 +8,15 @@ External class paths appear in Dependencies. Their Markdown files, relative link
 
 ![Markdown source opened from the project Explorer](images/markdown-explorer.png)
 
-Edits update an open preview after the editor's change debounce, including unsaved buffers. Opening the same preview again focuses its existing tab. The source and refresh actions have icon tooltips. Inactive preview tabs release decoded images, generated SVGs, code viewers and diagram canvases; their document structure, scroll position and disclosure state remain available for reopening. Closing a preview, including through a bulk close action, releases its document model too.
+Edits update an open preview, including unsaved buffers. Opening the same preview again focuses its existing tab. Source and refresh actions are available in its toolbar.
 
 ## Rendering
 
-The parser supports CommonMark with GFM tables, task lists, strikethrough, autolinks and footnotes. Nested emphasis, ordered and unordered lists, block quotes, fenced code and heading anchors are rendered with Ashui components. Local PNG, JPEG, WebP and SVG images resolve relative to the Markdown file. Relative document links open another preview; other file links open the editor. HTTP, HTTPS and mailto links open in the system handler after a click.
+The preview supports CommonMark with GFM tables, task lists, strikethrough, autolinks and footnotes. Local PNG, JPEG, WebP and SVG images resolve relative to the Markdown file. Relative document links open another preview; other file links open the editor. Web and mail links open in the system handler after a click.
 
 Task lists use read-only Ashui checkboxes. Checked and unchecked markers share the same 14 px square and spacing.
 
-Inline math uses `$...$`. Display math uses `$$...$$` or a fenced `math`/`latex` block. LaTeX-Rust typesets fractions, roots, integrals, sums, Greek and mathematical symbols, accents and supported matrix/alignment environments into SVG paths using its embedded STIX Two Math font. This is mathematical LaTeX, rather than a LaTeX document compiler.
+Inline math uses `$...$`. Display math uses `$$...$$` or a fenced `math`/`latex` block. Fractions, roots, integrals, sums, Greek symbols and supported matrix/alignment environments render as mathematical LaTeX.
 
 ![Inline and display mathematics in the dark preview](images/markdown-preview-math.png)
 
@@ -33,7 +33,7 @@ flowchart LR
 ```
 ````
 
-Mermaid fences use the pinned native Mermaid renderer's diagram families, including flowcharts, sequence, class, state, ER, pie, mindmap, journey, timeline, Gantt, requirement, Git, C4, Sankey, quadrant, ZenUML, block, packet, Kanban, architecture, radar, treemap and XY charts. Drag to pan and use the wheel to zoom around the pointer. Zoom in, zoom out and fit controls have tooltips. The SVG follows the CanvasKit viewport and remains sharp when scaled; the canvas occupies the visible diagram area.
+Mermaid fences render diagrams. Drag to pan and use the wheel to zoom around the pointer, or use the zoom and fit controls.
 
 ![Mermaid viewport with zoom and fit controls](images/markdown-preview-mermaid.png)
 
@@ -43,7 +43,11 @@ Malformed equations and diagrams show an error and their source within the docum
 
 ## HTML and images
 
-Embedded HTML is parsed with Scraper/html5ever and rendered with Ashui. Supported document elements include paragraphs, headings, block containers, inline emphasis, underline, mark, small/superscript/subscript text, links, images, lists, tables, code/pre and native details/summary disclosures. HTML entities and omitted closing tags follow HTML5 parsing. `align` and `style="text-align: ..."` control alignment; image `width`/`height` accept pixel values, and width also accepts percentages. Images preserve their aspect ratio when only one dimension is supplied and fit the available document width. Scripts, event attributes, forms, embedded pages and external stylesheets are omitted; this is a native document renderer with a limited presentation style set.
+Supported HTML includes paragraphs, headings, containers, inline formatting, links, images, lists, tables, code and details/summary disclosures.
+
+Use `align` or `style="text-align: ..."` for alignment. Images accept pixel `width` and `height`; width can also be a percentage. A single dimension preserves the aspect ratio, and images fit the document width.
+
+Scripts, event attributes, forms, embedded pages and external stylesheets are omitted.
 
 ```html
 <p align="center"><img src="assets/logo.svg" alt="Logo" width="250"/></p>
@@ -51,14 +55,12 @@ Embedded HTML is parsed with Scraper/html5ever and rendered with Ashui. Supporte
 <details><summary>More information</summary><p>Document content.</p></details>
 ```
 
-Images remain file references in the cached document. The visible view reads them through the workspace's capability and path checks; image bytes are not embedded in the extension VM's document JSON. Raster buffers are reduced for the requested display size, allowing 2× backing resolution with a 2048 px longest-side cap. The scroll container opts into Ashui's `virtualizeImages`: offscreen images release decoded pixels, keep dimensions and compressed source, and reload on reentry. The renderer reclaims unused atlas entries and reduces texture capacity as the resident set changes. Hiding the tab releases its image sources too. Ashui packs displayed images into a shared RGBA atlas; GPU block compression is currently available for mesh textures rather than this 2D atlas.
-
 ![HTML alignment, sized images and inline formatting](images/markdown-html.png)
 
 ![The contextual Open Preview action](images/markdown-preview-menu.png)
 
 ## Shared syntax highlighting
 
-Fenced code consumes [RayDE's syntax system](syntax.md). Language flags such as `rust`, `python`, `c++`, `bash` and `ts` resolve through the shared registry. Unknown flags remain readable plain text. Code blocks are read-only Ashui code viewers with selection, copying and scrolling.
+Fenced code consumes [RayDE's syntax system](syntax.md). Language flags such as `rust`, `python`, `c++`, `bash` and `ts` resolve through the shared registry. Unknown flags remain readable plain text. Code blocks support selection, copying and scrolling.
 
 The old `tests/fixtures/markdown` extension remains a small extension-authoring demonstration. The production implementation is `extensions/markdown`; `markdownpreview` snapshots install and exercise that implementation in an ordinary Haxe workspace.

@@ -1,52 +1,33 @@
-# Language servers
+# Language assistance
 
-RayScript extensions register language servers with RayDE's asynchronous LSP client. A process belongs to its workspace registration. Opening, hiding, switching or closing editor tabs does not restart it. Closing a document sends `textDocument/didClose`, allowing the server to release its analysis.
+Rayzor is enabled by default for Haxe files. It supplies completion, hover documentation, signature help, definitions, diagnostics and Outline. If Rayzor is disabled or cannot start, RayDE falls back to the Haxe compiler's display service. Build and Run use the project's chosen runtime separately.
 
-## Rayzor
+## Completion and documentation
 
-The built-in [Rayzor extension](../extensions/rayzor) is enabled by default and handles `.hx` files. It registers when the workspace opens and launches `rayzor lsp` over stdio when the first Haxe document opens. The process remains alive after its last document closes. Native replies wake the UI, so settled code tabs need no periodic LSP polling. Timers cover request and lifecycle deadlines; platforms without native wake support retain fallback polling. Startup, restart and shutdown finish even without code tabs. It contributes no sidebar view.
+Completion opens after `.` or the first character of a word, or with **Ctrl+Space**. Typing narrows the results. Arrow keys, Page Up/Down, Home and End move through them; Enter or Tab inserts the selection; Escape closes the list. Suggestions reflect unsaved text.
 
-**Settings > Extensions > Rayzor Language Server** configures the executable, build file, Rayzor standard library and macro time budget. The default command `rayzor` discovers `RAYZOR_LSP`, a packaged executable, PATH, then an existing sibling development build. An explicit command path overrides discovery. The server discovers the installed Haxe standard library by default; the `stdlib` setting overrides it through `RAYZOR_STD_PATH`. RayDE leaves discovery to the server when that setting is empty. **Rayzor: Restart Language Server** applies changed settings. **Rayzor: Language Server Status** reports the registration's state.
+Hover a name to see its type and documentation. Hover and diagnostic popovers render Markdown, including highlighted code blocks; long content scrolls within the popup.
 
-The right end of the bottom status bar names the language of the file in front (from its name: `Haxe`, `JSON`, `Plain Text` for an unknown extension) and, last, the project's runtime. Pages that are not files, such as Welcome or Settings, and image previews show no language; a local history revision shows its file's. Extensions' status items, such as the Git branch, sit at the left.
+![Completion list narrowed to charAt, with its documentation](images/editor-completion.png)
 
-The bottom status bar shows the registered server and its state, including stopped or failed sessions. During work, its logo spins and the label names the module or qualified class Rayzor is scanning or indexing, with counts when available. The tooltip shows the full status. Rayzor reports workspace scanning separately from document analysis, and remains busy until its editor index is ready, even when diagnostics arrive earlier. Older servers fall back to the active file's name while awaiting diagnostics. Click the status for **Start**, **Restart**, **Stop**, extension settings or Output. Stop suspends the process until explicitly started; opening or editing a file does not relaunch it. Start and Restart replay the current unsaved buffers. These controls keep the existing configuration; apply changed Rayzor settings with **Rayzor: Restart Language Server**.
+## Signature help and definitions
 
-Hover popovers render Markdown with syntax-highlighted fenced code, emphasis, inline code, lists and links. Explicit `plaintext` responses remain literal. Long documentation scrolls within the popover, whose rendered content is released when it closes.
+Typing `(` or `,` shows the call's signatures with the current argument emphasized. Escape closes the popup; **Cmd+Shift+Space** opens it explicitly.
 
-RayDE routes completion, hover, signature help, definitions, diagnostics and Outline to Rayzor by default. Build and Run continue to use the selected project runtime. Disabling Rayzor or reaching its restart limit restores the Haxe display fallback. Conflicting registrations for the same file extension are rejected.
+Use **F12**, Cmd-click on macOS or Ctrl-click elsewhere to go to a symbol's definition.
 
-## Extension API
+![Signature help with the second argument emphasized](images/editor-signature.png)
 
-The manifest requires `"capabilities": ["languages.register"]`. This grants process launch and document synchronization for the registered extensions, including unsaved buffers.
+## Server status
 
-```haxe
-import rayde.languages.registerServer;
-import rayde.languages.unregisterServer;
-import rayde.languages.servers;
+The bottom status bar shows the language server and its state. During scanning or indexing, Rayzor's logo spins and the label identifies the module or class. Hover for the full status.
 
-await registerServer({
-  id: 'rayzor', name: 'Rayzor', languages: ['haxe'], fileExtensions: ['.hx'],
-  diagnosticProgress: true,
-  transport: {kind: 'stdio', command: 'rayzor', args: ['lsp']},
-  initializationOptions: {hxml: 'build.hxml', macroBudgetMs: 5000}
-});
-```
+Click it for **Start**, **Restart**, **Stop**, extension settings or Output. A stopped server stays stopped until you start it. Start and Restart synchronize your current unsaved buffers.
 
-The first language id is sent in `didOpen`. Optional `lazy: true` defers process launch until the first matching document opens. `transport.env` optionally supplies string environment variables. `${workspaceFolder}` expands in the executable, arguments and environment values. The working directory is the workspace root. Arguments are passed directly, without a shell. Optional `settings` supplies the result of `workspace/configuration` queries. `diagnosticProgress: true` opts into active-document activity tracking for servers that publish diagnostics after every analysis, including an empty list. The status icon spins until diagnostics for the current document arrive; stale versioned results are ignored. Rayzor enables this by default.
+## Configure Rayzor
 
-RayDE also advertises LSP work-done progress and displays `$/progress` titles, messages and percentages. Rayzor's `experimental.rayzorIndexProgress` client capability enables background workspace reports; `rayzor/indexProgress` carries `scope: "workspace"`, a qualified module `subject`, `phase: "scanning"` and a `completed` file count, followed by `state: "ready"`. Document reports carry `uri`, `version`, `subject`, `phase`, `completed` and optional `total`. A server advertising `experimental.analysisStatusProvider` finishes document activity with `rayzor/analysisStatus` (`state: "ready"`), rather than diagnostics alone. Progress is cleared on shutdown and when the last code tab closes; it adds no welcome-page polling.
+**Settings > Extensions > Rayzor Language Server** sets the executable, build file, standard library and macro time budget. Leave the executable on automatic discovery to use the packaged server, PATH or a sibling development build; an explicit path overrides discovery. The standard library is discovered automatically unless overridden.
 
-`registerServer` returns the id before startup completes. Registering the same id again replaces that extension's session. `unregisterServer(id)` removes it; `servers()` returns that extension's registrations and states. Disabling, reloading or stopping an extension releases its servers. An event-fiber exception alone does not stop the registration.
+After changing settings, run **Rayzor: Restart Language Server**. **Rayzor: Language Server Status** reports the registration's state.
 
-## Protocol and recovery
-
-The client uses [LSP framing and lifecycle](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/), JSON-RPC ids and UTF-16 document positions. Independent requests may be in flight together; replies may arrive in any order. A single writer prevents interleaved frames. Launch, pipe I/O, stderr draining and process reaping run off the UI thread. Queues and frame sizes are bounded.
-
-Edits are coalesced before synchronization. Full and incremental servers are supported; incremental servers receive a full-document replacement range. Pending editor requests are cancelled when replaced, when their text changes or when their view is disposed. Stale request replies and versioned diagnostics are ignored. Servers publishing diagnostics without document versions cannot identify which revision an analysis belongs to. Request errors and timeouts are logged without dropping the server. Startup failure and unexpected exit trigger at most three starts per minute, with backoff and replay of open unsaved documents. The restart command resets the session after the limit.
-
-Server stderr and protocol logs go to the owning extension's Output channel. Unregistering requests `shutdown` and `exit`, with a bounded grace period; workspace disposal terminates owned processes asynchronously.
-
-Rayzor's current server has separate reader and writer threads and one analysis thread per session. It coalesces queued edits, analyzes changed files and then answers requests sequentially. It catches request/compiler unwinds and limits macro evaluation time. Client cancellation does not interrupt an analysis already executing in Rayzor; a slow compile delays replies while RayDE remains responsive. Native aborts, stack overflow and process termination require restart.
-
-The initial client does not expose server-driven workspace edits, formatting, rename, semantic tokens or inlay hints. Hover documentation requests plain text. Completion snippets are not advertised. Plain insertions, imports and text edits ending at the caret are supported; unsupported replacement forms are omitted.
+Extension authors can [register other language servers](extensions/languages.md).

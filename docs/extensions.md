@@ -42,6 +42,8 @@ An extension starts on one of its `activationEvents`:
 
 Views, commands and menu items from enabled extensions share the workbench. Views and command bindings are identified by their owning extension. A failed host is restarted at most three times in a minute; after the limit it stays stopped until disabled and enabled again. **Output** has a channel per extension for logs, errors and restart reports, alongside the Build channel.
 
+The status bar identifies extensions that are starting or preparing a command. An empty extension view shows loading feedback until its content arrives; stopped or failed views offer **Show Output**. View tools enable when their extension and content are ready.
+
 `contributes.keybindings` supplies defaults such as `[{"command": "preview", "key": "mod+alt+p"}]`. Saved user bindings override them. The full command key is `ext.<extension-id>.<command>`; a saved `ext.<command>` binding migrates when exactly one installed extension declares that command. Ambiguous old bindings are kept for manual reassignment.
 
 `contributes.configuration` accepts a schema with `properties`: boolean, string, number, integer and enum fields render under the extension's name in Settings. Values are stored in the `extension.<id>` section of the settings file, with workspace values overriding user values and schema defaults. A `describe` command returning structured state is the convention for extension inspection.
@@ -196,7 +198,7 @@ Native providers register with [CodeActions](../src/rayde/actions/CodeActions.hx
 
 ## Views
 
-Language extensions can instead register [workspace language servers](languages.md) through `rayde.languages`, without a view or sidebar contribution.
+Language extensions can instead register [workspace language servers](extensions/languages.md) through `rayde.languages`, without a view or sidebar contribution.
 
 A view is a part of the layout that shows an extension continuously, as opposed to a tab opened for a file. The Markdown preview declares none. Views are declared with `view` (one) or `views` (several):
 
