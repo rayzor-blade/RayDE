@@ -24,7 +24,7 @@ use tokio_tungstenite::{
     tungstenite::{Message, protocol::WebSocketConfig},
 };
 
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 const MAX_WIRE: usize = MAX_UPDATE * 4 / 3 + 4096;
 const MAX_PEERS: usize = 8;
 
@@ -33,6 +33,23 @@ const MAX_PEERS: usize = 8;
 pub struct PeerInfo {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Viewport {
+    pub top: String,
+    pub offset: f64,
+    pub x: f64,
+}
+impl Viewport {
+    fn valid(&self) -> bool {
+        self.top.len() <= 256
+            && self.offset.is_finite()
+            && (-16.0..1.0).contains(&self.offset)
+            && self.x.is_finite()
+            && (0.0..=1_000_000.0).contains(&self.x)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,11 +85,15 @@ pub enum Wire {
     Presence {
         caret: String,
         anchor: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        view: Option<Viewport>,
     },
     Cursor {
         peer: String,
         caret: String,
         anchor: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        view: Option<Viewport>,
     },
     Peers {
         list: Vec<PeerInfo>,
@@ -241,6 +262,15 @@ impl Session {
     fn push(&self, event: Value) {
         let size = event.to_string().len();
         let mut events = self.events.lock().unwrap();
+        if event["t"] == "cursor"
+            && let Some(index) = events
+                .list
+                .iter()
+                .position(|previous| previous["t"] == "cursor" && previous["peer"] == event["peer"])
+        {
+            let previous = events.list.remove(index).unwrap();
+            events.bytes -= previous.to_string().len();
+        }
         if events.bytes + size > MAX_SESSION || events.list.len() >= 128 {
             events.list.clear();
             events.bytes = 0;
@@ -284,8 +314,15 @@ impl Session {
             };
             let bytes = match &message {
                 Wire::Sync { update, .. } if update.len() <= MAX_WIRE - 4096 => update.len() + 128,
-                Wire::Presence { caret, anchor } if caret.len() <= 256 && anchor.len() <= 256 => {
-                    caret.len() + anchor.len() + 128
+                Wire::Presence {
+                    caret,
+                    anchor,
+                    view,
+                } if caret.len() <= 256
+                    && anchor.len() <= 256
+                    && view.as_ref().is_none_or(Viewport::valid) =>
+                {
+                    caret.len() + anchor.len() + view.as_ref().map_or(0, |v| v.top.len() + 64) + 128
                 }
                 _ => return false,
             };
@@ -545,7 +582,7 @@ impl Session {
 struct Peer {
     info: PeerInfo,
     tx: mpsc::Sender<Wire>,
-    cursor: Option<(String, String)>,
+    cursor: Option<Wire>,
 }
 struct Room {
     doc: Document,
@@ -589,20 +626,29 @@ impl Room {
                         .map_err(|_| "Jam participant is too slow")?;
                 }
             }
-            Wire::Presence { caret, anchor } if caret.len() <= 256 && anchor.len() <= 256 => {
+            Wire::Presence {
+                caret,
+                anchor,
+                view,
+            } if caret.len() <= 256
+                && anchor.len() <= 256
+                && view.as_ref().is_none_or(Viewport::valid) =>
+            {
                 self.doc.resolve(&caret)?;
                 self.doc.resolve(&anchor)?;
-                if let Some(p) = self.peers.get_mut(peer) {
-                    p.cursor = Some((caret.clone(), anchor.clone()));
+                if let Some(view) = &view {
+                    self.doc.resolve(&view.top)?;
                 }
-                self.broadcast(
-                    Wire::Cursor {
-                        peer: peer.into(),
-                        caret,
-                        anchor,
-                    },
-                    peer,
-                );
+                let message = Wire::Cursor {
+                    peer: peer.into(),
+                    caret,
+                    anchor,
+                    view,
+                };
+                if let Some(p) = self.peers.get_mut(peer) {
+                    p.cursor = Some(message.clone());
+                }
+                self.broadcast(message, peer);
             }
             _ => return Err("Unexpected Jam message".into()),
         }
@@ -677,13 +723,9 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
         };
         drop(saved);
         let _ = tx.try_send(welcome);
-        for (id, p) in &room.peers {
-            if let Some((caret, anchor)) = &p.cursor {
-                let _ = tx.try_send(Wire::Cursor {
-                    peer: id.clone(),
-                    caret: caret.clone(),
-                    anchor: anchor.clone(),
-                });
+        for p in room.peers.values() {
+            if let Some(cursor) = &p.cursor {
+                let _ = tx.try_send(cursor.clone());
             }
         }
         room.peers.insert(
@@ -779,7 +821,7 @@ mod tests {
         let guest = Session::start(
             Config {
                 host: false,
-                invite,
+                invite: invite.clone(),
                 name: "Guest".into(),
                 file: String::new(),
                 state: String::new(),
@@ -795,10 +837,29 @@ mod tests {
         b.apply(event["update"].as_str().unwrap()).unwrap();
         assert_eq!(a.text(), b.text());
         guest.send(
-            json!({"t":"presence","caret":b.position(11).unwrap(),"anchor":b.position(6).unwrap()}),
+            json!({"t":"presence","caret":b.position(11).unwrap(),"anchor":b.position(6).unwrap(),"view":{"top":b.position(6).unwrap(),"offset":0.25,"x":2.5}}),
         );
         let cursor = until(&host, &mut ha, |e| e["t"] == "cursor");
         assert_eq!(a.resolve(cursor["caret"].as_str().unwrap()).unwrap(), 11);
+        assert_eq!(
+            a.resolve(cursor["view"]["top"].as_str().unwrap()).unwrap(),
+            6
+        );
+        assert_eq!(cursor["view"]["offset"], 0.25);
+        let late = Session::start(
+            Config {
+                host: false,
+                invite,
+                name: "Late".into(),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        let mut events = vec![];
+        let replay = until(&late, &mut events, |e| e["t"] == "cursor");
+        assert_eq!(replay["view"], cursor["view"]);
+        late.close();
         guest.send(json!({"t":"pause","paused":true}));
         until(&guest, &mut hb, |e| e["t"] == "paused");
         b.edit(
@@ -853,7 +914,11 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(serve(listener, room.clone()));
-        for (version, token) in [(1, "0123456789abcdef"), (VERSION, "bad")] {
+        for (version, token) in [
+            (1, "0123456789abcdef"),
+            (2, "0123456789abcdef"),
+            (VERSION, "bad"),
+        ] {
             let (mut ws, _) = connect_async_with_config(
                 format!("ws://{addr}/jam/0123456789abcdef"),
                 Some(config()),
@@ -967,6 +1032,34 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn slow_presence_receiver_keeps_latest_position_and_all_edits() {
+        let (commands, _) = mpsc::channel(64);
+        let session = Session {
+            commands,
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
+            events: Mutex::new(Events {
+                list: VecDeque::new(),
+                bytes: 0,
+            }),
+            stopped: AtomicBool::new(false),
+            cancel: Notify::new(),
+            wake: None,
+        };
+        for index in 0..1000 {
+            session.push(json!({"t":"cursor","peer":"peer","caret":index,"anchor":index,"view":{"top":index,"offset":0.5,"x":1.0}}));
+            if index == 500 {
+                session.push(json!({"t":"update","peer":"peer","update":"keep this edit"}));
+            }
+        }
+        assert!(!session.stopped.load(Ordering::Acquire));
+        let events = session.poll();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["update"], "keep this edit");
+        assert_eq!(events[1]["view"]["top"], 999);
+        assert!(!session.pending());
+        assert_eq!(session.events.lock().unwrap().bytes, 0);
+    }
+    #[test]
     fn slow_sender_has_a_byte_budget_and_releases_it_on_cancel() {
         let (tx, rx) = mpsc::channel(64);
         let session = Session {
@@ -987,6 +1080,93 @@ mod tests {
         assert!(session.queued_bytes.load(Ordering::Relaxed) <= MAX_SESSION);
         drop(rx);
         assert_eq!(session.queued_bytes.load(Ordering::Relaxed), 0);
+    }
+    #[test]
+    fn viewport_presence_is_bounded_validated_and_not_persisted() {
+        let root =
+            std::env::temp_dir().join(format!("rayde-jam-{}", Document::new("").unwrap().id()));
+        let seed = Document::new("hello 🦀").unwrap();
+        let recovery = Recovery::open(
+            root.to_str().unwrap(),
+            "Main.hx",
+            false,
+            &seed.id(),
+            &seed.state(),
+        )
+        .unwrap();
+        let (fatal, _) = mpsc::channel(1);
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut room = Room {
+            doc: seed,
+            token: String::new(),
+            file: "Main.hx".into(),
+            peers: HashMap::new(),
+            bytes: 0,
+            recovery: Arc::new(Mutex::new(recovery)),
+            fatal,
+        };
+        room.peers.insert(
+            "other".into(),
+            Peer {
+                info: PeerInfo {
+                    id: "other".into(),
+                    name: "Other".into(),
+                },
+                tx,
+                cursor: None,
+            },
+        );
+        let top = room.doc.position(0).unwrap();
+        let state = std::fs::read(root.join("checkpoint.json")).unwrap();
+        for (offset, x) in [
+            (1.0, 0.0),
+            (-17.0, 0.0),
+            (0.0, -1.0),
+            (0.0, 1_000_001.0),
+            (f64::NAN, 0.0),
+            (0.0, f64::INFINITY),
+        ] {
+            assert!(
+                !Viewport {
+                    top: top.clone(),
+                    offset,
+                    x
+                }
+                .valid()
+            );
+        }
+        let message = |top: String| Wire::Presence {
+            caret: room.doc.position(6).unwrap(),
+            anchor: room.doc.position(0).unwrap(),
+            view: Some(Viewport {
+                top,
+                offset: 0.5,
+                x: 4.0,
+            }),
+        };
+        let wrong = message(Document::new("unrelated").unwrap().position(1).unwrap());
+        let valid = message(top);
+        assert!(room.process("sender", wrong).is_err());
+        assert!(rx.try_recv().is_err());
+        room.process("sender", valid).unwrap();
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            Wire::Cursor {
+                view: Some(Viewport {
+                    offset: 0.5,
+                    x: 4.0,
+                    ..
+                }),
+                ..
+            }
+        ));
+        assert_eq!(
+            std::fs::metadata(root.join("updates.log")).unwrap().len(),
+            0
+        );
+        assert_eq!(std::fs::read(root.join("checkpoint.json")).unwrap(), state);
+        drop(room);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn local_invites_and_strict_wire() {

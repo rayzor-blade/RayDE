@@ -97,8 +97,13 @@ fn run() -> Result<(), String> {
                     emit(json!({"t":"text","text":doc.text()}));
                 }
                 Some("cursor") => {
+                    let view = if message["view"].is_object() {
+                        json!({"top":doc.resolve(message["view"]["top"].as_str().ok_or("Missing viewport")?)?,"offset":message["view"]["offset"],"x":message["view"]["x"]})
+                    } else {
+                        Value::Null
+                    };
                     emit(
-                        json!({"t":"cursor","caret":doc.resolve(message["caret"].as_str().ok_or("Missing caret")?)?,"anchor":doc.resolve(message["anchor"].as_str().ok_or("Missing anchor")?)?}),
+                        json!({"t":"cursor","caret":doc.resolve(message["caret"].as_str().ok_or("Missing caret")?)?,"anchor":doc.resolve(message["anchor"].as_str().ok_or("Missing anchor")?)?,"view":view}),
                     );
                 }
                 Some("failed") => {
@@ -127,7 +132,12 @@ fn run() -> Result<(), String> {
                         emit(json!({"t":"edited","text":doc.text()}));
                     }
                     Some("presence") => {
-                        session.send(json!({"t":"presence","caret":doc.position(command["caret"].as_u64().unwrap_or(0) as u32)?,"anchor":doc.position(command["anchor"].as_u64().unwrap_or(0) as u32)?}));
+                        let view = if command["view"].is_object() {
+                            json!({"top":doc.position(command["view"]["top"].as_u64().unwrap_or(0) as u32)?,"offset":command["view"]["offset"],"x":command["view"]["x"]})
+                        } else {
+                            Value::Null
+                        };
+                        session.send(json!({"t":"presence","caret":doc.position(command["caret"].as_u64().unwrap_or(0) as u32)?,"anchor":doc.position(command["anchor"].as_u64().unwrap_or(0) as u32)?,"view":view}));
                     }
                     Some("pause") => {
                         session.send(json!({"t":"pause","paused":command["paused"]}));

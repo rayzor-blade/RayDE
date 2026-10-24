@@ -480,3 +480,29 @@
 .rayde-code-action { color: var(--warning); }
 .rayde-code-action-run { color: var(--success); }
 .rayde-code-editor { padding-left: 6px; }
+
+#rayde .rayde-jam-icon[data-idle] { color: var(--text-secondary); }
+#rayde-jam-panel { background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; }
+#rayde-jam-panel .rayde-jam-heading { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--border); }
+#rayde-jam-panel .rayde-jam-heading .ui-button { --ui-button-height: 24px; --ui-button-width: 24px; }
+#rayde-jam-panel .rayde-jam-scroll { flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 12px; gap: 12px; }
+#rayde-jam-panel .rayde-jam-section { flex-direction: column; gap: 10px; flex-shrink: 0; min-width: 0; }
+#rayde-jam-panel .rayde-jam-title { font-size: 13px; font-weight: 600; }
+#rayde-jam-panel .rayde-jam-muted { font-size: 11px; color: var(--text-secondary); white-space: normal; }
+#rayde-jam-panel .rayde-jam-file { font-size: 12px; white-space: normal; }
+#rayde-jam-panel .rayde-jam-actions { flex-direction: row; gap: 6px; flex-wrap: wrap; }
+#rayde-jam-panel .rayde-jam-actions .ui-button { flex: 1; min-width: 100px; }
+#rayde-jam-panel .rayde-jam-connection { flex-direction: row; gap: 6px; align-items: center; color: var(--error); font-size: 12px; }
+#rayde-jam-panel .rayde-jam-connection[data-connected] { color: var(--success); }
+#rayde-jam-panel .rayde-jam-document { justify-content: flex-start; min-width: 0; height: auto; min-height: 30px; padding: 6px; }
+#rayde-jam-panel .rayde-jam-document text { flex: 1; white-space: normal; text-align: left; font-size: 12px; }
+#rayde-jam-panel .rayde-jam-details { flex-direction: column; gap: 5px; padding: 10px; background: var(--accent-subtle); border-radius: var(--radius-md); font-size: 11px; color: var(--text-secondary); }
+#rayde-jam-panel .rayde-jam-error { font-size: 12px; color: var(--error); white-space: normal; }
+#rayde-jam-panel .rayde-jam-participants { border-top: 1px solid var(--border); padding-top: 12px; }
+#rayde-jam-panel .rayde-jam-person { flex-direction: row; align-items: center; gap: 6px; min-width: 0; }
+#rayde-jam-panel .rayde-jam-person > .ui-tooltip-trigger { flex: 1; min-width: 0; overflow: hidden; }
+#rayde-jam-panel .rayde-jam-person-name { flex: 1; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rayde .rayde-jam-status-label { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rayde .ui-code-peer-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+#rayde-jam-panel .rayde-jam-person > .ui-button { flex-shrink: 0; }

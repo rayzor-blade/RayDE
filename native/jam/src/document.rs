@@ -1,6 +1,7 @@
 //! UTF-16 editor transactions over Yrs update-v1 documents.
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use yrs::{
     Assoc, Doc, GetString, IndexedSequence, OffsetKind, Options, ReadTxn, StateVector, StickyIndex,
     Text, TextRef, Transact, UndoManager, Update,
@@ -25,6 +26,7 @@ pub struct Document {
     undo: UndoManager,
     history_bytes: usize,
     received_bytes: usize,
+    boundaries: RefCell<Option<(u32, Vec<u32>)>>,
 }
 
 pub fn decode(value: &str) -> Result<Vec<u8>, String> {
@@ -79,6 +81,7 @@ impl Document {
             undo,
             history_bytes: 0,
             received_bytes: initial.len(),
+            boundaries: RefCell::new(None),
         })
     }
     pub fn id(&self) -> String {
@@ -140,6 +143,7 @@ impl Document {
         self.history_bytes += cost;
         self.received_bytes += cost;
         self.undo.reset();
+        *self.boundaries.get_mut() = None;
         let mut txn = self.doc.transact_mut_with("editor");
         for part in parts.iter().rev() {
             if !part.removed.is_empty() {
@@ -156,6 +160,7 @@ impl Document {
         Ok(encode(&txn.encode_update_v1()))
     }
     pub fn apply(&mut self, update: &str) -> Result<(), String> {
+        *self.boundaries.get_mut() = None;
         let bytes = decode(update)?;
         if bytes.len() > MAX_UPDATE || self.received_bytes + bytes.len() > MAX_SESSION {
             return Err("Jam session limit reached; start a new session".into());
@@ -172,6 +177,7 @@ impl Document {
         Ok(())
     }
     pub fn undo(&mut self, redo: bool) -> String {
+        *self.boundaries.get_mut() = None;
         let vector = self.doc.transact().state_vector();
         if redo {
             self.undo.redo_blocking();
@@ -181,7 +187,25 @@ impl Document {
         encode(&self.doc.transact().encode_state_as_update_v1(&vector))
     }
     pub fn position(&self, index: u32) -> Result<String, String> {
-        byte_at(&self.text(), index)?;
+        // Scrolling publishes positions repeatedly without changing the document.
+        let mut boundaries = self.boundaries.borrow_mut();
+        let (len, interior) = boundaries.get_or_insert_with(|| {
+            let mut offset = 0;
+            let mut interior = Vec::new();
+            for ch in self.text().chars() {
+                if ch.len_utf16() == 2 {
+                    interior.push(offset + 1);
+                }
+                offset += ch.len_utf16() as u32;
+            }
+            (offset, interior)
+        });
+        if index > *len {
+            return Err("Jam position is out of bounds".into());
+        }
+        if interior.binary_search(&index).is_ok() {
+            return Err("Jam position splits a Unicode character".into());
+        }
         let txn = self.doc.transact();
         let position = self
             .text
@@ -306,6 +330,40 @@ mod tests {
             a.text().contains("B: ") && a.text().contains("hello") && a.text().contains("world")
         );
         assert_eq!(a.text(), b.text());
+    }
+    #[test]
+    fn unicode_positions_track_local_remote_edits_and_undo() {
+        let mut a = Document::new("🦀x").unwrap();
+        assert!(a.position(1).is_err());
+        assert!(a.position(2).is_ok());
+        a.edit(
+            "🦀x",
+            &[Patch {
+                from: 0,
+                removed: "".into(),
+                inserted: "a".into(),
+            }],
+        )
+        .unwrap();
+        assert!(a.position(1).is_ok());
+        assert!(a.position(2).is_err());
+        a.undo(false);
+        assert!(a.position(1).is_err());
+        let mut b = Document::new("").unwrap();
+        b.apply(&a.state()).unwrap();
+        let update = b
+            .edit(
+                "🦀x",
+                &[Patch {
+                    from: 0,
+                    removed: "🦀".into(),
+                    inserted: "é".into(),
+                }],
+            )
+            .unwrap();
+        a.apply(&update).unwrap();
+        assert!(a.position(1).is_ok());
+        assert!(a.position(3).is_err());
     }
     #[test]
     fn rejects_surrogates_overlap_stale_and_oversize() {

@@ -104,9 +104,10 @@ def main():
             peer.send(op="pause", paused=False)
         merged = "Mac: hello 🦀 NUC"
         a.text(merged); b.text(merged)
-        b.send(op="presence", caret=17, anchor=5)
+        b.send(op="presence", caret=17, anchor=5, view={"top":5,"offset":0.25,"x":3})
         cursor = a.until(lambda e: e.get("t") == "cursor")
         assert cursor["caret"] == 17 and cursor["anchor"] == 5, cursor
+        assert cursor["view"] == {"top":5,"offset":0.25,"x":3}, cursor
         b.send(op="undo")
         a.text("Mac: " + base); b.text("Mac: " + base)
         a.send(op="undo")
@@ -115,7 +116,7 @@ def main():
         a.text(merged); b.text(merged)
         a.close()
         b.until(lambda e: e.get("t") == "room_closed")
-        print("Jam peers: concurrent Unicode edits, reconnect convergence, remote selection, per-author undo/redo and clean exit passed" + (" (macOS + Linux NUC over SSH)" if args.ssh else " (local)"))
+        print("Jam peers: concurrent Unicode edits, reconnect convergence, remote selection/viewport, per-author undo/redo and clean exit passed" + (" (macOS + Linux NUC over SSH)" if args.ssh else " (local)"))
     finally:
         for peer in reversed(peers):
             peer.close()

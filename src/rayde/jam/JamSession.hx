@@ -7,6 +7,9 @@ import ashui.components.code.CodeTransaction;
 import ashui.components.code.CodeTransaction.CodePeer;
 import ashui.reactive.Signal;
 
+typedef JamViewport = {top:Int, offset:Float, x:Float};
+typedef JamPosition = {id:String, name:String, caret:Int, anchor:Int, view:Null<JamViewport>};
+
 /** A single explicitly shared document; view mounting never controls the CRDT lifetime. */
 class JamSession {
 	public final file:String;
@@ -18,6 +21,10 @@ class JamSession {
 	public final failure = Signal.make("");
 	public final recoveryStatus = Signal.make("saving locally");
 	public final durableHost = Signal.make(false);
+	public final synced = Signal.make(false);
+	public final following = Signal.make("");
+	public final positions = Signal.make(([] : Array<JamPosition>));
+	var viewport:Null<JamViewport>;
 	final seeded:Bool;
 	final state:CodeEditorState;
 	final changed:Void->Void;
@@ -46,6 +53,7 @@ class JamSession {
 
 	function transaction(edit:CodeTransaction):Void {
 		if (closed || edit.parts.length == 0) return;
+		stopFollowing();
 		try {
 			if (edit.before != known) throw "Jam document and editor are out of sync";
 			var result=NativeJam.call(document,{op:"edit",parts:edit.parts});
@@ -62,25 +70,41 @@ class JamSession {
 	}
 	function publish(update:String):Void {
 		if (!closed && transport >= 0) {
-			recoveryStatus.set("saving locally");
+			recoveryStatus.set("saving locally"); synced.set(false);
 			if (!NativeJam.send(transport,{t:"sync",id:++serial,update:update})) fail("Jam could not queue an update; leave and rejoin");
 		}
 	}
 	function undo(redo:Bool):Void {
 		if (!editable()) return;
+		stopFollowing();
 		try {
 			var result=NativeJam.call(document,{op:"undo",redo:redo});
 			selection={caret:Std.int(Math.min(selection.caret,result.text.length)),anchor:Std.int(Math.min(selection.anchor,result.text.length))};
 			known=result.text; state.applyRemote(result.text,selection); publish(result.update); changed(); refreshCursors();
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
-	public function remember(caret:Int,anchor:Int):Void selection={caret:caret,anchor:anchor};
+	public function remember(caret:Int,anchor:Int,?view:JamViewport):Void {
+		selection={caret:caret,anchor:anchor};
+		if (view != null) viewport=view;
+	}
+	public function isSelf(id:String):Bool return peer == id;
+	public function positionOf(id:String):Null<JamPosition> return Lambda.find(positions.get(),p -> p.id == id);
+	public function follow(id:String):Bool {
+		if (status.get() != "connected" || failure.get() != "" || id == peer || positionOf(id) == null) return false;
+		following.set(id); return true;
+	}
+	public function stopFollowing():Void following.set("");
 	public function moved(caret:Int,anchor:Int):Void {
 		remember(caret,anchor);
-		if (!editable() || status.get() != "connected") return;
+		if (!editable() || status.get() != "connected" || following.get() != "") return;
 		try {
 			var positions=NativeJam.call(document,{op:"position",caret:caret,anchor:anchor});
-			NativeJam.send(transport,{t:"presence",caret:positions.caret,anchor:positions.anchor});
+			var view:Dynamic=null;
+			if (viewport != null) try {
+				var top=NativeJam.call(document,{op:"position",caret:viewport.top,anchor:viewport.top});
+				view={top:top.caret,offset:viewport.offset,x:viewport.x};
+			} catch (_:Dynamic) {}
+			NativeJam.send(transport,{t:"presence",caret:positions.caret,anchor:positions.anchor,view:view});
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
 	public function poll():Void {
@@ -94,7 +118,7 @@ class JamSession {
 				if (message.file != haxe.io.Path.withoutDirectory(file)) throw "This checkpoint belongs to a different document";
 				apply(message.state); initialized.set(true); recoveryStatus.set("saved locally"); status.set("reconnecting");
 			case "welcome":
-				if (message.v != 2 || message.file != haxe.io.Path.withoutDirectory(file)) throw "The invitation shares a different document; open " + Std.string(message.file) + " and join again";
+				if (message.v != 3 || message.file != haxe.io.Path.withoutDirectory(file)) throw "The invitation shares a different document; open " + Std.string(message.file) + " and join again";
 				apply(message.state); durableHost.set(message.durable == true);
 				publish(NativeJam.call(document,{op:"diff",vector:message.vector}).update);
 				initialized.set(true); status.set("connected"); moved(selection.caret,selection.anchor);
@@ -103,13 +127,14 @@ class JamSession {
 			case "peers":
 				people.set(cast message.list);
 				for (id in cursors.keys()) if (!Lambda.exists(people.get(),p -> p.id == id)) cursors.remove(id);
+				if (!Lambda.exists(people.get(),p -> p.id == following.get())) stopFollowing();
 				refreshCursors();
-			case "reconnecting" | "paused": status.set(message.t); state.peers.set([]);
+			case "reconnecting" | "paused": status.set(message.t); disconnected();
 			case "failed": fail(message.message);
 			case "room_closed": fail("The host ended this Jam");
 			case "locally_saved": if (message.id == serial) recoveryStatus.set("saved locally");
 			case "checkpointed": if (message.id == serial) recoveryStatus.set("saved locally");
-			case "ack":
+			case "ack": if (message.id == serial) synced.set(true);
 			default: throw "Unexpected Jam event";
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
@@ -123,16 +148,22 @@ class JamSession {
 		refreshCursors();
 	}
 	function refreshCursors():Void {
-		var marks:Array<CodePeer>=[];
+		var marks:Array<CodePeer>=[], resolved:Array<JamPosition>=[];
 		for (person in people.get()) if (person.id != peer && cursors.exists(person.id)) {
 			var cursor=cursors.get(person.id);
 			try {
 				var position=NativeJam.call(document,{op:"resolve",caret:cursor.caret,anchor:cursor.anchor});
 				var color=0; for (i in 0...person.id.length) color=(color+person.id.charCodeAt(i))%4;
 				marks.push({id:person.id,name:person.name,caret:position.caret,anchor:position.anchor,color:color});
+				var view:Null<JamViewport>=null;
+				if (cursor.view != null) {
+					var top=NativeJam.call(document,{op:"resolve",caret:cursor.view.top,anchor:cursor.view.top});
+					view={top:top.caret,offset:cursor.view.offset,x:cursor.view.x};
+				}
+				resolved.push({id:person.id,name:person.name,caret:position.caret,anchor:position.anchor,view:view});
 			} catch (_:Dynamic) {}
 		}
-		state.peers.set(marks);
+		state.peers.set(marks); positions.set(resolved);
 	}
 	public function checkpoint():Void {
 		if (transport >= 0) {
@@ -141,8 +172,11 @@ class JamSession {
 		}
 	}
 	public function pause(paused:Bool):Void { if (transport >= 0) NativeJam.send(transport,{t:"pause",paused:paused}); }
+	function disconnected():Void {
+		stopFollowing(); synced.set(false); cursors.clear(); positions.set([]); people.set([]); state.peers.set([]);
+	}
 	function fail(message:String):Void {
-		failure.set(message); status.set("failed"); state.peers.set([]);
+		failure.set(message); status.set("failed"); disconnected();
 		if (transport >= 0) NativeJam.closeSession(transport); transport=-1;
 	}
 	public function dispose():Void {
@@ -150,6 +184,6 @@ class JamSession {
 		closed=true; state.onTransaction=null; state.onUndo=null; state.peers.set([]); state.history.clear();
 		if (transport >= 0) NativeJam.closeSession(transport); transport=-1;
 		if (document >= 0) NativeJam.closeDocument(document); document=-1;
-		cursors.clear(); people.set([]); invite.set(""); status.set("closed");
+		disconnected(); invite.set(""); status.set("closed");
 	}
 }

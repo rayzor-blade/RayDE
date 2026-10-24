@@ -7,6 +7,7 @@ import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
 import rayde.jam.JamSession;
+import rayde.jam.JamEditor;
 import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
@@ -229,7 +230,6 @@ class Workbench extends Component<WorkbenchProps> {
 	final documents = new Map<String, DocumentState>();
 	final jam = Signal.make((null : Null<JamSession>));
 	var jamPoll:Null<ashui.animation.AnimationScheduler.Timer>;
-	var jamPresence:Null<ashui.animation.AnimationScheduler.Timer>;
 	final nativeSyntax = new Map<String, Null<TextMateSyntax>>();
 	final editorRefs = new Map<String, Ref<CodeEditor>>();
 	final menuRef = new Ref<DropdownMenu>();
@@ -494,6 +494,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
 	public function openFile(file:String):Void {
+		if (jam.get()!=null) jam.get().stopFollowing();
 		var fresh = open.get().indexOf(file) < 0;
 		if (fresh)
 			open.set(open.get().concat([file]));
@@ -737,11 +738,13 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function editorFind(replace = false):Void {
+		if (jam.get()!=null) jam.get().stopFollowing();
 		var editor = editorOf(active.get());
 		if (editor != null) editor.showFind(replace);
 	}
 
 	function editorFindNext(backward = false):Void {
+		if (jam.get()!=null) jam.get().stopFollowing();
 		var editor = editorOf(active.get());
 		if (editor != null) editor.findNext(backward);
 	}
@@ -1271,6 +1274,8 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The commands: what the center lists after `>`, what the Settings page lets a key be chosen for, and what a key runs. */
 	function commands():Array<CenterAction>
 		return [
+			{id:"jam.open",label:"Jam: Open Panel",icon:Icons.JAM_JOYSTICK,run:showJam},
+			{id:"jam.stopFollowing",label:"Jam: Stop Following",icon:Icons.USER_LINE,run:() -> { if (jam.get()!=null) jam.get().stopFollowing(); }},
 			{id:"jam.start",label:"Jam: Share Active Document…",icon:Icons.TEAM_LINE,run:askStartJam},
 			{id:"jam.join",label:"Jam: Join Shared Document…",icon:Icons.TEAM_LINE,run:askJoinJam},
 			{id:"jam.resume",label:"Jam: Resume Saved Document…",icon:Icons.TEAM_LINE,run:() -> askRestoreJam(true)},
@@ -1867,7 +1872,7 @@ class Workbench extends Component<WorkbenchProps> {
 		Extensions.setDisabled(props.display.cwd, id, disabled);
 		extensionManager.setDisabled(id, disabled);
 		containers = makeContainers();
-		if (!Lambda.exists(containers, c -> c.id == sideView.get())) sideView.set("explorer");
+		if (sideView.get() != "jam" && !Lambda.exists(containers, c -> c.id == sideView.get())) sideView.set("explorer");
 		open.set([for (f in open.get()) if (!isViewTab(f) || containerOfTab(f) != null) f]);
 		if (open.get().indexOf(active.get()) < 0) active.set(open.get().length == 0 ? "" : open.get()[0]);
 		commandList.splice(0, commandList.length);
@@ -2248,6 +2253,7 @@ class Workbench extends Component<WorkbenchProps> {
 			if (sessionReady) workspaceSession.save(sessionSnapshot());
 		}, (_, _) -> false);
 		new ashui.reactive.Watch(() -> active.get(), file -> {
+			if (jam.get()!=null && file != jam.get().file) jam.get().stopFollowing();
 			activeStudio.set(extension != null ? extensionStudio() : studios.get(file));
 			emit("active.changed", {path: realFile(file)});
 		});
@@ -2440,6 +2446,9 @@ class Workbench extends Component<WorkbenchProps> {
 	function sideBody(shown:Bool, view:String):Element {
 		if (!shown)
 			return <div/>;
+		if (view == "jam") return <jam-panel workspace={props.name ?? haxe.io.Path.withoutDirectory(props.display.cwd)} session={jam} active={active} dirty={dirty} canShare={canShareJam}
+			onClose={() -> treeWidth.set(ACTIVITY)} onStart={askStartJam} onJoin={askJoinJam} onResume={() -> askRestoreJam(true)} onRejoin={() -> askRestoreJam(false)}
+			onOpenFile={() -> { if (jam.get()!=null) openFile(jam.get().file); }} onCopy={copyJamInvite} onLeave={leaveJam} onFollow={followJam}/>;
 		var c = Lambda.find(containers, c -> c.id == view && c.location == "sidebar");
 		return c == null ? explorer(shown) : extensionBody(c, "rayde-explorer");
 	}
@@ -2484,6 +2493,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The Explorer's icon and one for each extension view, which an extension that is in the sidebar swaps with the Explorer. */
 	function containerItems(shown:Bool, view:String):Element {
 		var items:Array<Element> = [activityItem("rayde-activity-explorer", "Explorer", Icons.FOLDERS_LINE, shown && view == "explorer", chooseExplorer)];
+		items.push(activityItem("rayde-activity-jam", "Jam", Icons.JAM_JOYSTICK, shown && view == "jam", () -> {
+			if (shown && view == "jam") treeWidth.set(ACTIVITY); else showJam();
+		}));
 		for (c in containers) if (c.location != "explorer") {
 			// Only the view the side panel shows is selected; a view in another part of the layout is toggled from here but is not what the activity bar is showing.
 			var on = c.location == "sidebar" && shown && view == c.id;
@@ -2569,7 +2581,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (layoutKey(m) == before && !moved)
 			return;
 		containers = makeContainers();
-		if (!Lambda.exists(containers, c -> c.id == sideView.get() && c.location == "sidebar")) {
+		if (sideView.get() != "jam" && !Lambda.exists(containers, c -> c.id == sideView.get() && c.location == "sidebar")) {
 			var first = Lambda.find(containers, c -> c.location == "sidebar");
 			sideView.set(first == null ? "explorer" : first.id);
 		}
@@ -3252,17 +3264,7 @@ class Workbench extends Component<WorkbenchProps> {
 		assistWatch(file, editorRef(file).get());
 		var mounted = editorRef(file).get(), state = documents.get(file);
 		watchCodeActions(file, mounted);
-		new ashui.reactive.Watch(() -> { mounted.editing.caret.get(); mounted.editing.anchor.get(); mounted.editing.composing.get(); 0; }, _ -> {
-			var current = jam.get();
-			if (current == null || current.file != file) return;
-			pollJam();
-			if (jamPresence != null) jamPresence.cancel();
-			jamPresence=ashui.animation.AnimationScheduler.main.after(.04, () -> {
-				jamPresence=null;
-				if (!gone && jam.get() == current && editorOf(file) == mounted && mounted.editing.composing.get() == "")
-					current.moved(mounted.editing.caret.get(),mounted.editing.anchor.get());
-			});
-		}, (_,_) -> false);
+		new JamEditor(mounted,file,() -> jam.get());
 		Owner.onCleanup(() -> { assist.stop(file, mounted); state.compact(); });
 		return editor;
 	}
@@ -3779,7 +3781,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The runtime the project runs on, the problem counts, and where the run stands. */
 	function statusBar():Element
 		return <div id="rayde-status-bar" class="rayde-status flex items-center gap-2 px-3 shrink-0" height={28}>
-			<for {current in [jam.get()]}><if {current != null}>${jamStatus(current)}</if></for>
+			<for {current in [jam.get()]}>${jamStatus(current)}</for>
 			<for {items in [extensionStatus.get()]}>${extensionStatusItems(items)}</for>
 			<for {list in [problems.get()]}>${problemCounts(list)}</for>
 			<div class="flex-1"/>
@@ -3792,6 +3794,21 @@ class Workbench extends Component<WorkbenchProps> {
 				<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${runtime() + " runtime"}</text></div>
 			</tooltip></if>
 		</div>;
+
+	function canShareJam():Bool {
+		var file=active.get();
+		return file != "" && !isVirtual(file) && !ImagePreview.isRaster(file) && FileOps.inside(props.display.cwd,file);
+	}
+	function showJam():Void {
+		sideView.set("jam");
+		if (!explorerShown.get()) treeWidth.set(ACTIVITY + EXPLORER_WIDTH);
+	}
+	function followJam(id:String):Void {
+		var current=jam.get();
+		if (current == null) return;
+		openFile(current.file);
+		if (!current.follow(id)) say("Wait for this participant's position before following");
+	}
 
 	function jamFile():String {
 		var file=active.get();
@@ -3835,7 +3852,7 @@ class Workbench extends Component<WorkbenchProps> {
 		jam.set(current);
 		var editor=editorOf(file);
 		if (editor != null) current.moved(editor.editing.caret.get(),editor.editing.anchor.get());
-		pollJam(); scheduleJam();
+		pollJam(); scheduleJam(); showJam();
 	}
 
 	function pollJam():Void {
@@ -3861,32 +3878,26 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function leaveJam():Void {
 		if (jamPoll != null) jamPoll.cancel(); jamPoll=null;
-		if (jamPresence != null) jamPresence.cancel(); jamPresence=null;
 		var current=jam.get();
 		if (current != null) current.dispose();
 		jam.set(null);
 		if (!gone) releaseClosedDocuments();
 	}
 
-	function jamStatus(current:JamSession):Element {
-		var label=Computed.make(() -> "Jam · " + current.status.get() + (current.people.get().length > 0 ? " · " + current.people.get().length : ""));
-		var live=Computed.make(() -> current.status.get() == "connected" && current.failure.get() == "");
+	function jamStatus(current:Null<JamSession>):Element {
+		var label=Computed.make(() -> {
+			if (current == null) return "Jam";
+			var person=Lambda.find(current.people.get(),p -> p.id == current.following.get());
+			return "Jam · " + (person == null ? current.status.get() : "following " + person.name) + (current.people.get().length > 0 ? " · " + current.people.get().length : "");
+		});
+		var live=Computed.make(() -> current != null && current.status.get() == "connected" && current.failure.get() == "");
 		var symbol:Element = <icon document={Icons.JAM_JOYSTICK} class="size-4 rayde-jam-icon"/>;
-		ashui.css.Identity.of(symbol.tree,symbol.node.id).bindBooleanAttribute("data-live",live);
+		var identity=ashui.css.Identity.of(symbol.tree,symbol.node.id);
+		identity.bindBooleanAttribute("data-live",live);
+		identity.setAttribute("data-idle",current == null ? "" : null);
 		var picture:Element = <div class="relative size-4 shrink-0"><if {live}><icon document={Icons.JAM_JOYSTICK} class="absolute inset-0 size-4 rayde-jam-shadow"/></if>{symbol}</div>;
-		var description=Computed.make(() -> current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.recoveryStatus.get() + (current.durableHost.get() ? "; host checkpoints enabled" : "; host durability not confirmed") + " — " + current.people.get().map(p -> p.name).join(", "));
-		return <tooltip label={description} side="top"><dropdown-menu side="top" id="rayde-jam-menu">
-			<dropdown-menu-trigger id="rayde-jam-status" variant={Ghost} class="rayde-status-item">{picture}<text>${label}</text></dropdown-menu-trigger>
-			<dropdown-menu-content>
-				<dropdown-menu-label><text>${description}</text></dropdown-menu-label>
-				<dropdown-menu-item onSelect={() -> openFile(current.file)}>Open Shared Document</dropdown-menu-item>
-				<dropdown-menu-item disabled={!current.host || current.invite.get() == ""} onSelect={copyJamInvite}>Copy Invitation</dropdown-menu-item>
-				<dropdown-menu-item onSelect={() -> current.pause(false)}>Reconnect</dropdown-menu-item>
-				<dropdown-menu-item onSelect={current.checkpoint}>Save Recovery Checkpoint</dropdown-menu-item>
-				<dropdown-menu-separator/>
-				<dropdown-menu-item id="rayde-jam-leave" onSelect={leaveJam}>${current.host ? "End Jam" : "Leave Jam"}</dropdown-menu-item>
-			</dropdown-menu-content>
-		</dropdown-menu></tooltip>;
+		var description=Computed.make(() -> current == null ? "Open Jam" : current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.recoveryStatus.get() + " — " + current.people.get().map(p -> p.name).join(", "));
+		return <tooltip label={description} side="top"><button id="rayde-jam-status" variant={Ghost} class="rayde-status-item" onClick={_ -> showJam()}>{picture}<text class="rayde-jam-status-label">${label}</text></button></tooltip>;
 	}
 
 	function languageStatus():Null<LanguageServerStatus> {
