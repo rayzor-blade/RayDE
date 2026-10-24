@@ -148,7 +148,7 @@ class JamFeature {
 		ashui.input.Clipboard.setText(current.invite.get()); host.say("Jam invitation copied");
 	}
 
-	function leaveJam():Void {
+	public function leaveJam():Void {
 		if (poller != null) poller.cancel(); poller=null;
 		var current=session.get();
 		if (current != null) current.dispose();
