@@ -464,7 +464,9 @@
 #rayde .rayde-lsp-working, #rayde .rayde-lsp-icon[data-indexing] { animation: ui-spinner-turn 1000ms linear infinite; }
 
 #rayde .rayde-jam-icon { color: var(--error); opacity: 1; }
-#rayde .rayde-jam-shadow { color: #000000; }
+#rayde .rayde-jam-shadow { color: color-mix(in srgb, var(--success) 30%, transparent); }
+#rayde #rayde-status-bar > .ui-tooltip-trigger { flex: 0 0 auto; }
+#rayde #rayde-jam-status { flex: 0 0 auto; justify-content: flex-start; }
 #rayde .rayde-jam-icon[data-live] { color: var(--success); animation: rayde-jam-live 1200ms ease-in-out infinite alternate; }
 @keyframes rayde-jam-live { from { opacity: 1; } to { opacity: 0; } }
 
