@@ -8,3 +8,4 @@
 /extensions/git/git.rayext
 __pycache__/
 .rayzor
+**/target
