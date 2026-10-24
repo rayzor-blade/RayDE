@@ -3870,9 +3870,13 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function jamStatus(current:JamSession):Element {
 		var label=Computed.make(() -> "Jam · " + current.status.get() + (current.people.get().length > 0 ? " · " + current.people.get().length : ""));
+		var live=Computed.make(() -> current.status.get() == "connected" && current.failure.get() == "");
+		var symbol:Element = <icon document={Icons.JAM_JOYSTICK} class="size-4 rayde-jam-icon"/>;
+		ashui.css.Identity.of(symbol.tree,symbol.node.id).bindBooleanAttribute("data-live",live);
+		var picture:Element = <div class="relative size-4 shrink-0"><if {live}><icon document={Icons.JAM_JOYSTICK} class="absolute inset-0 size-4 rayde-jam-shadow"/></if>{symbol}</div>;
 		var description=Computed.make(() -> current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.recoveryStatus.get() + (current.durableHost.get() ? "; host checkpoints enabled" : "; host durability not confirmed") + " — " + current.people.get().map(p -> p.name).join(", "));
 		return <tooltip label={description} side="top"><dropdown-menu side="top" id="rayde-jam-menu">
-			<dropdown-menu-trigger id="rayde-jam-status" variant={Ghost} class="rayde-status-item"><icon document={Icons.TEAM_LINE} class="size-3.5"/><text>${label}</text></dropdown-menu-trigger>
+			<dropdown-menu-trigger id="rayde-jam-status" variant={Ghost} class="rayde-status-item">{picture}<text>${label}</text></dropdown-menu-trigger>
 			<dropdown-menu-content>
 				<dropdown-menu-label><text>${description}</text></dropdown-menu-label>
 				<dropdown-menu-item onSelect={() -> openFile(current.file)}>Open Shared Document</dropdown-menu-item>

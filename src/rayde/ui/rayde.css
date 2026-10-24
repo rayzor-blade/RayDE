@@ -463,6 +463,11 @@
 
 #rayde .rayde-lsp-working, #rayde .rayde-lsp-icon[data-indexing] { animation: ui-spinner-turn 1000ms linear infinite; }
 
+#rayde .rayde-jam-icon { color: var(--error); opacity: 1; }
+#rayde .rayde-jam-shadow { color: #000000; }
+#rayde .rayde-jam-icon[data-live] { color: var(--success); animation: rayde-jam-live 1200ms ease-in-out infinite alternate; }
+@keyframes rayde-jam-live { from { opacity: 1; } to { opacity: 0; } }
+
 /* ANSI indexed colors follow the terminal palette. */
 #rayde .rayde-output { --rayde-ansi-0: #000000; --rayde-ansi-1: #cd3131; --rayde-ansi-2: #00bc00; --rayde-ansi-3: #949800; --rayde-ansi-4: #0451a5; --rayde-ansi-5: #bc05bc; --rayde-ansi-6: #0598bc; --rayde-ansi-7: #555555; --rayde-ansi-8: #666666; --rayde-ansi-9: #cd3131; --rayde-ansi-10: #14ce14; --rayde-ansi-11: #b5ba00; --rayde-ansi-12: #0451a5; --rayde-ansi-13: #bc05bc; --rayde-ansi-14: #0598bc; --rayde-ansi-15: #a5a5a5; }
 @media (prefers-color-scheme: dark) {
