@@ -90,8 +90,8 @@
 #rayde .ui-code { border-width: 0; border-radius: 0; }
 #rayde .ui-code-gutter { border-right-width: 0; }
 
-/* The command center: glass over the page, as ChimpMonk's, rising in with a spring. */
-#rayde .rayde-glass {
+/* The command center: glass over the page, as ChimpMonk's, rising in with a spring. It opens in the top layer, outside the workbench, so none of this is scoped to #rayde. */
+.rayde-glass {
 	--rayde-glass-text: var(--text-primary);
 	--rayde-glass-muted: var(--text-secondary);
 	color: var(--rayde-glass-text);
@@ -102,23 +102,23 @@
 	backdrop-filter: blur(12px) saturate(1.15);
 	box-shadow: var(--shadow-lg);
 }
-#rayde .rayde-command-center { animation: ui-rise-in var(--duration-normal) var(--ease-spring); }
-#rayde .rayde-command-center[closing] { animation: ui-rise-out var(--duration-faster) var(--ease-in) forwards; }
-#rayde .rayde-cc { flex-direction: column; overflow: hidden; }
-#rayde .rayde-cc-input { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
-#rayde .rayde-cc-search { flex-shrink: 0; width: 16px; height: 16px; color: var(--text-tertiary); }
-#rayde input.rayde-cc-field { flex-grow: 1; width: auto; height: 44px; padding: 0; border: 0; background: transparent; font-size: var(--text-sm); }
-#rayde input.rayde-cc-field:hover, #rayde input.rayde-cc-field:focus { background: transparent; outline-width: 0; }
-#rayde .rayde-cc-list { flex-direction: column; max-height: 300px; overflow-y: auto; padding: 4px 8px; }
-#rayde .rayde-cc-list > * { flex-shrink: 0; }
-#rayde .rayde-cc-item { flex-direction: row; align-items: center; gap: 8px; padding: 2px 8px; min-height: 36px; color: var(--text-primary); border-radius: var(--radius-md); corner-shape: squircle; }
-#rayde .rayde-cc-item[data-selected] { background: var(--accent-subtle); }
-#rayde .rayde-cc-empty { justify-content: center; padding: 24px 12px; color: var(--text-secondary); }
-#rayde .rayde-cc-footer { height: 34px; border-top: 1px solid var(--border); }
-#rayde .rayde-cc-label, #rayde input.rayde-cc-field { color: var(--rayde-glass-text); }
-#rayde .rayde-cc-detail, #rayde .rayde-cc-footer text, #rayde .rayde-cc-search, #rayde .rayde-cc-empty, #rayde .rayde-cc-field .text-text-tertiary { color: var(--rayde-glass-muted); }
+.rayde-command-center { animation: ui-rise-in var(--duration-normal) var(--ease-spring); }
+.rayde-command-center[closing] { animation: ui-rise-out var(--duration-faster) var(--ease-in) forwards; }
+.rayde-cc { flex-direction: column; overflow: hidden; }
+.rayde-cc-input { flex-direction: row; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+.rayde-cc-search { flex-shrink: 0; width: 16px; height: 16px; color: var(--text-tertiary); }
+input.rayde-cc-field { flex-grow: 1; width: auto; height: 44px; padding: 0; border: 0; background: transparent; font-size: var(--text-sm); }
+input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent; outline-width: 0; }
+.rayde-cc-list { flex-direction: column; max-height: 300px; overflow-y: auto; padding: 4px 8px; }
+.rayde-cc-list > * { flex-shrink: 0; }
+.rayde-cc-item { flex-direction: row; align-items: center; gap: 8px; padding: 2px 8px; min-height: 36px; color: var(--text-primary); border-radius: var(--radius-md); corner-shape: squircle; }
+.rayde-cc-item[data-selected] { background: var(--accent-subtle); }
+.rayde-cc-empty { justify-content: center; padding: 24px 12px; color: var(--text-secondary); }
+.rayde-cc-footer { height: 34px; border-top: 1px solid var(--border); }
+.rayde-cc-label, input.rayde-cc-field { color: var(--rayde-glass-text); }
+.rayde-cc-detail, .rayde-cc-footer text, .rayde-cc-search, .rayde-cc-empty, .rayde-cc-field .text-text-tertiary { color: var(--rayde-glass-muted); }
 @media (prefers-color-scheme: light) {
-	#rayde .rayde-glass { --rayde-glass-text: #1f2937; --rayde-glass-muted: #475569; }
+	.rayde-glass { --rayde-glass-text: #1f2937; --rayde-glass-muted: #475569; }
 }
 
 

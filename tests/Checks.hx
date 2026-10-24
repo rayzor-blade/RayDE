@@ -791,6 +791,15 @@ class Checks {
 			sys.FileSystem.deleteFile(path);
 	}
 
+	/** Content that opens in the top layer sits outside the workbench in a real window, so its rules cannot be scoped to #rayde. */
+	static function topLayerStyleChecks():Void {
+		var css = sys.io.File.getContent("src/rayde/ui/rayde.css");
+		for (line in css.split("\n"))
+			for (name in [".rayde-glass", ".rayde-command-center", ".rayde-cc"])
+				if (line.indexOf(name) >= 0 && line.indexOf("#rayde ") >= 0 && !StringTools.startsWith(StringTools.ltrim(line), "/*"))
+					check(false, "top-layer style scoped to #rayde, so it misses the real window: " + StringTools.trim(line).substr(0, 70));
+	}
+
 	static function gitIgnoreChecks():Void {
 		var root = Sys.getCwd() + "bin/gitignore-checks-" + Std.random(0x3fffffff);
 		for (dir in ["/.git/info", "/build", "/src/nested", "/src/keep", "/docs/api", "/out/deep"]) sys.FileSystem.createDirectory(root + dir);
@@ -839,6 +848,7 @@ class Checks {
 		iconChecks();
 		fileOpsChecks();
 		gitIgnoreChecks();
+		topLayerStyleChecks();
 		extensionHostChecks();
 		ActivityLogChecks.run();
 		ExtensionManagerChecks.run();
