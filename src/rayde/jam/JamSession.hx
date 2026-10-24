@@ -16,6 +16,9 @@ class JamSession {
 	public final people = Signal.make(([] : Array<{id:String,name:String}>));
 	public final initialized = Signal.make(false);
 	public final failure = Signal.make("");
+	public final recoveryStatus = Signal.make("saving locally");
+	public final durableHost = Signal.make(false);
+	final seeded:Bool;
 	final state:CodeEditorState;
 	final changed:Void->Void;
 	var document = -1;
@@ -27,12 +30,13 @@ class JamSession {
 	final cursors = new Map<String,Dynamic>();
 	public var closed(default,null) = false;
 
-	public function new(file:String,state:CodeEditorState,host:Bool,name:String,invitation:String,changed:Void->Void) {
+	public function new(file:String,state:CodeEditorState,host:Bool,name:String,invitation:String,changed:Void->Void,recovery:String,restore:Bool=false) {
 		this.file=file; this.state=state; this.host=host; this.changed=changed; known=state.value.get();
-		document=NativeJam.document(host ? state.value.get() : "");
+		seeded=host && !restore;
+		document=NativeJam.document(seeded ? state.value.get() : "");
 		try {
 			var snapshot=NativeJam.call(document,{op:"snapshot"});
-			transport=NativeJam.open({host:host,invite:invitation,name:name,file:haxe.io.Path.withoutDirectory(file),state:snapshot.state});
+			transport=NativeJam.open({host:host,invite:invitation,name:name,file:haxe.io.Path.withoutDirectory(file),state:snapshot.state,document_id:seeded ? snapshot.document_id : "",recovery:recovery,restore:restore});
 		} catch (error:Dynamic) { NativeJam.closeDocument(document); document=-1; throw error; }
 		state.history.clear(); state.onTransaction=transaction; state.onUndo=undo;
 	}
@@ -57,7 +61,10 @@ class JamSession {
 		transaction({before:before,after:after,parts:CodeHistory.difference(before,after),selection:selection,next:selection});
 	}
 	function publish(update:String):Void {
-		if (!closed && transport >= 0 && !NativeJam.send(transport,{t:"sync",id:++serial,update:update})) fail("Jam could not queue an update; leave and rejoin");
+		if (!closed && transport >= 0) {
+			recoveryStatus.set("saving locally");
+			if (!NativeJam.send(transport,{t:"sync",id:++serial,update:update})) fail("Jam could not queue an update; leave and rejoin");
+		}
 	}
 	function undo(redo:Bool):Void {
 		if (!editable()) return;
@@ -83,9 +90,12 @@ class JamSession {
 		try for (message in messages) switch Std.string(message.t) {
 			case "hosting": invite.set(message.invite);
 			case "identity": peer=message.peer;
+			case "restored":
+				if (message.file != haxe.io.Path.withoutDirectory(file)) throw "This checkpoint belongs to a different document";
+				apply(message.state); initialized.set(true); recoveryStatus.set("saved locally"); status.set("reconnecting");
 			case "welcome":
-				if (message.v != 1 || message.file != haxe.io.Path.withoutDirectory(file)) throw "The invitation shares a different document; open " + Std.string(message.file) + " and join again";
-				apply(message.state);
+				if (message.v != 2 || message.file != haxe.io.Path.withoutDirectory(file)) throw "The invitation shares a different document; open " + Std.string(message.file) + " and join again";
+				apply(message.state); durableHost.set(message.durable == true);
 				publish(NativeJam.call(document,{op:"diff",vector:message.vector}).update);
 				initialized.set(true); status.set("connected"); moved(selection.caret,selection.anchor);
 			case "update": apply(message.update);
@@ -97,13 +107,15 @@ class JamSession {
 			case "reconnecting" | "paused": status.set(message.t); state.peers.set([]);
 			case "failed": fail(message.message);
 			case "room_closed": fail("The host ended this Jam");
+			case "locally_saved": if (message.id == serial) recoveryStatus.set("saved locally");
+			case "checkpointed": if (message.id == serial) recoveryStatus.set("saved locally");
 			case "ack":
 			default: throw "Unexpected Jam event";
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
 	function apply(update:String):Void {
 		var before=state.value.get();
-		var current:CodeSelection=initialized.get() || host ? selection : {caret:0,anchor:0};
+		var current:CodeSelection=initialized.get() || seeded ? selection : {caret:0,anchor:0};
 		var result=NativeJam.call(document,{op:"apply",update:update,caret:current.caret,anchor:current.anchor});
 		selection={caret:result.caret,anchor:result.anchor};
 		known=result.text; state.applyRemote(result.text,selection);
@@ -121,6 +133,12 @@ class JamSession {
 			} catch (_:Dynamic) {}
 		}
 		state.peers.set(marks);
+	}
+	public function checkpoint():Void {
+		if (transport >= 0) {
+			recoveryStatus.set("saving locally");
+			if (!NativeJam.send(transport,{t:"checkpoint",id:serial})) fail("Jam could not queue a checkpoint");
+		}
 	}
 	public function pause(paused:Bool):Void { if (transport >= 0) NativeJam.send(transport,{t:"pause",paused:paused}); }
 	function fail(message:String):Void {

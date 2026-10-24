@@ -6,6 +6,7 @@ cd "$here"
 cargo test --manifest-path native/jam/Cargo.toml --locked
 cargo build --manifest-path native/jam/Cargo.toml --locked
 python3 tests/jam_peer_checks.py "$@"
+python3 tests/jam_recovery_checks.py "$@"
 stage_natives bin
 haxe "${ui_args[@]}" -cp "$ashui/tests" -main CodeCollaboration -hl bin/ashui-jam-check.hl
 haxe "${ui_args[@]}" -cp tests -main JamWorkbenchChecks -hl bin/jam-ui-check.hl

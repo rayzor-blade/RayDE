@@ -1191,6 +1191,7 @@ name = "rayde-jam"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "crc32fast",
  "futures-util",
  "getrandom 0.3.4",
  "serde",

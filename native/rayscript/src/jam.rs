@@ -36,7 +36,7 @@ pub fn document_call(id: i32, message: &str) -> String {
             let index=|key:&str| message[key].as_u64().and_then(|n|u32::try_from(n).ok()).ok_or_else(||format!("Invalid Jam {key}"));
             let mut reply=json!({});
             match string("op")? {
-                "snapshot" => { reply["state"]=doc.state().into(); reply["vector"]=doc.vector().into(); },
+                "snapshot" => { reply["document_id"]=doc.id().into(); reply["state"]=doc.state().into(); reply["vector"]=doc.vector().into(); },
                 "edit" => {
                     let parts:Vec<Patch>=serde_json::from_value(message["parts"].clone()).map_err(|_|"Invalid Jam edit ranges")?;
                     let before=doc.text();

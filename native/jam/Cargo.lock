@@ -82,6 +82,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -414,6 +423,7 @@ name = "rayde-jam"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "crc32fast",
  "futures-util",
  "getrandom 0.3.4",
  "serde",

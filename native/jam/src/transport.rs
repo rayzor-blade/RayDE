@@ -1,4 +1,7 @@
-use crate::document::{Document, MAX_SESSION, MAX_UPDATE};
+use crate::{
+    document::{Document, MAX_SESSION, MAX_UPDATE},
+    recovery::Recovery,
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -21,7 +24,7 @@ use tokio_tungstenite::{
     tungstenite::{Message, protocol::WebSocketConfig},
 };
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 const MAX_WIRE: usize = MAX_UPDATE * 4 / 3 + 4096;
 const MAX_PEERS: usize = 8;
 
@@ -46,6 +49,10 @@ pub enum Wire {
         file: String,
         state: String,
         vector: String,
+        #[serde(default)]
+        document_id: String,
+        #[serde(default)]
+        durable: bool,
     },
     Sync {
         id: u64,
@@ -77,7 +84,7 @@ pub enum Wire {
     RoomClosed,
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub host: bool,
@@ -88,6 +95,12 @@ pub struct Config {
     pub file: String,
     #[serde(default)]
     pub state: String,
+    #[serde(default)]
+    pub document_id: String,
+    #[serde(default)]
+    pub recovery: String,
+    #[serde(default)]
+    pub restore: bool,
 }
 struct Queued {
     message: Wire,
@@ -102,6 +115,7 @@ impl Drop for Queued {
 enum Command {
     Send(Queued),
     Pause(bool),
+    Checkpoint(u64),
 }
 type Wake = Option<unsafe extern "C" fn() -> bool>;
 struct Events {
@@ -260,7 +274,9 @@ impl Session {
         if self.stopped.load(Ordering::Acquire) {
             return false;
         }
-        let command = if value["t"] == "pause" {
+        let command = if value["t"] == "checkpoint" {
+            Command::Checkpoint(value["id"].as_u64().unwrap_or(0))
+        } else if value["t"] == "pause" {
             Command::Pause(value["paused"].as_bool().unwrap_or(true))
         } else {
             let Ok(message) = serde_json::from_value::<Wire>(value) else {
@@ -313,31 +329,55 @@ impl Session {
         self.cancel.notify_one();
     }
 
-    async fn run(&self, config: Config, commands: mpsc::Receiver<Command>) -> Result<(), String> {
+    async fn run(
+        &self,
+        config: Config,
+        mut commands: mpsc::Receiver<Command>,
+    ) -> Result<(), String> {
         let peer = Document::new("")?.id();
+        let id = if config.host && config.document_id.is_empty() {
+            peer.clone()
+        } else {
+            config.document_id
+        };
+        let recovery = Arc::new(Mutex::new(Recovery::open(
+            &config.recovery,
+            &config.file,
+            config.restore,
+            &id,
+            &config.state,
+        )?));
+        if config.restore {
+            let saved = recovery.lock().unwrap();
+            self.push(json!({"t":"restored","document_id":saved.id,"file":saved.file,"state":saved.doc.state()}));
+        }
         let mut server = JoinSet::new();
         let mut local_room = None;
+        let (fatal_tx, mut fatal_rx) = mpsc::channel(1);
         let (url, token) = if config.host {
             let listener = TcpListener::bind("127.0.0.1:0")
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|_| "Cannot listen for a local Jam")?;
             let mut secret = [0u8; 32];
             getrandom::fill(&mut secret).map_err(|_| "Cannot create a Jam invitation")?;
             let token: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
             let invite = format!(
                 "ws://{}/jam/{token}",
-                listener.local_addr().map_err(|e| e.to_string())?
+                listener
+                    .local_addr()
+                    .map_err(|_| "Cannot read Jam address")?
             );
             let mut doc = Document::new("")?;
-            doc.apply(&config.state)?;
-            let room = Room {
+            doc.apply(&recovery.lock().unwrap().doc.state())?;
+            let room = Arc::new(Mutex::new(Room {
                 doc,
                 token: token.clone(),
                 file: config.file,
                 peers: HashMap::new(),
                 bytes: 0,
-            };
-            let room = Arc::new(Mutex::new(room));
+                recovery: recovery.clone(),
+                fatal: fatal_tx.clone(),
+            }));
             local_room = Some(room.clone());
             server.spawn(serve(listener, room));
             self.push(json!({"t":"hosting","invite":invite}));
@@ -345,7 +385,20 @@ impl Session {
         } else {
             invite_address(&config.invite)?
         };
-        let result = self.connect(url, token, peer, config.name, commands).await;
+        let result = tokio::select! {
+            result = self.connect(url, token, peer, config.name, &mut commands, &recovery) => result,
+            Some(error) = fatal_rx.recv() => Err(error),
+        };
+        // Closing a view is non-blocking; the worker finishes already accepted local writes.
+        commands.close();
+        let mut paused = true;
+        let mut result = result;
+        while let Some(command) = commands.recv().await {
+            if let Err(error) = self.local(command, &recovery, &mut paused) {
+                result = Err(error);
+                break;
+            }
+        }
         if let Some(room) = local_room {
             room.lock().unwrap().broadcast(Wire::RoomClosed, "");
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -354,13 +407,43 @@ impl Session {
         result
     }
 
+    fn local(
+        &self,
+        command: Command,
+        recovery: &Arc<Mutex<Recovery>>,
+        paused: &mut bool,
+    ) -> Result<Option<Wire>, String> {
+        match command {
+            Command::Pause(on) => {
+                *paused = on;
+                Ok(None)
+            }
+            Command::Checkpoint(id) => {
+                recovery.lock().unwrap().checkpoint()?;
+                self.push(json!({"t":"checkpointed","id":id}));
+                Ok(None)
+            }
+            Command::Send(message) => {
+                if let Wire::Sync { id, update } = &message.message {
+                    let mut saved = recovery.lock().unwrap();
+                    saved.accept(update)?;
+                    if saved.durable() {
+                        self.push(json!({"t":"locally_saved","id":id}));
+                    }
+                }
+                Ok(Some(message.message.clone()))
+            }
+        }
+    }
+
     async fn connect(
         &self,
         url: String,
         token: String,
         peer: String,
         name: String,
-        mut commands: mpsc::Receiver<Command>,
+        commands: &mut mpsc::Receiver<Command>,
+        recovery: &Arc<Mutex<Recovery>>,
     ) -> Result<(), String> {
         self.push(json!({"t":"identity","peer":peer}));
         let mut paused = false;
@@ -369,14 +452,31 @@ impl Session {
                 return Ok(());
             }
             if paused {
-                tokio::select! { _ = self.cancel.notified() => return Ok(()), next = commands.recv() => match next { Some(Command::Pause(false)) => paused=false, None => return Ok(()), _ => {} } }
+                tokio::select! {
+                    _ = self.cancel.notified() => return Ok(()),
+                    next = commands.recv() => match next {
+                        Some(command) => { self.local(command,recovery,&mut paused)?; },
+                        None => return Ok(()),
+                    }
+                }
                 continue;
             }
-            let connected = tokio::select! {
-                _ = self.cancel.notified() => return Ok(()),
-                result = tokio::time::timeout(Duration::from_secs(5),connect_async_with_config(&url,Some(self::config()),true)) => result,
+            let connecting = tokio::time::timeout(
+                Duration::from_secs(5),
+                connect_async_with_config(&url, Some(self::config()), true),
+            );
+            tokio::pin!(connecting);
+            let connected = loop {
+                tokio::select! {
+                    _ = self.cancel.notified() => return Ok(()),
+                    result = &mut connecting => break Some(result),
+                    next = commands.recv() => match next {
+                        Some(command) => { self.local(command,recovery,&mut paused)?; if paused { break None; } },
+                        None => return Ok(()),
+                    }
+                }
             };
-            if let Ok(Ok((mut socket, _))) = connected {
+            if let Some(Ok(Ok((mut socket, _)))) = connected {
                 let hello = Wire::Hello {
                     v: VERSION,
                     token: token.clone(),
@@ -395,17 +495,27 @@ impl Session {
                             _ = self.cancel.notified() => return Ok(()),
                             _ = &mut handshake, if !welcomed => break,
                             next = commands.recv() => match next {
-                                Some(Command::Pause(true)) => { paused=true; break; },
-                                Some(Command::Send(message)) if welcomed && !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&message.message))).await.is_ok_and(|r|r.is_ok()) => break,
-                                None => return Ok(()), _ => {},
+                                Some(command) => {
+                                    let message=self.local(command,recovery,&mut paused)?;
+                                    if paused { break; }
+                                    if let Some(message)=message && welcomed && !tokio::time::timeout(Duration::from_secs(3),socket.send(packet(&message))).await.is_ok_and(|r|r.is_ok()) { break; }
+                                },
+                                None => return Ok(()),
                             },
                             next = socket.next() => match next {
                                 Some(Ok(message)) => match parse(message) {
                                     Ok(Some(Wire::Error {message,..})) => return Err(message),
                                     Ok(Some(Wire::RoomClosed)) => { self.push(json!({"t":"room_closed"})); return Ok(()); },
-                                    Ok(Some(message @ Wire::Welcome {v:VERSION,..})) if !welcomed => { welcomed=true; self.push(serde_json::to_value(message).unwrap()); },
+                                    Ok(Some(message @ Wire::Welcome {v:VERSION,..})) if !welcomed => {
+                                        if let Wire::Welcome {document_id,file,state,..} = &message { recovery.lock().unwrap().adopt(document_id,file,state)?; }
+                                        welcomed=true; self.push(serde_json::to_value(message).unwrap());
+                                    },
                                     Ok(Some(Wire::Welcome {..})) => return Err("Incompatible Jam protocol".into()),
-                                    Ok(Some(message @ (Wire::Update {..}|Wire::Ack {..}|Wire::Peers {..}|Wire::Cursor {..}))) if welcomed => self.push(serde_json::to_value(message).unwrap()),
+                                    Ok(Some(message @ Wire::Update {..})) if welcomed => {
+                                        if let Wire::Update {update,..} = &message { recovery.lock().unwrap().accept(update)?; }
+                                        self.push(serde_json::to_value(message).unwrap());
+                                    },
+                                    Ok(Some(message @ (Wire::Ack {..}|Wire::Peers {..}|Wire::Cursor {..}))) if welcomed => self.push(serde_json::to_value(message).unwrap()),
                                     Ok(None) => {}, _ => break,
                                 }, _ => break,
                             }
@@ -414,14 +524,19 @@ impl Session {
                 }
             }
             self.push(json!({"t":if paused {"paused"} else {"reconnecting"}}));
-            // Updates are reconstructed from the CRDT on the next welcome; stale presence is disposable.
-            while let Ok(command) = commands.try_recv() {
-                if let Command::Pause(on) = command {
-                    paused = on;
-                }
-            }
             if !paused {
-                tokio::select! { _ = self.cancel.notified() => return Ok(()), _ = tokio::time::sleep(Duration::from_secs(1)) => {} }
+                let delay = tokio::time::sleep(Duration::from_secs(1));
+                tokio::pin!(delay);
+                loop {
+                    tokio::select! {
+                        _ = self.cancel.notified() => return Ok(()),
+                        _ = &mut delay => break,
+                        next = commands.recv() => match next {
+                            Some(command) => { self.local(command,recovery,&mut paused)?; if paused { break; } },
+                            None => return Ok(()),
+                        }
+                    }
+                }
             }
         }
     }
@@ -438,6 +553,8 @@ struct Room {
     file: String,
     peers: HashMap<String, Peer>,
     bytes: usize,
+    recovery: Arc<Mutex<Recovery>>,
+    fatal: mpsc::Sender<String>,
 }
 impl Room {
     fn broadcast(&mut self, message: Wire, except: &str) {
@@ -456,6 +573,10 @@ impl Room {
                     return Err("Local Jam room limit reached; start a new room".into());
                 }
                 self.doc.apply(&update)?;
+                if let Err(error) = self.recovery.lock().unwrap().accept(&update) {
+                    let _ = self.fatal.try_send(error.clone());
+                    return Err(error);
+                }
                 self.broadcast(
                     Wire::Update {
                         peer: peer.into(),
@@ -545,12 +666,16 @@ async fn serve_peer(stream: TcpStream, room: Arc<Mutex<Room>>) {
     let connection = tx.clone();
     {
         let mut room = room.lock().unwrap();
+        let saved = room.recovery.lock().unwrap();
         let welcome = Wire::Welcome {
             v: VERSION,
             file: room.file.clone(),
             state: room.doc.state(),
             vector: room.doc.vector(),
+            document_id: saved.id.clone(),
+            durable: saved.durable(),
         };
+        drop(saved);
         let _ = tx.try_send(welcome);
         for (id, p) in &room.peers {
             if let Some((caret, anchor)) = &p.cursor {
@@ -639,6 +764,7 @@ mod tests {
                 name: "Host".into(),
                 file: "Main.hx".into(),
                 state: a.state(),
+                ..Default::default()
             },
             None,
         )
@@ -657,6 +783,7 @@ mod tests {
                 name: "Guest".into(),
                 file: String::new(),
                 state: String::new(),
+                ..Default::default()
             },
             None,
         )
@@ -713,6 +840,10 @@ mod tests {
     async fn rejects_wrong_version_token_and_invalid_updates() {
         let seed = Document::new("safe").unwrap();
         let room = Arc::new(Mutex::new(Room {
+            recovery: Arc::new(Mutex::new(
+                Recovery::open("", "Main.hx", false, &seed.id(), &seed.state()).unwrap(),
+            )),
+            fatal: mpsc::channel(1).0,
             doc: seed,
             token: "0123456789abcdef".into(),
             file: "Main.hx".into(),
@@ -722,7 +853,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(serve(listener, room.clone()));
-        for (version, token) in [(2, "0123456789abcdef"), (1, "bad")] {
+        for (version, token) in [(1, "0123456789abcdef"), (VERSION, "bad")] {
             let (mut ws, _) = connect_async_with_config(
                 format!("ws://{addr}/jam/0123456789abcdef"),
                 Some(config()),
@@ -778,6 +909,64 @@ mod tests {
         server.abort();
     }
     #[test]
+    fn storage_failure_never_acknowledges_or_broadcasts() {
+        let root =
+            std::env::temp_dir().join(format!("rayde-jam-{}", Document::new("").unwrap().id()));
+        let mut seed = Document::new("safe").unwrap();
+        let recovery = Recovery::open(
+            root.to_str().unwrap(),
+            "Main.hx",
+            false,
+            &seed.id(),
+            &seed.state(),
+        )
+        .unwrap();
+        let (fatal, mut errors) = mpsc::channel(1);
+        let (tx, mut replies) = mpsc::channel(8);
+        let mut room = Room {
+            doc: Document::new("").unwrap(),
+            token: String::new(),
+            file: "Main.hx".into(),
+            peers: HashMap::new(),
+            bytes: 0,
+            recovery: Arc::new(Mutex::new(recovery)),
+            fatal,
+        };
+        room.doc.apply(&seed.state()).unwrap();
+        room.peers.insert(
+            "peer".into(),
+            Peer {
+                info: PeerInfo {
+                    id: "peer".into(),
+                    name: "Peer".into(),
+                },
+                tx,
+                cursor: None,
+            },
+        );
+        // Force snapshot compaction to fail after the journal itself has been flushed.
+        std::fs::create_dir(root.join("checkpoint.next")).unwrap();
+        let update = seed
+            .edit(
+                "safe",
+                &[crate::document::Patch {
+                    from: 4,
+                    removed: "".into(),
+                    inserted: "x".repeat(512 * 1024),
+                }],
+            )
+            .unwrap();
+        assert!(room.process("peer", Wire::Sync { id: 7, update }).is_err());
+        assert!(replies.try_recv().is_err());
+        assert!(errors.try_recv().is_ok());
+        drop(room);
+        std::fs::remove_dir(root.join("checkpoint.next")).unwrap();
+        let recovered = Recovery::open(root.to_str().unwrap(), "Main.hx", true, "", "").unwrap();
+        assert_eq!(recovered.doc.text(), seed.text());
+        drop(recovered);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn slow_sender_has_a_byte_budget_and_releases_it_on_cancel() {
         let (tx, rx) = mpsc::channel(64);
         let session = Session {
@@ -811,6 +1000,13 @@ mod tests {
         ] {
             assert!(invite_address(url).is_err());
         }
+        assert!(matches!(
+            serde_json::from_str::<Wire>(
+                r#"{"t":"welcome","v":1,"file":"Main.hx","state":"AA==","vector":"AA=="}"#
+            )
+            .unwrap(),
+            Wire::Welcome { v: 1, .. }
+        ));
         assert!(
             serde_json::from_str::<Wire>(r#"{"t":"sync","id":1,"update":"AA==","extra":true}"#)
                 .is_err()

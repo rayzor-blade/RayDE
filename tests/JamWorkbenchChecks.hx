@@ -17,7 +17,7 @@ class JamWorkbenchChecks {
 			Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",extensions); throw error;
 		}
 		Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",extensions);
-		Sys.println("Jam UI: explicit sharing, exact edit ranges, Unicode, author undo/redo, IME deferral, reconnect, inactive views, and owner cleanup in both themes");
+		Sys.println("Jam UI: explicit sharing, exact edit ranges, Unicode, author undo/redo, IME deferral, reconnect, inactive views, durable recovery, and owner cleanup in both themes");
 	}
 	static function run(dark:Bool):Void {
 		var root=Sys.getCwd()+"bin/jam-ui-"+Std.random(0x3fffffff), source="hello 🦀\nsecond line\n";
@@ -44,7 +44,7 @@ class JamWorkbenchChecks {
 		try {
 			check(a.jam.get()==null && a.jamPoll==null,"Session-free window started Jam polling");
 			a.openFile(fa); b.openFile(fb); settle();
-			for (id in ["jam.start","jam.join","jam.copy","jam.leave"]) check(Lambda.exists(a.commandList,c -> c.id==id),"Missing command "+id);
+			for (id in ["jam.start","jam.join","jam.copy","jam.leave","jam.resume","jam.rejoin"]) check(Lambda.exists(a.commandList,c -> c.id==id),"Missing command "+id);
 			a.runCommand("jam.start"); settle(); check(a.prompt.get()!=null && a.prompt.get().action=="Start Jam","Share command did not request explicit consent");
 			a.prompt.get().accept("Host"); a.prompt.set(null);
 			until(() -> a.jam.get().initialized.get() && a.jam.get().invite.get()!="","Host did not connect");
@@ -83,12 +83,29 @@ class JamWorkbenchChecks {
 			check(!state.mounted,"Inactive shared document retained its editor");
 			eb.applyEdits([{from:0,to:0,text:"hidden "}]); until(() -> b.buffer(fb).get()==a.buffer(fa).get(),"Inactive document stopped synchronizing");
 			a.openFile(fa); settle(); check(a.editorFor(fa).value.get()==b.buffer(fb).get(),"Reopened editor lost the shared document");
+			until(() -> ja.recoveryStatus.get()=="saved locally" && jb.recoveryStatus.get()=="saved locally","Edits were not checkpointed");
+			var finalText=a.buffer(fa).get(), firstInvite=ja.invite.get();
 			a.runCommand("jam.leave");
 			until(() -> jb.failure.get()!="","Host closure was not reported to the guest");
 			b.runCommand("jam.leave"); settle();
 			check(ja.closed && jb.closed && ja.document==-1 && jb.transport==-1,"Leaving retained native handles");
 			check(state.onUndo==null && state.onTransaction==null && state.peers.get().length==0,"Leaving retained document callbacks or peer decorations");
 			check(Css.query(ta,a.node.id,".ui-code-peer-caret").length==0 && a.jamPoll==null && b.jamPoll==null,"Leaving retained views or polling");
+			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Jam wrote files without Save");
+			// Recovery replaces only a clean buffer and never needs an active old presentation.
+			a.runCommand("jam.resume"); settle(); check(a.prompt.get()==null,"Recovery offered to replace unsaved editor changes");
+			a.documentState(fa).value.set(source); b.documentState(fb).value.set(source); a.saveAll(); b.saveAll(); settle();
+			a.editorFor(fa).select(source.length,source.length);
+			a.runCommand("jam.resume"); settle(); check(a.prompt.get()!=null && a.prompt.get().action=="Resume Jam","Resume command did not request explicit consent");
+			a.prompt.get().accept(""); a.prompt.set(null);
+			until(() -> a.jam.get().status.get()=="connected","Host did not resume");
+			check(a.buffer(fa).get()==finalText && a.jam.get().invite.get()!=firstInvite,"Resume reseeded text or reused an invitation");
+			b.runCommand("jam.rejoin"); settle(); check(b.prompt.get()!=null,"Rejoin did not request an invitation");
+			b.prompt.get().accept(a.jam.get().invite.get()); b.prompt.set(null);
+			until(() -> b.jam.get().status.get()=="connected" && a.jam.get().people.get().length==2,"Guest did not restore and rejoin");
+			check(b.buffer(fb).get()==finalText,"Restored peers diverged");
+			a.jam.get().checkpoint(); until(() -> a.jam.get().recoveryStatus.get()=="saved locally","Explicit checkpoint failed");
+			a.runCommand("jam.leave"); b.runCommand("jam.leave"); settle();
 			check(sys.io.File.getContent(fa)==source && sys.io.File.getContent(fb)==source,"Jam wrote files without Save");
 		} catch (error:Dynamic) { sa(); sb(); ta.dispose(); tb.dispose(); ca.stop(); cb.stop(); throw error; }
 		sa(); sb(); ta.dispose(); tb.dispose(); ca.stop(); cb.stop();

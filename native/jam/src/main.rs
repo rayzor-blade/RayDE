@@ -41,7 +41,8 @@ fn run() -> Result<(), String> {
     let first: Value =
         serde_json::from_str(&rx.recv().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let host = first["host"].as_bool().unwrap_or(false);
-    let mut doc = Document::new(if host {
+    let restore = first["restore"].as_bool().unwrap_or(false);
+    let mut doc = Document::new(if host && !restore {
         first["text"].as_str().unwrap_or("")
     } else {
         ""
@@ -53,6 +54,13 @@ fn run() -> Result<(), String> {
             name: first["name"].as_str().unwrap_or("Peer").into(),
             file: first["file"].as_str().unwrap_or("Main.hx").into(),
             state: doc.state(),
+            document_id: if host && !restore {
+                doc.id()
+            } else {
+                String::new()
+            },
+            recovery: first["recovery"].as_str().unwrap_or("").into(),
+            restore,
         },
         None,
     )?;
@@ -68,13 +76,21 @@ fn run() -> Result<(), String> {
     loop {
         for message in session.poll() {
             match message["t"].as_str() {
+                Some("restored") => {
+                    doc.apply(message["state"].as_str().ok_or("Missing recovery state")?)?;
+                    emit(
+                        json!({"t":"restored","text":doc.text(),"document_id":message["document_id"]}),
+                    );
+                }
                 Some("welcome") => {
                     doc.apply(message["state"].as_str().ok_or("Missing state")?)?;
                     publish(
                         doc.diff(message["vector"].as_str().ok_or("Missing vector")?)?,
                         &mut serial,
                     )?;
-                    emit(json!({"t":"welcome","text":doc.text()}));
+                    emit(
+                        json!({"t":"welcome","text":doc.text(),"document_id":message["document_id"],"durable":message["durable"]}),
+                    );
                 }
                 Some("update") => {
                     doc.apply(message["update"].as_str().ok_or("Missing update")?)?;
@@ -116,7 +132,11 @@ fn run() -> Result<(), String> {
                     Some("pause") => {
                         session.send(json!({"t":"pause","paused":command["paused"]}));
                     }
+                    Some("checkpoint") => {
+                        session.send(json!({"t":"checkpoint","id":serial}));
+                    }
                     Some("snapshot") => emit(json!({"t":"snapshot","text":doc.text()})),
+                    Some("crash") => std::process::exit(86),
                     Some("close") => {
                         shutdown(&session);
                         return Ok(());

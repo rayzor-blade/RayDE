@@ -1273,6 +1273,8 @@ class Workbench extends Component<WorkbenchProps> {
 		return [
 			{id:"jam.start",label:"Jam: Share Active Document…",icon:Icons.TEAM_LINE,run:askStartJam},
 			{id:"jam.join",label:"Jam: Join Shared Document…",icon:Icons.TEAM_LINE,run:askJoinJam},
+			{id:"jam.resume",label:"Jam: Resume Saved Document…",icon:Icons.TEAM_LINE,run:() -> askRestoreJam(true)},
+			{id:"jam.rejoin",label:"Jam: Rejoin Saved Document…",icon:Icons.TEAM_LINE,run:() -> askRestoreJam(false)},
 			{id:"jam.copy",label:"Jam: Copy Invitation",icon:Icons.LINK_M,run:copyJamInvite},
 			{id:"jam.leave",label:"Jam: Leave",icon:Icons.LOGOUT_BOX_LINE,run:leaveJam},
 			{id:"newwindow", label:"New Window", icon:Icons.WINDOW_LINE, run:() -> if (props.onNewWindow != null) props.onNewWindow()},
@@ -3802,7 +3804,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function askStartJam():Void {
 		try {
 			var file=jamFile();
-			prompt.set({title:"Share " + haxe.io.Path.withoutDirectory(file),description:"Share this document in a local Jam. Participants can edit it. Save writes changes to your local copy. Closing the host window ends the room.",action:"Start Jam",hasInput:true,value:Sys.getEnv("USER") ?? "Host",placeholder:"Your display name",
+			prompt.set({title:"Share " + haxe.io.Path.withoutDirectory(file),description:"Share this document in a local Jam. Participants can edit it. Save writes changes to your local copy. Closing the host window ends the room. Starting a fresh Jam replaces this file's previous Jam checkpoint; use Resume Saved Document to recover it.",action:"Start Jam",hasInput:true,value:Sys.getEnv("USER") ?? "Host",placeholder:"Your display name",
 				check:name -> StringTools.trim(name) == "" || haxe.io.Bytes.ofString(name).length > 64 ? "Enter a name of 1–64 bytes" : null,
 				accept:name -> beginJam(file,true,name,"")});
 		} catch (error:Dynamic) say(Std.string(error));
@@ -3812,14 +3814,24 @@ class Workbench extends Component<WorkbenchProps> {
 		try {
 			var file=jamFile();
 			if (dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
-			prompt.set({title:"Join a local Jam",description:"Open the matching file in your own workspace copy. Joining replaces its editor buffer with the shared document. Your disk copy changes only when you save.",action:"Join Jam",hasInput:true,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,false,Sys.getEnv("USER") ?? "Guest",StringTools.trim(invitation))});
+			prompt.set({title:"Join a local Jam",description:"Open the matching file in your own workspace copy. Joining replaces its editor buffer with the shared document. Your disk copy changes only when you save. Joining fresh replaces its previous Jam checkpoint; use Rejoin Saved Document to retain offline edits.",action:"Join Jam",hasInput:true,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,false,Sys.getEnv("USER") ?? "Guest",StringTools.trim(invitation))});
 		} catch (error:Dynamic) say(Std.string(error));
 	}
 
-	function beginJam(file:String,host:Bool,name:String,invitation:String):Void {
+	function jamRecovery(file:String):String return props.display.cwd + "/.rayde/jam/" + haxe.crypto.Sha256.encode(file);
+
+	function askRestoreJam(host:Bool):Void {
+		try {
+			var file=jamFile();
+			if (dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before restoring a Jam";
+			prompt.set({title:host ? "Resume saved Jam" : "Rejoin saved Jam",description:host ? "Restore this file's saved shared document into the editor and create a new invitation. Participants can rejoin using that invitation. Your disk copy changes only when you save." : "Restore this file's saved shared document and merge its offline edits into the original Jam. Ask the host for the current invitation. Your disk copy changes only when you save.",action:host ? "Resume Jam" : "Rejoin Jam",hasInput:!host,placeholder:"ws://127.0.0.1:port/jam/invitation",accept:invitation -> beginJam(file,host,Sys.getEnv("USER") ?? "Peer",host ? "" : StringTools.trim(invitation),true)});
+		} catch (error:Dynamic) say(Std.string(error));
+	}
+
+	function beginJam(file:String,host:Bool,name:String,invitation:String,restore:Bool=false):Void {
 		if (jam.get() != null || !buffers.exists(file)) throw "Open the document and leave any existing Jam first";
-		if (!host && dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
-		var current=new JamSession(file,documentState(file),host,name,invitation,() -> { if (!gone) edited(file); });
+		if ((!host || restore) && dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
+		var current=new JamSession(file,documentState(file),host,name,invitation,() -> { if (!gone) edited(file); },jamRecovery(file),restore);
 		jam.set(current);
 		var editor=editorOf(file);
 		if (editor != null) current.moved(editor.editing.caret.get(),editor.editing.anchor.get());
@@ -3858,7 +3870,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function jamStatus(current:JamSession):Element {
 		var label=Computed.make(() -> "Jam · " + current.status.get() + (current.people.get().length > 0 ? " · " + current.people.get().length : ""));
-		var description=Computed.make(() -> current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.people.get().map(p -> p.name).join(", "));
+		var description=Computed.make(() -> current.failure.get() != "" ? current.failure.get() : haxe.io.Path.withoutDirectory(current.file) + " — " + current.recoveryStatus.get() + (current.durableHost.get() ? "; host checkpoints enabled" : "; host durability not confirmed") + " — " + current.people.get().map(p -> p.name).join(", "));
 		return <tooltip label={description} side="top"><dropdown-menu side="top" id="rayde-jam-menu">
 			<dropdown-menu-trigger id="rayde-jam-status" variant={Ghost} class="rayde-status-item"><icon document={Icons.TEAM_LINE} class="size-3.5"/><text>${label}</text></dropdown-menu-trigger>
 			<dropdown-menu-content>
@@ -3866,6 +3878,7 @@ class Workbench extends Component<WorkbenchProps> {
 				<dropdown-menu-item onSelect={() -> openFile(current.file)}>Open Shared Document</dropdown-menu-item>
 				<dropdown-menu-item disabled={!current.host || current.invite.get() == ""} onSelect={copyJamInvite}>Copy Invitation</dropdown-menu-item>
 				<dropdown-menu-item onSelect={() -> current.pause(false)}>Reconnect</dropdown-menu-item>
+				<dropdown-menu-item onSelect={current.checkpoint}>Save Recovery Checkpoint</dropdown-menu-item>
 				<dropdown-menu-separator/>
 				<dropdown-menu-item id="rayde-jam-leave" onSelect={leaveJam}>${current.host ? "End Jam" : "Leave Jam"}</dropdown-menu-item>
 			</dropdown-menu-content>
