@@ -19,7 +19,7 @@ mkdir -p "$out"
 cp "$libs/blinc_abi.wasm" "$out/"
 cd "$here"
 haxe "${ui_args[@]}" -D wasm -D ashui_no_hdll -D ashui_window -D rayde_page -D "hlwgpu_web=$libs/hlwgpu-web" -D "hlwindow_web=$libs/hlwindow-web" \
-  -dce full --macro "ashui.core.render.UiFramework.register()" --macro "ashui.macro.DefaultFonts.stage()" --macro "ashui.macro.WebPage.stage()" \
+  -dce full --macro "ashui.core.render.UiFramework.register()" --macro "ashui.macro.DefaultFonts.stage()" --macro "rayde.workspace.PageFonts.stage()" --macro "ashui.macro.WebPage.stage()" \
   --macro "hlwgpu.macro.NativeInstall.stage()" --macro "hlwindow.macro.NativeInstall.stage()" \
   -main rayde.Main -hl "$out/rayde.hl"
 # The window presents as a Mac, but shortcuts follow the visitor's keyboard: the page tells the program its platform before the host starts it.
