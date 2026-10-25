@@ -137,7 +137,7 @@ class ExplorerPart {
 		if (!sys.FileSystem.exists(path) || sys.FileSystem.isDirectory(path)) return;
 		if (Manifest.isManifest(path)) wb.openSettings("extension");
 		else if (ThemeFile.isThemeFile(path)) wb.themePart.openThemeStudio();
-		else if (path == wb.props.display.hxml || path == wb.rayzorManifest()) wb.openBuild();
+		else if (path == wb.props.display.hxml || path == wb.projectManifest()) wb.openBuild();
 		else wb.openFile(path);
 	}
 
@@ -287,7 +287,7 @@ class ExplorerPart {
 		var contributed = wb.extensionsPart.contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
 			items.push(menuItem("Open", null, () -> openExplorerFile(path)));
-		if (!folder && path == wb.rayzorManifest())
+		if (!folder && path == wb.projectManifest())
 			items.push(menuItem("Edit as Text", null, () -> wb.openFile(path), true, Icons.CODE_S_SLASH_LINE));
 		if (!folder && ImagePreview.isSvg(path)) {
 			items.push(menuItem("Open Preview", null, () -> { wb.editorPart.imageTextMode(path).set(false); wb.openFile(path); }, true, Icons.IMAGE_LINE));

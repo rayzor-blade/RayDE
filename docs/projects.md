@@ -28,5 +28,7 @@ A `.cbproj` is a Caribou project: one program in Haxe with Lua, Python and Wren 
 
 **Run** and **Build** run `caribou run --diagnostics <file> <name>.cbproj` and `caribou build --diagnostics <file> <name>.cbproj` in the project folder, with the output streamed to the console and Caribou's findings written to `.rayde/run/diagnostics.jsonl`. Compile errors, failed reloads and runtime errors with a file and range land in **Problems** at their line; the others are workspace problems. Stop ends the process. Caribou builds into the project's own `target/`.
 
+**Settings > Build** edits the `.cbproj` as a form: name, entry point, languages, Haxe class paths and defines, run preset and arguments, and workspace members. Each control changes only its own field; Edit as Text covers everything else. Opening the `.cbproj` from the Explorer goes to the form.
+
 RayDE finds `caribou` from `CARIBOU`, beside RayDE, on `PATH`, or in a sibling `../caribou/target/{release,debug}`. Lua, Python and Wren files open with syntax highlighting.
 

@@ -8,6 +8,7 @@ import rayde.run.Runner;
 
 /** A Caribou project is opened through `caribou project --json`, run and built through `caribou`, and its findings land in Problems; a fake `caribou` stands in for the real one. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.ExplorerPart)
 class CaribouProjectChecks {
 	static function check(value:Bool, message:String):Void { if (!value) throw message; }
 	static function main():Void {
@@ -61,8 +62,25 @@ class CaribouProjectChecks {
 		var found = bench.problems.get();
 		check(found.length == 1 && found[0].file == null && found[0].message == "plugins.window: library not built yet", 'the file\'s problems reach Problems: ${found.length}');
 		check(bench.runtime() == "caribou" || display.project.runtime == "caribou", "the project runs on Caribou");
+		var css = ashui.css.Css;
+		function settle(frames = 8):Void for (_ in 0...frames) { ashui.core.render.Offscreen.advance(.03); css.update(); tree.flush(); tree.computeLayout(bench.node, 1280, 800); }
+		function node(selector:String):ashui.layout.Node {
+			var ids = css.query(tree, bench.node.id, selector); check(ids.length == 1, 'missing or duplicate control: $selector');
+			return new ashui.layout.Node(ids[0]);
+		}
+		bench.explorerPart.openExplorerFile(project + "/game.cbproj"); settle();
+		check(bench.active.get() == rayde.ui.Workbench.SETTINGS && bench.settingsSection() == "build" && css.query(tree, bench.node.id, "#rayde-caribou-build").length == 1 && bench.editorFor(project + "/game.cbproj") == null, "Explorer opens the Caribou settings form");
+		check(css.query(tree, bench.node.id, "#rayde-caribou-problems-section").length == 1, "the file's problems are shown in the form");
+		var name = node("#rayde-caribou-project-name"), box = tree.getScrolledBounds(name);
+		ashui.input.Pointer.move(tree, box.x + box.width / 2, box.y + box.height / 2); ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
+		ashui.ui.Input.at(tree, name.id).value.set("renamed"); settle(2);
+		var mods = window.Modifiers.State(false, false, false, false, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+		for (state in [window.MouseElementState.Pressed, window.MouseElementState.Released])
+			ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), window.Key.Named(Enter), None, Standard, state, false, Unavailable), mods);
+		settle();
+		check(sys.io.File.getContent(project + "/game.cbproj").indexOf('name = "renamed"') >= 0, "the name edit is written to the .cbproj");
 		stop();
-		Sys.println("Caribou workbench: the project file's problems are workspace problems");
+		Sys.println("Caribou workbench: the project file's problems are workspace problems, and its settings form edits the file");
 	}
 
 	public static function run():Void {

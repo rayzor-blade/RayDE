@@ -3,7 +3,7 @@ package rayde.build;
 import haxe.io.Bytes;
 import sys.io.File;
 
-/** A Rayzor manifest edited one field at a time, keeping unrelated TOML intact. */
+/** A TOML project manifest (rayzor.toml, or a Caribou .cbproj) edited one field at a time, keeping unrelated TOML intact. */
 class RayzorFile {
 	public final path:String;
 	var data:Dynamic;
@@ -16,7 +16,7 @@ class RayzorFile {
 	public function reload():Void {
 		var bytes = Bytes.ofString(source());
 		data = unpack(parseNative(bytes.getData(), bytes.length)).value;
-		if (value(["project"]) == null && value(["workspace"]) == null) throw "rayzor.toml needs a [project] or [workspace] section";
+		if (value(["project"]) == null && value(["workspace"]) == null) throw haxe.io.Path.withoutDirectory(path) + " needs a [project] or [workspace] section";
 		if (workspace()) {
 			if (value(["workspace", "members"]) == null) throw "workspace.members must be an array of strings";
 			strings(["workspace", "members"]);

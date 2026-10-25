@@ -440,9 +440,16 @@ class Workbench extends Component<WorkbenchProps> {
 	function rayzorManifest():Null<String>
 		return props.display.project != null && props.display.project.kind == "rayzor" ? props.display.project.file : null;
 
+	function caribouManifest():Null<String>
+		return props.display.project != null && props.display.project.kind == "caribou" ? props.display.project.file : null;
+
+	/** The manifest of the project's own tool, which Settings > Build edits: rayzor.toml or a Caribou .cbproj. */
+	function projectManifest():Null<String>
+		return rayzorManifest() ?? caribouManifest();
+
 	function beforeBuildChange():Void {
-		var file = rayzorManifest();
-		if (file != null && dirty.get().indexOf(file) >= 0) throw "Save the changes in rayzor.toml before editing its settings.";
+		var file = projectManifest();
+		if (file != null && dirty.get().indexOf(file) >= 0) throw "Save the changes in " + haxe.io.Path.withoutDirectory(file) + " before editing its settings.";
 	}
 
 	/** The size of the element a selector finds, for tests. */
@@ -478,7 +485,7 @@ class Workbench extends Component<WorkbenchProps> {
 		props.display.reload();
 		explorerPart.dependencyReadRoots = [];
 		explorerPart.dependenciesRevision.set(explorerPart.dependenciesRevision.get() + 1);
-		var manifest = rayzorManifest();
+		var manifest = projectManifest();
 		if (manifest != null && documentsPart.buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0)
 			documentsPart.buffers.get(manifest).set(sys.io.File.getContent(manifest));
 		buildRevision.set(buildRevision.get() + 1);

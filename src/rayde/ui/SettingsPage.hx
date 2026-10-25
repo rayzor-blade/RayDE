@@ -35,6 +35,9 @@ typedef SettingsPageProps = {
 	/** The build file the Build section edits; null when the project has none. */
 	build:Null<HxmlFile>,
 	rayzor:Null<String>,
+	/** The project's `.cbproj`, when it is a Caribou project, and what Caribou says is wrong with it. */
+	caribou:Null<String>,
+	caribouProblems:Void->Array<String>,
 	onEditBuildText:Void->Void,
 	beforeBuildChange:Void->Void,
 	terminal:Settings,
@@ -119,6 +122,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root} manager={props.manager} changes={props.extensionChanges} onToggle={props.onExtensionToggle}/>;
 			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
+			case _ if (props.caribou != null): <caribou-settings path={props.caribou} problems={props.caribouProblems} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}
@@ -127,6 +131,6 @@ class SettingsPage extends Component<SettingsPageProps> {
 	function noBuild():Element
 		return SettingsParts.page("rayde-build", <div class="flex flex-col gap-6">
 			${SettingsParts.header(Icons.HAMMER_LINE, "Build", "This project has no build file.")}
-			<div class="rayde-note flex items-center gap-3 px-4 py-3"><icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0"/><text class="text-xs">Open a .hxml or rayzor.toml project to edit how it builds.</text></div>
+			<div class="rayde-note flex items-center gap-3 px-4 py-3"><icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0"/><text class="text-xs">Open a .hxml, .cbproj or rayzor.toml project to edit how it builds.</text></div>
 		</div>);
 }
