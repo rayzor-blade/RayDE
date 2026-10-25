@@ -209,6 +209,22 @@ source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
             deps.verify_remotes()
         self.assertIn("Verified 2 published", result.getvalue())
 
+    def test_windows_linker_ignores_git_bash_path_collision(self):
+        deps = self.dependency_helper()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            git_bin, install = root / "Git/usr/bin", root / "Visual Studio/VC/Tools/MSVC/14.0"
+            linker = install / "bin/Hostx64/x64/link.exe"
+            git_bin.mkdir(parents=True)
+            linker.parent.mkdir(parents=True)
+            (git_bin / "link.exe").write_text("Git link utility")
+            linker.write_text("Microsoft linker")
+            with patch.dict(os.environ, {"VCToolsInstallDir": str(install), "PATH": str(git_bin)}):
+                self.assertEqual(deps.windows_linker()["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER"], str(linker))
+                linker.unlink()
+                with self.assertRaisesRegex(SystemExit, "Visual Studio developer environment"):
+                    deps.windows_linker()
+
     def test_failed_checkout_recovers_and_existing_work_is_protected(self):
         deps = self.dependency_helper()
         with tempfile.TemporaryDirectory() as temp:
@@ -258,6 +274,7 @@ source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
         self.assertEqual(deps.environment()["ASHUI_REV"], pin)
         self.assertIn("RayDE/.deps/ashui-${{ env.ASHUI_REV }} -> target", workflow)
         self.assertIn("--verify-remotes", workflow)
+        self.assertIn('rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt', workflow)
 
 
 if __name__ == "__main__":

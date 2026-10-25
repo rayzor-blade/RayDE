@@ -119,6 +119,15 @@ def fetch():
         run("haxelib", "path", library)
 
 
+def windows_linker():
+    install = os.environ.get("VCToolsInstallDir")
+    linker = Path(install) / "bin/Hostx64/x64/link.exe" if install else None
+    if linker is None or not linker.is_file():
+        raise SystemExit("Initialize the x64 Visual Studio developer environment before building Windows distributions")
+    # Git Bash puts its unrelated link.exe ahead of Visual Studio on PATH.
+    return {"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER": str(linker)}
+
+
 def environment():
     dirs = paths()
     exe = ".exe" if os.name == "nt" else ""
@@ -156,9 +165,12 @@ def windows_imports():
 def build():
     os.environ.update(environment())
     dirs = paths()
+    extra = windows_linker() if os.name == "nt" else {}
+    os.environ.update(extra)
     run("cargo", "build", "--locked", "--release", "-p", "ash_std", cwd=dirs["ash"])
     run("cargo", "build", "--locked", "--release", "-p", "ash", cwd=dirs["ash"])
-    extra = windows_imports() if os.name == "nt" else {}
+    if os.name == "nt":
+        extra.update(windows_imports())
     os.environ.update(extra)
     if os.name == "nt":
         llvm_bin = Path(os.environ["LLVM_SYS_211_PREFIX"]) / "bin"

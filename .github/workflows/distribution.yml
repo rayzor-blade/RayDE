@@ -82,7 +82,7 @@ jobs:
       - name: Check out locked dependencies and install Haxe libraries
         run: python3 scripts/ci-deps.py --fetch --env-file "$GITHUB_ENV"
       - name: Install the locked Rust toolchain
-        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt
       - name: Install native headers (Linux)
         if: runner.os == 'Linux'
         run: |
