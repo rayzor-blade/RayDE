@@ -24,6 +24,8 @@ The command center searches the complete file catalog while mounting only the vi
 
 **Show Code Actions** (Cmd+., Ctrl+. elsewhere with the default keymap) lists actions from the active document's providers. Opt-in providers also put icons beside their target lines; clicking a shared line opens a chooser. The configured Haxe main class gets a **Run Project** icon that uses the normal save/build/run path. Other entry points can be supplied by extensions. Actions belong to a document version and disappear when it changes or its tab becomes inactive. Extension edits to the current document form one undo step. See the [provider API](../extensions.md#code-actions).
 
+Ordinary code tabs enable ashui's `compactGutter`: marker and fold columns occupy space only when the document uses them, including offscreen lines. RayScript tabs with a debugger retain the empty marker column so users can set breakpoints. Column changes share the editor's geometry used by text, selections, hit testing and hints.
+
 ## Panels
 
 Problems come from the active language server, the fallback Haxe compiler and the last build. A problem in the Problems list opens its file at its line. Only the visible rows and a small overscan are mounted.

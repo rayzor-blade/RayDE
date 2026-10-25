@@ -61,6 +61,7 @@ class CodeActionWorkbenchChecks {
 			bench.openProject(); settle(); check(bench.codeActionsPart.codeActions.list().length == 0,"Welcome retained document actions");
 			bench.openFile(file); until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 			check(nodes(".rayde-code-action").length == 2 && nodes(".ui-code-marker-icon").length == 2,"Providers did not share SVG gutter hints");
+			var activeGutter = tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width;
 			check(Lambda.exists(bench.commandList,c -> c.id == "codeactions") && bench.keymapPart.bindings.of("codeactions") != null,"Code actions command or shortcut is missing");
 			Snapshot.capture('code-actions-${dark ? "dark" : "light"}',tree,bench.node,1100,760);
 			var editor = bench.editorFor(file), item = Lambda.find(bench.codeActionsPart.codeActions.list(),i -> i.action.kind == "quickfix"), version = bench.codeActionsPart.codeActionVersion;
@@ -79,7 +80,11 @@ class CodeActionWorkbenchChecks {
 			bench.quickOpen.set(false); settle();
 			bench.openFile(other); settle(); until(() -> !bench.codeActionsPart.codeActions.busy() && bench.codeActionsPart.codeActions.current(other,bench.codeActionsPart.codeActionVersion));
 			check(bench.codeActionsPart.codeActions.list().length == 0 && nodes(".rayde-code-action").length == 0,"Inactive tab retained its actions or Run hint");
+			var compactGutter = tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width;
+			check(nodes(".ui-code-marker-slot").length == 0 && nodes(".ui-code-fold-slot").length == 0 && Math.abs(activeGutter-compactGutter-40)<.1,"Unused gutter columns remained allocated in a tab without actions or folds");
+			Snapshot.capture('code-actions-${dark ? "dark" : "light"}-compact',tree,bench.node,1100,760);
 			bench.openFile(file); until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
+			check(Math.abs(tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width-activeGutter)<.1,"Reopening an actionable tab did not restore its gutter columns");
 			click('.rayde-code-action[title="Run Project"]'); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runner.console.indexOf("ACTION_RAN") >= 0 && bench.runPart.runner.exitCode == 0,"Run provider did not route through the project runner");
 			bench.runPart.saveAll(); bench.closeFile(file); bench.closeFile(other); settle();
