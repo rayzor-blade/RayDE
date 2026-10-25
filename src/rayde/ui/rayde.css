@@ -142,7 +142,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 /* File tabs: the strip sits on the page's background, a quiet tab brightens under the pointer, the front tab is drawn by its canvas. */
 #rayde .rayde-strip { background: var(--background); }
 /* Only the tab in front has feet. It takes the room for them as padding and gives it back as margin, so it flares over its neighbours and tabs sit close. */
-#rayde .rayde-tab { padding: 0; flex-shrink: 0; }
+#rayde .rayde-tab { box-sizing: border-box; padding: 0 0 4px; flex-shrink: 0; }
 #rayde .rayde-tab[data-front] { padding: 0 12px; margin: 0 -12px; }
 /* Tabs that do not fit scroll along; the bar itself stays out of sight. */
 #rayde .rayde-tab-scroll { scrollbar-visibility: hidden; }
@@ -154,9 +154,10 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 /* The menu trigger adds a chevron of its own; this button is only the dots. */
 #rayde .rayde-more .ui-dropdown-menu-chevron { display: none; }
 #rayde .rayde-more:hover { color: var(--text-primary); background: var(--accent-subtle); }
-#rayde .rayde-tab-body { height: 100%; border-radius: var(--radius-lg); corner-shape: squircle; }
+/* Inactive tabs leave a bottom gap; inner padding keeps their labels on the active tab's baseline. */
+#rayde .rayde-tab-body { box-sizing: border-box; height: 100%; padding-top: 4px; border-radius: var(--radius-lg); corner-shape: squircle; }
 #rayde .rayde-tab:hover .rayde-tab-body { background: var(--accent-subtle); }
-#rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
+#rayde .rayde-tab[data-front] .rayde-tab-body { padding-top: 0; background: transparent; }
 #rayde .rayde-tab-icon { flex-shrink: 0; }
 #rayde .rayde-tab-name { color: var(--text-secondary); }
 #rayde .rayde-tab[data-dragging] { opacity: .45; cursor: grabbing; }
