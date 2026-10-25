@@ -249,7 +249,7 @@ class EditorPart {
 		// The inner page starts at its parent's origin for capture; the outer wrapper follows the strip.
 		return <div class="flex flex-col flex-1 min-h-0">
 			<div class="rayde-tab-page flex flex-col flex-1 min-h-0 min-w-0">
-			<for {file in [group.active.get() == Workbench.SETTINGS ? Workbench.SETTINGS + ":" + wb.settingsCategory.get() : group.active.get()]}>${breadcrumb(group.active.get())}</for>
+			<for {file in [group.active.get() == Workbench.SETTINGS ? Workbench.SETTINGS + ":" + wb.settingsCategory.get() : group.active.get()]}><if {!codeBreadcrumb(group.active.get())}>${breadcrumb(group.active.get())}</if></for>
 			<tabs id="rayde-tabs" value={group.active} class="flex-1 min-h-0">
 				<tabs-list indicator={false} class="rayde-nolist"/>
 				<for {file in group.files}>${retainedPage(file,group.active)}</for>
@@ -272,6 +272,10 @@ class EditorPart {
 			build={wb.explorerPart.projectEntry() == null ? "" : haxe.io.Path.withoutDirectory(wb.explorerPart.projectEntry())} haxe={wb.props.empty == true || wb.runtime() == "" ? "" : wb.compilerVersion()} canRun={wb.props.empty != true && (wb.props.display.project == null || wb.props.display.project.runnable)}
 			sources={[for (cp in wb.explorerPart.classpaths()) cp.label]} files={() -> wb.explorerPart.projectFiles().length} main={wb.mainFile()} recent={wb.recent} problems={wb.problems}
 			onOpen={path -> wb.openFile(path)} onFiles={() -> wb.openCenter()} onCommands={() -> wb.openCenter(">")} onRun={wb.runPart.run} onBuild={wb.openBuild}/>;
+
+	/** A text editor owns its breadcrumb so its minimap can span the whole page. */
+	function codeBreadcrumb(file:String):Bool
+		return !file.startsWith("rayde:") && !ImagePreview.supports(file) && !(ExtensionsPart.isExtension(file) && wb.extension == null);
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
@@ -380,7 +384,9 @@ class EditorPart {
 	function codeEditor(file:String):Element {
 		if (wb.restoredTabs.remove(file)) wb.languagesPart.check(file);
 		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={wb.documentsPart.documentState(file)} readOnly={Computed.make(() -> wb.contributions.readOnly(file))} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
+		var header = codeBreadcrumb(file) ? breadcrumb(file) : null;
+		if (header != null) ashui.input.Interaction.of(header.node).onPointerDown(event -> if (event.button != null && event.button.match(Right)) event.stopPropagation());
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={wb.documentsPart.documentState(file)} header={header} readOnly={Computed.make(() -> wb.contributions.readOnly(file))} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
 			onKey={wb.keymapPart.editorKey}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} stableGutter={true} compactGutter={wb.debugPart.debuggerOf(file) == null} onNavigate={offset -> { var group = groups.owner(file); if (group != null) groups.select(group); wb.definitionAt(file, offset); }} hover={offset -> wb.editorMarksPart.hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				wb.documentsPart.edited(file);

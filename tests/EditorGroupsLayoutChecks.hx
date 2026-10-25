@@ -64,7 +64,7 @@ class EditorGroupsLayoutChecks {
 			});
 			bench.openProject();
 		}
-		function settle(frames = 8):Void
+		function settle(frames = 8):Void {
 			for (_ in 0...frames) {
 				Offscreen.advance(1 / 60);
 				Css.setViewport(1460, 960);
@@ -72,6 +72,23 @@ class EditorGroupsLayoutChecks {
 				tree.flush();
 				tree.computeLayout(bench.node, 1460, 960);
 			}
+			var pages = Css.query(tree,bench.node.id,".rayde-tab-page");
+			for (id in Css.query(tree,bench.node.id,".rayde-code-editor")) {
+				var minimaps = Css.query(tree,id,".ui-code-minimap"), headers = Css.query(tree,id,".rayde-crumbs");
+				check(minimaps.length == 1,"Editor lost its minimap");
+				var map = tree.getScrolledBounds(new Node(minimaps[0])), editor = tree.getScrolledBounds(new Node(id));
+				var ancestors = tree.ancestors(id), page = Lambda.find(pages,id -> ancestors.indexOf(id) >= 0);
+				check(page != null,"Editor has no page");
+				var body = tree.getScrolledBounds(new Node(page));
+				check(Math.abs(map.x+map.width-body.x-body.width)<.5,"Minimap leaves a right gap in its pane");
+				check(Math.abs(map.y-editor.y)<.5 && Math.abs(map.y+map.height-editor.y-editor.height)<.5,"Minimap does not fill the editor height");
+				if (headers.length > 0) {
+					var header = tree.getScrolledBounds(new Node(headers[0]));
+					check(Math.abs(map.y-body.y)<.5 && Math.abs(header.y-map.y)<.5,"Breadcrumb leaves a top gap above the minimap");
+					check(header.x+header.width <= map.x+.5,"Breadcrumb overlaps the minimap");
+				}
+			}
+		}
 		function count(selector:String):Int
 			return Css.query(tree, bench.node.id, selector).length;
 		function bounds(selector:String):ashui.layout.Bounds {

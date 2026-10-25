@@ -27,7 +27,7 @@ class EditorContextMenu extends Component<{workbench:Workbench, file:String, edi
 
 	function render():Element {
 		var editor = props.editor, trigger = new Ref<ContextMenuTrigger>();
-		var view = <context-menu ref={menu} open={opened} class="rayde-code-context flex flex-col flex-1 min-h-0 min-w-0">
+		var view = <context-menu ref={menu} open={opened} class="rayde-code-context flex flex-col self-stretch flex-1 min-h-0 min-w-0">
 			<context-menu-trigger ref={trigger} class="flex flex-col flex-1 min-h-0 min-w-0">${editor}</context-menu-trigger>
 			<context-menu-content id="rayde-code-context-menu"><if {opened.get()}>${items()}</if></context-menu-content>
 		</context-menu>;
