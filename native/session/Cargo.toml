@@ -1,0 +1,45 @@
+[package]
+name = "rayde-session"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+description = "RayDE workspace session: a workspace's files, documents (Yrs) and programs behind one WebSocket."
+
+[lib]
+name = "rayde_session"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rayde-session"
+path = "src/main.rs"
+required-features = ["server"]
+
+[features]
+default = ["server"]
+# The Node-free runner: a directory as the workspace, programs as child processes, HTTP and WebSocket on a port.
+server = ["dep:tokio", "dep:axum", "dep:notify", "dep:rand", "dep:libc"]
+
+[dependencies]
+yrs = { version = "=0.28.0", features = ["sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "process", "io-util", "signal"], optional = true }
+axum = { version = "0.7.9", features = ["ws"], optional = true }
+notify = { version = "7.0.0", default-features = false, features = ["macos_fsevent"], optional = true }
+rand = { version = "0.8", optional = true }
+sha2 = "0.10"
+hmac = "0.12"
+libc = { version = "0.2", optional = true }
+subtle = "2"
+
+[dev-dependencies]
+tokio-tungstenite = "=0.28.0"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
