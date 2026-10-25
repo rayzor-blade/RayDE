@@ -257,6 +257,40 @@ source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
                     deps.checkout("fixture", revision, dest)
                 self.assertEqual((dest / "file.txt").read_text(), "local edits")
 
+    def test_native_staging_preserves_package_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in ("ashui", "hlwgpu", "hlwindow"):
+                native = root / name / "target/release"
+                native.mkdir(parents=True)
+                (native / ("lib" + ("blinc_abi" if name == "ashui" else name) + ".so")).write_text("fixture")
+            for folder in ("scripts", "bin", "native/rayscript/notices", "assets/notices"):
+                (root / folder).mkdir(parents=True, exist_ok=True)
+            for name in ("build-terminal.sh", "build-rayscript.sh"):
+                script = root / "scripts" / name
+                script.write_text("#!/bin/sh\nexit 0\n")
+                script.chmod(0o755)
+            for name in ("cterm.hdll", "rayscript.hdll", "rayde-extension-host"):
+                (root / "bin" / name).write_text("fixture")
+            for folder in ("native/rayscript/notices", "assets/notices"):
+                (root / folder / "LICENSE").write_text("fixture")
+            env = {**os.environ, "ASH": "/usr/bin/true", "ASHUI": str(root / "ashui"),
+                   "HLWGPU": str(root / "hlwgpu"), "HLWINDOW": str(root / "hlwindow")}
+            script = r'''set -euo pipefail
+uname() { printf Linux; }
+source "$1"
+here=$2
+stage_rayzor() { :; }
+lib="$here/package with spaces/lib/rayde"
+out="$here/outer output"
+stage_natives "$lib"
+[[ "$lib" == "$here/package with spaces/lib/rayde" ]] || exit 1
+[[ "$out" == "$here/outer output" ]] || exit 1
+'''
+            subprocess.run(["bash", "-c", script, "staging-check", str(ROOT / "scripts/deps.sh"), str(root)], env=env, check=True)
+            for name in ("blinc_abi.hdll", "xgpu.hdll", "xwindow.hdll", "cterm.hdll", "rayscript.hdll", "rayde-extension-host"):
+                self.assertTrue((root / "package with spaces/lib/rayde" / name).is_file(), name)
+
     def test_locked_toolchains_and_source_revisions(self):
         lock = json.loads((ROOT / "packaging/dependencies.json").read_text())
         workflow = (ROOT / ".github/workflows/distribution.yml").read_text()
