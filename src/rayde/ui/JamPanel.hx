@@ -49,7 +49,12 @@ class JamPanel extends Component<JamPanelProps> {
 			<div class="rayde-jam-welcome"><icon document={Icons.JAM_JOYSTICK} class="size-6"/></div>
 			<text class="rayde-jam-hero-title">Code together</text>
 			<text class="rayde-jam-muted">Share a document or join someone else's Jam.</text>
-			<text id="rayde-jam-selected" class="rayde-jam-file rayde-jam-card">${props.canShare() ? haxe.io.Path.withoutDirectory(props.active.get()) : "Open a text document to get started."}</text>
+			<div id="rayde-jam-selected" class="rayde-jam-file rayde-jam-card flex items-center gap-2 min-w-0">
+				<for {file in [props.active.get()]}>
+					<if {props.canShare()}><icon document={FileIcons.of(file)} class="size-4 shrink-0"/><text class="flex-1 min-w-0">${haxe.io.Path.withoutDirectory(file)}</text>
+					<else><text>Open a text document to get started.</text></if>
+				</for>
+			</div>
 			<div class="rayde-jam-actions">
 				<button id="rayde-jam-start" size={Sm} disabled={unavailable} onClick={_ -> props.onStart()}>Start Jam…</button>
 				<button id="rayde-jam-join" variant={Outline} size={Sm} disabled={unavailable} onClick={_ -> props.onJoin()}>Join Jam…</button>
@@ -76,21 +81,24 @@ class JamPanel extends Component<JamPanelProps> {
 		return <div class="rayde-jam-section">
 			<div class="rayde-jam-card rayde-jam-section">
 				{summary}
-				<button id="rayde-jam-open-document" variant={Ghost} class="rayde-jam-document" onClick={_ -> props.onOpenFile()}><icon document={Icons.FILE_CODE_LINE} class="size-4 shrink-0"/><text>${haxe.io.Path.withoutDirectory(current.file)}</text></button>
+				<button id="rayde-jam-open-document" variant={Ghost} class="rayde-jam-document" onClick={_ -> props.onOpenFile()}><icon document={FileIcons.of(current.file)} class="size-4 shrink-0"/><text>${haxe.io.Path.withoutDirectory(current.file)}</text></button>
 				<div class="rayde-jam-details">
 					<div class="rayde-jam-detail"><text>Sync</text>
 						<for {state in [current.status.get() != "connected" ? "Waiting" : current.synced.get() ? "Up to date" : "Sending edits"]}>
-							<badge id="rayde-jam-sync" size={Sm} variant={state == "Up to date" ? Success : Warning}>${state}</badge>
+							<if {state == "Up to date"}><text id="rayde-jam-sync" class="text-success">${state}</text>
+							<else><text id="rayde-jam-sync" class="text-warning">${state}</text></if>
 						</for>
 					</div>
 					<div class="rayde-jam-detail"><text>Recovery</text>
 						<for {saved in [current.recoveryStatus.get() == "saved locally"]}>
-							<badge id="rayde-jam-recovery" size={Sm} variant={saved ? Secondary : Warning}>${saved ? "Saved locally" : "Saving locally"}</badge>
+							<if {saved}><text id="rayde-jam-recovery" class="text-success">Saved locally</text>
+							<else><text id="rayde-jam-recovery" class="text-warning">Saving locally</text></if>
 						</for>
 					</div>
 					<div class="rayde-jam-detail"><text>Local file</text>
 						<for {dirty in [props.dirty.get().indexOf(current.file)>=0]}>
-							<badge id="rayde-jam-save" size={Sm} variant={dirty ? Warning : Secondary}>${dirty ? "Unsaved" : "Saved"}</badge>
+							<if {dirty}><text id="rayde-jam-save" class="text-warning">Unsaved</text>
+							<else><text id="rayde-jam-save" class="text-success">Saved</text></if>
 						</for>
 					</div>
 				</div>

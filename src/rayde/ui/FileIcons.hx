@@ -1,6 +1,6 @@
 package rayde.ui;
 
-/** Shared file icons for Explorer rows and editor tabs. */
+/** Shared file icons for Explorer rows, editor tabs and document panels. */
 class FileIcons {
 	public static function of(file:String):ashui.svg.SvgDocument {
 		var name = haxe.io.Path.withoutDirectory(file).toLowerCase(), extension = haxe.io.Path.extension(name);
