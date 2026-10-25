@@ -1,5 +1,7 @@
 package rayde.run;
 
+import rayde.workspace.Procs;
+
 using StringTools;
 
 /** A library haxelib has, and the version it uses. */
@@ -44,7 +46,7 @@ class Haxelib {
 	}
 
 	static function output(args:Array<String>):String {
-		var p = new sys.io.Process(command(), args);
+		var p = Procs.start(command(), args);
 		var text = p.stdout.readAll().toString();
 		p.close();
 		return text;

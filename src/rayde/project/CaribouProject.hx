@@ -1,5 +1,7 @@
 package rayde.project;
 
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
 import rayde.workspace.Fs;
 
 /** What `caribou project --json` says about a `.cbproj`: Caribou's own reading of its project file. A workspace lists its members. */
@@ -52,8 +54,8 @@ class CaribouProject {
 	public static function resolve(file:String):CaribouInfo {
 		var caribou = binary();
 		if (caribou == null) throw "Caribou is not installed. Build ../caribou, put caribou on PATH, or set CARIBOU.";
-		var process:sys.io.Process;
-		try process = new sys.io.Process(caribou, ["project", file, "--json"]) catch (e:Dynamic) throw "Could not start " + caribou + ": " + Std.string(e);
+		var process:Program;
+		try process = Procs.start(caribou, ["project", file, "--json"]) catch (e:Dynamic) throw "Could not start " + caribou + ": " + Std.string(e);
 		var out = process.stdout.readAll().toString(), err = process.stderr.readAll().toString(), code = process.exitCode();
 		process.close();
 		if (code != 0) {

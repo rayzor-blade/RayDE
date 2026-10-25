@@ -1,5 +1,7 @@
 package rayde.history;
 
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
 import rayde.workspace.Fs;
 import haxe.io.Path;
 import rayde.history.LineOwners.OwnedText;
@@ -33,9 +35,9 @@ class GitHistory {
 			"-C",
 			cwd
 		].concat(args).map(quote).join(" ") + " < " + (windows ? "NUL" : "/dev/null") + " > " + quote(log) + " 2>&1";
-		var process:sys.io.Process = null, result = "", failure:Dynamic = null;
+		var process:Program = null, result = "", failure:Dynamic = null;
 		try {
-			process = new sys.io.Process(windows ? "cmd.exe" : "/bin/sh", windows ? ["/d", "/s", "/c", line] : ["-c", "exec " + line]);
+			process = Procs.start(windows ? "cmd.exe" : "/bin/sh", windows ? ["/d", "/s", "/c", line] : ["-c", "exec " + line]);
 			var until = haxe.Timer.stamp() + 12., code:Null<Int>;
 			while ((code = process.exitCode(false)) == null) {
 				if (cancelled() || haxe.Timer.stamp() > until)

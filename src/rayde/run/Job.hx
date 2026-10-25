@@ -1,5 +1,7 @@
 package rayde.run;
 
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
 import rayde.workspace.Fs;
 
 /**
@@ -15,7 +17,7 @@ class Job {
 	public var exit(default, null):Null<Int>;
 
 	final line:String;
-	var process:Null<sys.io.Process>;
+	var process:Null<Program>;
 	var offset = 0;
 	final background:Bool;
 	var worker:Null<OutputJob>;
@@ -37,7 +39,7 @@ class Job {
 		Fs.saveContent(log, "");
 		offset = 0;
 		exit = null;
-		process = new sys.io.Process("/bin/sh", ["-c", line]);
+		process = Procs.start("/bin/sh", ["-c", line]);
 	}
 
 	/** Whether the command is still running. */

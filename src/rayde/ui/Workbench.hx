@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Procs;
 import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
@@ -628,7 +629,7 @@ class Workbench extends Component<WorkbenchProps> {
 	function compilerVersion():String {
 		if (compiler == null)
 			compiler = try {
-				var p = new sys.io.Process(props.display.server.haxe, ["--version"]);
+				var p = Procs.start(props.display.server.haxe, ["--version"]);
 				var v = StringTools.trim(p.stdout.readAll().toString());
 				p.close();
 				"Haxe " + v;

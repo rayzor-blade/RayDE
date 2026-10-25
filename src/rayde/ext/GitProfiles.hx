@@ -1,5 +1,7 @@
 package rayde.ext;
 
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
 import ashui.layout.LayoutTree;
 import ashui.reactive.Owner;
 import haxe.io.Bytes;
@@ -171,9 +173,9 @@ class GitProfiles {
 
 	/** Bounded, unauthenticated HTTPS reads run only on the profile worker. */
 	static function http(url:String, limit:Int):Null<Bytes> {
-		var process:sys.io.Process = null;
+		var process:Program = null;
 		try {
-			process = new sys.io.Process("curl", ["--disable", "--silent", "--fail", "--location", "--max-redirs", "2", "--proto", "=https", "--proto-redir", "=https",
+			process = Procs.start("curl", ["--disable", "--silent", "--fail", "--location", "--max-redirs", "2", "--proto", "=https", "--proto-redir", "=https",
 				"--connect-timeout", "2", "--max-time", "4", "--max-filesize", Std.string(limit), "--user-agent", "RayDE/0.1", "--write-out", "%{stderr}%{http_code}", "--url", url]);
 			var output = new haxe.io.BytesOutput(), chunk = Bytes.alloc(8192);
 			try while (true) {

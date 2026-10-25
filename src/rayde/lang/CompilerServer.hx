@@ -1,5 +1,8 @@
 package rayde.lang;
 
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
+
 /**
  * A Haxe compilation server kept running for a project, and the requests sent
  * to it. The server keeps what it has typed between requests, so asking again
@@ -16,7 +19,7 @@ class CompilerServer {
 	public final haxe:String;
 	public var port(default, null) = 0;
 
-	var process:Null<sys.io.Process>;
+	var process:Null<Program>;
 
 	/** A server run with `haxe`, the compiler on `PATH` unless named. Nothing starts until the first request. */
 	public function new(haxe = "haxe")
@@ -66,7 +69,7 @@ class CompilerServer {
 		for (candidate in 7600...7700) {
 			if (taken(candidate))
 				continue;
-			var p = new sys.io.Process(haxe, ["--server-listen", Std.string(candidate)]);
+			var p = Procs.start(haxe, ["--server-listen", Std.string(candidate)]);
 			for (_ in 0...200) {
 				if (p.exitCode(false) != null)
 					break;

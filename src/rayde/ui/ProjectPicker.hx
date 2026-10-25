@@ -34,6 +34,7 @@ class ProjectPicker {
 	}
 
 	static function run(command:String, args:Array<String>, cancelled:Void->Bool):Null<String> {
+		// The native folder dialog belongs to the machine the window is on, so it is not started through `Procs`.
 		var picker = new sys.io.Process(command, args);
 		var status:Null<Int>;
 		while ((status = picker.exitCode(false)) == null) {

@@ -1,5 +1,9 @@
 import haxe.io.Bytes;
 import rayde.workspace.Fs;
+import rayde.workspace.Launcher;
+import rayde.workspace.LocalLauncher;
+import rayde.workspace.Procs;
+import rayde.workspace.Program;
 import rayde.workspace.LocalWorkspace;
 import rayde.workspace.MemoryWorkspace;
 import rayde.workspace.Workspace;
@@ -53,7 +57,29 @@ class WorkspaceChecks {
 		ws.deleteFile(at("bin.dat"));
 	}
 
+	/** What a `Launcher` must do: a program's output, exit code, input and ending. */
+	public static function conformLauncher(launcher:Launcher, label:String):Void {
+		var finished = launcher.start("/bin/sh", ["-c", "echo out; echo err 1>&2; exit 3"]);
+		check(finished.stdout.readAll().toString() == "out\n" && finished.stderr.readAll().toString() == "err\n", '$label: stdout and stderr are separate');
+		check(finished.exitCode() == 3, '$label: exitCode gives the exit code');
+		finished.close();
+		var echo = launcher.start("/bin/cat", []);
+		echo.stdin.writeString("typed\n");
+		echo.stdin.close();
+		check(echo.stdout.readAll().toString() == "typed\n" && echo.exitCode() == 0, '$label: stdin reaches the program');
+		echo.close();
+		var long = launcher.start("/bin/sleep", ["30"]);
+		check(long.exitCode(false) == null, '$label: a running program has no exit code yet');
+		long.kill();
+		check(long.exitCode() != 0, '$label: a killed program ends without success');
+		long.close();
+		var missing:Int = try launcher.start("/nonexistent/program", []).exitCode() catch (_:Dynamic) -1;
+		check(missing != 0, '$label: a missing program fails to start or ends unsuccessfully');
+	}
+
 	public static function run():Void {
+		conformLauncher(new LocalLauncher(), "local launcher");
+		runThroughProcs();
 		var local = Sys.getCwd() + "bin/workspace-checks-" + Std.random(0x3fffffff);
 		sys.FileSystem.createDirectory(local);
 		conform(new LocalWorkspace(), local, "local");
@@ -76,5 +102,54 @@ class WorkspaceChecks {
 		Sys.println("Workspace: the local and in-memory providers answer alike");
 	}
 
+	/** RayDE's own calls start programs through `Procs`, so a launcher elsewhere is used by all of them. */
+	static function runThroughProcs():Void {
+		var before = Procs.current, asked:Array<String> = [];
+		Procs.current = new CannedLauncher((command, args) -> {
+			asked.push(command + " " + args.join(" "));
+			return {code: 0, out: '{"dir":"/w","name":"demo","entry":{"language":"haxe","module":"Main"},"languages":["haxe"],"haxe":{"cwd":"/w","args":["-cp","src"]},"problems":[]}', err: ""};
+		});
+		var had = Sys.getEnv("CARIBOU");
+		Sys.putEnv("CARIBOU", "/remote/caribou");
+		try {
+			var info = rayde.project.CaribouProject.resolve("/w/demo.cbproj");
+			check(info.name == "demo" && asked.length == 1 && asked[0] == "/remote/caribou project /w/demo.cbproj --json", 'Caribou is asked through the launcher: $asked');
+		} catch (e:Dynamic) {
+			Procs.current = before;
+			throw e;
+		}
+		Procs.current = before;
+		Sys.putEnv("CARIBOU", had == null ? "" : had);
+	}
+
 	public static function main():Void run();
+}
+
+/** A launcher that answers each start with what a function says, with nothing run. */
+private class CannedLauncher implements Launcher {
+	final answer:(String, Array<String>) -> {code:Int, out:String, err:String};
+
+	public function new(answer:(String, Array<String>) -> {code:Int, out:String, err:String}) this.answer = answer;
+
+	public function start(command:String, args:Array<String>):Program {
+		var result = answer(command, args);
+		return new CannedProgram(result.code, result.out, result.err);
+	}
+}
+
+private class CannedProgram implements Program {
+	public var stdout(default, null):haxe.io.Input;
+	public var stderr(default, null):haxe.io.Input;
+	public var stdin(default, null):haxe.io.Output = new haxe.io.BytesOutput();
+	final code:Int;
+
+	public function new(code:Int, out:String, err:String) {
+		this.code = code;
+		stdout = new haxe.io.BytesInput(haxe.io.Bytes.ofString(out));
+		stderr = new haxe.io.BytesInput(haxe.io.Bytes.ofString(err));
+	}
+
+	public function exitCode(block:Bool = true):Null<Int> return code;
+	public function kill():Void {}
+	public function close():Void {}
 }
