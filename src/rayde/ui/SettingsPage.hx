@@ -37,7 +37,6 @@ typedef SettingsPageProps = {
 	rayzor:Null<String>,
 	/** The project's `.cbproj`, when it is a Caribou project, and what Caribou says is wrong with it. */
 	caribou:Null<String>,
-	caribouProblems:Void->Array<String>,
 	caribouLanguages:Void->Array<String>,
 	onEditBuildText:Void->Void,
 	beforeBuildChange:Void->Void,
@@ -123,7 +122,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root} manager={props.manager} changes={props.extensionChanges} onToggle={props.onExtensionToggle}/>;
 			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
-			case _ if (props.caribou != null): <caribou-settings path={props.caribou} problems={props.caribouProblems} languages={props.caribouLanguages} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
+			case _ if (props.caribou != null): <caribou-settings path={props.caribou} languages={props.caribouLanguages} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
 		}

@@ -13,8 +13,6 @@ using StringTools;
 
 typedef CaribouSettingsProps = {
 	path:String,
-	/** What Caribou says is wrong with the file, asked again after each change. */
-	problems:Void->Array<String>,
 	/** The languages Caribou resolved, which stand in for a file that does not list them. */
 	languages:Void->Array<String>,
 	onChanged:Void->Void,
@@ -62,8 +60,7 @@ class CaribouSettings extends Component<CaribouSettingsProps> {
 	function sections(_:Int):Element {
 		if (file == null) return <div/>;
 		try {
-			var cards:Array<Element> = [], problems = props.problems();
-			if (problems.length > 0) cards.push(card("problems", "Problems", "What Caribou rejects or ignores in this file.", [for (p in problems) <text class="rayde-mono text-sm text-warning">${p}</text>]));
+			var cards:Array<Element> = [];
 			if (file.workspace()) {
 				cards.push(card("workspace", "Workspace", "Member project directories, relative to this file. Open a member to run it.", list(["workspace", "members"], "Member directory")));
 			} else {

@@ -70,7 +70,9 @@ class CaribouProjectChecks {
 		}
 		bench.explorerPart.openExplorerFile(project + "/game.cbproj"); settle();
 		check(bench.active.get() == rayde.ui.Workbench.SETTINGS && bench.settingsSection() == "build" && css.query(tree, bench.node.id, "#rayde-caribou-build").length == 1 && bench.editorFor(project + "/game.cbproj") == null, "Explorer opens the Caribou settings form");
-		check(css.query(tree, bench.node.id, "#rayde-caribou-problems-section").length == 1, "the file's problems are shown in the form");
+		check(css.query(tree, bench.node.id, "#rayde-caribou-problems-section").length == 0, "the file's problems are in the Problems panel, not the form");
+		bench.showPanel("problems"); settle();
+		ashui.core.render.Snapshot.capture("caribou-problems-dark", tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
 		ashui.core.render.Snapshot.capture("caribou-settings-dark", tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
 		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), Light); settle();
 		ashui.core.render.Snapshot.capture("caribou-settings-light", tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
@@ -83,7 +85,8 @@ class CaribouProjectChecks {
 			ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), window.Key.Named(Enter), None, Standard, state, false, Unavailable), mods);
 		settle();
 		check(sys.io.File.getContent(project + "/game.cbproj").indexOf('name = "renamed"') >= 0, "the name edit is written to the .cbproj");
-		bench.props.display.reload(); settle();
+		bench.buildChanged(); settle();
+		check(bench.problems.get().length == 1, 'a reread replaces the project\'s problems rather than adding to them: ${bench.problems.get().length}');
 		check(css.query(tree, bench.node.id, "#rayde-caribou-language-haxe").length == 1, "the languages are listed when the file has none");
 		stop();
 		Sys.println("Caribou workbench: the project file's problems are workspace problems, and its settings form edits the file");
