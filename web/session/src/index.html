@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RayDE session</title>
+<style>
+  :root { color-scheme: light dark; --line: #8884; font: 14px/1.4 system-ui, sans-serif; }
+  body { margin: 0; display: grid; grid-template-columns: 240px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+  header { grid-column: 1 / 3; display: flex; gap: 12px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+  #files { overflow: auto; border-right: 1px solid var(--line); padding: 6px 0; }
+  #files button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 3px 12px; font: inherit; color: inherit; cursor: pointer; }
+  #files button:hover { background: #8882; }
+  #editor { width: 100%; height: 100%; box-sizing: border-box; border: 0; padding: 12px; font: 13px/1.5 ui-monospace, monospace; resize: none; outline: none; background: transparent; color: inherit; }
+  #signin { display: none; gap: 8px; align-items: center; }
+  #signin.on { display: flex; }
+  .state { opacity: .7; }
+</style>
+</head>
+<body>
+<header>
+  <strong id="name">session</strong>
+  <span id="status" class="state">connecting</span>
+  <span id="sync" class="state"></span>
+  <span id="signin"><a id="login-link" target="_blank" rel="noreferrer">Sign in with GitHub</a> to edit <input id="credential" placeholder="credential" size="24"><button id="signin-go">Use</button></span>
+  <span id="who" class="state"></span>
+</header>
+<nav id="files"></nav>
+<textarea id="editor" spellcheck="false" disabled></textarea>
+<script type="module" src="demo.js"></script>
+</body>
+</html>

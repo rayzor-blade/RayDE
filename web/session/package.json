@@ -1,0 +1,19 @@
+{
+  "name": "rayde-session-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The browser side of RayDE's workspace session: a local-first client over Yjs, and its page test. Development tooling only; the session itself is Rust.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "y-indexeddb": "9.0.12",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "puppeteer-core": "24.12.1"
+  }
+}
