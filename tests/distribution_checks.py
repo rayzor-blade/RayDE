@@ -274,7 +274,7 @@ source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
         self.assertEqual(deps.environment()["ASHUI_REV"], pin)
         self.assertIn("RayDE/.deps/ashui-${{ env.ASHUI_REV }} -> target", workflow)
         self.assertIn("--verify-remotes", workflow)
-        self.assertIn('rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt', workflow)
+        self.assertIn('rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --target wasm32-unknown-unknown', workflow)
 
 
 if __name__ == "__main__":
