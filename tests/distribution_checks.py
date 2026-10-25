@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Distribution contracts that run without native build dependencies."""
 import importlib.util
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -154,6 +156,91 @@ class DistributionChecks(unittest.TestCase):
         env.update(GITHUB_REF="", INPUT_VERSION="$(touch /tmp/unwanted)")
         self.assertNotEqual(subprocess.run([sys.executable, script], env=env, capture_output=True).returncode, 0)
 
+    def dependency_helper(self):
+        spec = importlib.util.spec_from_file_location("ci_deps", ROOT / "scripts/ci-deps.py")
+        deps = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(deps)
+        return deps
+
+    def test_cargo_git_checks_use_locked_commit_not_branch_or_rev_query(self):
+        deps = self.dependency_helper()
+        first, second = "a" * 40, "b" * 40
+        lock = f'''version = 4
+[[package]]
+name = "a"
+source = "git+https://github.com/owner/project.git?branch=main#{first}"
+[[package]]
+name = "b"
+source = "git+https://github.com/owner/project.git?rev=abc#{second}"
+[[package]]
+name = "c"
+source = "git+https://github.com/owner/project?branch=main#{first}"
+[[package]]
+name = "registry"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+'''
+        self.assertEqual(deps.cargo_git_sources(lock), {("owner/project", first), ("owner/project", second)})
+        with self.assertRaisesRegex(ValueError, "Unsupported locked Git source"):
+            deps.cargo_git_sources(lock.replace("https://github.com/owner/project.git", "file:///local/project"))
+
+    def test_preflight_reports_unpublished_cargo_revision_before_builds(self):
+        deps = self.dependency_helper()
+        direct, nested = "a" * 40, "b" * 40
+        lock = f'''[[package]]
+name = "window-core"
+source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
+'''
+        checked = []
+        def lookup(url):
+            checked.append(url)
+            if url.endswith("/Cargo.lock"):
+                return lock
+            if "/owner/window/" in url:
+                raise RuntimeError("Not published")
+            return json.dumps({"sha": direct})
+        with tempfile.TemporaryDirectory() as temp, patch.object(deps, "ROOT", Path(temp)), patch.object(deps, "sources", return_value={"hlwindow": direct}), patch.object(deps, "github_text", side_effect=lookup):
+            with self.assertRaisesRegex(SystemExit, "owner/window@" + nested):
+                deps.verify_remotes()
+        self.assertTrue(any("/hlwindow/commits/" + direct in url for url in checked))
+        self.assertEqual(sum("/owner/window/commits/" in url for url in checked), 1)
+        def published(url):
+            return lock if url.endswith("/Cargo.lock") else json.dumps({"sha": url.rsplit("/",1)[1]})
+        with tempfile.TemporaryDirectory() as temp, patch.object(deps, "ROOT", Path(temp)), patch.object(deps, "sources", return_value={"hlwindow": direct}), patch.object(deps, "github_text", side_effect=published), redirect_stdout(io.StringIO()) as result:
+            deps.verify_remotes()
+        self.assertIn("Verified 2 published", result.getvalue())
+
+    def test_failed_checkout_recovers_and_existing_work_is_protected(self):
+        deps = self.dependency_helper()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            remote, seed, dest = [root / path for path in ("remote.git", "seed", "checkout with spaces")]
+            def git(*args, cwd=root, check=True):
+                return subprocess.run(["git", *map(str,args)], cwd=cwd, check=check, capture_output=True, text=True)
+            git("init", "--bare", remote)
+            git("init", seed)
+            (seed / "file.txt").write_text("published")
+            git("add", "file.txt", cwd=seed)
+            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-m", "Initial", cwd=seed)
+            revision = git("rev-parse", "HEAD", cwd=seed).stdout.strip()
+            git("push", str(remote), "HEAD:main", cwd=seed)
+            def run(*args, **kwargs):
+                args = list(args)
+                if args[:4] == ["git", "remote", "add", "origin"]:
+                    args[4] = str(remote)
+                return subprocess.run(list(map(str,args)), cwd=kwargs.get("cwd", root), check=kwargs.get("check", True), capture_output=True, text=True)
+            with patch.object(deps, "run", side_effect=run):
+                with self.assertRaisesRegex(SystemExit, "Cannot fetch locked dependency"):
+                    deps.checkout("fixture", "f" * 40, dest)
+                self.assertTrue((dest / ".git").is_dir())
+                deps.checkout("fixture", revision, dest)
+                self.assertEqual(git("rev-parse", "HEAD", cwd=dest).stdout.strip(), revision)
+                with self.assertRaisesRegex(SystemExit, "clean checkout"):
+                    deps.checkout("fixture", "f" * 40, dest)
+                (dest / "file.txt").write_text("local edits")
+                with self.assertRaisesRegex(SystemExit, "clean checkout"):
+                    deps.checkout("fixture", revision, dest)
+                self.assertEqual((dest / "file.txt").read_text(), "local edits")
+
     def test_locked_toolchains_and_source_revisions(self):
         lock = json.loads((ROOT / "packaging/dependencies.json").read_text())
         workflow = (ROOT / ".github/workflows/distribution.yml").read_text()
@@ -165,7 +252,12 @@ class DistributionChecks(unittest.TestCase):
         for action in re.findall(r"uses: ([^\s]+)", workflow):
             self.assertTrue(action.startswith("./") or re.search(r"@[0-9a-f]{40}$", action), action)
         pin = re.search(r"^ashui_rev=(\w+)$", (ROOT / "scripts/deps.sh").read_text(), re.M)[1]
-        self.assertIn("ashui-" + pin, workflow)
+        spec = importlib.util.spec_from_file_location("ci_deps", ROOT / "scripts/ci-deps.py")
+        deps = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(deps)
+        self.assertEqual(deps.environment()["ASHUI_REV"], pin)
+        self.assertIn("RayDE/.deps/ashui-${{ env.ASHUI_REV }} -> target", workflow)
+        self.assertIn("--verify-remotes", workflow)
 
 
 if __name__ == "__main__":

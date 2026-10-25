@@ -36,8 +36,22 @@ jobs:
       - run: python3 tests/distribution_checks.py
       - run: for script in scripts/*.sh; do bash -n "$script"; done
 
-  package:
+  dependencies:
     needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Verify published source and Cargo Git revisions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-deps.py --verify-remotes
+
+  package:
+    needs: dependencies
     name: ${{ matrix.platform }}-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
@@ -85,7 +99,7 @@ jobs:
             hlwgpu -> target
             hlwindow -> target
             rayzor -> target
-            RayDE/.deps/ashui-3d0851d888eb741c695a805f11d1f4a5aba97e71 -> target
+            RayDE/.deps/ashui-${{ env.ASHUI_REV }} -> target
             RayDE/native/terminal -> target
             RayDE/native/rayscript -> ../../../rayscript/target
       - name: Build runtimes, language server and UI libraries
