@@ -15,6 +15,8 @@ typedef CaribouSettingsProps = {
 	path:String,
 	/** What Caribou says is wrong with the file, asked again after each change. */
 	problems:Void->Array<String>,
+	/** The languages Caribou resolved, which stand in for a file that does not list them. */
+	languages:Void->Array<String>,
 	onChanged:Void->Void,
 	onEditText:Void->Void,
 	beforeChange:Void->Void
@@ -69,7 +71,7 @@ class CaribouSettings extends Component<CaribouSettingsProps> {
 					textField(["project", "name"], "Name", "Project name", "game"),
 					textField(["project", "entry"], "Entry point", "language:module, such as haxe:game.Main", "haxe:Main")
 				]));
-				cards.push(card("languages", "Languages", "The languages the project's modules are written in. Modules are found under the source roots.", languages()));
+				cards.push(card("languages", "Languages", file.value(["project", "languages"]) == null ? "Not listed in the file, so Caribou infers them from the sources. Changing one writes the list." : "The languages the project's modules are written in. Modules are found under the source roots.", languages()));
 				cards.push(card("paths", "Haxe class paths", "Extra class paths, relative to this file. The source roots are always compiled whole; these only as far as the program reaches.", list(["haxe", "class-paths"], "Class path")));
 				cards.push(card("defines", "Haxe defines", "Compile-time flags. An empty value creates a boolean flag; a supplied value is a string.", defines()));
 				cards.push(card("run", "Run", "Used by Run when this Caribou reads a [run] table.", [
@@ -98,11 +100,12 @@ class CaribouSettings extends Component<CaribouSettingsProps> {
 
 	/** A switch for each language: on adds it to the list, off takes it out. */
 	function languages():Array<Element> {
-		var chosen = file.strings(["project", "languages"]), out:Array<Element> = [];
+		var listed = file.value(["project", "languages"]) != null, chosen = listed ? file.strings(["project", "languages"]) : props.languages(), out:Array<Element> = [];
 		for (language in LANGUAGES) {
 			var name = language, on = chosen.indexOf(name) >= 0;
 			out.push(SettingsParts.field(name.charAt(0).toUpperCase() + name.substr(1), on ? "Modules in " + name + " are found and loaded" : "Not part of this project", <select id={"rayde-caribou-language-" + name} value={on ? "true" : "false"} size={Sm} class="rayde-control" onChange={v -> change(() -> {
 				file.reload();
+				if (file.value(["project", "languages"]) == null) for (l in chosen) file.append(["project", "languages"], l);
 				var now = file.strings(["project", "languages"]), at = now.indexOf(name);
 				if (v == "true" && at < 0) file.append(["project", "languages"], name);
 				else if (v != "true" && at >= 0) file.removeAt(["project", "languages"], at);

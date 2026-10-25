@@ -20,6 +20,9 @@ class ProjectFile {
 	/** What the project's own tool rejects or ignores in its file, as sentences (Caribou reports these). */
 	public var problems(default, null):Array<String> = [];
 
+	/** The languages Caribou resolved for the project: the file's list, or what it inferred from the sources. */
+	public var languages(default, null):Array<String> = [];
+
 	/** The projects of a Caribou workspace, by their `.cbproj`. */
 	public var members(default, null):Array<String> = [];
 
@@ -47,7 +50,7 @@ class ProjectFile {
 		if (StringTools.endsWith(name, ".cbproj")) {
 			// Caribou reads its own project file; RayDE takes what it resolved, Haxe arguments included.
 			var info = CaribouProject.resolve(file);
-			project.kind = "caribou"; project.runtime = "caribou"; project.name = info.name; project.args = ["--cwd", info.cwd].concat(info.args); project.problems = info.problems;
+			project.kind = "caribou"; project.runtime = "caribou"; project.name = info.name; project.args = ["--cwd", info.cwd].concat(info.args); project.problems = info.problems; project.languages = info.languages;
 			project.runnable = info.runnable;
 			project.members = info.files.length > 0 ? info.files : [for (member in info.members) haxe.io.Path.join([member.dir, member.name + ".cbproj"])];
 			return project;

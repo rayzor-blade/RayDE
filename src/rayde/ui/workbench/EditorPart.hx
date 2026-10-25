@@ -326,7 +326,7 @@ class EditorPart {
 		}
 		if (file == Workbench.SETTINGS)
 			return <tabs-content value={file} class="flex-1 min-h-0">
-				<settings-page category={wb.settingsCategory} root={wb.props.display.cwd} build={wb.buildModel} rayzor={wb.rayzorManifest()} caribou={wb.caribouManifest()} caribouProblems={() -> wb.props.display.project == null ? [] : wb.props.display.project.problems} onEditBuildText={() -> wb.openFile(wb.projectManifest())} beforeBuildChange={wb.beforeBuildChange} terminal={wb.terminalPart.terminalSettings} appearance={wb.appearance} bindings={wb.keymapPart.bindings}
+				<settings-page category={wb.settingsCategory} root={wb.props.display.cwd} build={wb.buildModel} rayzor={wb.rayzorManifest()} caribou={wb.caribouManifest()} caribouLanguages={() -> wb.props.display.project == null ? [] : wb.props.display.project.languages} caribouProblems={() -> wb.props.display.project == null ? [] : wb.props.display.project.problems} onEditBuildText={() -> wb.openFile(wb.projectManifest())} beforeBuildChange={wb.beforeBuildChange} terminal={wb.terminalPart.terminalSettings} appearance={wb.appearance} bindings={wb.keymapPart.bindings}
 					commands={wb.commandList} libraries={wb.libraries} onBuildChanged={wb.buildChanged} onRunnerChanged={() -> { wb.props.display.reload(); wb.runPart.runnerRevision.set(wb.runPart.runnerRevision.get() + 1); }} onTerminalChanged={() -> wb.terminalPart.settingsRevision.set(wb.terminalPart.settingsRevision.get() + 1)}
 					onAppearanceChanged={() -> {
 						wb.windowStyle.set(WindowControls.styleFor(wb.appearance.windowControls));

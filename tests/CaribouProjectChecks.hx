@@ -79,6 +79,8 @@ class CaribouProjectChecks {
 			ashui.input.Keyboard.input(tree, window.KeyEvent.Input(Unidentified(Unidentified), window.Key.Named(Enter), None, Standard, state, false, Unavailable), mods);
 		settle();
 		check(sys.io.File.getContent(project + "/game.cbproj").indexOf('name = "renamed"') >= 0, "the name edit is written to the .cbproj");
+		bench.props.display.reload(); settle();
+		check(css.query(tree, bench.node.id, "#rayde-caribou-language-haxe").length == 1, "the languages are listed when the file has none");
 		stop();
 		Sys.println("Caribou workbench: the project file's problems are workspace problems, and its settings form edits the file");
 	}
