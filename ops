@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1792887574,"nonce":"dnjSqM8NzjQh/4YXFsOVlS/GqOs=","status":1}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1792887574,"nonce":"4yRdI5OnrjJVVQV+I8PY/pHZJXc=","message":"Refine the dragged notch outline: retain the theme border along the top and side curves, and omit the straight bottom edge where the tab meets the page thumbnail.","files":null}]}
