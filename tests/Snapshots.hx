@@ -27,6 +27,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "git-sidebar") {
+			GitSidebarChecks.main();
+			return;
+		}
 		if (Sys.getEnv("SNAPSHOT_ONLY") == "tab-drag") {
 			TabDragChecks.main();
 			return;
@@ -1488,7 +1492,7 @@ class Snapshots {
 				until(() -> bench.boundsOf("#rayde-status-branch") != null, "the Git extension to show its branch in the status bar");
 				var branchBounds = bench.boundsOf("#rayde-status-branch"), runtimeBounds = bench.boundsOf("#rayde-runtime");
 				if (branchBounds.x >= runtimeBounds.x) throw "the branch item must come first at the left of the status bar";
-				if (runtimeBounds.x < bench.boundsOf("#rayde-panel-toggle").x) throw "the runtime notice belongs at the right end of the status bar";
+				if (runtimeBounds.x > bench.boundsOf("#rayde-panel-toggle").x) throw "the panel toggle belongs at the right end of the status bar";
 				if (bench.boundsOf("#rayde-language") != null) throw "the status bar named a language with no file in front";
 				shot("status-branch");
 				@:privateAccess bench.extensionsPart.setExtensionStatus(git.connection.file, "branch", {text:"main", icon:"branch", detail:"0\u2193 3\u2191", detailIcon:"refresh", tooltip:"main: 0 behind and 3 ahead of its upstream", view:"scm"});

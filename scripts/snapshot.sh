@@ -3,7 +3,7 @@
 set -euo pipefail
 source "$(dirname "$0")/deps.sh"
 cd "$here"
-if [ -z "${SNAPSHOT_ONLY:-}" ] || [ "${SNAPSHOT_ONLY:-}" = git ] || [ "${SNAPSHOT_ONLY:-}" = explorer ]; then
+if [ -z "${SNAPSHOT_ONLY:-}" ] || [ "${SNAPSHOT_ONLY:-}" = git ] || [ "${SNAPSHOT_ONLY:-}" = git-sidebar ] || [ "${SNAPSHOT_ONLY:-}" = explorer ]; then
   "$here/scripts/build-libgit2.sh"
 fi
 stage_natives bin

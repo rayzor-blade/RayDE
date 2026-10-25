@@ -18,7 +18,9 @@ SNAPSHOT_ONLY=<name> scripts/snapshot.sh   # one scenario
 
 `SNAPSHOT_ONLY=find scripts/snapshot.sh` exercises Ashui's compact frosted-glass search panel, current-file shortcuts, bare regex/captured replacements, match navigation, Replace All undo, dirty state, inactive editor disposal, restored search inputs and invalid-pattern recovery in both schemes. Ashui's `CodeFindTest` additionally checks Haxe literal flags, Unicode and zero-width matches, bounded highlight nodes, narrow editors, read-only/disabled guards and same-batch edits.
 
-`SNAPSHOT_ONLY=readiness scripts/snapshot.sh` checks extension startup feedback, delayed command registration and view mounting, failed/stopped views, retry and closing during startup in both themes. `scripts/check-jam.sh` also checks that Jam controls follow the active document without remounting the panel and enable as connection data arrives.
+`SNAPSHOT_ONLY=readiness scripts/snapshot.sh` checks extension startup feedback, delayed command registration and view mounting, repeated sidebar hide/reopen without fresh script operations, failed/stopped views, retry and closing during startup in both themes. `scripts/check-jam.sh` also checks that Jam controls follow the active document without remounting the panel and enable as connection data arrives.
+
+`SNAPSHOT_ONLY=git-sidebar scripts/snapshot.sh` installs the real Git extension against a fixture repository and repeatedly closes/reopens its sidebar. It verifies restored content, enabled tools, dismissed readiness feedback, retained root models and the same native host in both themes.
 
 `SNAPSHOT_ONLY=splits scripts/snapshot.sh` checks side-by-side and stacked editor groups, nested divider resizing, pointer/keyboard focus, Find routing, stable visible editors, shared document ownership and undo, extension and SVG previews beside code, workspace layout/unsaved recovery, joining and close cleanup in both themes. The core suite separately covers the group model, path renames, missing-file pruning, session metadata and shortcut conflicts.
 

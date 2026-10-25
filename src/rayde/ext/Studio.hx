@@ -278,9 +278,9 @@ class Studio {
 
 	public function running():Bool return connection.running();
 
-	/** Reads the view revision so a waiting surface follows asynchronously mounted roots. */
+	/** Tracks roots and surface changes, including retained views rebuilt without new script operations. */
 	public function hasView(?view:String):Bool {
-		elements.get();
+		surfaceRevision.get(); elements.get();
 		return preview != null && Lambda.exists(preview.roots,r -> r.node != null && !isTab(r.name) && (view == null || viewFor(r.name) == view));
 	}
 

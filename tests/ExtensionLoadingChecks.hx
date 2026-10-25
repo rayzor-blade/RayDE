@@ -25,7 +25,7 @@ class ExtensionLoadingChecks {
 		for (directory in [root+"/home",root+"/extensions/delay/ext",root+"/workspace"]) sys.FileSystem.createDirectory(directory);
 		Sys.putEnv("HOME",root+"/home"); Sys.putEnv("RAYDE_EXTENSIONS",root+"/extensions");
 		var source=root+"/extensions/delay/ext/main.rays";
-		var good='await sleep(700); registerCommand("late", () -> trace("ready")); mount(() -> <div class="p-4"><text>Ready view</text></div>, "main"); onTool("refresh", () -> trace("refreshed"));';
+		var good='await sleep(700); registerCommand("late", () -> trace("ready")); mount(() -> <div id="delayed-ready" class="p-4"><text>Ready view</text></div>, "main"); onTool("refresh", () -> trace("refreshed"));';
 		sys.io.File.saveContent(source,good);
 		sys.io.File.saveContent(root+"/extensions/delay/delay.rayext",haxe.Json.stringify({id:"delay",name:"Delayed extension",main:"ext/main.rays",sources:["ext"],activationEvents:["onView:main","onCommand:late"],contributes:{commands:[{id:"late",title:"Delayed command"}]},views:[{id:"main",title:"Delayed view",location:"sidebar",tools:[{id:"refresh",title:"Refresh",icon:"refresh"}]}]}));
 		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(),dark ? Dark : Light); rayde.ui.Style.use();
@@ -52,6 +52,17 @@ class ExtensionLoadingChecks {
 			until(() -> studio.hasView("main") && studio.progress.get()=="","Delayed view or command never became ready");
 			check(count("#rayde-extensions-loading")==0 && count("#rayde-studio-loading")==0,"Readiness feedback remained after content mounted");
 			check(count("#rayde-tool-refresh:disabled")==0,"Ready view tool stayed disabled");
+			var model=studio.preview, revision=studio.elements.get();
+			for (cycle in 0...3) {
+				bench.shellPart.chooseContainer(container); settle();
+				check(!studio.hasView("main") && count("#delayed-ready")==0,"Closing the sidebar retained its mounted view");
+				bench.shellPart.chooseContainer(container);
+				for (_ in 0...3) settle();
+				check(studio.hasView("main") && count("#delayed-ready")==1,"Reopening did not restore the retained view");
+				check(count("#rayde-studio-loading")==0 && count("#rayde-tool-refresh:disabled")==0,"Reopening a ready sidebar kept its loading overlay or disabled tools");
+				check(studio.preview==model && studio.elements.get()==revision,"Reopening needed a fresh extension render or replaced its model");
+			}
+			Snapshot.capture('extension-loading-reopened-${dark ? "dark" : "light"}',tree,bench.node,1000,720);
 			studio.command("missing",null); settle();
 			check(count("#rayde-extensions-loading")==1,"A command waiting for registration had no feedback");
 			studio.stop(); settle();
