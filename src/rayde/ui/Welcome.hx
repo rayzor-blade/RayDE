@@ -106,7 +106,7 @@ class Welcome extends Component<WelcomeProps> {
 		</div>;
 
 	function key(k:String):Element
-		return <div class="rayde-kbd flex items-center justify-center"><text class="text-xs">${k}</text></div>;
+		return <div class="rayde-kbd flex items-center justify-center"><text class="text-xs font-mono">${k}</text></div>;
 
 	function recent(list:Array<String>):Element {
 		if (list.length == 0)
