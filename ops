@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792945826,"nonce":"llu/RmFU4ocW4Qt8WRGvViGk5Rg=","added":["area:lsp"],"removed":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1792945840,"nonce":"0cUHm03uujdP8octE4HZst85BKk=","added":null,"removed":["debt area:rayzor-lsp"]}]}
