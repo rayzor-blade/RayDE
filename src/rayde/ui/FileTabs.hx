@@ -26,6 +26,8 @@ typedef FileTabsProps = {
 	dirty:Signal<Array<String>>,
 	onClose:String->Void,
 	?onActivate:String->Void,
+	/** Secondary press on a tab, in window coordinates. */
+	?onContextMenu:(String, Float, Float)->Void,
 	?drag:EditorTabDrag,
 	?group:rayde.ui.EditorGroups.EditorGroup,
 	/** What a tab says and shows for the entry `file`, which is a path or one of the workbench's own pages. */
@@ -115,7 +117,13 @@ class FileTabs extends Component<FileTabsProps> {
 		var name = Computed.make(() -> { props.files.get(); props.label(file); });
 		var id = "rayde-tab-" + ~/[^A-Za-z0-9]+/g.replace(name.get(), "-");
 		var element = <div id={id} class="rayde-tab relative flex items-center cursor-pointer" height={HEIGHT - 4}
-			onPointerDown={event -> { if (props.drag != null && props.group != null) props.drag.begin(props.group,file,event); }}
+			onPointerDown={event -> {
+				if (event.button != null && event.button.match(Right) && props.onContextMenu != null) {
+					event.preventDefault(); event.stopPropagation();
+					if (props.drag != null) props.drag.cancel();
+					props.onContextMenu(file,event.x,event.y);
+				} else if (props.drag != null && props.group != null) props.drag.begin(props.group,file,event);
+			}}
 			onClick={_ -> { if (props.drag == null || !props.drag.suppressClick()) { if (props.onActivate != null) props.onActivate(file); else props.active.set(file); } }}>
 			<if {selected.get()}><canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx, props.files.get()[0] == file)}/></if>
 			<div class="rayde-tab-body relative flex items-center gap-2 pl-2 pr-1">

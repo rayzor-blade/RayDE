@@ -139,18 +139,26 @@ class RunPart {
 
 	/** Writes every edited buffer to its file: a build reads the files, so it should see them as they are in the editor. */
 	public function saveAll():Void {
-		for (file in wb.dirty.get()) {
-			sys.io.File.saveContent(file, wb.documentsPart.buffer(file).get());
-			wb.documentsPart.localHistory.saved(file, wb.documentsPart.buffer(file).get(), wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
-			var studio = wb.extensionsPart.studios.get(file);
-			if (studio != null && !studio.live.get())
-				studio.reload();
-			wb.emit("file.saved", {path: file});
-			var client = wb.languagesPart.languageServers.client(file);
-			if (client != null) { wb.languagesPart.languageServers.sync(file, wb.documentsPart.buffer(file).get()); client.saved(file); }
-		}
+		for (file in wb.dirty.get()) writeFile(file);
 		if (wb.dirty.get().length > 0)
 			wb.dirty.set([]);
+	}
+
+	/** Saves one tab without writing other dirty buffers. */
+	public function saveFile(file:String):Void {
+		if (Workbench.isVirtual(file) || wb.dirty.get().indexOf(file) < 0 || wb.contributions.readOnly(file)) return;
+		writeFile(file);
+		wb.dirty.set(wb.dirty.get().filter(path -> path != file));
+	}
+
+	function writeFile(file:String):Void {
+		sys.io.File.saveContent(file, wb.documentsPart.buffer(file).get());
+		wb.documentsPart.localHistory.saved(file, wb.documentsPart.buffer(file).get(), wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
+		var studio = wb.extensionsPart.studios.get(file);
+		if (studio != null && !studio.live.get()) studio.reload();
+		wb.emit("file.saved", {path:file});
+		var client = wb.languagesPart.languageServers.client(file);
+		if (client != null) { wb.languagesPart.languageServers.sync(file,wb.documentsPart.buffer(file).get()); client.saved(file); }
 	}
 
 	/** Saves what is edited, then builds the project and runs it. */

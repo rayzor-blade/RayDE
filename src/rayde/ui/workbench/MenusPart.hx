@@ -131,8 +131,8 @@ class MenusPart {
 		</tooltip>;
 	}
 
-	/** The items an extension adds to the editor's actions menu for the file in front, after a separator; none for a page that is not a file. */
-	function titleItems(file:String):Element {
+	/** Extension title actions for a real file, shared by the editor and tab menus. */
+	function titleItems(file:String, ?dispatch:(Void->Void)->Void):Element {
 		var entries = Workbench.isVirtual(file) || file == "" ? [] : wb.extensionsPart.contributedMenu("editor/title", file, "file");
 		if (entries.length == 0)
 			return <div/>;
@@ -141,7 +141,8 @@ class MenusPart {
 			var e = entry.item, m = entry.extension;
 			var icon = ViewIcons.named(m, e.icon), keys = wb.keymapPart.bindings.label(ExtensionsPart.extensionKey(m.id, e.command));
 			var label = icon == null ? <text>${e.title}</text> : <div class="flex items-center justify-between gap-3 flex-1 min-w-0"><text>${e.title}</text><icon document={icon} class="size-4 shrink-0 text-text-secondary"/></div>;
-			items.push(<dropdown-menu-item id={"rayde-menu-ext-" + (wb.extension != null && m.id == wb.extension.id ? "" : m.id + "-") + e.command} shortcut={keys} onSelect={() -> wb.extensionsPart.runExtensionCommand(m.id, e.command, file)}>${label}</dropdown-menu-item>);
+			var action = () -> wb.extensionsPart.runExtensionCommand(m.id, e.command, file);
+			items.push(<dropdown-menu-item id={"rayde-menu-ext-" + (wb.extension != null && m.id == wb.extension.id ? "" : m.id + "-") + e.command} shortcut={keys} onSelect={() -> { if (dispatch == null) action(); else dispatch(action); }}>${label}</dropdown-menu-item>);
 		}
 		return <div class="flex flex-col">{items}</div>;
 	}

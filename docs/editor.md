@@ -27,6 +27,8 @@ Right-click code, or press the context-menu key, for navigation, **Code Actionsâ
 
 Tabs retain their selection, scroll position, folds and undo history when you switch away. Reopening RayDE restores your previous [windows and tabs](window.md#restoring-a-session).
 
+Right-click a tab for close, split and move actions, **Save**, or path commands. The menu targets that tab, including inactive tabs. Close Others, Left, Right, Saved and All affect only its split group; Save writes only that file.
+
 Drag a tab along its strip to reorder it, or onto another split pane to move it. A thumbnail of its page follows the pointer. The insertion marker shows its position; dropping on a pane's content appends it. Crowded strips scroll when you hold the dragged tab near an edge. Press Escape or drop outside the editor to cancel. Tab order is restored with your workspace.
 
 ## Split view

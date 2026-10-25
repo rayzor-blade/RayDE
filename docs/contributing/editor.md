@@ -14,6 +14,8 @@ Hover documentation is requested from the language server; revisiting an unchang
 
 `EditorTabDrag` coordinates one window's gesture and registered pane bounds. It starts after a movement threshold, hit-tests insertion slots with the source tab excluded, and commits through `EditorGroups.move`. Reordering leaves the active editor mounted; transfers keep the same document and collapse an emptied source pane. Pointer/flush hooks and the edge-scroll timer are removed on release, cancellation, source removal or disposal. Drop feedback ignores pointer events, and the release click is suppressed after dragging.
 
+`TabContextMenu` provides one lazy menu per tab strip. Actions capture the clicked file, including `editor/title` extension actions. Bulk closes stay within that group, and opening the menu leaves inactive editors unmounted. Structural actions run after the popup restores focus. Run `SNAPSHOT_ONLY=tab-context scripts/snapshot.sh` for interaction checks and screenshots in both themes.
+
 After the selected page is laid out, `EditorTabSnapshot` captures it once into a thumbnail texture, bounded to 320 × 220 pixels. The page's inner wrapper starts at its parent's origin, so subtree capture keeps its layout without the strip or card border. It draws through the window's existing renderer before the frame, sharing its device and atlases; pointer movement only positions the captured texture. `FileTabs.preview` shares the strip's notch drawing above the borderless thumbnail. No additional editor, renderer or pixel readback is needed. The settled hook, texture, view and bind group are released when the gesture ends.
 
 ## Command center

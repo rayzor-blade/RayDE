@@ -523,3 +523,6 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 .rayde-code-context { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 #rayde-code-context-menu { min-width: 260px; max-height: 90vh; overflow-y: auto; }
 #rayde-code-context-menu .ui-menu-item { padding: 4px 10px; min-height: 24px; }
+.rayde-tab-context { display: flex; align-self: stretch; flex-shrink: 0; min-width: 0; }
+#rayde-tab-context-menu { min-width: 230px; max-height: 90vh; overflow-y: auto; }
+#rayde-tab-context-menu .ui-menu-item { padding: 4px 10px; min-height: 24px; }

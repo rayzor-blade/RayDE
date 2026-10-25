@@ -276,7 +276,7 @@ Menu locations:
 | Location | Where | Runs on |
 | --- | --- | --- |
 | `explorer/context` | the right-click menu of a file or folder in the Explorer | that row |
-| `editor/title` | the editor's `…` menu | the file in front |
+| `editor/title` | the editor's `…` menu and tab right-click menus | the file in front, or the clicked tab |
 | `editor/context` | the code editor's right-click menu | the clicked file; also receives `range: {from, to}` as UTF-16 offsets in its current buffer |
 
 ![The editor's menu, with Preview for the file in front](images/markdown-title-menu.png)

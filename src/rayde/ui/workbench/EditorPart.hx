@@ -239,7 +239,7 @@ class EditorPart {
 			<tooltip label={"Split Editor Down (Horizontal)" + shortcut("splitdown")} side="bottom"><button id="rayde-split-down" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("vertical"); }}><icon document={Icons.LAYOUT_ROW_LINE} class="size-4"/></button></tooltip>
 			${wb.menusPart.editorMenu(group)}
 		</div>;
-		return <file-tabs files={group.files} active={group.active} dirty={wb.dirty} drag={tabDrag} group={group} onActivate={file -> groups.select(group,file)} onClose={file -> { groups.select(group); wb.closeFile(file); }} label={tabLabel} icon={tabIcon} trailing={actions}/>;
+		return new TabContextMenu({workbench:wb,group:group,label:tabLabel,icon:tabIcon,trailing:actions});
 	}
 	function shortcut(command:String):String { wb.keymapPart.bindingsRevision.get(); var label = wb.keymapPart.bindings.label(command); return label == null ? "" : " · " + label; }
 
