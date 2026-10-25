@@ -44,7 +44,7 @@ typedef WelcomeProps = {
  */
 class Welcome extends Component<WelcomeProps> {
 	function render():Element {
-		var mod = rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl";
+		var mac = rayde.Platform.shortcutsMac();
 		return <div id="rayde-welcome" class="rayde-welcome flex flex-col flex-1 min-h-0 items-center overflow-auto">
 			<div class="flex flex-col gap-7 px-10 py-6 max-w-full my-auto shrink-0" width={900}>
 				<div class="flex flex-col gap-3">
@@ -60,8 +60,8 @@ class Welcome extends Component<WelcomeProps> {
 								${action("welcome-open-project", Icons.FILE_CODE_LINE, "Open Project…", "Open a build file or project manifest", [], props.onOpenProject)}
 								${action("welcome-new-project", Icons.FOLDER_ADD_LINE, "New Project…", "Create a project from a template", [], props.onNewProject)}
 								<if {props.main != null}>${action("welcome-main", Icons.HAXE, "Open " + haxe.io.Path.withoutDirectory(props.main), "The project's main class", [], () -> props.onOpen(props.main))}</if>
-								<if {props.empty != true}>${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", [mod, "P"], props.onFiles)}</if>
-								${action("welcome-commands", Icons.COMMAND_LINE, "Show all commands", "Run, save, close, go to line and the rest", ["⇧", mod, "P"], props.onCommands)}
+								<if {props.empty != true}>${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", rayde.keys.Chord.parse("mod+p", mac).keycaps(mac), props.onFiles)}</if>
+								${action("welcome-commands", Icons.COMMAND_LINE, "Show all commands", "Run, save, close, go to line and the rest", rayde.keys.Chord.parse("mod+shift+p", mac).keycaps(mac), props.onCommands)}
 								<if {props.canRun != false}>${action("welcome-run", Icons.PLAY_FILL, "Run the project", "Build " + props.build + " and run it on " + props.runtime, ["F5"], props.onRun)}</if>
 								<if {props.build != ""}>${action("welcome-build", Icons.SETTINGS_3_LINE, "Configure the build", "Target, main class, class paths, libraries, defines", [], props.onBuild)}</if>
 							</div>

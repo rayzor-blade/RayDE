@@ -23,25 +23,14 @@ haxe "${ui_args[@]}" -D wasm -D ashui_no_hdll -D ashui_window -D rayde_page -D "
   --macro "hlwgpu.macro.NativeInstall.stage()" --macro "hlwindow.macro.NativeInstall.stage()" \
   -main rayde.Main -hl "$out/rayde.hl"
 # The window presents as a Mac, but shortcuts follow the visitor's keyboard: the page tells the program its platform before the host starts it.
+cp "$here/web/platform.js" "$out/rayde-platform.js"
 python3 - "$out/index.html" <<'PY'
 import sys
 path = sys.argv[1]
 page = open(path).read()
-marker = "RAYDE_VISITOR"
+marker = "rayde-platform.js"
 if marker not in page:
-    script = """<script>
-  // RayDE's shortcuts follow this keyboard (RAYDE_VISITOR), whatever platform its window presents as.
-  (function () {
-    var query = new URLSearchParams(location.search);
-    if (query.getAll("env").some(function (e) { return e.indexOf("RAYDE_VISITOR=") === 0; })) return;
-    var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
-    query.append("env", "RAYDE_VISITOR=" + (/mac|iphone|ipad/i.test(platform) ? "Mac" : /win/i.test(platform) ? "Windows" : "Linux"));
-    // An installed web app is RayDE's own window; embedded in another page it is not.
-    if (window.matchMedia("(display-mode: standalone), (display-mode: window-controls-overlay), (display-mode: fullscreen)").matches && window.top === window && !query.getAll("env").some(function (e) { return e.indexOf("RAYDE_STANDALONE=") === 0; })) query.append("env", "RAYDE_STANDALONE=1");
-    history.replaceState(null, "", "?" + query.toString());
-  })();
-</script>
-"""
+    script = '<script src="./rayde-platform.js"></script>\n'
     page = page.replace('<script type="module"', script + '<script type="module"', 1)
     open(path, "w").write(page)
 PY

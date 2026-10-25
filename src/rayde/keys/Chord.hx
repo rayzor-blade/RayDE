@@ -175,13 +175,19 @@ class Chord {
 	}
 
 	/** How a menu or the Settings page shows it: ⌃⇧⌘P on a Mac, Ctrl+Shift+P elsewhere. */
-	public function label(mac:Bool):String {
+	public function label(mac:Bool):String
+		return keycaps(mac).join(mac ? "" : "+");
+
+	/** Individual key labels for the visitor's platform, in shortcut order. */
+	public function keycaps(mac:Bool):Array<String> {
 		var name = named.exists(key) ? named.get(key) : key.toUpperCase();
-		if (mac) {
-			var symbols = (ctrl ? "⌃" : "") + (alt ? "⌥" : "") + (shift ? "⇧" : "") + (meta ? "⌘" : "");
-			return symbols + (arrows.exists(key) ? arrows.get(key) : glyphs.exists(key) ? glyphs.get(key) : name);
-		}
-		return (ctrl ? "Ctrl+" : "") + (alt ? "Alt+" : "") + (shift ? "Shift+" : "") + (meta ? "Win+" : "") + name;
+		var out = [];
+		if (ctrl) out.push(mac ? "⌃" : "Ctrl");
+		if (alt) out.push(mac ? "⌥" : "Alt");
+		if (shift) out.push(mac ? "⇧" : "Shift");
+		if (meta) out.push(mac ? "⌘" : "Win");
+		out.push(mac && arrows.exists(key) ? arrows.get(key) : mac && glyphs.exists(key) ? glyphs.get(key) : name);
+		return out;
 	}
 
 	public function equals(other:Null<Chord>):Bool

@@ -131,7 +131,7 @@ try {
   const varied = await page.evaluate(async base64 => {
     const image = new Image(); image.src = "data:image/png;base64," + base64; await image.decode();
     const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
-    const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+    const context = canvas.getContext("2d", { willReadFrequently: true }); context.drawImage(image, 0, 0);
     const pixels = context.getImageData(330, 80, 900, 650).data;
     const colors = new Set();
     for (let i = 0; i < pixels.length; i += 16) colors.add((pixels[i] >> 4) * 256 + (pixels[i + 1] >> 4) * 16 + (pixels[i + 2] >> 4));
@@ -158,7 +158,7 @@ try {
         const image = new Image(); image.src = "data:image/png;base64," + source; await image.decode(); return image;
       }));
       const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 800;
-      const context = canvas.getContext("2d");
+      const context = canvas.getContext("2d", { willReadFrequently: true });
       const pixels = images.map(image => { context.drawImage(image, 0, 0); return context.getImageData(400, 80, 400, 240).data; });
       let changed = 0;
       for (let i = 0; i < pixels[0].length; i += 16) if (Math.abs(pixels[0][i] - pixels[1][i]) + Math.abs(pixels[0][i + 1] - pixels[1][i + 1]) + Math.abs(pixels[0][i + 2] - pixels[1][i + 2]) > 32) changed++;
