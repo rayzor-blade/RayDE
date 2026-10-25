@@ -206,7 +206,7 @@ class ShellPart {
 		wb.contributions.status({id:"runtime", place:"right", order:600, build:() -> <if {wb.runtime() != ""}><tooltip label={"This project runs on the " + wb.runtime() + " runtime"} side="top">
 			<div id="rayde-runtime" class="rayde-status-item flex"><icon document={Icons.TERMINAL_BOX_LINE} class="size-3.5"/><text>${wb.runtime() + " runtime"}</text></div>
 		</tooltip></if>});
-		wb.contributions.status({id:"panel", place:"right", order:0, build:() -> <for {on in [wb.panelsPart.panelShown.get()]}>${wb.panelItem(on)}</for>});
+		wb.contributions.status({id:"panel", place:"right", order:700, build:() -> <for {on in [wb.panelsPart.panelShown.get()]}>${wb.panelItem(on)}</for>});
 		if (wb.props.empty != true) Features.installAll(host());
 	}
 
