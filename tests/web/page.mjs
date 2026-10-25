@@ -62,7 +62,10 @@ if (probe) {
       const name = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
       const file = resolve(dir, "." + (name === "/" ? "/index.html" : name));
       if (!file.startsWith(dir + "/")) throw new Error("outside output");
-      let body = name === "/gpu-probe.mjs" ? readFileSync(join(here, "gpu-probe.mjs")) : readFileSync(file);
+      let body = ["/gpu-probe.mjs", "/queue-probe.mjs"].includes(name) ? readFileSync(join(here, name.slice(1))) : readFileSync(file);
+      if (name === "/xwindow.mjs" && args.includes("--settings")) body = Buffer.from('import { watchQueue } from "./queue-probe.mjs";\n' + body.toString()
+        .replace("const queue = new Queue(memory, address + QUEUE);", "const queue = new Queue(memory, address + QUEUE); const traceQueue = watchQueue(memory, address + QUEUE);")
+        .replace("const posted = post_XwEvent(queue, event);", "const posted = post_XwEvent(queue, event); traceQueue(event, posted);"));
       if (name === "/gpu-worker.mjs") body = Buffer.from('import "./gpu-probe.mjs";\n' + body);
       if (name === "/gpu-agent.mjs") body = Buffer.from(body.toString().replace("execute(wire, words[2] >>> 0, words[3] >>> 0);", "globalThis.raydeBatch(wire, words[2] >>> 0, words[3] >>> 0); execute(wire, words[2] >>> 0, words[3] >>> 0);"));
       if (name === "/ashui-host.mjs" && args.includes("--agents")) body = Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)", String(Number(option("--agents", "3")))));
@@ -147,6 +150,37 @@ try {
     if (result.idleSubmissions > 2) throw new Error("idle session work kept rendering GPU frames: " + result.idleSubmissions);
   }
   await page.screenshot({ path: join(shots, "welcome.png") });
+  if (args.includes("--settings")) {
+    const waitSettings = async (id, from) => {
+      for (let i = 0; i < 1000; i++) {
+        const entry = lines.slice(from).find(line => line.startsWith("settings-ready:") && JSON.parse(line.slice(15)).id === id);
+        if (entry) return JSON.parse(entry.slice(15));
+        await sleep(10);
+      }
+      throw new Error("settings did not finish rendering: " + id + "\n" + lines.join("\n"));
+    };
+    await page.mouse.click(33, 742); await waitSettings("build", 0);
+    await page.screenshot({ path: join(shots, "settings-initial.png") });
+    const timings = [], positions = {build:142, run:180, libraries:218, terminal:256, appearance:294, keys:332, extensions:370};
+    for (const name of ["keys", "appearance", "extensions", "build", "keys", "terminal", "keys", "libraries", "build"]) {
+      const started = performance.now(), from = lines.length; await page.mouse.click(410, positions[name]);
+      const ready = await waitSettings(name, from);
+      await page.screenshot({ path: join(shots, `settings-${timings.length}-${name}.png`) });
+      timings.push({...ready, observedMs:performance.now() - started});
+      if (args.includes("--virtualized") && (ready.keyRows > 18 || ready.libraryRows > 15)) throw new Error("settings rows were not virtualized");
+    }
+    const from = lines.length, started = performance.now();
+    for (const name of ["keys", "build", "terminal", "extensions", "keys", "appearance"]) {
+      await page.mouse.click(410, positions[name]); await sleep(15);
+    }
+    result.settingsBurst = {...await waitSettings("appearance", from), observedMs:performance.now() - started};
+    await page.screenshot({path:join(shots, "settings-burst.png")});
+    result.settings = timings;
+    result.queue = await page.evaluate(() => globalThis.raydeQueueProbe);
+    await sample("settingsProbe");
+    writeFileSync(join(shots, "settings.json"), JSON.stringify(timings, null, 2));
+    if (args.includes("--settings-only")) { result.ok = true; result.afterEdit = result.afterReady; }
+  }
   if (args.includes("--timeline")) for (const t of [3, 6, 10]) { await sleep(t * 1000 - (t > 3 ? (t === 6 ? 3000 : 6000) : 0)); await page.screenshot({ path: join(shots, `t${t}.png`) }); }
 
   // The scheme changes while the page runs: the app follows.
@@ -156,6 +190,7 @@ try {
     await page.screenshot({ path: join(shots, "flipped.png") });
   }
 
+  if (!args.includes("--settings-only")) {
   // Open Main.hx from the Explorer, then type into it.
   if (session) await page.mouse.click(480, 412);
   else await page.mouse.click(147, 165);
@@ -214,6 +249,7 @@ try {
     }, [before, after].map(bytes => Buffer.from(bytes).toString("base64")));
     if (result.shortcutPixelsChanged < 500) throw new Error("the browser platform's command shortcut did not open the command center");
     await page.keyboard.press("Escape");
+  }
   }
   if (lines.some(l => /gpu error|device was lost|uncaught exception|RayDE stopped:|PAGE ERROR/.test(l))) throw new Error("page reported a runtime or GPU error:\n" + lines.join("\n"));
   result.console = args.includes("--all") ? lines : lines.filter((l) => !/^thread |agent entering|^\[ash\] loaded/.test(l)).slice(-12);

@@ -15,13 +15,13 @@ class ExtensionConfiguration extends Component<ExtensionConfigurationProps> {
 	function render():Element {
 		var groups:Array<Dynamic> = Std.isOfType(props.schema, Array) ? props.schema : [props.schema];
 		var fields:Array<Element> = [];
+		var workspace = Store.section(props.root, "extension." + props.id), user = Store.section(Extensions.home(), "extension." + props.id);
 		for (group in groups) {
 			var properties = group == null ? null : Reflect.field(group, "properties");
 			if (properties == null) continue;
 			for (key in Reflect.fields(properties)) {
 				var definition = Reflect.field(properties, key);
 				if (definition == null) continue;
-				var workspace = Store.section(props.root, "extension." + props.id), user = Store.section(Extensions.home(), "extension." + props.id);
 				var value:Dynamic = Reflect.hasField(workspace, key) ? Reflect.field(workspace, key) : Reflect.hasField(user, key) ? Reflect.field(user, key) : Reflect.field(definition, "default");
 				var choices:Dynamic = Reflect.field(definition, "enum");
 				var input:Element, id = "rayde-extension-setting-" + props.id + "-" + ~/[^A-Za-z0-9_-]/g.replace(key, "-");

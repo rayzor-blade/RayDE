@@ -14,6 +14,9 @@ typedef Lib = {name:String, version:String};
  */
 class Haxelib {
 	static var cache:Null<Array<Lib>> = null;
+	static var pending:Null<ash.Future<Array<Lib>>>;
+	static var generation = 0;
+	static final mutex = new sys.thread.Mutex();
 
 	public static function command():String {
 		var named = Sys.getEnv("RAYDE_HAXELIB");
@@ -21,15 +24,28 @@ class Haxelib {
 	}
 
 	/** The libraries haxelib has, each with the version it uses. */
-	public static function installed():Array<Lib> {
-		if (cache == null)
-			cache = try parse(output(["list"])) catch (_:Dynamic) [];
-		return cache;
+	public static function installed():Array<Lib> return installedAsync().await();
+
+	/** Concurrent readers share one background query; rendering need not wait for haxelib. */
+	public static function installedAsync():ash.Future<Array<Lib>> {
+		mutex.acquire();
+		if (cache != null) { var ready = new ash.Future<Array<Lib>>(); ready.resolve(cache); mutex.release(); return ready; }
+		if (pending != null) { var known = pending; mutex.release(); return known; }
+		var future = pending = new ash.Future<Array<Lib>>(), version = generation;
+		mutex.release();
+		sys.thread.Thread.create(() -> {
+			var libraries = try parse(output(["list"])) catch (_:Dynamic) [];
+			mutex.acquire();
+			if (generation == version) { cache = libraries; pending = null; }
+			mutex.release(); future.resolve(libraries);
+		});
+		return future;
 	}
 
-	/** Forgets what was asked, so the next `installed` asks again. */
-	public static function refresh():Void
-		cache = null;
+	/** Forgets the previous query; an older in-flight reply cannot replace a fresh catalog. */
+	public static function refresh():Void {
+		mutex.acquire(); generation++; cache = null; pending = null; mutex.release();
+	}
 
 	/** The libraries `haxelib list` printed: a name, a colon, then versions with the one in use in brackets. */
 	public static function parse(text:String):Array<Lib> {

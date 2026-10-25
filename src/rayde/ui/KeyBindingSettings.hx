@@ -119,15 +119,9 @@ class KeyBindingSettings extends Component<KeyBindingSettingsProps> {
 				<text id="rayde-keys-count" class="text-xs text-text-tertiary">${shown.length + (shown.length == 1 ? " command" : " commands")}</text>
 				<if {props.bindings.anyChanged()}><button id="rayde-keys-reset-all" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> resetAll()}>Reset all</button></if>
 			</div>
-			<div id="rayde-keys-list" class="rayde-key-list flex flex-col overflow-auto">
-				<if {shown.length == 0}><div class="px-3 py-3"><text class="text-xs text-text-tertiary">No command matches.</text></div></if>
-				{rows(shown, recordingId)}
-			</div>
+			${WindowedRows.make("rayde-keys-list", "rayde-key-list", shown, 48, 440, a -> row(a, recordingId == a.id), "No command matches.")}
 		</div>;
 	}
-
-	function rows(shown:Array<CenterAction>, recordingId:String):Array<Element>
-		return [for (a in shown) row(a, recordingId == a.id)];
 
 	function matches(a:CenterAction, q:String):Bool {
 		var label = props.bindings.label(a.id);

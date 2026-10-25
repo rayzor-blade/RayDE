@@ -94,27 +94,27 @@ class SettingsPage extends Component<SettingsPageProps> {
 	function render():Element
 		return <div id="rayde-settings" class="flex flex-1 min-h-0">
 			<div id="rayde-settings-nav" class="rayde-settings-nav flex flex-col shrink-0 gap-1 px-3 py-4" width={216}>
-				<for {id in [props.category.get()]}>${nav(id)}</for>
+				${nav()}
 			</div>
 			<for {id in [props.category.get()]}>${section(id)}</for>
 		</div>;
 
-	function nav(current:String):Element
-		return <div class="flex flex-col gap-1">{[for (c in categories) if (has(c)) navItem(c, c.id == current)]}</div>;
+	function nav():Element
+		return <div class="flex flex-col gap-1">{[for (c in categories) if (has(c)) navItem(c)]}</div>;
 
-	function navItem(c:SettingsCategory, on:Bool):Element {
-		var item = <div id={"rayde-settings-nav-" + c.id} class="rayde-nav-item flex items-center gap-3 px-3 cursor-pointer" height={34} onClick={_ -> props.category.set(c.id)}>
+	function navItem(c:SettingsCategory):Element {
+		var item = <div id={"rayde-settings-nav-" + c.id} class="rayde-nav-item flex items-center gap-3 px-3 cursor-pointer" height={34} onClick={_ -> { SettingsTiming.request(); props.category.set(c.id); }}>
 			<icon document={c.icon} class="size-4 shrink-0"/>
 			<text class="text-sm truncate">${labelOf(c, props.extension)}</text>
 		</div>;
-		if (on)
-			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
+		new ashui.reactive.Watch(() -> props.category.get() == c.id,
+			on -> ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", on ? "" : null));
 		return item;
 	}
 
 	/** The chosen section, which fills what the list leaves. */
 	function section(id:String):Element
-		return switch id {
+		return SettingsTiming.build(id, () -> switch id {
 			case "run": <runner-settings root={props.root} onChanged={props.onRunnerChanged}/>;
 			case "libraries": <library-settings file={props.build} root={props.root} manager={props.libraries} onChanged={props.onBuildChanged}/>;
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
@@ -125,7 +125,7 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case _ if (props.caribou != null): <caribou-settings path={props.caribou} languages={props.caribouLanguages} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
-		}
+		});
 
 	/** The Build section of a project opened without a build file. */
 	function noBuild():Element

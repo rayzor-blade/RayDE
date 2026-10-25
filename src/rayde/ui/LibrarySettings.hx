@@ -36,14 +36,27 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 	final version = Signal.make("");
 	var polling = false;
 	var gone = false;
+	var catalog:Array<rayde.run.Haxelib.Lib> = [];
+	var catalogQuery:Null<ash.Future<Array<rayde.run.Haxelib.Lib>>>;
+	final loading = Signal.make(false);
 
 	function render():Element {
-		Owner.onCleanup(() -> gone = true);
-		resume();
+		var receive:ashui.layout.LayoutTree->Void = tree -> if (tree == this.tree && !gone && catalogQuery != null && catalogQuery.isReady()) {
+			catalog = catalogQuery.await(); catalogQuery = null; loading.set(false); revision.set(revision.get() + 1);
+		};
+		ashui.layout.LayoutTree.flushHooks.push(receive);
+		Owner.onCleanup(() -> { gone = true; ashui.layout.LayoutTree.flushHooks.remove(receive); });
+		loadCatalog(); resume();
 		return SettingsParts.page("rayde-libraries", <div class="flex flex-col gap-6">
 			${SettingsParts.header(Icons.BOOK_2_LINE, "Libraries", "Haxe libraries from haxelib, and the ones this build uses.")}
 			<for {r in [revision.get()]}>${sections(r)}</for>
 		</div>);
+	}
+
+	function loadCatalog():Void {
+		catalogQuery = Haxelib.installedAsync();
+		if (catalogQuery.isReady()) { catalog = catalogQuery.await(); catalogQuery = null; loading.set(false); }
+		else { loading.set(true); catalogQuery.then(_ -> ashui.core.Work.notify()); }
 	}
 
 	function sections(_:Int):Element
@@ -55,11 +68,12 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 		return <div class="flex items-center gap-2">
 			<input height={32} id="rayde-library-name" value={query} placeholder="Filter, or type a library to add" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) add()}/>
 			<input height={32} id="rayde-library-version" value={version} placeholder="Version (optional)" class="rayde-control-narrow" onKeyDown={e -> if (e.key.match(Named(Enter))) add()}/>
-			<button id="rayde-library-add" variant={Secondary} size={Sm} class="rayde-add" disabled={props.manager.busy()} onClick={_ -> add()}>${props.file == null ? "Install" : "Add"}</button>
+			<button id="rayde-library-add" variant={Secondary} size={Sm} class="rayde-add" disabled={props.manager.busy() || loading.get()} onClick={_ -> add()}>${props.file == null ? "Install" : "Add"}</button>
 		</div>;
 
 	/** What haxelib is doing, or how its last job ended. */
 	function status():Element {
+		if (loading.get()) return <text id="rayde-library-loading" class="text-xs text-text-secondary">Loading libraries…</text>;
 		var m = props.manager;
 		if (m.busy())
 			return <div class="flex items-center gap-2"><icon document={Icons.REFRESH_LINE} class="size-4 text-text-secondary"/><text id="rayde-library-status" class="text-xs text-text-secondary">${m.doing + "..."}</text></div>;
@@ -73,7 +87,7 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 
 	/** A column of the build's libraries first and the installed ones after. */
 	function libraryList(text:String):Element {
-		var used = props.file == null ? [] : props.file.values("-lib"), installed = Haxelib.installed(), filter = text.trim().toLowerCase();
+		var used = props.file == null ? [] : props.file.values("-lib"), installed = catalog, filter = text.trim().toLowerCase();
 		var rows:Array<LibraryRow> = [], seen = new Map<String, Bool>();
 		for (entry in used) {
 			var colon = entry.indexOf(":"), name = colon < 0 ? entry : entry.substr(0, colon);
@@ -85,17 +99,12 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 			if (!seen.exists(lib.name))
 				rows.push({name: lib.name, entry: lib.name, pin: null, used: false, version: lib.version, installed: true});
 		var shown = [for (r in rows) if (filter == "" || r.name.toLowerCase().indexOf(filter) >= 0) r];
-		return <div id="rayde-library-list" class="rayde-lib-list flex flex-col overflow-auto">
-			<if {shown.length == 0}><div class="px-3 py-3"><text class="text-xs text-text-tertiary">${filter == "" ? "No libraries." : "No library matches. Add installs " + text.trim() + "."}</text></div></if>
-			{libraryRows(shown)}
-		</div>;
+		return WindowedRows.make("rayde-library-list", "rayde-lib-list", shown, 36, 264, libraryRow,
+			filter == "" ? "No libraries." : "No library matches. Add installs " + text.trim() + ".");
 	}
 
-	function libraryRows(rows:Array<LibraryRow>):Array<Element>
-		return [for (r in rows) libraryRow(r)];
-
 	function libraryRow(r:LibraryRow):Element {
-		var busy = props.manager.busy();
+		var busy = props.manager.busy() || loading.get();
 		return <div id={"rayde-lib-" + r.name} class="rayde-lib-row flex items-center gap-3 px-3 shrink-0 cursor-pointer" height={36} onClick={_ -> toggle(r)}>
 			<if {props.file != null}>
 				<if {r.used}><icon document={Icons.CHECKBOX_CIRCLE_FILL} class="size-4 text-primary shrink-0"/>
@@ -123,11 +132,11 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 
 	function add():Void {
 		var name = query.get().trim(), pin = version.get().trim();
-		if (name == "" || props.manager.busy())
+		if (name == "" || props.manager.busy() || loading.get())
 			return;
 		query.set("");
 		version.set("");
-		var installed = Lambda.exists(Haxelib.installed(), i -> i.name == name);
+		var installed = Lambda.exists(catalog, i -> i.name == name);
 		if (props.file != null)
 			change(() -> props.file.add("-lib", pin == "" ? name : name + ":" + pin));
 		if (!installed)
@@ -160,8 +169,9 @@ class LibrarySettings extends Component<LibrarySettingsProps> {
 				polling = false;
 				return;
 			}
-			if (props.manager.tick())
-				revision.set(revision.get() + 1);
+			if (props.manager.tick()) {
+				loadCatalog(); revision.set(revision.get() + 1);
+			}
 			if (props.manager.busy())
 				ashui.animation.AnimationScheduler.main.after(.15, step);
 			else
