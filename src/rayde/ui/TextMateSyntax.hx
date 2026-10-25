@@ -8,8 +8,12 @@ class TextMateSyntax implements CodeHighlighter {
 	function new(handle:Int) this.handle = handle;
 
 	public static function forFile(file:String):Null<TextMateSyntax> {
+		#if wasm
+		return null;
+		#else
 		var bytes = haxe.io.Bytes.ofString(file), handle = openNative(bytes.getData(), bytes.length);
 		return handle < 0 ? null : new TextMateSyntax(handle);
+		#end
 	}
 
 	public function highlight(line:String, state:String):CodeHighlight {

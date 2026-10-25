@@ -66,6 +66,7 @@ if (probe) {
       if (name === "/xwindow.mjs" && args.includes("--settings")) body = Buffer.from('import { watchQueue } from "./queue-probe.mjs";\n' + body.toString()
         .replace("const queue = new Queue(memory, address + QUEUE);", "const queue = new Queue(memory, address + QUEUE); const traceQueue = watchQueue(memory, address + QUEUE);")
         .replace("const posted = post_XwEvent(queue, event);", "const posted = post_XwEvent(queue, event); traceQueue(event, posted);"));
+      if (name === "/xwindow.mjs" && args.includes("--text-input")) body = Buffer.from(body.toString().replace("const posted = post_XwEvent(queue, event);", 'if (event.kind === "keyboard-input" || event.kind.startsWith("ime-")) console.log("browser-input:" + JSON.stringify(event)); const posted = post_XwEvent(queue, event);'));
       if (name === "/gpu-worker.mjs") body = Buffer.from('import "./gpu-probe.mjs";\n' + body);
       if (name === "/gpu-agent.mjs") body = Buffer.from(body.toString().replace("execute(wire, words[2] >>> 0, words[3] >>> 0);", "globalThis.raydeBatch(wire, words[2] >>> 0, words[3] >>> 0); execute(wire, words[2] >>> 0, words[3] >>> 0);"));
       if (name === "/ashui-host.mjs" && args.includes("--agents")) body = Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)", String(Number(option("--agents", "3")))));
@@ -80,6 +81,11 @@ const browser = await puppeteer.launch({ executablePath: chrome, headless: "new"
 const result = { ok: false };
 try {
   const page = await browser.newPage();
+  if (args.includes("--ime-fallback")) await page.evaluateOnNewDocument(() => { delete globalThis.EditContext; });
+  if (args.includes("--shortcuts")) await page.evaluateOnNewDocument(() => {
+    globalThis.raydeKeys = [];
+    addEventListener("keydown", event => raydeKeys.push({key:event.key, ctrl:event.ctrlKey, meta:event.metaKey, prevented:event.defaultPrevented}));
+  });
   if (visitor) await page.evaluateOnNewDocument(value => {
     Object.defineProperty(navigator, "userAgentData", { value: { platform: value === "Mac" ? "macOS" : value } });
   }, visitor);
@@ -150,6 +156,26 @@ try {
     if (result.idleSubmissions > 2) throw new Error("idle session work kept rendering GPU frames: " + result.idleSubmissions);
   }
   await page.screenshot({ path: join(shots, "welcome.png") });
+  if (args.includes("--text-input")) {
+    await page.mouse.click(140, session ? 165 : 140, {button:"right"}); await sleep(500);
+    await page.screenshot({path:join(shots, "new-file-menu.png")});
+    await page.mouse.click(220, session ? 185 : 160); await sleep(500);
+    await page.screenshot({path:join(shots, "new-file-empty.png")});
+    await page.keyboard.type("Hello.hxs", {delay:Number(option("--input-delay", "15"))}); await sleep(500);
+    await page.screenshot({path:join(shots, "new-file-typed.png")});
+    await page.keyboard.press("Enter"); await sleep(1000);
+    const paths = await page.evaluate(() => new Promise((resolve, reject) => {
+      const open = indexedDB.open("rayde-page", 1);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result, request = db.transaction("files").objectStore("files").getAll();
+        request.onsuccess = () => { resolve(request.result.map(entry => entry.path)); db.close(); };
+      };
+    }));
+    result.inputPaths = paths;
+    if (!paths.includes("/work/src/Hello.hxs")) throw new Error("typed filename changed: " + paths.join(", "));
+    if (args.includes("--input-only")) { result.ok = true; result.afterEdit = result.afterReady; }
+  }
   if (args.includes("--settings")) {
     const waitSettings = async (id, from) => {
       for (let i = 0; i < 1000; i++) {
@@ -190,7 +216,7 @@ try {
     await page.screenshot({ path: join(shots, "flipped.png") });
   }
 
-  if (!args.includes("--settings-only")) {
+  if (!args.includes("--settings-only") && !args.includes("--input-only")) {
   // Open Main.hx from the Explorer, then type into it.
   if (session) await page.mouse.click(480, 412);
   else await page.mouse.click(147, 165);
@@ -230,11 +256,22 @@ try {
   await sample("editProbe");
   if (probe && (!result.editProbe.gpu?.completed || !result.editProbe.gpu.batches || result.editProbe.gpu.crossBatchSubmits)) throw new Error("GPU frames did not complete in one batch");
   if (args.includes("--shortcuts")) {
+    for (const key of ["s", "p", "f"]) {
+      const modifier = result.visitor === "RAYDE_VISITOR=Mac" ? "Meta" : "Control";
+      await page.keyboard.down(modifier); await page.keyboard.press(key); await page.keyboard.up(modifier);
+      await sleep(400);
+      const event = await page.evaluate(key => raydeKeys.findLast(event => event.key.toLowerCase() === key), key);
+      if (!event?.prevented) throw new Error("browser default was not prevented for " + modifier + "+" + key);
+      await page.keyboard.press("Escape"); await sleep(200);
+    }
     const before = await page.screenshot();
     const modifier = result.visitor === "RAYDE_VISITOR=Mac" ? "Meta" : "Control";
     await page.keyboard.down(modifier); await page.keyboard.down("Shift"); await page.keyboard.press("P");
     await page.keyboard.up("Shift"); await page.keyboard.up(modifier);
     await sleep(3000);
+    result.shortcutEvents = await page.evaluate(() => raydeKeys.filter(event => event.ctrl || event.meta));
+    const commandEvent = result.shortcutEvents.findLast(event => event.key.toLowerCase() === "p");
+    if (!commandEvent?.prevented) throw new Error("the command shortcut also reached the browser default");
     const after = await page.screenshot({ path: join(shots, "commands.png") });
     result.shortcutPixelsChanged = await page.evaluate(async sources => {
       const images = await Promise.all(sources.map(async source => {
