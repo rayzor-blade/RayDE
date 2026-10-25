@@ -11,8 +11,31 @@ private enum Node {
 class MemoryWorkspace implements Workspace {
 	final nodes = new Map<String, Node>();
 
+	/** Called after every change, with the path and what happened: `write`, `mkdir`, `delete` or `rename` (of the destination). A page saves host storage from this. */
+	public var onChange:Null<(String, String) -> Void>;
+
 	public function new() {
 		nodes.set("", Dir(Date.now().getTime()));
+	}
+
+	function changed(path:String, kind:String):Void if (onChange != null) onChange("/" + key(path), kind);
+
+	/** Everything held, directories first, for saving. Paths are absolute. */
+	public function entries():Array<{path:String, directory:Bool, bytes:Null<Bytes>}> {
+		var names = [for (name in nodes.keys()) if (name != "") name];
+		names.sort((a, b) -> a < b ? -1 : a > b ? 1 : 0);
+		return [for (name in names) switch nodes.get(name) {
+			case File(bytes, _): {path: "/" + name, directory: false, bytes: bytes};
+			case Dir(_): {path: "/" + name, directory: true, bytes: null};
+		}];
+	}
+
+	/** Puts entries from `entries` or from storage back, without telling `onChange`. */
+	public function load(items:Array<{path:String, directory:Bool, bytes:Null<Bytes>}>):Void {
+		var listener = onChange;
+		onChange = null;
+		for (item in items) if (item.directory) createDirectory(item.path) else saveBytes(item.path, item.bytes);
+		onChange = listener;
 	}
 
 	/** `/`-separated, without trailing or doubled slashes and without `.` segments. */
@@ -71,6 +94,7 @@ class MemoryWorkspace implements Workspace {
 		if (isDirectory(at)) throw "Is a directory: " + path;
 		createDirectory(parent(at));
 		nodes.set(at, File(bytes, Date.now().getTime()));
+		changed(at, "write");
 	}
 
 	public function saveContent(path:String, content:String):Void saveBytes(path, Bytes.ofString(content));
@@ -83,12 +107,15 @@ class MemoryWorkspace implements Workspace {
 		}
 		createDirectory(parent(at));
 		nodes.set(at, Dir(Date.now().getTime()));
+		changed(at, "mkdir");
 	}
 
 	public function deleteFile(path:String):Void {
 		var at = key(path);
 		switch nodes.get(at) {
-			case File(_, _): nodes.remove(at);
+			case File(_, _):
+				nodes.remove(at);
+				changed(at, "delete");
 			case Dir(_): throw "Is a directory: " + path;
 			case null: throw "No such file: " + path;
 		}
@@ -99,6 +126,7 @@ class MemoryWorkspace implements Workspace {
 		if (at == "" || !isDirectory(at)) throw "Not a directory: " + path;
 		if (readDirectory(at).length > 0) throw "Directory not empty: " + path;
 		nodes.remove(at);
+		changed(at, "delete");
 	}
 
 	public function rename(path:String, to:String):Void {
@@ -110,6 +138,8 @@ class MemoryWorkspace implements Workspace {
 				var node = nodes.get(name);
 				nodes.remove(name);
 				nodes.set(target + name.substr(from.length), node);
+				changed(name, "delete");
+				changed(target + name.substr(from.length), "rename");
 			}
 	}
 

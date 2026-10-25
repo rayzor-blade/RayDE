@@ -3,6 +3,8 @@ import rayde.workspace.Fs;
 import rayde.workspace.Launcher;
 import rayde.workspace.LocalLauncher;
 import rayde.workspace.Procs;
+import rayde.workspace.RoutedWorkspace;
+import rayde.workspace.PageHost;
 import rayde.workspace.Program;
 import rayde.workspace.session.SessionClient;
 import rayde.workspace.session.SessionLauncher;
@@ -91,6 +93,7 @@ class WorkspaceChecks {
 		sys.FileSystem.deleteDirectory(local);
 		conform(new MemoryWorkspace(), "/work", "memory");
 		againstSession();
+		routing();
 
 		// RayDE's own code reaches files through `Fs`: it follows whatever is current, and the machine's disk is left alone.
 		var before = Fs.current, memory = new MemoryWorkspace();
@@ -106,6 +109,45 @@ class WorkspaceChecks {
 		Fs.current = before;
 		check(!sys.FileSystem.exists("/project/.rayde/settings.json"), "the local disk was not touched");
 		Sys.println("Workspace: the local and in-memory providers answer alike");
+	}
+
+	/** Mounts send each path to its own workspace, and the page host assembles them. */
+	static function routing():Void {
+		var home = new MemoryWorkspace(), work = new MemoryWorkspace(), routed = new RoutedWorkspace(home);
+		routed.mount("/work", work);
+		routed.saveContent("/work/a.txt", "work");
+		routed.saveContent("/home/b.txt", "home");
+		check(work.exists("/work/a.txt") && !home.exists("/work/a.txt") && home.exists("/home/b.txt") && !work.exists("/home/b.txt"), "a path goes to the workspace mounted at its prefix");
+		check(routed.exists("/work") && routed.isDirectory("/work") && routed.readDirectory("/").indexOf("work") >= 0, "a mount point is a directory of its parent");
+		check(fails(() -> routed.rename("/work/a.txt", "/home/a.txt")) && work.exists("/work/a.txt"), "a rename does not cross workspaces");
+		routed.copy("/work/a.txt", "/home/a.txt");
+		check(home.getContent("/home/a.txt") == "work", "a copy does");
+		conform(routed, "/work/conform", "routed workspace");
+		conform(routed, "/home/conform", "routed fallback");
+
+		var seen:Array<String> = [], memory = new MemoryWorkspace();
+		memory.onChange = (path, kind) -> seen.push(kind + " " + path);
+		memory.saveContent("/x/y.txt", "1");
+		memory.rename("/x/y.txt", "/x/z.txt");
+		memory.deleteFile("/x/z.txt");
+		check(seen.join(",") == "mkdir /x,write /x/y.txt,delete /x/y.txt,rename /x/z.txt,delete /x/z.txt", 'changes are reported: $seen');
+		var copy = new MemoryWorkspace();
+		memory.saveContent("/keep/k.txt", "k");
+		copy.load(memory.entries());
+		check(copy.getContent("/keep/k.txt") == "k", "entries load into another workspace");
+
+		#if rayde_page
+		var before = Fs.current, beforeLauncher = Procs.current;
+		var entry = PageHost.install();
+		check(entry == "/work/build.hxml" && Fs.exists(entry) && Fs.exists("/work/src/Main.hx"), "a page with no session opens a sample project");
+		check(Fs.exists("/rayde/themes") && Fs.exists("/rayde/extensions/git/git.rayext.in") && !Fs.exists("/rayde/extensions/git/natives"), "built-in themes and extensions are embedded, natives are not");
+		var ids = [for (entry in rayde.settings.Extensions.list("", rayde.settings.Extensions.builtins(), "")) entry.id];
+		check(ids.indexOf("markdown") >= 0 && ids.indexOf("rayzor") >= 0, 'RayDE finds the embedded extensions: $ids');
+		var none = Procs.start("true", []);
+		check(none.exitCode() == 127 && none.stderr.readAll().toString().indexOf("session") >= 0, "a program started in a page with no session has ended, unsuccessfully, saying why");
+		Fs.current = before;
+		Procs.current = beforeLauncher;
+		#end
 	}
 
 	/** The session provider, against the real session server when it is built. */
