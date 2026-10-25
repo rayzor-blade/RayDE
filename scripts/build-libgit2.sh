@@ -17,7 +17,8 @@ sha256() { python3 -c 'import hashlib,sys; print(hashlib.file_digest(open(sys.ar
 actual=$(sha256 "$archive")
 [ "$actual" = "$checksum" ] || { echo "libgit2: source checksum mismatch" >&2; exit 1; }
 if [ ! -d "$source_dir" ]; then
-  tar -xzf "$archive" -C "$cache"
+  # Disabled test fixtures contain symlinks that require extra Windows privileges.
+  tar --exclude="libgit2-$version/tests" -xzf "$archive" -C "$cache"
 fi
 cmake -S "$source_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_EXAMPLES=OFF \
