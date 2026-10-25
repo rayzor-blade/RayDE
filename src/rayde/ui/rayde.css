@@ -154,7 +154,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 /* The menu trigger adds a chevron of its own; this button is only the dots. */
 #rayde .rayde-more .ui-dropdown-menu-chevron { display: none; }
 #rayde .rayde-more:hover { color: var(--text-primary); background: var(--accent-subtle); }
-#rayde .rayde-tab-body { height: 28px; border-radius: var(--radius-lg); corner-shape: squircle; }
+#rayde .rayde-tab-body { height: 100%; border-radius: var(--radius-lg); corner-shape: squircle; }
 #rayde .rayde-tab:hover .rayde-tab-body { background: var(--accent-subtle); }
 #rayde .rayde-tab[data-front] .rayde-tab-body { background: transparent; }
 #rayde .rayde-tab-icon { flex-shrink: 0; }
