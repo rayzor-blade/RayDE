@@ -257,8 +257,10 @@ class PanelsPart {
 		var errors = Lambda.count(list, p -> p.severity == 1), warnings = Lambda.count(list, p -> p.severity == 2);
 		return <tooltip label="Problems in the open files" side="top">
 			<div id="rayde-problem-counts" class="rayde-status-item action flex" onClick={_ -> showPanel("problems")}>
-				<icon document={Icons.CLOSE_CIRCLE_LINE} class="size-3.5"/><text>${errors}</text>
-				<icon document={Icons.ALERT_LINE} class="size-3.5"/><text>${warnings}</text>
+				<if {errors > 0}><icon document={Icons.CLOSE_CIRCLE_LINE} class="size-3.5 text-error"/><text class="text-error">${errors}</text>
+				<else><icon document={Icons.CLOSE_CIRCLE_LINE} class="size-3.5"/><text>${errors}</text></if>
+				<if {warnings > 0}><icon document={Icons.ALERT_LINE} class="size-3.5 text-warning"/><text class="text-warning">${warnings}</text>
+				<else><icon document={Icons.ALERT_LINE} class="size-3.5"/><text>${warnings}</text></if>
 			</div>
 		</tooltip>;
 	}
