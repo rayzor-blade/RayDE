@@ -83,13 +83,28 @@ jobs:
         run: python3 scripts/ci-deps.py --fetch --env-file "$GITHUB_ENV"
       - name: Install the locked Rust toolchain
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --target wasm32-unknown-unknown
-      - name: Install native headers (Linux)
+      - name: Install native build tools (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev \
-            libxcursor-dev libudev-dev fonts-dejavu-core patchelf
+            libxcursor-dev libudev-dev fonts-dejavu-core patchelf nasm
+      - name: Install native assembler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install nasm
+      - name: Install native assembler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nasm --no-progress --yes
+          if ($LASTEXITCODE -ne 0) { throw "NASM installation failed" }
+          $nasm = Join-Path $env:ProgramFiles 'NASM'
+          if (Test-Path $nasm) {
+            $nasm | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          }
+      - name: Verify native assembler
+        run: nasm -v
       - uses: ./ash/.github/actions/llvm21
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:

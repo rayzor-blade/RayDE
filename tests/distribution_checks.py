@@ -274,6 +274,10 @@ source = "git+https://github.com/owner/window.git?rev={nested}#{nested}"
         self.assertEqual(deps.environment()["ASHUI_REV"], pin)
         self.assertIn("RayDE/.deps/ashui-${{ env.ASHUI_REV }} -> target", workflow)
         self.assertIn("--verify-remotes", workflow)
+        self.assertIn("patchelf nasm", workflow)
+        self.assertIn("brew install nasm", workflow)
+        self.assertIn("choco install nasm", workflow)
+        self.assertIn("run: nasm -v", workflow)
         self.assertIn('rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --target wasm32-unknown-unknown', workflow)
 
 
