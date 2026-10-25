@@ -114,7 +114,8 @@ class WorkspaceChecks {
 		if (!sys.FileSystem.exists(binary)) { Sys.println("Workspace: skipped the session provider, native/session is not built"); return; }
 		var root = sys.FileSystem.fullPath(Sys.getCwd() + "bin") + "/session-checks-" + Std.random(0x3fffffff), port = 20000 + Std.random(20000);
 		sys.FileSystem.createDirectory(root);
-		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--token", "t", "--exec"]);
+		var raw = port + 1;
+		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--raw-port", Std.string(raw), "--token", "t", "--exec"]);
 		try {
 			var client:SessionClient = null;
 			for (_ in 0...100) {
@@ -126,6 +127,15 @@ class WorkspaceChecks {
 			conform(new SessionWorkspace(client), client.root, "session workspace");
 			check(fails(() -> new SessionWorkspace(client).getContent("/elsewhere/file")), "a path outside the session's workspace fails");
 			conformLauncher(new SessionLauncher(client), "session launcher");
+			// The same session over frames on a byte stream, which is how a page reaches it.
+			var stream:SessionClient = null;
+			for (_ in 0...100) {
+				try { stream = SessionClient.connectFramed("127.0.0.1", raw, "t"); break; } catch (_:Dynamic) Sys.sleep(.05);
+			}
+			check(stream != null && stream.root == client.root, "a framed connection reaches the same session");
+			conform(new SessionWorkspace(stream), stream.root, "framed session workspace");
+			conformLauncher(new SessionLauncher(stream), "framed session launcher");
+			stream.close();
 			client.close();
 		} catch (e:Dynamic) {
 			server.kill();

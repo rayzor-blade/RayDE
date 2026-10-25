@@ -18,6 +18,7 @@ pub async fn server(root: &std::path::Path, exec: bool) -> Running {
 
 /// A client of the session: requests wait for their response, and events queue up.
 pub struct Client {
+    binary: bool,
     sink: futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, Message>,
     waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Value>>>>,
     pub events: mpsc::UnboundedReceiver<Value>,
@@ -25,6 +26,12 @@ pub struct Client {
 }
 
 impl Client {
+    pub async fn connect_binary(running: &Running) -> Client {
+        let mut client = Client::connect(running).await;
+        client.binary = true;
+        client
+    }
+
     pub async fn connect(running: &Running) -> Client {
         let (socket, _) = tokio_tungstenite::connect_async(format!("ws://{}/session", running.address)).await.expect("connects");
         let (sink, mut stream) = socket.split();
@@ -32,7 +39,12 @@ impl Client {
         let (events_tx, events) = mpsc::unbounded_channel();
         let table = waiting.clone();
         tokio::spawn(async move {
-            while let Some(Ok(Message::Text(text))) = stream.next().await {
+            while let Some(Ok(message)) = stream.next().await {
+                let text = match message {
+                    Message::Text(text) => text.to_string(),
+                    Message::Binary(bytes) => String::from_utf8(bytes[4..].to_vec()).unwrap(),
+                    _ => continue,
+                };
                 let value: Value = serde_json::from_str(&text).unwrap();
                 match value.get("id").and_then(Value::as_u64) {
                     Some(id) => {
@@ -49,7 +61,7 @@ impl Client {
                 }
             }
         });
-        Client { sink, waiting, events, next: 1 }
+        Client { binary: false, sink, waiting, events, next: 1 }
     }
 
     pub async fn hello(running: &Running) -> Client {
@@ -65,7 +77,9 @@ impl Client {
         message["id"] = json!(id);
         let (reply, answer) = oneshot::channel();
         self.waiting.lock().unwrap().insert(id, reply);
-        self.sink.send(Message::Text(message.to_string().into())).await.unwrap();
+        let text = message.to_string();
+        let message = if self.binary { Message::Binary(rayde_session::server::frame(&text).into()) } else { Message::Text(text.into()) };
+        self.sink.send(message).await.unwrap();
         tokio::time::timeout(Duration::from_secs(5), answer).await.expect("a response arrives").unwrap()
     }
 

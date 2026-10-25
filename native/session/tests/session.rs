@@ -255,3 +255,46 @@ async fn nobody_edits_before_signing_in_with_a_credential_the_edge_signed() {
     assert_eq!(other.request(json!({"op": "fs.write", "path": "c.txt", "data": "no"})).await["code"], "auth-required");
     running.shutdown().await;
 }
+
+#[tokio::test]
+async fn the_protocol_also_runs_as_length_prefixed_frames_over_tcp_and_as_websocket_binary() {
+    use rayde_session::server::{Frames, frame};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "framed").unwrap();
+    let mut options = rayde_session::server::Options::new(dir.path());
+    options.token = Some("secret".into());
+    options.raw = Some(([127, 0, 0, 1], 0).into());
+    let running = rayde_session::server::start(options).await.unwrap();
+
+    // Over TCP, with requests split across writes and two sent in one.
+    let mut stream = tokio::net::TcpStream::connect(running.raw_address.unwrap()).await.unwrap();
+    let hello = frame(&json!({"op": "hello", "token": "secret", "id": 1}).to_string());
+    stream.write_all(&hello[..3]).await.unwrap();
+    stream.write_all(&hello[3..]).await.unwrap();
+    let mut both = frame(&json!({"op": "fs.read", "path": "a.txt", "id": 2}).to_string());
+    both.extend(frame(&json!({"op": "fs.stat", "path": "a.txt", "id": 3}).to_string()));
+    stream.write_all(&both).await.unwrap();
+    let (mut frames, mut texts, mut buffer) = (Frames::default(), Vec::new(), [0u8; 4096]);
+    while texts.len() < 3 {
+        let n = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read(&mut buffer)).await.unwrap().unwrap();
+        texts.extend(frames.push(&buffer[..n]).unwrap());
+    }
+    let replies: Vec<serde_json::Value> = texts.iter().map(|t| serde_json::from_str(t).unwrap()).collect();
+    assert_eq!(replies[0]["ok"], true);
+    assert_eq!(replies[1]["data"], "framed");
+    assert_eq!(replies[2]["entry"]["size"], 6);
+
+    // Over a WebSocket, a client that speaks binary is answered in binary.
+    let mut c = Client::connect_binary(&running).await;
+    let reply = c.request(json!({"op": "hello", "token": "secret"})).await;
+    assert_eq!(reply["ok"], true);
+    assert_eq!(c.request(json!({"op": "fs.read", "path": "a.txt"})).await["data"], "framed");
+
+    // A stream that is not frames is dropped.
+    let mut bad = tokio::net::TcpStream::connect(running.raw_address.unwrap()).await.unwrap();
+    bad.write_all(&[0xff, 0xff, 0xff, 0xff, 1, 2, 3]).await.unwrap();
+    let n = tokio::time::timeout(std::time::Duration::from_secs(5), bad.read(&mut buffer)).await.unwrap().unwrap();
+    assert_eq!(n, 0);
+    running.shutdown().await;
+}

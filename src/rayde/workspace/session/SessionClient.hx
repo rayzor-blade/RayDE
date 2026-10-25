@@ -18,32 +18,44 @@ class SessionFailure {
 
 /** One connection to a session, used synchronously: a request returns when its response has arrived, and events that come meanwhile are routed on. */
 class SessionClient {
-	public final root:String;
-	public final name:String;
-	public final exec:Bool;
+	public var root(default, null) = "";
+	public var name(default, null) = "";
+	public var exec(default, null) = false;
 	/** Where to sign in, when the session asks for it before changes. */
-	public final signin:Null<String>;
+	public var signin(default, null):Null<String>;
 	/** Called for every event the session sends that is not a response. */
 	public var onEvent:Null<Dynamic->Void>;
 
-	final socket:WebSocket;
+	final channel:Channel;
 	var next = 1;
 	final responses = new Map<Int, Dynamic>();
 
-	function new(socket:WebSocket, hello:Dynamic) {
-		this.socket = socket;
-		root = hello.root;
-		name = hello.name;
-		exec = hello.exec == true;
-		signin = hello.signin;
+	function new(channel:Channel) {
+		this.channel = channel;
 	}
 
-	public static function connect(host:String, port:Int, ?token:String):SessionClient {
-		var socket = WebSocket.connect(host, port, "/session");
-		var client = new SessionClient(socket, {});
-		// `hello` is the first request, so it cannot go through the constructor's answer.
-		var hello = client.request("hello", {token: token});
-		return new SessionClient(socket, hello);
+	/** Connects over a WebSocket to `host:port`'s `/session`. */
+	public static function connect(host:String, port:Int, ?token:String):SessionClient
+		return over(WebSocket.connect(host, port, "/session"), token);
+
+	/** Connects over frames on a TCP stream, to a session's raw port. */
+	public static function connectFramed(host:String, port:Int, ?token:String):SessionClient
+		return over(FramedChannel.connect(host, port), token);
+
+	/** Says hello on `channel` and returns the client for it. */
+	public static function over(channel:Channel, ?token:String):SessionClient {
+		var client = new SessionClient(channel);
+		try {
+			var hello = client.request("hello", {token: token});
+			client.root = hello.root;
+			client.name = hello.name;
+			client.exec = hello.exec == true;
+			client.signin = hello.signin;
+		} catch (e:Dynamic) {
+			channel.close();
+			throw e;
+		}
+		return client;
 	}
 
 	public function request(op:String, ?params:Dynamic, timeout = 60.):Dynamic {
@@ -51,7 +63,7 @@ class SessionClient {
 		if (params != null) for (field in Reflect.fields(params)) if (Reflect.field(params, field) != null) Reflect.setField(message, field, Reflect.field(params, field));
 		Reflect.setField(message, "op", op);
 		Reflect.setField(message, "id", id);
-		socket.sendText(haxe.Json.stringify(message));
+		channel.sendText(haxe.Json.stringify(message));
 		var until = haxe.Timer.stamp() + timeout;
 		while (!responses.exists(id)) {
 			if (haxe.Timer.stamp() > until) throw new SessionFailure("timeout", "The session did not answer " + op + ".");
@@ -65,7 +77,7 @@ class SessionClient {
 
 	/** Reads one message if one arrives within `seconds`, and routes it. Returns whether one did. */
 	public function pump(seconds:Float):Bool {
-		var text = socket.receive(seconds);
+		var text = channel.receive(seconds);
 		if (text == null) return false;
 		var message:Dynamic = haxe.Json.parse(text);
 		if (message.id != null) responses.set(message.id, message);
@@ -76,5 +88,5 @@ class SessionClient {
 	/** Takes everything that has already arrived. */
 	public function drain():Void while (pump(0)) {}
 
-	public function close():Void socket.close();
+	public function close():Void channel.close();
 }

@@ -6,7 +6,7 @@ import haxe.io.Bytes;
 import haxe.io.BytesBuffer;
 
 /** A WebSocket client over a plain socket, for talking to a session from a program that is not in a page. Text messages only. */
-class WebSocket {
+class WebSocket implements Channel {
 	static inline var GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 	/** The largest message accepted, in bytes. */
 	static inline var MAX_MESSAGE = 16 * 1024 * 1024;

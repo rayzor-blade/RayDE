@@ -38,18 +38,21 @@ pub struct Options {
     pub authority: Option<Arc<dyn crate::auth::Authority>>,
     /// A directory of files for pages to load, served beside the session.
     pub web: Option<PathBuf>,
+    /// A second listener that speaks the session protocol as length-prefixed frames over TCP, with no HTTP or WebSocket.
+    pub raw: Option<SocketAddr>,
     /// How long an edit waits for more before the file is written.
     pub flush_delay: Duration,
 }
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, authority: None, web: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
 pub struct Running {
     pub address: SocketAddr,
+    pub raw_address: Option<SocketAddr>,
     pub token: Option<String>,
     pub workspace: Arc<Workspace<DirStore>>,
     stop: Option<oneshot::Sender<()>>,
@@ -145,10 +148,24 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     let listener = TcpListener::bind(options.address).await?;
     let address = listener.local_addr()?;
     let (stop, stopped) = oneshot::channel::<()>();
+    let raw_address = match options.raw {
+        Some(raw) => {
+            let raw_listener = TcpListener::bind(raw).await?;
+            let bound = raw_listener.local_addr()?;
+            let workspace = workspace.clone();
+            tokio::spawn(async move {
+                while let Ok((stream, _)) = raw_listener.accept().await {
+                    tokio::spawn(framed(workspace.clone(), stream));
+                }
+            });
+            Some(bound)
+        }
+        None => None,
+    };
     let done = tokio::spawn(async move {
         let _ = axum::serve(listener, app).with_graceful_shutdown(async { let _ = stopped.await; }).await;
     });
-    Ok(Running { address, token: options.token, workspace, stop: Some(stop), done, unwatch: Some(unwatch) })
+    Ok(Running { address, raw_address, token: options.token, workspace, stop: Some(stop), done, unwatch: Some(unwatch) })
 }
 
 /// A page may reach the session only from the server's own origin or one it was told of: a token alone does not stop another site's page that holds it.
@@ -172,17 +189,33 @@ async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
     let out: Out = Arc::new(move |text| {
         let _ = queue.send(text);
     });
+    // A client that sends binary messages (a program with only a byte stream to the session) is answered in the same form.
+    let binary = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let answers = binary.clone();
     let writer = tokio::spawn(async move {
         while let Some(text) = outgoing.recv().await {
-            if sink.send(Message::Text(text)).await.is_err() {
+            let message = if answers.load(std::sync::atomic::Ordering::Relaxed) { Message::Binary(frame(&text)) } else { Message::Text(text) };
+            if sink.send(message).await.is_err() {
                 break;
             }
         }
     });
     let mut connection = workspace.connect(out);
+    let mut frames = Frames::default();
     while let Some(Ok(message)) = stream.next().await {
         match message {
             Message::Text(text) => connection.handle(&text).await,
+            Message::Binary(bytes) => {
+                binary.store(true, std::sync::atomic::Ordering::Relaxed);
+                match frames.push(&bytes) {
+                    Ok(texts) => {
+                        for text in texts {
+                            connection.handle(&text).await;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
             Message::Close(_) => break,
             _ => {}
         }
@@ -220,4 +253,76 @@ async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// A message as a frame: its length in four bytes, big-endian, then its UTF-8 text.
+pub fn frame(text: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() + 4);
+    out.extend_from_slice(&(text.len() as u32).to_be_bytes());
+    out.extend_from_slice(text.as_bytes());
+    out
+}
+
+/// Frames arriving in pieces of any size, put back together.
+#[derive(Default)]
+pub struct Frames {
+    pending: Vec<u8>,
+}
+
+impl Frames {
+    /// Adds `bytes` and returns the messages now complete. An error means the stream is not frames, and the connection should end.
+    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>, ()> {
+        self.pending.extend_from_slice(bytes);
+        let mut out = Vec::new();
+        loop {
+            if self.pending.len() < 4 {
+                break;
+            }
+            let length = u32::from_be_bytes([self.pending[0], self.pending[1], self.pending[2], self.pending[3]]) as usize;
+            if length > MAX_MESSAGE {
+                return Err(());
+            }
+            if self.pending.len() < 4 + length {
+                break;
+            }
+            let text = String::from_utf8(self.pending[4..4 + length].to_vec()).map_err(|_| ())?;
+            self.pending.drain(..4 + length);
+            out.push(text);
+        }
+        Ok(out)
+    }
+}
+
+/// One TCP connection speaking frames.
+async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStream) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let (mut reader, mut writer) = stream.into_split();
+    let (queue, mut outgoing) = mpsc::unbounded_channel::<String>();
+    let out: Out = Arc::new(move |text| {
+        let _ = queue.send(text);
+    });
+    let sender = tokio::spawn(async move {
+        while let Some(text) = outgoing.recv().await {
+            if writer.write_all(&frame(&text)).await.is_err() {
+                break;
+            }
+        }
+    });
+    let mut connection = workspace.connect(out);
+    let (mut frames, mut buffer) = (Frames::default(), vec![0u8; 64 * 1024]);
+    'read: while let Ok(count) = reader.read(&mut buffer).await {
+        if count == 0 {
+            break;
+        }
+        match frames.push(&buffer[..count]) {
+            Ok(texts) => {
+                for text in texts {
+                    connection.handle(&text).await;
+                }
+            }
+            Err(_) => break 'read,
+        }
+    }
+    connection.close();
+    sender.abort();
 }
