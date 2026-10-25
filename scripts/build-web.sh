@@ -15,7 +15,7 @@ for need in blinc_abi.wasm hlwindow-web hlwgpu-web; do
   [ -e "$libs/$need" ] || { echo "build-web.sh: $libs/$need is missing; run ashui's tests/wasm/run.sh --no-open once, or set WEB_LIBS" >&2; exit 1; }
 done
 out=${1:-$here/bin/web/rayde}
-channel=${ASH_CHANNEL_ROOT:-$siblings/ash-channel}
+channel=${ASH_CHANNEL_ROOT:-$siblings/ash}
 channel_libs=${ASH_CHANNEL_WEB:-$channel/target/wasm-channel}
 [ -f "$channel_libs/ash_channel.wasm" ] || fail "build Ash's ash-channel wasm side module first, or set ASH_CHANNEL_WEB"
 [ -x "$here/web/session/node_modules/.bin/esbuild" ] || fail "run npm ci in web/session to build the page agent"
