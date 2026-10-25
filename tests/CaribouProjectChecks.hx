@@ -71,6 +71,10 @@ class CaribouProjectChecks {
 		bench.explorerPart.openExplorerFile(project + "/game.cbproj"); settle();
 		check(bench.active.get() == rayde.ui.Workbench.SETTINGS && bench.settingsSection() == "build" && css.query(tree, bench.node.id, "#rayde-caribou-build").length == 1 && bench.editorFor(project + "/game.cbproj") == null, "Explorer opens the Caribou settings form");
 		check(css.query(tree, bench.node.id, "#rayde-caribou-problems-section").length == 1, "the file's problems are shown in the form");
+		ashui.core.render.Snapshot.capture("caribou-settings-dark", tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
+		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), Light); settle();
+		ashui.core.render.Snapshot.capture("caribou-settings-light", tree, bench.node, 1280, 800, ashui.theme.ThemeState.get().color(Background).rgb());
+		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), Dark); settle();
 		var name = node("#rayde-caribou-project-name"), box = tree.getScrolledBounds(name);
 		ashui.input.Pointer.move(tree, box.x + box.width / 2, box.y + box.height / 2); ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
 		ashui.ui.Input.at(tree, name.id).value.set("renamed"); settle(2);
