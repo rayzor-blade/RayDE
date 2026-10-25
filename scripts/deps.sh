@@ -42,7 +42,7 @@ fi
 
 # Copies the native libraries a UI program loads beside it, under the names it loads them by.
 stage_natives() {
-  local out=$1
+  local out=$1 lib
   mkdir -p "$out"
   local ui="$ashui/target/release/${prefix}blinc_abi.$ext" gpu="$hlwgpu/target/release/${prefix}hlwgpu.$ext" window="$hlwindow/target/release/${prefix}hlwindow.$ext"
   for lib in "$ui" "$gpu" "$window"; do [ -f "$lib" ] || fail "missing native library: $lib"; done
