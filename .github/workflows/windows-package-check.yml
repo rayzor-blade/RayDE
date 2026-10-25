@@ -30,15 +30,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN: ${{ inputs.run_id }}
         run: gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name failed-package-windows-x86_64 --dir package
-      - name: Capture Windows startup crashes
-        shell: pwsh
-        run: |
-          $folder = New-Item -ItemType Directory -Force crash-reports
-          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\RayDE.exe'
-          New-Item -Path $key -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpFolder -Value $folder.FullName -PropertyType ExpandString -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpType -Value 1 -PropertyType DWord -Force | Out-Null
-          New-ItemProperty -Path $key -Name DumpCount -Value 2 -PropertyType DWord -Force | Out-Null
       - name: Check the extracted package
         run: |
           python3 - <<'PY'
@@ -61,24 +52,25 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force crash-reports | Out-Null
           Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
             Where-Object { $_.Message -like '*RayDE.exe*' } |
             Format-List TimeCreated, Id, Message | Out-String | Tee-Object crash-reports/events.txt
-          $dump = Get-ChildItem crash-reports -Filter '*.dmp' | Select-Object -First 1
           $debugger = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits" -Filter cdb.exe -Recurse -ErrorAction SilentlyContinue |
             Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
-          if ($dump -and $debugger) {
+          if ($debugger) {
             $archive = Get-ChildItem package -Filter '*.zip' | Select-Object -First 1
-            Expand-Archive -LiteralPath $archive.FullName -DestinationPath debug-package
-            $program = Get-ChildItem debug-package -Filter RayDE.exe -Recurse | Select-Object -First 1
-            & $debugger.FullName -z $dump.FullName -logo crash-reports/debugger.txt -c ".symfix; .exepath+ $($program.DirectoryName); .reload; .ecxr; k; r; u @rip-20 L30; lm; q"
+            $root = Join-Path $env:RUNNER_TEMP 'rayde native debug package'
+            Expand-Archive -LiteralPath $archive.FullName -DestinationPath $root
+            $program = Get-ChildItem $root -Filter RayDE.exe -Recurse | Select-Object -First 1
+            $log = Join-Path $env:GITHUB_WORKSPACE 'crash-reports/debugger.txt'
+            $cwd = New-Item -ItemType Directory -Force (Join-Path $env:RUNNER_TEMP 'rayde debug working directory')
+            Push-Location $cwd.FullName
+            & $debugger.FullName -logo $log -c ".symfix; sxe av; sxe ii; g; k; lm; q" $program.FullName --check-install
+            Pop-Location
           } else {
-            Write-Output "Crash dump: $($dump.FullName); debugger: $($debugger.FullName)"
+            Write-Output 'Windows SDK debugger was not found'
           }
-      - name: Remove temporary memory dumps
-        if: always()
-        shell: pwsh
-        run: Get-ChildItem crash-reports -Filter '*.dmp' -ErrorAction SilentlyContinue | Remove-Item -Force
       - name: Preserve startup crash reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
