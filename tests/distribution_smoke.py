@@ -7,11 +7,30 @@ import os
 from pathlib import Path
 import queue
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
 import time
 import zipfile
+
+
+def windows_loader_report(bindir, env):
+    probe = """import ctypes, os, sys
+with os.add_dll_directory(sys.argv[1]):
+    ctypes.WinDLL(sys.argv[2])
+print('loaded')
+"""
+    report = []
+    for path in sorted(bindir.iterdir()):
+        if path.suffix.lower() not in (".dll", ".hdll"):
+            continue
+        try:
+            result = subprocess.run([sys.executable, "-c", probe, str(bindir), str(path)], env=env, capture_output=True, text=True, timeout=15)
+            report.append(f"{path.name}: exit {result.returncode} (0x{result.returncode & 0xffffffff:08X})\n{result.stdout}{result.stderr}")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            report.append(f"{path.name}: {error}")
+    return "\n".join(report)
 
 
 def extension_host(binary, extensions, env):
@@ -161,7 +180,10 @@ def main():
         env["PATH"] = os.pathsep.join([str(bindir), str(Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32")]) if args.platform == "windows" else "/usr/bin:/bin"
         result = subprocess.run([bindir / program, "--check-install"], cwd=cwd, env=env, capture_output=True, text=True, timeout=45)
         if result.returncode or "RayDE installation check passed" not in result.stdout:
-            raise RuntimeError(result.stdout + result.stderr)
+            detail = f"{program} --check-install: exit {result.returncode} (0x{result.returncode & 0xffffffff:08X})\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            if args.platform == "windows":
+                detail += "\nWindows library loader probes:\n" + windows_loader_report(bindir, env)
+            raise RuntimeError(detail)
         host = bindir / ("rayde-extension-host.exe" if args.platform == "windows" else "rayde-extension-host")
         extension_host(host, extensions, env)
         env["RAYZOR_STD_PATH"] = str(data / "haxe-std")
