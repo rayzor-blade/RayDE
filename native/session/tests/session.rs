@@ -27,6 +27,8 @@ async fn files_are_listed_read_written_renamed_and_removed_inside_the_workspace(
     assert_eq!(list["entries"][0]["name"], "src");
     assert_eq!(list["entries"][0]["kind"], "dir");
     assert_eq!(c.request(json!({"op": "fs.read", "path": "src/Main.hx"})).await["data"], "class Main {}");
+    assert_eq!(c.request(json!({"op": "fs.read", "path": "src/Main.hx", "offset": 6, "length": 4})).await["data"], "Main");
+    assert_eq!(c.request(json!({"op": "fs.read", "path": "src/Main.hx", "offset": 99})).await["data"], "");
 
     assert_eq!(c.request(json!({"op": "fs.write", "path": "out/a.txt", "data": "hi"})).await["ok"], true);
     assert_eq!(fs::read_to_string(dir.path().join("out/a.txt")).unwrap(), "hi");

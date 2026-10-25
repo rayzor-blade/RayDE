@@ -91,6 +91,10 @@ impl FileStore for DirStore {
         self.root.file_name().map_or_else(|| "workspace".into(), |n| n.to_string_lossy().into_owned())
     }
 
+    fn root(&self) -> String {
+        self.root.to_string_lossy().into_owned()
+    }
+
     async fn list(&self, path: &str) -> Result<Vec<Entry>> {
         let at_root = clean(path)?.is_empty();
         let mut reader = tokio::fs::read_dir(self.inside(path).await?).await.map_err(io_error)?;

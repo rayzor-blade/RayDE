@@ -16,6 +16,8 @@ pub type Change = Arc<dyn Fn(String, &'static str) + Send + Sync>;
 pub trait FileStore: Send + Sync + 'static {
     /// The workspace's own name, for display.
     fn name(&self) -> String;
+    /// The workspace's absolute path where programs run, so paths a client builds are the ones programs see.
+    fn root(&self) -> String;
     fn list(&self, path: &str) -> impl Future<Output = Result<Vec<Entry>>> + Send;
     fn stat(&self, path: &str) -> impl Future<Output = Result<Option<Entry>>> + Send;
     fn read(&self, path: &str) -> impl Future<Output = Result<Vec<u8>>> + Send;

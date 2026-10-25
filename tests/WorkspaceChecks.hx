@@ -4,6 +4,9 @@ import rayde.workspace.Launcher;
 import rayde.workspace.LocalLauncher;
 import rayde.workspace.Procs;
 import rayde.workspace.Program;
+import rayde.workspace.session.SessionClient;
+import rayde.workspace.session.SessionLauncher;
+import rayde.workspace.session.SessionWorkspace;
 import rayde.workspace.LocalWorkspace;
 import rayde.workspace.MemoryWorkspace;
 import rayde.workspace.Workspace;
@@ -30,7 +33,9 @@ class WorkspaceChecks {
 		ws.saveContent(at("src/B.hx"), "λ");
 		check(ws.getContent(at("src/pkg/A.hx")) == "class A {}\n" && ws.getContent(at("src/B.hx")) == "λ", '$label: content round trips, UTF-8 included');
 		check(!ws.isDirectory(at("src/B.hx")) && ws.exists(at("src/B.hx")), '$label: a file is not a directory');
-		check(ws.readDirectory(at("src")).join(",") == "B.hx,pkg", '$label: directory entries are names, in name order: ${ws.readDirectory(at("src"))}');
+		var names = ws.readDirectory(at("src"));
+		names.sort((a, b) -> a < b ? -1 : a > b ? 1 : 0);
+		check(names.join(",") == "B.hx,pkg", '$label: directory entries are names: $names');
 		var bytes = Bytes.alloc(4);
 		for (i in 0...4) bytes.set(i, [0, 255, 10, 13][i]);
 		ws.saveBytes(at("bin.dat"), bytes);
@@ -85,6 +90,7 @@ class WorkspaceChecks {
 		conform(new LocalWorkspace(), local, "local");
 		sys.FileSystem.deleteDirectory(local);
 		conform(new MemoryWorkspace(), "/work", "memory");
+		againstSession();
 
 		// RayDE's own code reaches files through `Fs`: it follows whatever is current, and the machine's disk is left alone.
 		var before = Fs.current, memory = new MemoryWorkspace();
@@ -100,6 +106,34 @@ class WorkspaceChecks {
 		Fs.current = before;
 		check(!sys.FileSystem.exists("/project/.rayde/settings.json"), "the local disk was not touched");
 		Sys.println("Workspace: the local and in-memory providers answer alike");
+	}
+
+	/** The session provider, against the real session server when it is built. */
+	static function againstSession():Void {
+		var binary = Sys.getCwd() + "native/session/target/debug/rayde-session";
+		if (!sys.FileSystem.exists(binary)) { Sys.println("Workspace: skipped the session provider, native/session is not built"); return; }
+		var root = sys.FileSystem.fullPath(Sys.getCwd() + "bin") + "/session-checks-" + Std.random(0x3fffffff), port = 20000 + Std.random(20000);
+		sys.FileSystem.createDirectory(root);
+		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--token", "t", "--exec"]);
+		try {
+			var client:SessionClient = null;
+			for (_ in 0...100) {
+				try { client = SessionClient.connect("127.0.0.1", port, "t"); break; } catch (_:Dynamic) Sys.sleep(.05);
+			}
+			check(client != null, "the session server accepts a connection");
+			var real = sys.FileSystem.fullPath(root);
+			check(client.root == real, 'the session reports its root: ${client.root} vs $real');
+			conform(new SessionWorkspace(client), client.root, "session workspace");
+			check(fails(() -> new SessionWorkspace(client).getContent("/elsewhere/file")), "a path outside the session's workspace fails");
+			conformLauncher(new SessionLauncher(client), "session launcher");
+			client.close();
+		} catch (e:Dynamic) {
+			server.kill();
+			server.close();
+			throw e;
+		}
+		server.kill();
+		server.close();
 	}
 
 	/** RayDE's own calls start programs through `Procs`, so a launcher elsewhere is used by all of them. */

@@ -154,7 +154,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "exec": workspace.programs.is_some(), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
+                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -170,7 +170,14 @@ impl<S: FileStore> Connection<S> {
                 if store.stat(path).await?.is_some_and(|entry| entry.size > MAX_READ) {
                     return Err(SessionError::new("too-large", "The file is too large to read in one message."));
                 }
-                let data = store.read(path).await?;
+                let mut data = store.read(path).await?;
+                // `offset` and `length` read a slice, so a log read as it grows is not sent whole each time.
+                let offset = request.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+                if offset > 0 || request.get("length").is_some() {
+                    let start = offset.min(data.len());
+                    let end = request.get("length").and_then(Value::as_u64).map_or(data.len(), |n| start.saturating_add(n as usize).min(data.len()));
+                    data = data[start..end].to_vec();
+                }
                 if request.get("encoding").and_then(Value::as_str) == Some("base64") {
                     Ok(json!({"data": B64.encode(&data), "encoding": "base64"}))
                 } else {
