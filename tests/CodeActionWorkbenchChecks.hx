@@ -47,8 +47,8 @@ class CodeActionWorkbenchChecks {
 		function settle(frames=3):Void for (_ in 0...frames) { Offscreen.advance(.03); Css.setViewport(1100,760); Css.update(); tree.flush(); tree.computeLayout(bench.node,1100,760); }
 		function until(done:Void->Bool):Void {
 			var end = haxe.Timer.stamp() + 20;
-			while (!done() && haxe.Timer.stamp() < end) { settle(); Sys.sleep(.004); }
-			check(done(),"Actions did not settle: " + bench.runPart.runner.console); settle();
+			while (haxe.Timer.stamp() < end) { settle(); if (done()) return; Sys.sleep(.004); }
+			check(done(),"Actions did not settle: " + bench.runPart.runner.console);
 		}
 		function nodes(selector:String) return Css.query(tree,bench.node.id,selector);
 		function click(selector:String):Void {
@@ -62,6 +62,18 @@ class CodeActionWorkbenchChecks {
 			bench.openFile(file); until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 			check(nodes(".rayde-code-action").length == 2 && nodes(".ui-code-marker-icon").length == 2,"Providers did not share SVG gutter hints");
 			var activeGutter = tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width;
+			var typingEditor = bench.editorFor(file);
+			for (i in 0...4) {
+				var oldItem = bench.codeActionsPart.codeActions.list()[0], oldVersion = bench.codeActionsPart.codeActionVersion;
+				typingEditor.value.set(source + [for (_ in 0...i + 1) " "].join(""));
+				settle(1);
+				check(Math.abs(tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width-activeGutter)<.1,"Typing collapsed the action column during refresh");
+				check(!bench.codeActionsPart.codeActions.execute(oldItem.key,file,oldVersion,(_, _) -> true),"Refreshing actions retained an executable stale result");
+				until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
+				check(Math.abs(tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width-activeGutter)<.1,"Refreshed actions moved the code");
+			}
+			typingEditor.value.set(source); settle(1);
+			until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 			check(Lambda.exists(bench.commandList,c -> c.id == "codeactions") && bench.keymapPart.bindings.of("codeactions") != null,"Code actions command or shortcut is missing");
 			Snapshot.capture('code-actions-${dark ? "dark" : "light"}',tree,bench.node,1100,760);
 			var editor = bench.editorFor(file), item = Lambda.find(bench.codeActionsPart.codeActions.list(),i -> i.action.kind == "quickfix"), version = bench.codeActionsPart.codeActionVersion;
