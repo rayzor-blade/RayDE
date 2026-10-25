@@ -90,8 +90,8 @@ class WindowControls extends Component<WindowControlsProps> {
 				// A page that is an app of its own has no window to close or minimise: the icon stands where the buttons would.
 				var bitmap = ashui.types.Bitmap.fromBytes(AppIcon.png());
 				ashui.reactive.Owner.onCleanup(bitmap.dispose);
-				bitmap.shrink(96);
-				var image = new ashui.ui.Image(bitmap, {width: 22, height: 22, fit: Contain});
+				bitmap.shrink(128);
+				var image = new ashui.ui.Image(bitmap, {width: 28, height: 28, fit: Contain});
 				<div id="rayde-app-icon" class="flex items-center pl-4">{image}</div>;
 			case "windows":
 				<div class="flex items-stretch ml-auto" height={40}>
