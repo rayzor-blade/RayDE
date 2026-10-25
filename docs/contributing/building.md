@@ -38,3 +38,11 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 | `ASHUI_FRAME_STATS=1` | Log frame timings and compositing layers, plus loop wake-ups, busy time and pointer hooks. |
 
 One editor window at a time while testing: check `pgrep -fl rayde.hl` before launching another.
+
+## Browser build
+
+`scripts/build-web.sh` stages the page in `bin/web/rayde` using Ash and Ashui's built web libraries (see the script's header for `WEB_LIBS`). Serve it with `ash serve bin/web/rayde`. The page carries Arimo for UI text, JetBrains Mono for code, and a small Noto symbol subset for missing shortcut glyphs. Fonts register before layout; a browser has no system fonts for the renderer to fall back to.
+
+`node tests/web/page.mjs --visitor Mac --probe --shots bin/web/probe` opens the page in Chrome, opens and edits `Main.hx`, and writes screenshots and `probe.json`. Install the test dependencies in `web/session` first. `--dir` selects another build; `--env ASH_GC_STATS=1 --env ASHUI_FRAME_STATS=1 --all` includes runtime and frame logs. The probe records WASM memory, process RSS by browser role, logical GPU texture/buffer bytes, shader pipeline creation times and completed submissions. Logical resource sizes exclude driver overhead; WASM capacity is not live heap usage. Instrumentation is served only by this test, leaving the built page unchanged.
+
+Normal builds use the committed font assets. To regenerate them from pinned official sources, install `fonttools[woff]==4.67.0` in a virtual environment and run `python scripts/web-fonts.py`; `--check` verifies the shortcut glyphs without downloading anything. The font licenses are in `assets/notices/font-*-OFL.txt`.

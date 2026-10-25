@@ -4,8 +4,9 @@
 //
 // Needs Google Chrome (WebGPU, wasm exception handling) and puppeteer-core (web/session's node_modules).
 import { spawn, execSync } from "node:child_process";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { createServer as httpServer } from "node:http";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -21,7 +22,8 @@ const shots = resolve(root, option("--shots", "bin/web/shots"));
 const visitor = option("--visitor", "");
 const scheme = option("--scheme", "");
 const flip = args.includes("--flip");
-const envs = [visitor && "RAYDE_VISITOR=" + visitor, args.includes("--standalone") && "RAYDE_STANDALONE=1"].filter(Boolean);
+const probe = args.includes("--probe");
+const envs = [args.includes("--standalone") && "RAYDE_STANDALONE=1", ...args.flatMap((arg, i) => arg === "--env" ? [args[i + 1]] : [])].filter(Boolean);
 const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 mkdirSync(shots, { recursive: true });
 
@@ -43,27 +45,69 @@ function memory(pid) {
 }
 
 const port = await freePort();
-const server = spawn("ash", ["serve", "--port", String(port), dir], { stdio: "ignore" });
+let server;
+if (probe) {
+  server = httpServer((request, response) => {
+    try {
+      const name = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      const file = resolve(dir, "." + (name === "/" ? "/index.html" : name));
+      if (!file.startsWith(dir + "/")) throw new Error("outside output");
+      let body = name === "/gpu-probe.mjs" ? readFileSync(join(here, "gpu-probe.mjs")) : readFileSync(file);
+      if (name === "/gpu-worker.mjs") body = Buffer.from('import "./gpu-probe.mjs";\n' + body);
+      if (name === "/gpu-agent.mjs") body = Buffer.from(body.toString().replace("execute(wire, words[2] >>> 0, words[3] >>> 0);", "globalThis.raydeBatch(wire, words[2] >>> 0, words[3] >>> 0); execute(wire, words[2] >>> 0, words[3] >>> 0);"));
+      if (name === "/ashui-host.mjs" && args.includes("--agents")) body = Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)", String(Number(option("--agents", "3")))));
+      response.writeHead(200, { "Content-Type": /\.wasm$/.test(name) ? "application/wasm" : /\.(m?js)$/.test(name) ? "text/javascript" : "text/html", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" });
+      response.end(body);
+    } catch { response.writeHead(404).end(); }
+  }).listen(port, "127.0.0.1");
+} else server = spawn("ash", ["serve", "--port", String(port), dir], { stdio: "ignore" });
 await sleep(1500);
 const browser = await puppeteer.launch({ executablePath: chrome, headless: "new", args: ["--no-sandbox", "--enable-unsafe-webgpu", "--window-size=1280,900"], defaultViewport: { width: 1280, height: 800 } });
 const result = { ok: false };
 try {
   const page = await browser.newPage();
+  if (visitor) await page.evaluateOnNewDocument(value => {
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: value === "Mac" ? "macOS" : value } });
+  }, visitor);
+  if (probe) await page.evaluateOnNewDocument(() => {
+    const marks = [], OriginalWorker = Worker;
+    globalThis.raydeProbe = { marks, gpu: null, memory: null };
+    globalThis.Worker = class extends OriginalWorker {
+      constructor(...args) {
+        super(...args);
+        marks.push({ kind: "worker", url: String(args[0]), at: performance.now() });
+        this.addEventListener("message", ({ data }) => {
+          if (data.memory instanceof WebAssembly.Memory) globalThis.raydeProbe.memory = data.memory;
+          if (data.kind === "rayde-gpu-probe") globalThis.raydeProbe.gpu = data.stats;
+          if (data.text === "ashui: ready" || data.kind === "spawn-agent") marks.push({ kind: data.kind, name: data.name, text: data.text, at: performance.now() });
+        });
+      }
+    };
+  });
   const lines = [];
+  result.console = lines;
   page.on("console", (m) => lines.push(m.text()));
   page.on("pageerror", (e) => lines.push("PAGE ERROR " + e.message));
   if (scheme) await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
   const started = Date.now();
-  await page.goto(`http://127.0.0.1:${port}/index.html${envs.length ? "?" + envs.map((e) => "env=" + e).join("&") : ""}`);
+  await page.goto(`http://127.0.0.1:${port}/index.html?${new URLSearchParams(envs.map(e => ["env", e]))}`);
   await page.waitForFunction(() => /RayDE/.test(document.title), { timeout: 120000 });
   const titled = Date.now() - started;
-  for (let i = 0; i < 400 && !lines.some((l) => /ashui: ready/.test(l)); i++) await sleep(100);
+  for (let i = 0; i < 400 && !lines.some((l) => /ashui: ready|RayDE stopped:|uncaught exception/.test(l)); i++) await sleep(100);
   const ready = Date.now() - started;
+  if (!lines.some(l => l === "ashui: ready")) throw new Error("window did not become ready:\n" + lines.join("\n"));
   await sleep(Number(option("--settle", "2")) * 1000);
   result.title = await page.title();
+  result.visitor = await page.evaluate(() => new URLSearchParams(location.search).getAll("env").find(e => e.startsWith("RAYDE_VISITOR=")));
+  if (visitor && result.visitor !== "RAYDE_VISITOR=" + visitor) throw new Error("shortcuts do not follow the browser platform");
   result.readyMs = ready;
   result.titledMs = titled;
   result.afterReady = memory(browser.process().pid);
+  async function sample(label) {
+    if (!probe) return;
+    result[label] = await page.evaluate(() => ({ marks: raydeProbe.marks, timeOrigin: performance.timeOrigin, wasmBytes: raydeProbe.memory?.buffer.byteLength, gpu: raydeProbe.gpu, jsHeap: performance.memory?.usedJSHeapSize }));
+  }
+  await sample("readyProbe");
   await page.screenshot({ path: join(shots, "welcome.png") });
   if (args.includes("--timeline")) for (const t of [3, 6, 10]) { await sleep(t * 1000 - (t > 3 ? (t === 6 ? 3000 : 6000) : 0)); await page.screenshot({ path: join(shots, `t${t}.png`) }); }
 
@@ -75,23 +119,65 @@ try {
   }
 
   // Open Main.hx from the Explorer, then type into it.
-  await page.mouse.click(147, 189);
-  await sleep(1500);
+  await page.mouse.click(147, 165);
+  for (const t of [1, 3, 6]) {
+    await sleep(t === 1 ? 1000 : t === 3 ? 2000 : 3000);
+    await page.screenshot({ path: join(shots, `open-${t}s.png`) });
+    result[`title after ${t}s`] = await page.title();
+  }
   await page.screenshot({ path: join(shots, "open.png") });
+  await sample("openProbe");
+  const capture = await page.screenshot();
+  const varied = await page.evaluate(async base64 => {
+    const image = new Image(); image.src = "data:image/png;base64," + base64; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+    const context = canvas.getContext("2d"); context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(330, 80, 900, 650).data;
+    const colors = new Set();
+    for (let i = 0; i < pixels.length; i += 16) colors.add((pixels[i] >> 4) * 256 + (pixels[i + 1] >> 4) * 16 + (pixels[i + 2] >> 4));
+    return colors.size;
+  }, Buffer.from(capture).toString("base64"));
+  if (varied < 8) throw new Error("opening Main.hx left a blank canvas");
   await page.mouse.click(700, 300);
   await sleep(300);
   await page.keyboard.type("// typed in a page", { delay: 15 });
   await sleep(1000);
   await page.screenshot({ path: join(shots, "typed.png") });
   result.afterEdit = memory(browser.process().pid);
-  result.console = lines.filter((l) => !/^thread |agent entering|^\[ash\] loaded/.test(l)).slice(-12);
+  await sample("editProbe");
+  if (probe && (!result.editProbe.gpu?.completed || !result.editProbe.gpu.batches || result.editProbe.gpu.crossBatchSubmits)) throw new Error("GPU frames did not complete in one batch");
+  if (args.includes("--shortcuts")) {
+    const before = await page.screenshot();
+    const modifier = result.visitor === "RAYDE_VISITOR=Mac" ? "Meta" : "Control";
+    await page.keyboard.down(modifier); await page.keyboard.down("Shift"); await page.keyboard.press("P");
+    await page.keyboard.up("Shift"); await page.keyboard.up(modifier);
+    await sleep(3000);
+    const after = await page.screenshot({ path: join(shots, "commands.png") });
+    result.shortcutPixelsChanged = await page.evaluate(async sources => {
+      const images = await Promise.all(sources.map(async source => {
+        const image = new Image(); image.src = "data:image/png;base64," + source; await image.decode(); return image;
+      }));
+      const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 800;
+      const context = canvas.getContext("2d");
+      const pixels = images.map(image => { context.drawImage(image, 0, 0); return context.getImageData(400, 80, 400, 240).data; });
+      let changed = 0;
+      for (let i = 0; i < pixels[0].length; i += 16) if (Math.abs(pixels[0][i] - pixels[1][i]) + Math.abs(pixels[0][i + 1] - pixels[1][i + 1]) + Math.abs(pixels[0][i + 2] - pixels[1][i + 2]) > 32) changed++;
+      return changed;
+    }, [before, after].map(bytes => Buffer.from(bytes).toString("base64")));
+    if (result.shortcutPixelsChanged < 500) throw new Error("the browser platform's command shortcut did not open the command center");
+    await page.keyboard.press("Escape");
+  }
+  if (lines.some(l => /gpu error|device was lost|uncaught exception|RayDE stopped:|PAGE ERROR/.test(l))) throw new Error("page reported a runtime or GPU error:\n" + lines.join("\n"));
+  result.console = args.includes("--all") ? lines : lines.filter((l) => !/^thread |agent entering|^\[ash\] loaded/.test(l)).slice(-12);
   result.ok = true;
 } finally {
+  if (probe) writeFileSync(join(shots, "probe.json"), JSON.stringify(result, null, 2));
   await browser.close();
-  server.kill();
+  if (probe) server.close(); else server.kill();
 }
 const fmt = (m) => `renderer ${mb(m.renderer)}, gpu ${mb(m.gpu)}, other ${mb(m.other)}, total ${mb(m.renderer + m.gpu + m.other)}`;
 console.log(`title: ${result.title}`);
+for (const key of Object.keys(result)) if (key.startsWith("title after")) console.log(`${key}: ${result[key]}`);
 console.log(`window title at ${result.titledMs} ms, ashui ready at ${result.readyMs} ms (local server, no compression)`);
 console.log(`memory after ready: ${fmt(result.afterReady)}`);
 console.log(`memory after opening a file and typing: ${fmt(result.afterEdit)}`);

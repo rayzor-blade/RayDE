@@ -8,6 +8,8 @@ import gpu.GpuDevice;
 /** Services completed native GPU work, including releases after a frame's garbage collection. */
 class GpuProgress {
 	public static function attach(device:GpuDevice, tree:LayoutTree, frames:Void->Int):Void {
+		// Browser frames stay in one batch until presentation; polling during layout would send a partial frame.
+		#if !wasm
 		var timer:Null<ashui.animation.AnimationScheduler.Timer> = null, remaining = 0, lastFrame = -1;
 		var poll:Void->Void = null;
 		poll = () -> {
@@ -28,5 +30,6 @@ class GpuProgress {
 			if (timer != null) timer.cancel();
 			for (i in 0...LayoutTree.flushHooks.length) if (Reflect.compareMethods(LayoutTree.flushHooks[i], flush)) { LayoutTree.flushHooks.splice(i, 1); break; }
 		});
+		#end
 	}
 }
