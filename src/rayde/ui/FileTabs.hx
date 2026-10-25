@@ -147,11 +147,13 @@ class FileTabs extends Component<FileTabsProps> {
 	 * flare into, so its left side goes straight down. The canvas fills the
 	 * tab's box, which keeps a sweep clear on each side that has a foot.
 	 */
-	static function notch(ctx:DrawContext, first:Bool):Void {
+	static function notch(ctx:DrawContext, first:Bool, outlined = false):Void {
 		var theme = ThemeState.get();
 		theme.revision.get();
 		var k = theme.shape().effectiveMathExponent();
-		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width, h = ctx.height;
+		var inset = outlined ? .5 : 0.;
+		var s:Float = SWEEP, r:Float = ROUND, full = ctx.width - 2 * inset, h = ctx.height - 2 * inset;
+		if (outlined) ctx.pushTransform(new ashui.draw.Affine(1,0,0,1,inset,inset));
 		var left = first ? 0. : s, right = full - s;
 		var path = new Path();
 		path.moveTo(0, h);
@@ -165,12 +167,16 @@ class FileTabs extends Component<FileTabsProps> {
 		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
 		path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
+		if (outlined) {
+			ctx.strokePath(path,new ashui.draw.Stroke(1),theme.color(Border).toBrush());
+			ctx.popTransform();
+		}
 	}
 
 	/** The dragged tab uses the strip's shape above its captured page. */
 	public static function preview(label:String, icon:ashui.svg.SvgDocument, dirty:Bool, first:Bool):Element {
 		return <div id="rayde-tab-drag-label" class="rayde-tab-drag-label relative flex items-center" height={HEIGHT - 4} paddingLeft={first ? 0 : SWEEP} paddingRight={SWEEP}>
-			<canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx,first)}/>
+			<canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={ctx -> notch(ctx,first,true)}/>
 			<div class="relative flex items-center gap-2 px-2 min-w-0">
 				<icon document={icon} class="size-4 shrink-0"/><text class="text-sm truncate">${label}</text>
 				<if {dirty}><div class="rounded-full bg-text-secondary shrink-0" width={8} height={8}/><else><icon document={Icons.CLOSE_LINE} class="size-3.5 text-text-tertiary shrink-0"/></if>
