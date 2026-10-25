@@ -979,6 +979,7 @@ class Workbench extends Component<WorkbenchProps> {
 			languagesPart.languagesScheduled = false;
 			if (workspaceSession != null) workspaceSession.close(sessionReady ? sessionSnapshot() : null);
 			explorerPart.fileIndex.dispose();
+			explorerPart.moveJobs.dispose();
 			for (comparison in documentsPart.comparisonTabs) comparison.dispose();
 			documentsPart.comparisonTabs.clear();
 			documentsPart.localHistory.dispose();
@@ -1014,6 +1015,7 @@ class Workbench extends Component<WorkbenchProps> {
 			</div>
 			${shellPart.statusBar()}
 			<prompt request={prompt}/>
+			<if {projectPart.browsingWorkspace.get()}><repository-picker opened={projectPart.browsingWorkspace} closed={projectPart.repositoryClosed} ready={projectPart.repositoryReady}/></if>
 			<if {projectPart.creatingProject.get()}><new-project opened={projectPart.creatingProject} directory={props.display.cwd} templates={projectPart.projectTemplates} onCreate={projectPart.openWorkspace}/></if>
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${shellPart.edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={explorerPart.recentFiles} refreshFiles={explorerPart.refreshFileIndex} root={props.display.cwd} actions={commandList} tasks={runPart.taskChoices}

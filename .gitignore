@@ -10,3 +10,4 @@
 __pycache__/
 .rayzor
 **/target
+**/node_modules/

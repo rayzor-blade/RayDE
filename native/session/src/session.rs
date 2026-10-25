@@ -194,7 +194,7 @@ impl<S: FileStore> Connection<S> {
             }
             "fs.mkdir" => store.mkdir(text(request, "path")?).await.map(|_| json!({})),
             "fs.remove" => store.remove(text(request, "path")?, request.get("recursive").and_then(Value::as_bool).unwrap_or(false)).await.map(|_| json!({})),
-            "fs.rename" => store.rename(text(request, "from")?, text(request, "to")?).await.map(|_| json!({})),
+            "fs.rename" => workspace.docs.rename(&clean(text(request, "from")?)?, &clean(text(request, "to")?)?).await.map(|_| json!({})),
             "doc.open" => {
                 let path = clean(text(request, "path")?)?;
                 let vector = match request.get("vector").and_then(Value::as_str) {

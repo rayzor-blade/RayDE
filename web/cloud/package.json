@@ -1,0 +1,20 @@
+{
+  "name": "rayde-cloud-session",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "npm run build && node --test test/*.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "worker-build --release"
+  },
+  "devDependencies": {
+    "miniflare": "4.20260730.0",
+    "wrangler": "4.152.0"
+  },
+  "description": "Rust Workers/WASM backend; JavaScript dependencies are local build and test tools only.",
+  "overrides": {
+    "undici": "7.30.1",
+    "sharp": "0.35.5"
+  }
+}

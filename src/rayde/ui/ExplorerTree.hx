@@ -2,6 +2,7 @@ package rayde.ui;
 
 import ashui.animation.AnimationScheduler;
 import ashui.components.Library;
+import ashui.components.Icon;
 import ashui.css.Identity;
 import ashui.input.Focus;
 import ashui.input.Interaction;
@@ -37,6 +38,8 @@ typedef ExplorerTreeProps = {
 	selected:Signal<String>,
 	onSelect:String->Void,
 	onPress:ashui.input.Events.PointerEvent->Void,
+	?onMove:(String, String)->Void,
+	?canMove:Void->Bool,
 	/** Changes when the folders must be read again. */
 	revision:Void->Int
 };
@@ -125,6 +128,14 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 		rebuild();
 		var box = <div id="rayde-explorer-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto pl-1 pr-2 pb-2" onPointerDown={props.onPress}/>;
 		var scroll = Scroll.attach(box.node, false, true);
+		var drag = new ExplorerDrag(box, props.root, scroll, (x,y) -> {
+			var bounds = box.tree.getScrolledBounds(box.node);
+			if (bounds == null || x < bounds.x || x >= bounds.x+bounds.width || y < bounds.y || y >= bounds.y+bounds.height
+				|| !Lambda.exists(box.tree.hitTest(x,y), hit -> hit.id == box.node.id)) return null;
+			var at = Std.int(Math.floor((y-bounds.y+scroll.y.get())/ROW)), all = rows.get();
+			return at >= 0 && at < all.length ? {path:all[at].path,directory:all[at].directory} : {path:props.root,directory:true};
+		}, path -> props.state(path, true).set(true), (from,dir) -> if (props.onMove != null) props.onMove(from,dir));
+		Owner.onCleanup(drag.cancel);
 		var capacity = Computed.make(() -> Std.int(Math.ceil(viewHeight.get() / ROW)) + 2 * OVERSCAN + 1);
 		var first = Computed.make(() -> Std.int(Math.max(0, Math.min(rows.get().length - 1, Math.floor(scroll.y.get() / ROW)) - OVERSCAN)));
 		var end = Computed.make(() -> Std.int(Math.min(rows.get().length, first.get() + capacity.get())));
@@ -147,7 +158,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 			for (i in 0...LayoutTree.layoutHooks.length) if (Reflect.compareMethods(LayoutTree.layoutHooks[i], layout)) { LayoutTree.layoutHooks.splice(i, 1); break; }
 		});
 		list.appendChild(<div height={Computed.make(() -> first.get() * ROW * 1.)} flexShrink={0}/>);
-		list.appendChild(<for {row in visible}>${makeRow(row, mounted, path -> cursor = path)}</for>);
+		list.appendChild(<for {row in visible}>${makeRow(row, mounted, path -> cursor = path, drag)}</for>);
 		list.appendChild(<div height={Computed.make(() -> (rows.get().length - end.get()) * ROW * 1.)} flexShrink={0}/>);
 		box.appendChild(list);
 
@@ -181,6 +192,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 			cursor = all[index].path; reveal(index); focusRow(cursor);
 		}
 		Interaction.of(box.node).onKeyDown(e -> {
+			if (drag.active() && e.key.match(Named(Escape))) { drag.abort(); e.preventDefault(); e.stopPropagation(); return; }
 			var all = rows.get(), at = indexOf(cursor);
 			if (at < 0) return;
 			var row = all[at];
@@ -213,10 +225,13 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 			var at = indexOf(path);
 			if (at >= 0) reveal(at);
 		}, (_, _) -> false);
-		return box;
+		return <div class="flex flex-col flex-1 min-h-0 relative">
+			${box}
+			<if {drag.file.get() != ""}><div class="rayde-explorer-drag" left={drag.x} top={drag.y}><icon document={Lambda.exists(rows.get(), row -> row.path == drag.file.get() && row.directory) ? Icons.FOLDER_LINE : props.icon(drag.file.get())} class="size-4 shrink-0"/><text wrap={false}>${haxe.io.Path.withoutDirectory(drag.file.get())}</text></div></if>
+		</div>;
 	}
 
-	function makeRow(row:Row, mounted:Map<String, Interaction>, focused:String->Void):Element {
+	function makeRow(row:Row, mounted:Map<String, Interaction>, focused:String->Void, drag:ExplorerDrag):Element {
 		var parts:Array<Element> = [];
 		if (row.directory) {
 			if (chevron == null)
@@ -235,10 +250,15 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 		Identity.of(line.tree, line.node.id).setAttribute("role", "treeitem");
 		var interaction = Interaction.of(line.node).setFocusable(true);
 		interaction.onClick(_ -> {
+			if (drag.suppressClick()) return;
 			focused(path);
 			props.onSelect(path);
 			if (row.directory) row.open.set(!row.open.get());
 		});
+		interaction.onPointerDown(event -> if (props.onMove != null && (props.canMove == null || props.canMove())) drag.begin(path, event));
+		var rowIdentity = Identity.of(line.tree, line.node.id);
+		new Watch(() -> drag.target.get() == path, on -> rowIdentity.setAttribute("data-drop-target", on ? "" : null));
+		new Watch(() -> drag.file.get() == path, on -> rowIdentity.setAttribute("data-drag-source", on ? "" : null));
 		interaction.onFocus(_ -> focused(path));
 		mounted.set(path, interaction);
 		Owner.onCleanup(() -> if (mounted.get(path) == interaction) mounted.remove(path));

@@ -138,6 +138,8 @@ class WorkspaceChecks {
 
 		#if rayde_page
 		var before = Fs.current, beforeLauncher = Procs.current;
+		var empty = PageHost.install(null,[{path:"/work/src/stale.hx",directory:false,bytes:Bytes.ofString("stale") }],false);
+		check(empty == null && !Fs.exists("/work") && Fs.exists("/home/web/.rayde/themes"), "an anonymous page opens Welcome and ignores stale local workspace files");
 		var entry = PageHost.install();
 		check(entry == "/work/build.hxml" && Fs.exists(entry) && Fs.exists("/work/src/Main.hx"), "a page with no session opens a sample project");
 		check(Fs.exists("/rayde/themes") && Fs.exists("/rayde/extensions/git/git.rayext.in") && !Fs.exists("/rayde/extensions/git/natives"), "built-in themes and extensions are embedded, natives are not");

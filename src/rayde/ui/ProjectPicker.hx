@@ -9,7 +9,12 @@ class ProjectPicker {
 	public static function choose(request:ProjectPickRequest, cancelled:Void->Bool):Null<String> {
 		if (cancelled()) return null;
 		var folder = request.mode != "project", title = folder ? request.mode == "new" || request.mode == "parent" ? "Choose a parent folder" : "Open Folder Workspace" : "Open Project";
-		var chosen = request.selected != null ? request.selected : switch Sys.systemName() {
+		var chosen = request.selected;
+		if (chosen == null) {
+			#if (wasm || rayde_page)
+			throw "Choose a project from the connected workspace.";
+			#else
+			chosen = switch Sys.systemName() {
 			case "Mac": run("/usr/bin/osascript", ["-e", 'on run argv\ntry\nreturn POSIX path of (choose ${folder ? "folder" : "file"} with prompt (item 1 of argv)${folder ? "" : ' of type {"hxml", "json", "toml", "cbproj", "rayext", "raytheme"}'})\non error number -128\nreturn ""\nend try\nend run', "--", title], cancelled);
 			case "Windows":
 				var script = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); Add-Type -AssemblyName System.Windows.Forms; " + (folder
@@ -21,7 +26,9 @@ class ProjectPicker {
 				if (available("zenity")) run("zenity", ["--file-selection", "--title=" + title].concat(folder ? ["--directory"] : []), cancelled);
 				else if (available("kdialog")) run("kdialog", folder ? ["--getexistingdirectory", ".", "--title", title] : ["--getopenfilename", ".", "*.hxml *.json *.toml *.cbproj *.rayext *.raytheme", "--title", title], cancelled);
 				else throw "Install zenity or kdialog to choose a workspace";
-		};
+			};
+			#end
+		}
 		if (chosen == null || chosen == "" || cancelled()) return null;
 		if (request.mode == "new") return rayde.project.ProjectFile.create(chosen, request.name, request.kind, request.scaffold);
 		if (folder && !Fs.isDirectory(chosen)) throw "Choose a folder workspace";

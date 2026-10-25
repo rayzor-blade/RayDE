@@ -2,6 +2,8 @@
 
 Explorer lists every file type, including dotfiles, with folders first and Haxe files ahead of other files. Select a file to open it. Git-ignored entries are muted. Use the arrow keys to navigate; Right and Left expand or collapse folders.
 
+Drag a file or folder onto a folder to move it. Hold over a closed folder to expand it; press Escape to cancel. Open tabs follow the move and keep unsaved edits.
+
 Drag the horizontal dividers to resize the file tree, Outline, Timeline and Dependencies. The three lower panes can collapse; reopening a pane restores its height.
 
 ## Outline

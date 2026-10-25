@@ -97,6 +97,7 @@ class ProjectPart {
 	var cancelProjectDialog:Null<Void->Void>;
 
 	final creatingProject = Signal.make(false);
+	final browsingWorkspace = Signal.make(false);
 
 	final projectStarters = new rayde.project.ProjectStarters();
 
@@ -127,6 +128,9 @@ class ProjectPart {
 	function pickProject(mode:String):Void {
 		if (pickingProject) return;
 		pickingProject = true;
+		#if (wasm || rayde_page)
+		browsingWorkspace.set(true);
+		#else
 		#if ashui_window
 		var app = ashui.app.WindowedApp.current;
 		if (app != null && ashui.app.FileDialog.available()) {
@@ -144,6 +148,18 @@ class ProjectPart {
 		#end
 		projectPicker.submit("pick", {mode:mode});
 		ashui.animation.AnimationScheduler.main.after(.03, pollProjectPicker);
+		#end
+	}
+
+	function repositoryClosed():Void { pickingProject = false; }
+
+	function repositoryReady(id:String, project:Null<String>):Void {
+		function connect():Void {
+			if (wb.dirty.get().length > 0) { wb.runPart.saveAll(); if (wb.dirty.get().length > 0) throw "Some files could not be saved."; }
+			rayde.workspace.PageHost.account("account.connect",{workspace:id, project:project});
+		}
+		if (wb.dirty.get().length > 0) wb.prompt.set({title:"Open repository", description:"Save your edited files before switching workspaces.", action:"Save and Open", accept:_ -> connect()});
+		else connect();
 	}
 
 	function pollProjectPicker():Void {
@@ -157,6 +173,9 @@ class ProjectPart {
 	}
 
 	function newProject():Void {
+		#if wasm
+		if (rayde.workspace.PageHost.session == null) { pickProject("project"); return; }
+		#end
 		wb.quickOpen.set(false);
 		creatingProject.set(true);
 		ashui.animation.AnimationScheduler.main.after(.016, () -> {

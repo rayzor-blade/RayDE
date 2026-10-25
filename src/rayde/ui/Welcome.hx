@@ -56,8 +56,7 @@ class Welcome extends Component<WelcomeProps> {
 						<div class="flex flex-col gap-2">
 							<text class="rayde-section">Start</text>
 							<div class="flex flex-col gap-1">
-								${action("welcome-open-folder", Icons.FOLDER_OPEN_LINE, "Open Folder…", "Open any folder as a workspace", [], props.onOpenFolder)}
-								${action("welcome-open-project", Icons.FILE_CODE_LINE, "Open Project…", "Open a build file or project manifest", [], props.onOpenProject)}
+								${openActions()}
 								${action("welcome-new-project", Icons.FOLDER_ADD_LINE, "New Project…", "Create a project from a template", [], props.onNewProject)}
 								<if {props.main != null}>${action("welcome-main", Icons.HAXE, "Open " + haxe.io.Path.withoutDirectory(props.main), "The project's main class", [], () -> props.onOpen(props.main))}</if>
 								<if {props.empty != true}>${action("welcome-files", Icons.SEARCH_LINE, "Go to file", "Open a file by name", rayde.keys.Chord.parse("mod+p", mac).keycaps(mac), props.onFiles)}</if>
@@ -81,6 +80,15 @@ class Welcome extends Component<WelcomeProps> {
 				</div>
 			</div>
 		</div>;
+	}
+
+	function openActions():Array<Element> {
+		#if (wasm || rayde_page)
+		return [action("welcome-open-project", Icons.GITHUB_FILL, "Open Repository…", "Sign in with GitHub and open a remote workspace", [], props.onOpenProject)];
+		#else
+		return [action("welcome-open-folder", Icons.FOLDER_OPEN_LINE, "Open Folder…", "Open any folder as a workspace", [], props.onOpenFolder),
+			action("welcome-open-project", Icons.FILE_CODE_LINE, "Open Project…", "Open a build file or project manifest", [], props.onOpenProject)];
+		#end
 	}
 
 	/** Whether the theme in use is its dark scheme, read so that a change of scheme draws the page again. */

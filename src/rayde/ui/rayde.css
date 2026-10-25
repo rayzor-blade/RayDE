@@ -554,3 +554,21 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 .rayde-tab-context { display: flex; align-self: stretch; flex-shrink: 0; min-width: 0; }
 #rayde-tab-context-menu { min-width: 230px; max-height: 90vh; overflow-y: auto; }
 #rayde-tab-context-menu .ui-menu-item { padding: 4px 10px; min-height: 24px; }
+
+.rayde-explorer .ui-tree-row[data-drop-target] { background: var(--accent-subtle); outline: 1px solid var(--primary); outline-offset: -1px; }
+.rayde-explorer .ui-tree-row[data-drag-source] { opacity: .5; }
+.rayde-explorer-drag { position: absolute; z-index: 50; pointer-events: none; flex-direction: row; align-items: center; gap: 6px; padding: 6px 10px; max-width: 240px; border-radius: var(--radius-md); background: var(--surface-elevated); color: var(--text-primary); box-shadow: var(--shadow-lg); }
+.rayde-workspace-entry.ui-button { height: 28px; min-height: 28px; width: 100%; flex-shrink: 0; justify-content: flex-start; gap: 8px; padding: 2px 10px; color: var(--text-primary); }
+.rayde-workspace-entry[data-selected] { background: var(--accent-subtle); }
+#rayde-workspace-browser { width: 600px; max-width: 92vw; }
+
+#rayde-repository-dialog { width: 580px; max-width: 92vw; }
+.rayde-repository-row {
+  height: 60px;
+  min-height: 60px;
+  flex-shrink: 0;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 8px 12px;
+  text-align: left;
+}

@@ -17,6 +17,8 @@ class SessionClient {
 	public var name(default, null) = "";
 	public var exec(default, null) = false;
 	public var remote(default, null) = true;
+	public var demo(default, null) = false;
+	public var repositories(default, null) = false;
 	public var project(default, null):Null<String>;
 	public var extensionHost(default, null):Null<String>;
 	public var extensionsRoot(default, null):Null<String>;
@@ -53,7 +55,7 @@ class SessionClient {
 		try {
 			var hello = client.request("hello", {token:token});
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
-			client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
+			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
 			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
 		} catch (error:Dynamic) { client.close(); throw error; }

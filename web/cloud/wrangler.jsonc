@@ -1,0 +1,33 @@
+{
+  "name": "rayde-workspaces",
+  "main": "build/index.js",
+  "compatibility_date": "2026-07-30",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ACCOUNTS",
+        "class_name": "AccountSession"
+      },
+      {
+        "name": "WORKSPACES",
+        "class_name": "WorkspaceSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AccountSession",
+        "WorkspaceSession"
+      ]
+    }
+  ],
+  "vars": {
+    "ASSETS_ORIGIN": "http://127.0.0.1:8731",
+    "APP_ORIGIN": "http://127.0.0.1:8787"
+  },
+  "build": {
+    "command": "worker-build --release"
+  }
+}

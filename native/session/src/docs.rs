@@ -96,6 +96,16 @@ impl<S: FileStore> DocHub<S> {
         self.open.lock().unwrap().get(path).cloned()
     }
 
+    /// A path-based document must be released before its file or parent can move.
+    pub async fn rename(&self, from: &str, to: &str) -> Result<()> {
+        let _opening = self.opening.lock().await;
+        let inside = |path: &str, root: &str| path == root || path.starts_with(&format!("{root}/"));
+        if self.open.lock().unwrap().keys().any(|path| inside(path, from) || inside(path, to)) {
+            return Err(SessionError::new("document-open", "Close shared documents before moving this file or folder."));
+        }
+        self.store.rename(from, to).await
+    }
+
     async fn load(&self, path: &str) -> Result<Arc<OpenDoc>> {
         let disk = match self.store.stat(path).await? {
             Some(entry) if entry.kind != "file" => return Err(SessionError::new("wrong-kind", "That is not a file.")),

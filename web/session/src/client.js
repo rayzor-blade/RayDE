@@ -149,7 +149,8 @@ export class SessionClient {
         socket.onopen = async () => {
           try {
             this.hello = await this.rawRequest("hello", { token: this.options.token });
-            this.workspace = this.hello.name;
+            const endpoint = new URL(this.options.url);
+            this.workspace = endpoint.origin + endpoint.pathname + ":" + this.hello.name;
             this.ready = true;
             this.attempt = 0;
             if (this.credential) await this.login(this.credential).catch(() => {});

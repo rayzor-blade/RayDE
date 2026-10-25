@@ -47,6 +47,7 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		var next = describe(props.server, entry);
 		rayde.settings.RecentProjects.remember(entry);
 		current.set(next);
+		rayde.workspace.PageHost.selected(entry);
 		if (props.onWorkspaceChanged != null) props.onWorkspaceChanged(Fs.fullPath(entry));
 	}
 
@@ -69,9 +70,23 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		chrome.title("RayDE" + (workspace.empty == true ? "" : " · " + workspace.name));
 		bench = new Workbench({display:workspace.display, name:workspace.name, runtime:workspace.runtime,
 			extension:workspace.extension, theme:workspace.theme, empty:workspace.empty, chrome:chrome, onWorkspace:open,
+			#if (wasm || rayde_page)
+			onNewWindow:null, onNewWorkspace:null
+			#else
 			onNewWindow:props.openWindow == null ? null : () -> props.openWindow(null),
-			onNewWorkspace:props.openWindow == null || workspace.empty == true ? null : path -> props.openWindow(path)});
+			onNewWorkspace:props.openWindow == null || workspace.empty == true ? null : path -> props.openWindow(path)
+			#end
+		});
 		bench.openProject();
+		#if wasm
+		var demo = rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.demo;
+		var example = rayde.workspace.PageHost.SAMPLE + "/src/Main.hx";
+		if (!started && demo && bench.open.get().length == 0 && Fs.exists(example) && !Fs.isDirectory(example)) bench.openFile(example);
+		#end
+		#if wasm
+		if (!started && rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.repositories)
+			bench.projectPart.pickProject("project");
+		#end
 		if (!started) {
 			started = true;
 			var tab = Sys.getEnv("RAYDE_PANEL");

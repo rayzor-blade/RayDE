@@ -32,6 +32,7 @@ class NewProject extends Component<NewProjectProps> {
 	final error = Signal.make("");
 	final busy = Signal.make(false);
 	final browsing = Signal.make(false);
+	final workspaceBrowsing = Signal.make(false);
 	final input = new Ref<ashui.ui.Input>();
 	final jobs = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
 	var cancelDialog:Null<Void->Void>;
@@ -56,7 +57,7 @@ class NewProject extends Component<NewProjectProps> {
 				input.get().editing.caret.set(name.get().length);
 			}
 		});
-		return <dialog id="rayde-new-project" open={props.opened}>
+		var dialog = <dialog id="rayde-new-project" open={props.opened}>
 			<dialog-content id="rayde-project-modal" size={Full} onCancel={e -> if (locked()) e.preventDefault()}>
 				<div class="rayde-project-heading">
 					<div class="rayde-project-title">
@@ -99,6 +100,9 @@ class NewProject extends Component<NewProjectProps> {
 				</dialog-footer>
 			</dialog-content>
 		</dialog>;
+		return <div>${dialog}<if {workspaceBrowsing.get()}><workspace-picker opened={workspaceBrowsing} root={rayde.workspace.PageHost.workspaceRoot()} directory={directory.get()} folder={true} title="Choose a parent folder" complete={path -> {
+			browsing.set(false); if (path != null) directory.set(path);
+		}}/></if></div>;
 	}
 
 	function card(template:ProjectTemplate):Element {
@@ -140,6 +144,9 @@ class NewProject extends Component<NewProjectProps> {
 	function browse():Void {
 		if (locked()) return;
 		error.set(""); browsing.set(true);
+		#if (wasm || rayde_page)
+		workspaceBrowsing.set(true);
+		#else
 		#if ashui_window
 		var app = ashui.app.WindowedApp.current;
 		if (app != null && ashui.app.FileDialog.available()) {
@@ -154,6 +161,7 @@ class NewProject extends Component<NewProjectProps> {
 		#end
 		jobs.submit("browse", {mode:"parent"});
 		ashui.animation.AnimationScheduler.main.after(.03, poll);
+		#end
 	}
 
 	function create():Void {

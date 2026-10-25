@@ -4,7 +4,7 @@
 //
 // Needs Google Chrome (WebGPU, wasm exception handling) and puppeteer-core (web/session's node_modules).
 import { spawn, execSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createServer as httpServer } from "node:http";
 import { createRequire } from "node:module";
@@ -123,6 +123,7 @@ try {
   if (scheme) await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
   const started = Date.now();
   const query = new URLSearchParams(envs.map(e => ["env", e]));
+  if (!session && !args.includes("--no-demo")) query.set("demo","1");
   if (session) { query.set("session", `ws://127.0.0.1:${sessionPort}/session`); query.set("project", "build.hxml"); }
   async function pageFiles(put = [], remove = []) {
     return page.evaluate(({put, remove}) => new Promise((resolve, reject) => {
@@ -185,6 +186,17 @@ try {
     if (result.idleSubmissions > 2) throw new Error("idle session work kept rendering GPU frames: " + result.idleSubmissions);
   }
   await page.screenshot({ path: join(shots, "welcome.png") });
+  if (args.includes("--explorer")) {
+    if (!session) throw new Error("--explorer requires an isolated --session-root fixture");
+    const from = join(resolve(workspace),"src/drag.txt"), into = join(resolve(workspace),"dest/drag.txt");
+    if (!existsSync(from) || readFileSync(from,"utf8") !== "remote drag fixture\n") throw new Error("missing isolated drag fixture");
+    await page.mouse.move(155,240); await page.mouse.down(); await page.mouse.move(155,165,{steps:12}); await sleep(350);
+    await page.screenshot({path:join(shots,"dragging.png")}); await page.mouse.up();
+    for (let i=0;i<100 && !existsSync(into);i++) await sleep(100);
+    if (existsSync(from) || !existsSync(into) || readFileSync(into,"utf8") !== "remote drag fixture\n") throw new Error("Explorer drag did not move the remote file");
+    result.remoteDrag = true;
+    result.afterEdit = memory(browser.process().pid);
+  }
   if (args.includes("--reload")) {
     const assertSaved = async missing => {
       const files = await pageFiles(), main = files.find(file => file.path === "/work/src/Main.hx");
@@ -265,7 +277,7 @@ try {
     await page.screenshot({ path: join(shots, "flipped.png") });
   }
 
-  if (!args.includes("--settings-only") && !args.includes("--input-only") && !args.includes("--reload-only")) {
+  if (!args.includes("--settings-only") && !args.includes("--input-only") && !args.includes("--reload-only") && !args.includes("--explorer-only")) {
   // Open Main.hx from the Explorer, then type into it.
   if (session) await page.mouse.click(480, 412);
   else await page.mouse.click(147, 165);

@@ -47,6 +47,32 @@ async fn files_are_listed_read_written_renamed_and_removed_inside_the_workspace(
 }
 
 #[tokio::test]
+async fn moving_an_open_crdt_file_or_parent_is_refused_without_losing_updates() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir(dir.path().join("src")).unwrap();
+    fs::create_dir(dir.path().join("src-other")).unwrap();
+    fs::write(dir.path().join("src/a.txt"), "base").unwrap();
+    fs::write(dir.path().join("other.txt"), "other").unwrap();
+    let running = server(dir.path(), false).await;
+    let mut reader = Client::hello(&running).await;
+    let mut mover = Client::hello(&running).await;
+    let peer = Peer::new();
+    let opened = reader.request(json!({"op":"doc.open","path":"src/a.txt"})).await;
+    peer.apply(opened["update"].as_str().unwrap());
+    for (from,to) in [("src/a.txt","a.txt"),("src","moved"),("other.txt","src/a.txt")] {
+        assert_eq!(mover.request(json!({"op":"fs.rename","from":from,"to":to})).await["code"], "document-open");
+    }
+    assert_eq!(mover.request(json!({"op":"fs.rename","from":"src-other","to":"elsewhere"})).await["ok"], true);
+    let update = peer.edit(4,0," + kept");
+    assert_eq!(reader.request(json!({"op":"doc.update","path":"src/a.txt","update":update})).await["ok"], true);
+    assert_eq!(reader.request(json!({"op":"doc.save","path":"src/a.txt"})).await["ok"], true);
+    assert_eq!(fs::read_to_string(dir.path().join("src/a.txt")).unwrap(), "base + kept");
+    assert_eq!(fs::read_to_string(dir.path().join("other.txt")).unwrap(), "other");
+    assert!(!dir.path().join("moved").exists());
+    running.shutdown().await;
+}
+
+#[tokio::test]
 async fn paths_cannot_leave_the_workspace() {
     let dir = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();

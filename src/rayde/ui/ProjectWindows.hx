@@ -57,11 +57,15 @@ class ProjectWindows {
 	/** Only application startup resumes windows; New Window always opens Welcome. */
 	static function startup(entry:Null<String>):Array<PreparedWindow> {
 		if (entry != null) return [prepare(entry)];
+		#if (wasm || rayde_page)
+		return [prepare(null)];
+		#else
 		var entries = WindowSession.read();
 		if (entries == null) entries = rayde.settings.RecentProjects.paths().slice(0, 1);
 		var windows:Array<PreparedWindow> = [];
 		for (path in entries) try windows.push(prepare(path)) catch (_:Dynamic) {}
 		return windows.length == 0 ? [prepare(null)] : windows;
+		#end
 	}
 
 	static function checkpoint():Void {

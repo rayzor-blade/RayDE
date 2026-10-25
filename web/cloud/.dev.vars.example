@@ -1,0 +1,6 @@
+GITHUB_CLIENT_ID=configure-a-github-app-client-id
+GITHUB_CLIENT_SECRET=configure-with-wrangler-secret
+GITHUB_APP_SLUG=your-rayde-app
+RUNNER_URL=http://127.0.0.1:8790
+RUNNER_SECRET=replace-with-a-random-shared-secret
+LOCAL_DEV=1

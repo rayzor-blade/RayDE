@@ -115,6 +115,12 @@ class ExplorerPart {
 
 	final fileIndex = new FileIndex();
 
+	final moveJobs = new rayde.run.Worker<{root:String, from:String, dir:String}, Null<{from:String,to:String,dir:String}>>((request, cancelled) -> {
+		if (cancelled()) return null;
+		return {from:request.from, to:FileOps.move(request.root, request.from, request.dir), dir:request.dir};
+	});
+	var movingFile = false;
+
 	final fileIndexRevision = Signal.make(0);
 
 	var fileIndexScheduled = false;
@@ -175,7 +181,7 @@ class ExplorerPart {
 				<context-menu-trigger id="rayde-explorer-trigger">
 					<explorer-tree root={wb.props.display.cwd} name={wb.props.name} entries={explorerEntries} head={headRow} icon={wb.editorPart.fileIcon}
 						ignored={ignoredPath} opened={startsOpen} state={folderState} selected={treeSelected} onSelect={openExplorerFile}
-						onPress={explorerPress} revision={() -> wb.buildRevision.get()}/>
+						onPress={explorerPress} onMove={moveExplorerFile} canMove={() -> !movingFile} revision={() -> wb.buildRevision.get()}/>
 				</context-menu-trigger>
 				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: wb.keymapPart.bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
 			</context-menu>;
@@ -355,6 +361,30 @@ class ExplorerPart {
 		if (path == null)
 			return wb.props.display.cwd;
 		return Fs.exists(path) && Fs.isDirectory(path) ? path : haxe.io.Path.directory(path);
+	}
+
+	/** Commits a drop on the provider worker before remapping the open document views. */
+	function moveExplorerFile(from:String, dir:String):Void {
+		if (movingFile || wb.gone) return;
+		var refused = wb.contributions.refusal(from, "renaming");
+		if (refused != null) { wb.say(refused); return; }
+		movingFile = true;
+		moveJobs.submit("move", {root:wb.props.display.cwd,from:from,dir:dir});
+		ashui.animation.AnimationScheduler.main.after(.03, pollMove);
+	}
+
+	function pollMove():Void {
+		if (wb.gone) return;
+		for (result in moveJobs.poll()) {
+			movingFile = false;
+			if (result.error != null) wb.say(result.error);
+			else if (result.value != null) {
+				var moved = result.value;
+				if (moved.from != moved.to) moveTabs(moved.from, moved.to);
+				folderState(moved.dir, true).set(true); refreshExplorer();
+			}
+		}
+		if (movingFile) ashui.animation.AnimationScheduler.main.after(.03, pollMove);
 	}
 
 	/** Puts what was cut or copied into `dir`: a copy takes a free name, and what was cut is moved, its tabs with it. */

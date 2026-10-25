@@ -1,9 +1,14 @@
+import { pageEntry } from "./entry.js";
+import { Accounts } from "./accounts.js";
 import { SessionClient } from "./client.js";
 import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
 
 const query = new URLSearchParams(location.search);
-const endpoint = query.get("session");
+const entry = pageEntry(location);
+const endpoint = entry.endpoint;
+const demo = entry.demo;
+const accounts = new Accounts();
 const token = new URLSearchParams(location.hash.slice(1)).get("token");
 async function storage() {
   return new Promise((resolve, reject) => {
@@ -16,6 +21,12 @@ async function storage() {
 
 export const start = ask => serve(ask, {
   async open({ deliver, closed }) {
+    let project = query.get("project");
+    if (entry.workspace) {
+      const workspace = await accounts.request("account.workspace", { workspace: entry.workspace });
+      if (workspace.status !== "ready") throw new Error(workspace.message ?? "The workspace is still starting.");
+      project ??= workspace.project;
+    }
     const database = await storage();
     let client = null;
     if (endpoint) {
@@ -31,7 +42,7 @@ export const start = ask => serve(ask, {
     for (const event of ["proc.out", "proc.exit", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => answer({ ev: "session.disconnected" }));
     client?.on("connected", () => answer({ ev: "session.connected" }));
-    const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
+    const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -44,11 +55,18 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), remote: !!client, project: query.get("project") };
+          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), remote: !!client, demo, repositories: query.get("repositories") === "1", project: project };
+          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
           else if (request.op === "page.load") reply = { entries: (await files("readonly", store => store.getAll())).filter(entry => localPath(entry.path)) };
+          else if (request.op === "page.project") {
+            if (typeof request.path !== "string" || request.path.split("/").includes("..")) throw new Error("Choose a project in this workspace.");
+            const url = new URL(location.href); url.searchParams.set("project",request.path);
+            history.replaceState(null,"",url); query.set("project",request.path); project = request.path;
+            return;
+          }
           else if (request.op === "page.seed") {
             const entries = request.entries;
-            if (client || !Array.isArray(entries) || entries.some(entry => !localPath(entry?.path) || !(entry.path === "/work" || entry.path.startsWith("/work/")))) throw new Error("The sample must use page storage.");
+            if (client || !demo || !Array.isArray(entries) || entries.some(entry => !localPath(entry?.path) || !(entry.path === "/work" || entry.path.startsWith("/work/")))) throw new Error("The sample must use page storage.");
             // The root record and its initial files become durable together.
             await files("readwrite", store => {
               const root = store.get("/work");
