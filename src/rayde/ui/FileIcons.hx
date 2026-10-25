@@ -14,7 +14,7 @@ class FileIcons {
 			case "hx": Icons.HAXE;
 			case "rays", "rayext": Icons.PUZZLE_LINE;
 			case "raytheme": Icons.PALETTE_LINE;
-			case "hxml", "toml", "yaml", "yml", "ini", "cfg", "conf", "config", "properties", "editorconfig": Icons.FILE_SETTINGS_LINE;
+			case "hxml", "toml", "cbproj", "yaml", "yml", "ini", "cfg", "conf", "config", "properties", "editorconfig": Icons.FILE_SETTINGS_LINE;
 			case "json", "jsonc", "json5": Icons.BRACES_LINE;
 			case "md", "markdown", "mdown", "mkd", "mdx": Icons.MARKDOWN_LINE;
 			case "html", "htm", "xhtml": Icons.HTML5_LINE;

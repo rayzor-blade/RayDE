@@ -327,6 +327,9 @@ class Workbench extends Component<WorkbenchProps> {
 	public function openProject():Void {
 		if (props.empty == true) return;
 		if (sessionReady) return;
+		// What the project's own tool says is wrong with its file is a problem of the workspace.
+		var complaints = props.display.project == null ? [] : props.display.project.problems;
+		if (complaints.length > 0) problems.set([for (message in complaints) {file:null, range:null, severity:2, message:message}].concat(problems.get()));
 		workspaceSession = new WorkspaceSession(props.display.cwd, explorerPart.projectEntry() ?? (extension != null ? extension.file : themePart.themeStudio != null ? themePart.themeStudio.file : props.display.cwd));
 		var saved = workspaceSession.read();
 		if (saved != null) {

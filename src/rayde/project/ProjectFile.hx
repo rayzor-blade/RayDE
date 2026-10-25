@@ -17,11 +17,17 @@ class ProjectFile {
 	public var args(default, null):Array<String> = [];
 	public var runnable(default, null) = true;
 
+	/** What the project's own tool rejects or ignores in its file, as sentences (Caribou reports these). */
+	public var problems(default, null):Array<String> = [];
+
+	/** The projects of a Caribou workspace, by their `.cbproj`. */
+	public var members(default, null):Array<String> = [];
+
 	function new(file:String, folder = false) { this.file = file; root = folder ? file : Path.directory(file); name = Path.withoutDirectory(root); if (name == "") name = root; }
 
 	public static function supported(file:String):Bool {
 		var name = Path.withoutDirectory(file).toLowerCase();
-		return StringTools.endsWith(name, ".hxml") || name == "haxelib.json" || name == "rayzor.toml";
+		return StringTools.endsWith(name, ".hxml") || StringTools.endsWith(name, ".cbproj") || name == "haxelib.json" || name == "rayzor.toml";
 	}
 
 	public static function read(file:String):ProjectFile {
@@ -31,11 +37,19 @@ class ProjectFile {
 			workspace.kind = "folder"; workspace.runtime = ""; workspace.runnable = false;
 			return workspace;
 		}
-		if (!supported(file)) throw "Choose a folder, .hxml, haxelib.json or rayzor.toml project file";
+		if (!supported(file)) throw "Choose a folder, .hxml, .cbproj, haxelib.json or rayzor.toml project file";
 		var project = new ProjectFile(file), name = Path.withoutDirectory(file).toLowerCase();
 		if (StringTools.endsWith(name, ".hxml")) {
 			project.kind = "hxml"; project.hxml = file; project.args = Hxml.read(file);
 			project.runtime = ProjectRunner.resolve(project.root);
+			return project;
+		}
+		if (StringTools.endsWith(name, ".cbproj")) {
+			// Caribou reads its own project file; RayDE takes what it resolved, Haxe arguments included.
+			var info = CaribouProject.resolve(file);
+			project.kind = "caribou"; project.runtime = "caribou"; project.name = info.name; project.args = ["--cwd", info.cwd].concat(info.args); project.problems = info.problems;
+			project.runnable = !info.workspace;
+			project.members = [for (member in info.members) haxe.io.Path.join([member.dir, member.name + ".cbproj"])];
 			return project;
 		}
 		if (FileSystem.stat(file).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";

@@ -27,6 +27,8 @@ class Runner {
 	var building = false;
 	var buildOnly = false;
 	var runtime = "ash";
+	var diagnostics:Null<String>;
+	var diagnosticsSize = -1;
 
 	public function new(display:Display, ?ash:String) {
 		this.display = display;
@@ -42,7 +44,7 @@ class Runner {
 		return state == "building" || state == "running";
 
 	public function canBuild():Bool
-		return display.hxml != null || display.project != null && display.project.runtime == "rayzor";
+		return display.hxml != null || display.project != null && (display.project.runtime == "rayzor" || display.project.runtime == "caribou");
 
 	/** Compiles without launching; targetless HXML uses Run's bytecode default. */
 	public function build():Void {
@@ -51,6 +53,13 @@ class Runner {
 		building = true; buildOnly = true;
 		if (!canBuild()) {
 			state = "failed"; append("Open an HXML or Rayzor project to build.\n"); return;
+		}
+		if (display.project != null && display.project.runtime == "caribou") {
+			if (!display.project.runnable) { building = false; state = "failed"; exitCode = 1; append("A workspace has no project to build. Open one of its members.\n"); return; }
+			sys.FileSystem.createDirectory(out);
+			state = "building"; append("Building with Caribou…\n");
+			launchCaribou("build", "build.log");
+			return;
 		}
 		var rayzor = display.project != null && display.project.runtime == "rayzor";
 		state = "building";
@@ -79,6 +88,12 @@ class Runner {
 		runtime = display.project == null ? rayde.project.ProjectRunner.resolve(display.cwd) : display.project.runtime;
 		if (display.project != null && !display.project.runnable) {
 			state = "failed"; append("This project has no application entry point. Open a runnable build to use Run.\n"); return;
+		}
+		if (display.project != null && display.project.runtime == "caribou") {
+			sys.FileSystem.createDirectory(out);
+			building = false; state = "running"; append("Running with Caribou…\n");
+			launchCaribou("run", "run.log");
+			return;
 		}
 		if (display.project != null && display.project.runtime == "rayzor") {
 			sys.FileSystem.createDirectory(out);
@@ -111,6 +126,7 @@ class Runner {
 	public function tick():Void {
 		if (job == null)
 			return;
+		if (diagnostics != null) readDiagnostics();
 		var text = job.read();
 		if (text != "")
 			append(text);
@@ -119,6 +135,17 @@ class Runner {
 		append(job.read());
 		var code = job.exit;
 		job = null;
+		if (diagnostics != null) {
+			readDiagnostics();
+			diagnostics = null;
+			var building = this.building;
+			this.building = false;
+			exitCode = code;
+			if (building && buildOnly) { state = code == 0 ? "built" : "failed"; append(code == 0 ? "Build succeeded.\n" : "Build failed with " + code + ".\n"); }
+			else { state = "finished"; append("Exited with " + code + ".\n"); }
+			revision++;
+			return;
+		}
 		if (building) {
 			building = false;
 			problems = CompilerOutput.parse(console, display.cwd);
@@ -143,6 +170,27 @@ class Runner {
 		exitCode = code;
 		state = "finished";
 		append("Exited with " + code + ".\n");
+	}
+
+	/** Runs Caribou on the project file. It builds what the project needs, and writes its findings as JSON lines to a file that is read as it grows. */
+	function launchCaribou(command:String, log:String):Void {
+		var caribou = rayde.project.CaribouProject.binary() ?? "caribou";
+		diagnostics = haxe.io.Path.join([out, "diagnostics.jsonl"]);
+		diagnosticsSize = -1;
+		if (sys.FileSystem.exists(diagnostics)) sys.FileSystem.deleteFile(diagnostics);
+		building = command == "build";
+		job = new Job(caribou, [command, display.project.file, "--diagnostics", diagnostics], haxe.io.Path.join([out, log]), null, display.cwd, true);
+		job.start();
+	}
+
+	/** Takes the findings Caribou has written so far, when the file has grown. */
+	function readDiagnostics():Void {
+		if (diagnostics == null || !sys.FileSystem.exists(diagnostics)) return;
+		var size = sys.FileSystem.stat(diagnostics).size;
+		if (size == diagnosticsSize) return;
+		diagnosticsSize = size;
+		problems = CaribouDiagnostics.parse(sys.io.File.getContent(diagnostics));
+		revision++;
 	}
 
 	function append(text:String):Void {

@@ -132,7 +132,7 @@ class ProjectPart {
 		if (app != null && ashui.app.FileDialog.available()) {
 			try cancelProjectDialog = ashui.app.FileDialog.open(app, {
 				title:mode == "folder" ? "Open Folder Workspace" : "Open Project",
-				folder:mode != "project", directory:wb.props.display.cwd, extensions:["hxml", "json", "toml", "rayext", "raytheme"]
+				folder:mode != "project", directory:wb.props.display.cwd, extensions:["hxml", "json", "toml", "cbproj", "rayext", "raytheme"]
 			}, selected -> {
 				cancelProjectDialog = null;
 				pickingProject = false;

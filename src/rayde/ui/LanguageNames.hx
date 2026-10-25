@@ -15,11 +15,11 @@ class LanguageNames {
 		var names = new Map<String, String>();
 		function add(language:String, extensions:Array<String>) for (e in extensions) names.set(e, language);
 		add("Haxe", ["hx"]); add("RayScript", ["rays"]); add("JSON", ["json", "rayext", "raytheme", "jsonc", "json5"]);
-		add("HXML", ["hxml"]); add("TOML", ["toml"]); add("YAML", ["yaml", "yml"]); add("INI", ["ini", "cfg", "conf", "config", "properties", "editorconfig"]);
+		add("HXML", ["hxml"]); add("TOML", ["toml", "cbproj"]); add("YAML", ["yaml", "yml"]); add("INI", ["ini", "cfg", "conf", "config", "properties", "editorconfig"]);
 		add("Markdown", ["md", "markdown", "mdown", "mkd", "mdx"]); add("HTML", ["html", "htm", "xhtml"]); add("CSS", ["css"]); add("SCSS", ["scss"]); add("Sass", ["sass"]); add("Less", ["less"]);
 		add("JavaScript", ["js", "mjs", "cjs"]); add("JavaScript React", ["jsx"]); add("TypeScript", ["ts", "mts", "cts"]); add("TypeScript React", ["tsx"]); add("Vue", ["vue"]); add("Svelte", ["svelte"]);
 		add("Java", ["java"]); add("Python", ["py", "pyw", "pyi"]); add("C", ["c", "h"]); add("C++", ["cpp", "cc", "cxx", "hpp", "hh", "hxx"]); add("C#", ["cs", "csx"]);
-		add("Rust", ["rs"]); add("Go", ["go"]); add("Ruby", ["rb", "rake", "gemspec"]); add("Kotlin", ["kt", "kts"]); add("Swift", ["swift"]); add("Dart", ["dart"]); add("Lua", ["lua"]);
+		add("Rust", ["rs"]); add("Go", ["go"]); add("Ruby", ["rb", "rake", "gemspec"]); add("Kotlin", ["kt", "kts"]); add("Swift", ["swift"]); add("Dart", ["dart"]); add("Lua", ["lua"]); add("Wren", ["wren"]);
 		add("Perl", ["pl", "pm", "pod"]); add("Scala", ["scala", "sc"]); add("Haskell", ["hs", "lhs"]); add("Elixir", ["ex", "exs"]); add("Erlang", ["erl", "hrl"]); add("OCaml", ["ml", "mli"]);
 		add("F#", ["fs", "fsi", "fsx"]); add("Clojure", ["clj", "cljs", "cljc", "edn"]); add("Julia", ["jl"]); add("R", ["r", "rmd"]); add("Zig", ["zig", "zon"]); add("Elm", ["elm"]); add("Nim", ["nim", "nims"]);
 		add("Fortran", ["f", "for", "f90", "f95", "f03", "f08"]); add("CoffeeScript", ["coffee", "litcoffee"]); add("Nix", ["nix"]); add("GraphQL", ["graphql", "gql"]); add("LaTeX", ["tex", "sty", "cls", "bib"]);
