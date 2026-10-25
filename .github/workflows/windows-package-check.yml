@@ -1,0 +1,50 @@
+name: Windows package check
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Distribution run containing a failed Windows package
+        type: string
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - name: Download the failed archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.run_id }}
+        run: gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name failed-package-windows-x86_64 --dir package
+      - name: Check the extracted package
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          import subprocess
+          import sys
+          archives = list(Path('package').glob('*.zip'))
+          if len(archives) != 1:
+              raise SystemExit('Expected one Windows package archive')
+          archive = archives[0]
+          expected = archive.with_name(archive.name + '.sha256').read_text().split()[0]
+          with archive.open('rb') as stream:
+              actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+          if actual != expected:
+              raise SystemExit('Package checksum mismatch')
+          subprocess.run([sys.executable, 'tests/distribution_smoke.py', str(archive), '--platform', 'windows'], check=True)
+          PY
