@@ -48,8 +48,8 @@ class ProjectFile {
 			// Caribou reads its own project file; RayDE takes what it resolved, Haxe arguments included.
 			var info = CaribouProject.resolve(file);
 			project.kind = "caribou"; project.runtime = "caribou"; project.name = info.name; project.args = ["--cwd", info.cwd].concat(info.args); project.problems = info.problems;
-			project.runnable = !info.workspace;
-			project.members = [for (member in info.members) haxe.io.Path.join([member.dir, member.name + ".cbproj"])];
+			project.runnable = info.runnable;
+			project.members = info.files.length > 0 ? info.files : [for (member in info.members) haxe.io.Path.join([member.dir, member.name + ".cbproj"])];
 			return project;
 		}
 		if (FileSystem.stat(file).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";

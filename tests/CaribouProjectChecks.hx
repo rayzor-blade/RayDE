@@ -90,7 +90,7 @@ class CaribouProjectChecks {
 		sys.io.File.saveContent(project + "/game.cbproj", '[project]\nname = "game"\nentry = "haxe:game.Main"\n');
 		sys.io.File.saveContent(ws + "/ws.cbproj", '[workspace]\nmembers = ["../game"]\n');
 		var projectJson = '{"dir":"$project","name":"game","entry":{"language":"haxe","module":"game.Main"},"languages":["haxe","lua"],"haxe":{"cwd":"$project","args":["-cp","src","-L","caribou","-D","caribou_guests","-main","game.Main","-hl","$project/target/game.hl"]},"problems":[{"key":"plugins.window","message":"library not built yet"},"a plain sentence"]}';
-		var workspaceJson = '{"workspace":{"dir":"$ws","name":"ws"},"members":[$projectJson]}';
+		var workspaceJson = '{"workspace":{"file":"$ws/ws.cbproj","dir":"$ws","members":["$project/game.cbproj"],"problems":[]},"members":[$projectJson],"project":null}';
 		var findings = '{"severity":"error","source":"compile","message":"unexpected symbol","language":"lua","module":"game/hello","file":"$project/src/game/hello.lua","range":{"start":{"line":10,"column":26},"end":{"line":10,"column":31}}}\n'
 			+ '{"severity":2,"source":"runtime","message":"slow frame"}\n{"serving":"http://127.0.0.1:1"}\nnot json\n';
 		sys.io.File.saveContent(root + "/project.json", projectJson);

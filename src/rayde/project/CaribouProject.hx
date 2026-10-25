@@ -14,7 +14,11 @@ typedef CaribouInfo = {
 	/** What Caribou rejects or ignores in the file, each as a sentence. */
 	problems:Array<String>,
 	workspace:Bool,
-	members:Array<CaribouInfo>
+	/** False for a workspace that has no project of its own: run one of its members. */
+	runnable:Bool,
+	members:Array<CaribouInfo>,
+	/** The member `.cbproj` files, as Caribou resolved them. */
+	files:Array<String>
 };
 
 /**
@@ -63,10 +67,13 @@ class CaribouProject {
 		try data = haxe.Json.parse(text) catch (e:Dynamic) throw "caribou project printed something that is not JSON.";
 		if (data == null || !Reflect.isObject(data)) throw "caribou project printed no project.";
 		if (data.workspace != null) {
-			var members:Array<Dynamic> = Std.isOfType(data.members, Array) ? data.members : [];
-			var info = read(data.workspace);
+			var root:Dynamic = data.workspace, members:Array<Dynamic> = Std.isOfType(data.members, Array) ? data.members : [];
+			var own:Dynamic = data.project, info = read(own != null ? own : root);
 			info.workspace = true;
+			info.runnable = own != null;
 			info.members = [for (member in members) read(member)];
+			info.files = Std.isOfType(root.members, Array) ? [for (f in (root.members:Array<Dynamic>)) if (Std.isOfType(f, String)) (f:String)] : [];
+			if (own != null && Std.isOfType(root.problems, Array)) info.problems = [for (p in (root.problems:Array<Dynamic>)) problem(p)].concat(info.problems);
 			return info;
 		}
 		return read(data);
@@ -81,7 +88,7 @@ class CaribouProject {
 			name: text(data.name) == "" ? haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(dir)) : text(data.name),
 			entry: entry == null ? null : Std.isOfType(entry, String) ? entry : text(entry.language) + ":" + text(entry.module),
 			languages: Std.isOfType(data.languages, Array) ? [for (l in (data.languages:Array<Dynamic>)) Std.string(l)] : [],
-			cwd: compiler != null && compiler.cwd != null ? Std.string(compiler.cwd) : dir, args: args, problems: problems, workspace: false, members: []
+			cwd: compiler != null && compiler.cwd != null ? Std.string(compiler.cwd) : dir, args: args, problems: problems, workspace: false, runnable: true, members: [], files: []
 		};
 	}
 
