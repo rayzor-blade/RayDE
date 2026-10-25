@@ -1,4 +1,5 @@
 /bin/
+/dist/
 /.deps/
 .DS_Store
 .rayde/

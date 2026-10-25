@@ -6,7 +6,7 @@ This directory contains implementation and maintenance details. Everyday workflo
 | --- | --- |
 | [Building and running](building.md) | Scripts, dependencies, environment variables. |
 | [Checks and snapshots](checks.md) | `check.sh`, `snapshot.sh`, benchmarks. |
-| [Packaging](packaging.md) | App icon and per-platform launchers. |
+| [Packaging](packaging.md) | AOT packages, CI matrix, dependency pins and release drafts. |
 | [Editor implementation](editor.md) | Document lifetime, command center, panels, preview resources and window startup. |
 | [Explorer implementation](explorer.md) | Tree virtualization, ignore rules, Outline, local history and dependencies. |
 | [Language-server implementation](languages.md) | Transport, synchronization, cancellation and process recovery. |

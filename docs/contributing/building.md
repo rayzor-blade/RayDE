@@ -16,10 +16,10 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 - `haxe` and `ash` on `PATH` (`ASH=<path>` names another ash).
 - ashui is pinned to a commit (`ashui_rev` in `scripts/deps.sh`), checked out under `.deps` and built once. `ASHUI=<dir>` builds against another checkout.
 - hlwgpu and hlwindow are read from beside RayDE (`HLWGPU`, `HLWINDOW`).
-- `scripts/rayde.sh`, packaging and Git checks/snapshots build pinned libgit2 with CMake and a C compiler, generating the built-in Git manifest with its library hash. The source archive is fetched with curl and verified with shasum; Git fixtures/checks use Python 3.
+- `scripts/rayde.sh`, packaging and Git checks/snapshots build pinned libgit2 with CMake and a C compiler, generating the built-in Git manifest with its library hash. The source archive is fetched with curl and verified with Python 3; Git fixtures/checks also use Python 3. Packaging needs Python 3.11 or newer, plus `patchelf` on Linux or an MSVC developer environment on Windows.
 - The local Jam core in `native/jam` uses pinned Yrs 0.28.0 and tokio-tungstenite 0.28.0. It is linked into `rayscript.hdll`; its standalone JSON-lines client needs neither Haxe nor the sibling RayScript checkout.
 - Rust 1.98 or newer and the sibling `rayscript` checkout supply the embedded extension runtime. `scripts/build-rayscript.sh` builds `native/rayscript` into the existing `../rayscript/target` and stages `bin/rayscript.hdll`; `RAYSCRIPT_TARGET_DIR` selects another shared target. No `rayscript-host` executable is required to run RayDE.
-- Rayzor is the default Haxe language server. Builds stage an existing `RAYZOR_LSP` executable, sibling `rayzor/target/release/rayzor`, or Rayzor on PATH, plus the available `RAYZOR_STD_PATH` or sibling `compiler/haxe-std`. They do not build Rayzor. The staged executable retains its linked-library requirements; release packages need a distributable Rayzor build. Without an available server, RayDE falls back to the Haxe display service after bounded startup attempts.
+- Rayzor is the default Haxe language server. Development builds stage an existing `RAYZOR_LSP` executable, sibling `rayzor/target/release/rayzor`, or Rayzor on PATH, plus the available `RAYZOR_STD_PATH` or sibling `compiler/haxe-std`. They do not build Rayzor. CI builds its pinned source; distribution packages require both the server and standard library and bundle non-system native dependencies. Without an available server in a development run, RayDE falls back to the Haxe display service after bounded startup attempts. See [packaging](packaging.md) for CI setup.
 - The same library embeds the pinned shared syntax registry and native Markdown/math/Mermaid renderers. `node scripts/update-grammars.mjs` updates grammar data from a checksum-verified archive; normal builds require neither Node nor a browser. Packaging includes the bundled data's notices.
 - Image previews bundle `image` and `avif-decode` for BMP, GIF, ICO and AVIF conversion. The decoders need no external image tools or system AVIF library; their versions and dependencies are locked in Cargo.lock.
 - Source `scripts/deps.sh` from bash only.
@@ -33,7 +33,6 @@ scripts/rayde.sh --native build.hxml     # rebuild and open with the native exec
 | `RAYDE_EXTENSIONS=<folder>` | Built-in extensions folder instead of the packaged or source folder. |
 | `RAYDE_THEMES=<folder>` | User theme folder instead of `~/.rayde/themes`. |
 | `RAYDE_OPAQUE=1` | Opaque window instead of a transparent one. |
-| `RAYDE_ASH=<path>` | ash for the packaged launchers. |
 | `RAYZOR_LSP=<path>` | Rayzor LSP executable for staging and automatic discovery. |
 | `RAYZOR_STD_PATH=<folder>` | Rayzor standard library for staging and server launch. |
 | `ASHUI_FRAME_STATS=1` | Log frame timings and compositing layers, plus loop wake-ups, busy time and pointer hooks. |

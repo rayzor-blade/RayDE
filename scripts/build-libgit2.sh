@@ -13,7 +13,8 @@ if [ ! -f "$archive" ]; then
   curl --fail --location --retry 2 "https://github.com/libgit2/libgit2/archive/refs/tags/v$version.tar.gz" -o "$archive.partial"
   mv "$archive.partial" "$archive"
 fi
-actual=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+sha256() { python3 -c 'import hashlib,sys; print(hashlib.file_digest(open(sys.argv[1], "rb"), "sha256").hexdigest())' "$1"; }
+actual=$(sha256 "$archive")
 [ "$actual" = "$checksum" ] || { echo "libgit2: source checksum mismatch" >&2; exit 1; }
 if [ ! -d "$source_dir" ]; then
   tar -xzf "$archive" -C "$cache"
@@ -22,20 +23,24 @@ cmake -S "$source_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_EXAMPLES=OFF \
   -DUSE_SSH=exec -DUSE_BUNDLED_ZLIB=ON -DREGEX_BACKEND=builtin \
   -DEXPERIMENTAL_SHA256=OFF -DCMAKE_MACOSX_RPATH=ON
-cmake --build "$build_dir" --parallel "${BUILD_JOBS:-4}"
+cmake --build "$build_dir" --config Release --parallel "${BUILD_JOBS:-4}"
 case "$(uname -s)" in
   Darwin) library=libgit2.dylib ;;
   Linux) library=libgit2.so ;;
-  *) echo "libgit2: this build script currently supports macOS and Linux" >&2; exit 1 ;;
+  MINGW*|MSYS*|CYGWIN*) library=git2.dll ;;
+  *) echo "libgit2: unsupported platform" >&2; exit 1 ;;
 esac
+built="$build_dir/$library"
+[ -f "$built" ] || built="$build_dir/Release/$library"
+[ -f "$built" ] || { echo "libgit2: missing $library" >&2; exit 1; }
 out="$here/extensions/git/natives"
 mkdir -p "$out"
-if [ ! -f "$out/$library" ] || ! cmp -s "$build_dir/$library" "$out/$library"; then
-  cp -L "$build_dir/$library" "$out/$library.new"
+if [ ! -f "$out/$library" ] || ! cmp -s "$built" "$out/$library"; then
+  cp -L "$built" "$out/$library.new"
   mv "$out/$library.new" "$out/$library"
 fi
 cp "$source_dir/COPYING" "$out/libgit2.COPYING"
-digest=$(shasum -a 256 "$out/$library" | cut -d ' ' -f 1)
+digest=$(sha256 "$out/$library")
 sed -e "s/@LIBRARY@/$library/g" -e "s/@SHA256@/$digest/g" \
   "$here/extensions/git/git.rayext.in" > "$here/extensions/git/git.rayext"
 echo "libgit2 $version: $out/$library"

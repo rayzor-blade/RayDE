@@ -20,16 +20,23 @@ stage_natives "$res"
 # Ash loads native libraries beside the executable; data stays under Resources.
 for library in "$res/"*.hdll; do mv "$library" "$mac/"; done
 mv "$res/rayde-extension-host" "$mac/"
-codesign --force --sign - "$mac/rayde-extension-host"
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl "$mac/rayde.hl"
 "$ash" --build "$mac/RayDE" "$mac/rayde.hl"
 rm "$mac/rayde.hl"
-sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+RAYDE_PLIST_VERSION="$version" python3 - "$app/Contents/Info.plist" <<'PY'
+import os, pathlib, plistlib, re, sys
+version = os.environ['RAYDE_PLIST_VERSION']
+if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?', version):
+    raise SystemExit('RAYDE_VERSION must be a semantic version')
+info = plistlib.loads(pathlib.Path('packaging/macos/Info.plist').read_bytes())
+info['CFBundleShortVersionString'] = info['CFBundleVersion'] = re.split(r'[-+]', version)[0]
+pathlib.Path(sys.argv[1]).write_bytes(plistlib.dumps(info))
+PY
 mkdir -p "$res/extensions"
 [ ! -d extensions ] || cp -R extensions/. "$res/extensions/"
 cp assets/icons/rayde.icns "$res/RayDE.icns"
 plutil -lint "$app/Contents/Info.plist" >/dev/null
-codesign --force --sign - "$app"
+python3 scripts/distribution.py "$app" --platform macos --version "$version"
 rm -rf "$out/RayDE.app"
 mv "$app" "$out/RayDE.app"
 echo "built ${out#"$here/"}/RayDE.app (AOT)"

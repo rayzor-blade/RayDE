@@ -7,7 +7,7 @@ case "$(uname -s)" in
   Linux) ext=so; prefix=lib ;;
   *) ext=dll; prefix= ;;
 esac
-(cd "$here/native/terminal" && nice -n 10 cargo build --release --quiet)
+(cd "$here/native/terminal" && nice -n 10 cargo build --release --locked --quiet)
 mkdir -p "$here/bin"
 # A new file, not a copy over the old: macOS keeps a library's signature by its file, and kills a program that loads one copied over in place.
 rm -f "$here/bin/cterm.hdll"

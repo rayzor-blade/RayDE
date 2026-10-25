@@ -1,13 +1,13 @@
 # Puts a RayDE shortcut, with its icon, on the Start menu and optionally the desktop.
-#   powershell -File install-shortcut.ps1 [-Folder <where RayDE.cmd, rayde.hl and the .hdll files are>] [-Desktop]
+#   powershell -File install-shortcut.ps1 [-Folder <where RayDE.exe is>] [-Desktop]
 param(
   [string]$Folder = $PSScriptRoot,
   [switch]$Desktop
 )
 $icon = Join-Path $Folder "rayde.ico"
-$launcher = Join-Path $Folder "RayDE.cmd"
+$launcher = Join-Path $Folder "RayDE.exe"
 if (-not (Test-Path $icon)) { throw "rayde.ico is not in $Folder" }
-if (-not (Test-Path $launcher)) { throw "RayDE.cmd is not in $Folder" }
+if (-not (Test-Path $launcher)) { throw "RayDE.exe is not in $Folder" }
 $shell = New-Object -ComObject WScript.Shell
 function New-Shortcut($path) {
   $link = $shell.CreateShortcut($path)

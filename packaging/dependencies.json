@@ -1,0 +1,21 @@
+{
+  "rust": "nightly-2026-10-06",
+  "haxe": "4.3.6",
+  "python": "3.13",
+  "sources": {
+    "ash": "40894c76149c286e3d1430f7c436f63a769cd0e9",
+    "hlwgpu": "dff2f4d191cd81ecfce9b8763b268c64d1f01e59",
+    "hlwindow": "0cf8fcac7755cdd4244d65db6d7d2170cc09092c",
+    "rayscript": "555ee9a09095dc2b8eba21011d7c84b4ade6491c",
+    "rayzor": "8521dec6242d2c5c42aeac28de595efa6a44272c"
+  },
+  "haxelibs": {
+    "hashlink": "1.15.0",
+    "html-entities": "1.0.0",
+    "tink_core": "2.1.1",
+    "tink_macro": "1.0.4",
+    "tink_parse": "0.4.1",
+    "tink_anon": "0.7.0",
+    "tink_hxx": "0.25.1"
+  }
+}
