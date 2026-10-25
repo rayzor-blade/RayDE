@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -134,7 +135,7 @@ class ExplorerPart {
 
 	/** Folder selections only expand the tree; every file can be opened. */
 	function openExplorerFile(path:String):Void {
-		if (!sys.FileSystem.exists(path) || sys.FileSystem.isDirectory(path)) return;
+		if (!Fs.exists(path) || Fs.isDirectory(path)) return;
 		if (Manifest.isManifest(path)) wb.openSettings("extension");
 		else if (ThemeFile.isThemeFile(path)) wb.themePart.openThemeStudio();
 		else if (path == wb.props.display.hxml || path == wb.projectManifest()) wb.openBuild();
@@ -282,7 +283,7 @@ class ExplorerPart {
 
 	/** The items of the Explorer's menu for a file, a folder or the project's own folder. */
 	function explorerItems(path:String):Element {
-		var folder = path != "" && sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path), top = path == wb.props.display.cwd;
+		var folder = path != "" && Fs.exists(path) && Fs.isDirectory(path), top = path == wb.props.display.cwd;
 		var items:Array<Element> = [];
 		var contributed = wb.extensionsPart.contributedMenu("explorer/context", path, folder ? "folder" : "file");
 		if (!folder && path != "")
@@ -353,7 +354,7 @@ class ExplorerPart {
 		var path = selectedPath();
 		if (path == null)
 			return wb.props.display.cwd;
-		return sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) ? path : haxe.io.Path.directory(path);
+		return Fs.exists(path) && Fs.isDirectory(path) ? path : haxe.io.Path.directory(path);
 	}
 
 	/** Puts what was cut or copied into `dir`: a copy takes a free name, and what was cut is moved, its tabs with it. */
@@ -363,7 +364,7 @@ class ExplorerPart {
 			return;
 		try {
 			for (p in held.paths) {
-				if (!sys.FileSystem.exists(p))
+				if (!Fs.exists(p))
 					continue;
 				if (held.cut) {
 					var to = FileOps.move(wb.props.display.cwd, p, dir);
@@ -535,7 +536,7 @@ class ExplorerPart {
 			if (args[i] == "--cwd") base = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([base, args[i + 1]]);
 			else if (args[i] == "-cp" || args[i] == "-p" || args[i] == "--class-path") {
 				var dir = haxe.io.Path.isAbsolute(args[i + 1]) ? args[i + 1] : haxe.io.Path.join([base, args[i + 1]]);
-				if (sys.FileSystem.exists(dir) && sys.FileSystem.isDirectory(dir))
+				if (Fs.exists(dir) && Fs.isDirectory(dir))
 					out.push({label: args[i + 1], dir: dir});
 			}
 		return out;
@@ -598,9 +599,9 @@ class ExplorerPart {
 
 	/** What is in `dir`, folders first, then Haxe files, then the rest, each by name. */
 	function explorerEntries(dir:String):Array<rayde.ui.ExplorerTree.ExplorerEntry> {
-		var names = try sys.FileSystem.readDirectory(dir) catch (_:Dynamic) [];
+		var names = try Fs.readDirectory(dir) catch (_:Dynamic) [];
 		var directories = new Map<String, Bool>();
-		for (name in names) directories.set(name, sys.FileSystem.isDirectory(haxe.io.Path.join([dir, name])));
+		for (name in names) directories.set(name, Fs.isDirectory(haxe.io.Path.join([dir, name])));
 		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;
 		names.sort((a, b) -> { var order = rank(a) - rank(b); return order == 0 ? Reflect.compare(a.toLowerCase(), b.toLowerCase()) : order; });
 		var entry = projectEntry(), out:Array<rayde.ui.ExplorerTree.ExplorerEntry> = [];

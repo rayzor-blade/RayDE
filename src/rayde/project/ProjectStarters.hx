@@ -1,5 +1,6 @@
 package rayde.project;
 
+import rayde.workspace.Fs;
 import rayde.ext.Manifest;
 import rayde.project.ProjectTemplates.ProjectTemplate;
 
@@ -37,9 +38,9 @@ class ProjectStarters {
 		var icon = text(data, "icon", "code", 240), iconPath:Null<String> = null;
 		if (StringTools.endsWith(icon.toLowerCase(), ".svg")) {
 			if (!ProjectTemplates.relativePath(icon)) throw "Starter icon must be relative to its extension";
-			var full = sys.FileSystem.fullPath(haxe.io.Path.join([manifest.root, icon]));
-			var root = haxe.io.Path.addTrailingSlash(sys.FileSystem.fullPath(manifest.root));
-			if (!StringTools.startsWith(full, root) || sys.FileSystem.isDirectory(full) || sys.FileSystem.stat(full).size > 64 * 1024) throw "Starter icon must be an SVG within the extension, at most 64 KiB";
+			var full = Fs.fullPath(haxe.io.Path.join([manifest.root, icon]));
+			var root = haxe.io.Path.addTrailingSlash(Fs.fullPath(manifest.root));
+			if (!StringTools.startsWith(full, root) || Fs.isDirectory(full) || Fs.stat(full).size > 64 * 1024) throw "Starter icon must be an SVG within the extension, at most 64 KiB";
 			iconPath = full;
 		}
 		var item:ProjectTemplate = {

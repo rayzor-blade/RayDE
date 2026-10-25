@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Icon;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
@@ -123,7 +124,7 @@ class Welcome extends Component<WelcomeProps> {
 	}
 
 	function projectRow(path:String):Element {
-		var folder = sys.FileSystem.isDirectory(path), root = folder ? path : haxe.io.Path.directory(path);
+		var folder = Fs.isDirectory(path), root = folder ? path : haxe.io.Path.directory(path);
 		return <div id={"welcome-project-" + props.projects.indexOf(path)} class="rayde-action flex items-center gap-3 px-2 py-2 cursor-pointer shrink-0" onClick={_ -> props.onProject(path)}>
 			<icon document={folder ? Icons.FOLDER_OPEN_LINE : Icons.FILE_CODE_LINE} class="size-4 shrink-0"/>
 			<div class="flex flex-col flex-1 min-w-0"><text class="text-sm">${haxe.io.Path.withoutDirectory(root)}</text>

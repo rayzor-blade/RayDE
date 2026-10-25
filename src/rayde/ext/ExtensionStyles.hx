@@ -1,5 +1,6 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
 import ashui.css.Css;
 import ashui.css.Stylesheet;
 
@@ -26,7 +27,7 @@ class ExtensionStyles {
 		return value.split("\\").join("\\\\").split('"').join('\\"');
 
 	static function key(m:Manifest):String
-		return fullPath(m.file) ?? haxe.io.Path.normalize(sys.FileSystem.absolutePath(m.file));
+		return fullPath(m.file) ?? haxe.io.Path.normalize(Fs.absolutePath(m.file));
 
 	static function token(m:Manifest):String
 		return haxe.crypto.Sha256.encode(key(m));
@@ -76,11 +77,11 @@ class ExtensionStyles {
 		for (path in m.styles) {
 			try {
 				var file = fullPath(haxe.io.Path.join([m.root, path]));
-				if (root == null || file == null || !StringTools.startsWith(file, root + "/") || sys.FileSystem.isDirectory(file))
+				if (root == null || file == null || !StringTools.startsWith(file, root + "/") || Fs.isDirectory(file))
 					throw "It must be a file inside the extension folder.";
-				if (sys.FileSystem.stat(file).size > LIMIT)
+				if (Fs.stat(file).size > LIMIT)
 					throw 'It exceeds ${LIMIT >> 10} KiB.';
-				var bytes = sys.io.File.getBytes(file);
+				var bytes = Fs.getBytes(file);
 				if (bytes.length > LIMIT)
 					throw 'It exceeds ${LIMIT >> 10} KiB.';
 				texts.push(bytes.toString());
@@ -124,7 +125,7 @@ class ExtensionStyles {
 
 	static function fullPath(path:String):Null<String> {
 		try
-			return haxe.io.Path.removeTrailingSlashes(haxe.io.Path.normalize(sys.FileSystem.fullPath(path)))
+			return haxe.io.Path.removeTrailingSlashes(haxe.io.Path.normalize(Fs.fullPath(path)))
 		catch (_:Dynamic)
 			return null;
 	}

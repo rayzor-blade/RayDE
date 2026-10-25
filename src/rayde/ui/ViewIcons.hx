@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import rayde.ext.Manifest;
 import rayde.ext.Manifest.ViewTool;
 
@@ -98,11 +99,11 @@ class ViewIcons {
 	}
 
 	static function file(path:Null<String>):Null<ashui.svg.SvgDocument> {
-		if (path == null || !sys.FileSystem.exists(path))
+		if (path == null || !Fs.exists(path))
 			return null;
-		var key = path + "@" + Std.string(sys.FileSystem.stat(path).mtime.getTime());
+		var key = path + "@" + Std.string(Fs.stat(path).mtime.getTime());
 		if (!read.exists(key))
-			read.set(key, try ashui.svg.SvgDocument.parse(sys.io.File.getContent(path)) catch (_:Dynamic) null);
+			read.set(key, try ashui.svg.SvgDocument.parse(Fs.getContent(path)) catch (_:Dynamic) null);
 		return read.get(key);
 	}
 

@@ -1,5 +1,7 @@
 package rayde.run;
 
+import rayde.workspace.Fs;
+
 /**
  * A command run in the background, its output going to a log file that is read
  * from as it grows, so polling never waits on the process. The command replaces
@@ -31,8 +33,8 @@ class Job {
 			worker = new OutputJob(line, log);
 			return;
 		}
-		sys.FileSystem.createDirectory(haxe.io.Path.directory(log));
-		sys.io.File.saveContent(log, "");
+		Fs.createDirectory(haxe.io.Path.directory(log));
+		Fs.saveContent(log, "");
 		offset = 0;
 		exit = null;
 		process = new sys.io.Process("/bin/sh", ["-c", line]);
@@ -57,12 +59,9 @@ class Job {
 	/** What the command has printed since the last call. */
 	public function read():String {
 		if (background) return worker == null ? "" : worker.read();
-		if (!sys.FileSystem.exists(log))
+		if (!Fs.exists(log))
 			return "";
-		var input = sys.io.File.read(log, true);
-		input.seek(offset, SeekBegin);
-		var bytes = input.readAll();
-		input.close();
+		var bytes = Fs.readFrom(log, offset);
 		offset += bytes.length;
 		return bytes.toString();
 	}

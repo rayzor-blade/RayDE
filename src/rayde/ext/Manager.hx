@@ -1,5 +1,6 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
 import rayde.ext.Connection.WorkspaceServices;
 import rayde.settings.Extensions;
 import rayde.settings.Extensions.Extension;
@@ -79,7 +80,7 @@ class Manager {
 		}
 		for (e in found) {
 			var m = e.manifest;
-			var c = new Connection(m.mainPath(), () -> sys.io.File.getContent(m.mainPath()), m);
+			var c = new Connection(m.mainPath(), () -> Fs.getContent(m.mainPath()), m);
 			c.services = services;
 			c.nativeAllowed = manifest -> e.scope == "Built-in" || NativeTrust.allApproved(manifest, options.trustHome);
 			var entry = new ManagedExtension(e, c);
@@ -317,19 +318,19 @@ class Manager {
 		if (pattern == "" || haxe.io.Path.isAbsolute(pattern) || pattern.split("/").indexOf("..") >= 0)
 			return false;
 		if (pattern.indexOf("*") < 0 && pattern.indexOf("?") < 0)
-			return sys.FileSystem.exists(haxe.io.Path.join([root, pattern]));
+			return Fs.exists(haxe.io.Path.join([root, pattern]));
 		var visited = new Map<String, Bool>();
 		function scan(dir:String, relative:String):Bool {
-			var real = sys.FileSystem.fullPath(dir);
+			var real = Fs.fullPath(dir);
 			if (visited.exists(real))
 				return false;
 			visited.set(real, true);
-			for (name in sys.FileSystem.readDirectory(dir)) {
+			for (name in Fs.readDirectory(dir)) {
 				var path = haxe.io.Path.join([dir, name]),
 					rel = relative == "" ? name : relative + "/" + name;
 				if (glob(pattern, rel))
 					return true;
-				if (name != ".git" && name != ".rayde" && name != "node_modules" && sys.FileSystem.isDirectory(path))
+				if (name != ".git" && name != ".rayde" && name != "node_modules" && Fs.isDirectory(path))
 					try {
 						if (scan(path, rel))
 							return true;

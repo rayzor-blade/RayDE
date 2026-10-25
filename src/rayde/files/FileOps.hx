@@ -1,5 +1,7 @@
 package rayde.files;
 
+import rayde.workspace.Fs;
+
 using StringTools;
 
 /**
@@ -46,9 +48,9 @@ class FileOps {
 		guard(root, dir);
 		check(name);
 		var path = haxe.io.Path.join([dir, name]);
-		if (sys.FileSystem.exists(path))
+		if (Fs.exists(path))
 			throw '$name is already there.';
-		sys.io.File.saveContent(path, "");
+		Fs.saveContent(path, "");
 		return path;
 	}
 
@@ -57,9 +59,9 @@ class FileOps {
 		guard(root, dir);
 		check(name);
 		var path = haxe.io.Path.join([dir, name]);
-		if (sys.FileSystem.exists(path))
+		if (Fs.exists(path))
 			throw '$name is already there.';
-		sys.FileSystem.createDirectory(path);
+		Fs.createDirectory(path);
 		return path;
 	}
 
@@ -71,20 +73,20 @@ class FileOps {
 		check(name);
 		var dir = haxe.io.Path.directory(haxe.io.Path.removeTrailingSlashes(path)), target = haxe.io.Path.join([dir, name]);
 		var same = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path)).toLowerCase() == name.toLowerCase();
-		if (sys.FileSystem.exists(target) && !same)
+		if (Fs.exists(target) && !same)
 			throw '$name is already there.';
-		sys.FileSystem.rename(path, target);
+		Fs.rename(path, target);
 		return target;
 	}
 
 	/** A name for a copy of `name` that is not taken in `dir`: `Main copy.hx`, then `Main copy 2.hx`; the name itself when it is free. */
 	public static function uniqueName(dir:String, name:String):String {
-		if (!sys.FileSystem.exists(haxe.io.Path.join([dir, name])))
+		if (!Fs.exists(haxe.io.Path.join([dir, name])))
 			return name;
 		var dot = name.lastIndexOf(".");
 		var base = dot > 0 ? name.substr(0, dot) : name, ext = dot > 0 ? name.substr(dot) : "";
 		var candidate = '$base copy$ext', n = 2;
-		while (sys.FileSystem.exists(haxe.io.Path.join([dir, candidate])))
+		while (Fs.exists(haxe.io.Path.join([dir, candidate])))
 		{
 			candidate = '$base copy $n$ext';
 			n++;
@@ -102,21 +104,21 @@ class FileOps {
 		var own = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(from));
 		var target = haxe.io.Path.join([dir, name == null ? own : name]);
 		check(name == null ? own : name);
-		if (sys.FileSystem.isDirectory(from) && isOrIn(from, dir))
+		if (Fs.isDirectory(from) && isOrIn(from, dir))
 			throw "A folder cannot be copied into itself.";
-		if (sys.FileSystem.exists(target))
+		if (Fs.exists(target))
 			throw '${haxe.io.Path.withoutDirectory(target)} is already there.';
 		copyTree(from, target);
 		return target;
 	}
 
 	static function copyTree(from:String, to:String):Void {
-		if (sys.FileSystem.isDirectory(from)) {
-			sys.FileSystem.createDirectory(to);
-			for (entry in sys.FileSystem.readDirectory(from))
+		if (Fs.isDirectory(from)) {
+			Fs.createDirectory(to);
+			for (entry in Fs.readDirectory(from))
 				copyTree(haxe.io.Path.join([from, entry]), haxe.io.Path.join([to, entry]));
 		} else
-			sys.io.File.copy(from, to);
+			Fs.copy(from, to);
 	}
 
 	/** Copies a file or folder beside itself under a name that is free, and gives the new path. */
@@ -133,11 +135,11 @@ class FileOps {
 		var target = haxe.io.Path.join([dir, own]);
 		if (haxe.io.Path.normalize(target) == haxe.io.Path.removeTrailingSlashes(haxe.io.Path.normalize(from)))
 			return from;
-		if (sys.FileSystem.isDirectory(from) && isOrIn(from, dir))
+		if (Fs.isDirectory(from) && isOrIn(from, dir))
 			throw "A folder cannot be moved into itself.";
-		if (sys.FileSystem.exists(target))
+		if (Fs.exists(target))
 			throw '$own is already there.';
-		sys.FileSystem.rename(from, target);
+		Fs.rename(from, target);
 		return target;
 	}
 
@@ -150,24 +152,24 @@ class FileOps {
 	}
 
 	static function remove(path:String):Void {
-		if (sys.FileSystem.isDirectory(path)) {
-			for (entry in sys.FileSystem.readDirectory(path))
+		if (Fs.isDirectory(path)) {
+			for (entry in Fs.readDirectory(path))
 				remove(haxe.io.Path.join([path, entry]));
-			sys.FileSystem.deleteDirectory(path);
+			Fs.deleteDirectory(path);
 		} else
-			sys.FileSystem.deleteFile(path);
+			Fs.deleteFile(path);
 	}
 
 	/** What deleting `path` would take, in a few words: the file, or the folder with the number of files in it. */
 	public static function summary(path:String):String {
 		var name = haxe.io.Path.withoutDirectory(haxe.io.Path.removeTrailingSlashes(path));
-		if (!sys.FileSystem.isDirectory(path))
+		if (!Fs.isDirectory(path))
 			return name;
 		var files = 0;
 		function walk(dir:String):Void
-			for (entry in sys.FileSystem.readDirectory(dir)) {
+			for (entry in Fs.readDirectory(dir)) {
 				var p = haxe.io.Path.join([dir, entry]);
-				if (sys.FileSystem.isDirectory(p))
+				if (Fs.isDirectory(p))
 					walk(p);
 				else
 					files++;
@@ -205,6 +207,6 @@ class FileOps {
 		switch Sys.systemName() {
 			case "Mac": Sys.command("open", ["-R", path]);
 			case "Windows": Sys.command("explorer", ["/select," + StringTools.replace(path, "/", "\\")]);
-			case _: Sys.command("xdg-open", [sys.FileSystem.isDirectory(path) ? path : haxe.io.Path.directory(path)]);
+			case _: Sys.command("xdg-open", [Fs.isDirectory(path) ? path : haxe.io.Path.directory(path)]);
 		}
 }

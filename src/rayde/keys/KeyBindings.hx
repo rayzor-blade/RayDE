@@ -1,5 +1,6 @@
 package rayde.keys;
 
+import rayde.workspace.Fs;
 import rayde.settings.Store;
 
 using StringTools;
@@ -71,8 +72,8 @@ class KeyBindings {
 		var chosen = Store.section(root, "keymap").preset;
 		var k = new KeyBindings(mac, chosen == null ? Keymaps.DEFAULT : Std.string(chosen));
 		try {
-			if (sys.FileSystem.exists(file(root))) {
-				var json:Dynamic = haxe.Json.parse(sys.io.File.getContent(file(root)));
+			if (Fs.exists(file(root))) {
+				var json:Dynamic = haxe.Json.parse(Fs.getContent(file(root)));
 				if (Std.isOfType(json, Array))
 					for (entry in (json : Array<Dynamic>)) {
 						if (entry == null || entry.command == null || entry.key == null)
@@ -97,14 +98,14 @@ class KeyBindings {
 		try {
 			var dir = haxe.io.Path.join([root, ".rayde"]);
 			if (changes.keys().hasNext()) {
-				if (!sys.FileSystem.exists(dir))
-					sys.FileSystem.createDirectory(dir);
+				if (!Fs.exists(dir))
+					Fs.createDirectory(dir);
 				var out = [
 					for (c in order) {command: c, key: changes.get(c) == null ? "" : changes.get(c).toString()}
 				];
-				sys.io.File.saveContent(file(root), haxe.Json.stringify(out, null, "\t") + "\n");
-			} else if (sys.FileSystem.exists(file(root)))
-				sys.FileSystem.deleteFile(file(root));
+				Fs.saveContent(file(root), haxe.Json.stringify(out, null, "\t") + "\n");
+			} else if (Fs.exists(file(root)))
+				Fs.deleteFile(file(root));
 		} catch (_:Dynamic) {}
 
 	function put(command:String, chord:Null<Chord>):Void {

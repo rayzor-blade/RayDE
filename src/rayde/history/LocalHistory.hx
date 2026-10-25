@@ -1,9 +1,8 @@
 package rayde.history;
 
+import rayde.workspace.Fs;
 import haxe.crypto.Sha256;
 import rayde.history.LineOwners.HistoryJournal;
-import sys.FileSystem;
-import sys.io.File;
 
 typedef Revision = {id:Int, parent:Int, time:Float, kind:String, from:Int, removed:String, inserted:String, ?author:String};
 typedef HistoryEntry = {id:Int, time:Float, kind:String, ?author:String};
@@ -28,9 +27,9 @@ class LocalHistory {
 		if (cached != null) return cached;
 		var now = Date.now().getTime(), data:Journal = {version:1, file:file, base:disk, baseId:0, baseTime:now, revisions:[], savedHash:Sha256.encode(disk), undo:null}, text = disk;
 		var name = path(file);
-		if (FileSystem.exists(name)) try {
-			if (FileSystem.stat(name).size > MAX_BYTES) throw "Local history file exceeds its size limit";
-			var saved:Journal = haxe.Json.parse(File.getContent(name));
+		if (Fs.exists(name)) try {
+			if (Fs.stat(name).size > MAX_BYTES) throw "Local history file exceeds its size limit";
+			var saved:Journal = haxe.Json.parse(Fs.getContent(name));
 			if (saved.version != 1 || saved.file != file || saved.base == null || saved.revisions == null || saved.revisions.length > MAX_ENTRIES) throw "Invalid local history";
 			text = saved.base;
 			var previous = saved.baseId;
@@ -139,8 +138,8 @@ class LocalHistory {
 				trim(item); text = haxe.Json.stringify(item.data);
 			}
 			if (haxe.io.Bytes.ofString(text).length > MAX_BYTES) throw "Local history exceeds the per-file size limit";
-			FileSystem.createDirectory(directory);
-			var name = path(file); File.saveContent(name + ".tmp", text); FileSystem.rename(name + ".tmp", name);
+			Fs.createDirectory(directory);
+			var name = path(file); Fs.saveContent(name + ".tmp", text); Fs.rename(name + ".tmp", name);
 			item.modified = false;
 		} catch (error:Dynamic) failed('Could not checkpoint local history for $file: $error');
 	}
@@ -148,8 +147,8 @@ class LocalHistory {
 	/** A renamed file keeps its journal, including when its editor has already been released. */
 	public function move(from:String, to:String):Void {
 		var names = files();
-		if (FileSystem.exists(directory)) for (name in FileSystem.readDirectory(directory)) if (StringTools.endsWith(name, ".json")) try {
-			var data:Dynamic = haxe.Json.parse(File.getContent(directory + "/" + name));
+		if (Fs.exists(directory)) for (name in Fs.readDirectory(directory)) if (StringTools.endsWith(name, ".json")) try {
+			var data:Dynamic = haxe.Json.parse(Fs.getContent(directory + "/" + name));
 			if (data.version == 1 && Std.isOfType(data.file, String) && names.indexOf(data.file) < 0) names.push(data.file);
 		} catch (_:Dynamic) {}
 		for (file in names) if (file == from || StringTools.startsWith(file, haxe.io.Path.addTrailingSlash(from))) {
@@ -158,7 +157,7 @@ class LocalHistory {
 			cache.set(next, item); flush(next);
 			if (!item.modified) {
 				cache.remove(file);
-				if (FileSystem.exists(path(file))) FileSystem.deleteFile(path(file));
+				if (Fs.exists(path(file))) Fs.deleteFile(path(file));
 			}
 		}
 	}

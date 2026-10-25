@@ -1,5 +1,7 @@
 package rayde.project;
 
+import rayde.workspace.Fs;
+
 /** What `caribou project --json` says about a `.cbproj`: Caribou's own reading of its project file. A workspace lists its members. */
 typedef CaribouInfo = {
 	dir:String,
@@ -33,7 +35,7 @@ class CaribouProject {
 		var name = Sys.systemName() == "Windows" ? "caribou.exe" : "caribou";
 		var program = haxe.io.Path.directory(Sys.programPath());
 		function existing(paths:Array<String>):Null<String> {
-			for (path in paths) if (sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) return sys.FileSystem.fullPath(path);
+			for (path in paths) if (Fs.exists(path) && !Fs.isDirectory(path)) return Fs.fullPath(path);
 			return null;
 		}
 		var bundled = existing([program + "/" + name, program + "/../Resources/" + name]);

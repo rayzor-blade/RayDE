@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
@@ -149,7 +150,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	function locate(name:String):Null<String> {
 		for (cp in props.file.values("-cp")) {
 			var path = haxe.io.Path.join([folderPath(cp), name.split(".").join("/") + ".hx"]);
-			if (sys.FileSystem.exists(path))
+			if (Fs.exists(path))
 				return path;
 		}
 		return null;
@@ -167,7 +168,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 
 	function folderFields():Array<Element> {
 		var cps = props.file.values("-cp");
-		var out:Array<Element> = [for (cp in cps) row(Icons.FOLDER_LINE, cp, sys.FileSystem.exists(folderPath(cp)) ? null : "Not found", () -> change(() -> props.file.remove("-cp", cp)))];
+		var out:Array<Element> = [for (cp in cps) row(Icons.FOLDER_LINE, cp, Fs.exists(folderPath(cp)) ? null : "Not found", () -> change(() -> props.file.remove("-cp", cp)))];
 		if (cps.length == 0)
 			out.push(<text class="text-xs text-text-tertiary">No class paths. The compiler searches only the working directory.</text>);
 		out.push(adder(newFolder, "Add a class path", "rayde-build-folder", () -> addFolder(newFolder.get())));
@@ -188,11 +189,11 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	/** Folders just under the project's that hold Haxe files and are not source folders yet. */
 	function suggestedFolders(taken:Array<String>):Array<String> {
 		var out = [];
-		var names = sys.FileSystem.readDirectory(props.root);
+		var names = Fs.readDirectory(props.root);
 		names.sort(Reflect.compare);
 		for (name in names) {
 			var path = haxe.io.Path.join([props.root, name]);
-			if (!name.startsWith(".") && sys.FileSystem.isDirectory(path) && taken.indexOf(name) < 0 && holdsHaxe(path, 3))
+			if (!name.startsWith(".") && Fs.isDirectory(path) && taken.indexOf(name) < 0 && holdsHaxe(path, 3))
 				out.push(name);
 		}
 		return out;
@@ -201,11 +202,11 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	function holdsHaxe(dir:String, depth:Int):Bool {
 		if (depth == 0)
 			return false;
-		for (name in sys.FileSystem.readDirectory(dir)) {
+		for (name in Fs.readDirectory(dir)) {
 			var path = haxe.io.Path.join([dir, name]);
 			if (name.startsWith("."))
 				continue;
-			if (sys.FileSystem.isDirectory(path) ? holdsHaxe(path, depth - 1) : name.endsWith(".hx"))
+			if (Fs.isDirectory(path) ? holdsHaxe(path, depth - 1) : name.endsWith(".hx"))
 				return true;
 		}
 		return false;

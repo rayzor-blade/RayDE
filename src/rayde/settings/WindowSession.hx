@@ -1,5 +1,7 @@
 package rayde.settings;
 
+import rayde.workspace.Fs;
+
 /** The workspaces open together; each workspace stores its own tab session. */
 class WindowSession {
 	public static function read(?home:String):Null<Array<Null<String>>> {
@@ -9,7 +11,7 @@ class WindowSession {
 		for (entry in (data.entries:Array<Dynamic>)) {
 			if (entry == null) entries.push(null);
 			else if (Std.isOfType(entry, String) && haxe.io.Path.isAbsolute(entry))
-				try { if (sys.FileSystem.exists(entry)) entries.push(entry); } catch (_:Dynamic) {}
+				try { if (Fs.exists(entry)) entries.push(entry); } catch (_:Dynamic) {}
 		}
 		return entries;
 	}

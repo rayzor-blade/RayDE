@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -98,7 +99,7 @@ class ThemePart {
 		var studio = new ThemeStudio(file, () -> wb.documentsPart.buffer(file).get(), text -> {
 			wb.documentsPart.localHistory.record(file, wb.documentsPart.buffer(file).get(), text, null, "Theme edit");
 			wb.documentsPart.buffer(file).set(text);
-			sys.io.File.saveContent(file, text);
+			Fs.saveContent(file, text);
 			wb.documentsPart.localHistory.saved(file, text, null);
 			wb.dirty.set([for (d in wb.dirty.get()) if (d != file) d]);
 		}, () -> wb.appearance);

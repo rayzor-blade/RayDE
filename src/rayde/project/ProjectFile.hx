@@ -1,9 +1,8 @@
 package rayde.project;
 
+import rayde.workspace.Fs;
 import haxe.io.Path;
 import rayde.lang.Hxml;
-import sys.FileSystem;
-import sys.io.File;
 
 /** Project entry metadata and compiler inputs, independent of views and editor buffers. */
 class ProjectFile {
@@ -34,8 +33,8 @@ class ProjectFile {
 	}
 
 	public static function read(file:String):ProjectFile {
-		file = FileSystem.fullPath(file);
-		if (FileSystem.isDirectory(file)) {
+		file = Fs.fullPath(file);
+		if (Fs.isDirectory(file)) {
 			var workspace = new ProjectFile(file, true);
 			workspace.kind = "folder"; workspace.runtime = ""; workspace.runnable = false;
 			return workspace;
@@ -55,8 +54,8 @@ class ProjectFile {
 			project.members = info.files.length > 0 ? info.files : [for (member in info.members) haxe.io.Path.join([member.dir, member.name + ".cbproj"])];
 			return project;
 		}
-		if (FileSystem.stat(file).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";
-		var source = File.getContent(file);
+		if (Fs.stat(file).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";
+		var source = Fs.getContent(file);
 		if (name == "haxelib.json") {
 			var data:Dynamic = haxe.Json.parse(source);
 			project.kind = "haxelib"; project.runnable = false;
@@ -68,7 +67,7 @@ class ProjectFile {
 				project.args = project.args.concat(["-L", library + (version == "" ? "" : ":" + version)]);
 			}
 			var extra = project.root + "/extraParams.hxml";
-			if (FileSystem.exists(extra)) project.args = project.args.concat(Hxml.read(extra));
+			if (Fs.exists(extra)) project.args = project.args.concat(Hxml.read(extra));
 			return project;
 		}
 		var bytes = haxe.io.Bytes.ofString(source), data = unpack(tomlNative(bytes.getData(), bytes.length)).value;
@@ -144,15 +143,15 @@ class ProjectFile {
 		if (!validName(name)) throw "Use a project name starting with a letter, followed by letters, numbers, hyphens or underscores (up to 64 characters)";
 		var scaffold = starter == null ? ProjectTemplates.scaffold(kind, name) : ProjectTemplates.instantiate(starter, name);
 		ProjectTemplates.validate(scaffold);
-		parent = FileSystem.fullPath(parent);
-		if (!FileSystem.isDirectory(parent)) throw "Choose a parent folder";
+		parent = Fs.fullPath(parent);
+		if (!Fs.isDirectory(parent)) throw "Choose a parent folder";
 		var root = Path.join([parent, name]), bytes = haxe.io.Bytes.ofString(root);
 		unpack(directoryNative(bytes.getData(), bytes.length));
 		var written:Array<String> = [], directories:Array<String> = [];
 		function directory(path:String):Void {
-			if (path == root || FileSystem.exists(path)) return;
+			if (path == root || Fs.exists(path)) return;
 			directory(Path.directory(path));
-			FileSystem.createDirectory(path);
+			Fs.createDirectory(path);
 			directories.push(path);
 		}
 		try {
@@ -161,14 +160,14 @@ class ProjectFile {
 				var file = root + "/" + path;
 				directory(Path.directory(file));
 				written.push(file);
-				File.saveContent(file, text);
+				Fs.saveContent(file, text);
 			}
 			return scaffold.entry == "" ? root : root + "/" + scaffold.entry;
 		} catch (error:Dynamic) {
-			for (file in written) try FileSystem.deleteFile(file) catch (_:Dynamic) {}
+			for (file in written) try Fs.deleteFile(file) catch (_:Dynamic) {}
 			directories.reverse();
-			for (path in directories) try FileSystem.deleteDirectory(path) catch (_:Dynamic) {}
-			try FileSystem.deleteDirectory(root) catch (_:Dynamic) {}
+			for (path in directories) try Fs.deleteDirectory(path) catch (_:Dynamic) {}
+			try Fs.deleteDirectory(root) catch (_:Dynamic) {}
 			throw error;
 		}
 	}

@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -109,7 +110,7 @@ class DocumentsPart {
 		if (ImagePreview.isRaster(file)) throw "Image files are not text documents";
 		var b = buffers.get(file);
 		if (b == null) {
-			var disk = sys.io.File.getContent(file), recovered = localHistory.recover(file, disk);
+			var disk = Fs.getContent(file), recovered = localHistory.recover(file, disk);
 			b = Signal.make(recovered);
 			buffers.set(file, b);
 			if (recovered != disk && wb.dirty.get().indexOf(file) < 0) {

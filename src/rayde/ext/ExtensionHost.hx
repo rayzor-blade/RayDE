@@ -1,5 +1,7 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
+
 /** Script-only VMs stay embedded; native extensions use an individually supervised process. */
 class ExtensionHost {
 	public var state(default, null) = "idle";
@@ -98,9 +100,9 @@ class ExtensionHost {
 	static function hostBinary():String {
 		// Resolve beside the program, never through a workspace-controlled PATH or current directory.
 		var name = Sys.systemName() == "Windows" ? "rayde-extension-host.exe" : "rayde-extension-host";
-		var program = haxe.io.Path.directory(sys.FileSystem.fullPath(Sys.programPath()));
+		var program = haxe.io.Path.directory(Fs.fullPath(Sys.programPath()));
 		for (path in [program + "/" + name, program + "/../Resources/" + name])
-			if (sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) return sys.FileSystem.fullPath(path);
+			if (Fs.exists(path) && !Fs.isDirectory(path)) return Fs.fullPath(path);
 		throw "The packaged native extension host is missing: " + name;
 	}
 

@@ -1,5 +1,6 @@
 package rayde.settings;
 
+import rayde.workspace.Fs;
 import rayde.ext.Manifest;
 
 /** An extension folder as found: what its manifest says, where it is, and what is wrong with it. */
@@ -22,7 +23,7 @@ class Extensions {
 			haxe.io.Path.join([Sys.getCwd(), "extensions"])
 		];
 		for (path in candidates)
-			if (sys.FileSystem.exists(path))
+			if (Fs.exists(path))
 				return haxe.io.Path.normalize(path);
 		return candidates[0];
 	}
@@ -66,21 +67,21 @@ class Extensions {
 	}
 
 	static function scan(dir:String, scope:String, out:Array<Extension>):Void {
-		if (!sys.FileSystem.exists(dir) || !sys.FileSystem.isDirectory(dir))
+		if (!Fs.exists(dir) || !Fs.isDirectory(dir))
 			return;
-		var names = sys.FileSystem.readDirectory(dir);
+		var names = Fs.readDirectory(dir);
 		names.sort(Reflect.compare);
 		for (name in names) {
 			var folder = haxe.io.Path.join([dir, name]);
-			if (name.charAt(0) == "." || !sys.FileSystem.isDirectory(folder))
+			if (name.charAt(0) == "." || !Fs.isDirectory(folder))
 				continue;
-			var configs = [for (f in sys.FileSystem.readDirectory(folder)) if (Manifest.isManifest(f)) f];
+			var configs = [for (f in Fs.readDirectory(folder)) if (Manifest.isManifest(f)) f];
 			if (configs.length == 0)
 				continue;
 			configs.sort(Reflect.compare);
 			var m = Manifest.read(haxe.io.Path.join([folder, configs[0]]));
-			if (scope == "Built-in" && (!StringTools.startsWith(sys.FileSystem.fullPath(folder) + "/", sys.FileSystem.fullPath(dir) + "/")
-				|| !StringTools.startsWith(m.file, sys.FileSystem.fullPath(folder) + "/")))
+			if (scope == "Built-in" && (!StringTools.startsWith(Fs.fullPath(folder) + "/", Fs.fullPath(dir) + "/")
+				|| !StringTools.startsWith(m.file, Fs.fullPath(folder) + "/")))
 				m.problems.push("Built-in extension escapes its install directory.");
 			out.push({
 				id: m.id,

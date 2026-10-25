@@ -1,5 +1,7 @@
 package rayde.theme;
 
+import rayde.workspace.Fs;
+
 /** A theme found on disk: its file, and where it was found. */
 typedef InstalledTheme = {file:ThemeFile, scope:String, path:String};
 
@@ -44,9 +46,9 @@ class Themes {
 		return Lambda.find(found, t -> t.file.id == id);
 
 	static function look(dir:String, scope:String, out:Array<InstalledTheme>):Void {
-		if (!sys.FileSystem.exists(dir) || !sys.FileSystem.isDirectory(dir))
+		if (!Fs.exists(dir) || !Fs.isDirectory(dir))
 			return;
-		var names = sys.FileSystem.readDirectory(dir);
+		var names = Fs.readDirectory(dir);
 		names.sort(Reflect.compare);
 		var add = (path:String) -> {
 			var t = ThemeFile.read(path);
@@ -57,8 +59,8 @@ class Themes {
 			var path = haxe.io.Path.join([dir, name]);
 			if (name.charAt(0) == ".")
 				continue;
-			if (sys.FileSystem.isDirectory(path)) {
-				var files = [for (f in sys.FileSystem.readDirectory(path)) if (ThemeFile.isThemeFile(f)) f];
+			if (Fs.isDirectory(path)) {
+				var files = [for (f in Fs.readDirectory(path)) if (ThemeFile.isThemeFile(f)) f];
 				files.sort(Reflect.compare);
 				if (files.length > 0)
 					add(haxe.io.Path.join([path, files[0]]));
@@ -78,13 +80,13 @@ class Themes {
 			problems.push("There is no home folder to install into; set RAYDE_THEMES to a folder.");
 			return null;
 		}
-		if (!sys.FileSystem.exists(source)) {
+		if (!Fs.exists(source)) {
 			problems.push('Nothing at $source.');
 			return null;
 		}
 		var file = source, folder = false;
-		if (sys.FileSystem.isDirectory(source)) {
-			var files = [for (f in sys.FileSystem.readDirectory(source)) if (ThemeFile.isThemeFile(f)) f];
+		if (Fs.isDirectory(source)) {
+			var files = [for (f in Fs.readDirectory(source)) if (ThemeFile.isThemeFile(f)) f];
 			files.sort(Reflect.compare);
 			if (files.length == 0) {
 				problems.push('No ${ThemeFile.EXTENSION} file in $source.');
@@ -103,7 +105,7 @@ class Themes {
 			return null;
 		}
 		var target = haxe.io.Path.join([user, theme.id]);
-		if (sys.FileSystem.exists(target))
+		if (Fs.exists(target))
 			deleteTree(target);
 		ensure(user);
 		copyTree(folder ? source : haxe.io.Path.directory(file), target, folder ? null : file, theme);
@@ -118,7 +120,7 @@ class Themes {
 			return false;
 		var folder = haxe.io.Path.directory(t.path);
 		if (haxe.io.Path.normalize(folder) == haxe.io.Path.normalize(user))
-			sys.FileSystem.deleteFile(t.path);
+			Fs.deleteFile(t.path);
 		else
 			deleteTree(folder);
 		found = found.filter(x -> x.file.id != id);
@@ -129,7 +131,7 @@ class Themes {
 		ensure(to);
 		if (only != null) {
 			// A loose file brings only itself, the stylesheets it names and its fonts.
-			sys.io.File.copy(only, haxe.io.Path.join([to, haxe.io.Path.withoutDirectory(only)]));
+			Fs.copy(only, haxe.io.Path.join([to, haxe.io.Path.withoutDirectory(only)]));
 			var named = [for (s in theme.css) if (s.file != null) s.file];
 			for (f in theme.fonts)
 				for (name in f.files)
@@ -137,35 +139,35 @@ class Themes {
 			for (name in named) {
 				var target = haxe.io.Path.join([to, name]);
 				ensure(haxe.io.Path.directory(target));
-				sys.io.File.copy(haxe.io.Path.join([from, name]), target);
+				Fs.copy(haxe.io.Path.join([from, name]), target);
 			}
 			return;
 		}
-		for (name in sys.FileSystem.readDirectory(from)) {
+		for (name in Fs.readDirectory(from)) {
 			if (name.charAt(0) == ".")
 				continue;
 			var source = haxe.io.Path.join([from, name]), target = haxe.io.Path.join([to, name]);
-			if (sys.FileSystem.isDirectory(source))
+			if (Fs.isDirectory(source))
 				copyTree(source, target, null, theme);
 			else
-				sys.io.File.copy(source, target);
+				Fs.copy(source, target);
 		}
 	}
 
 	/** Makes `dir` and the folders above it that are missing. */
 	public static function ensure(dir:String):Void {
-		if (dir == "" || sys.FileSystem.exists(dir))
+		if (dir == "" || Fs.exists(dir))
 			return;
 		ensure(haxe.io.Path.directory(dir));
-		sys.FileSystem.createDirectory(dir);
+		Fs.createDirectory(dir);
 	}
 
 	static function deleteTree(path:String):Void {
-		if (sys.FileSystem.isDirectory(path)) {
-			for (entry in sys.FileSystem.readDirectory(path))
+		if (Fs.isDirectory(path)) {
+			for (entry in Fs.readDirectory(path))
 				deleteTree(haxe.io.Path.join([path, entry]));
-			sys.FileSystem.deleteDirectory(path);
+			Fs.deleteDirectory(path);
 		} else
-			sys.FileSystem.deleteFile(path);
+			Fs.deleteFile(path);
 	}
 }

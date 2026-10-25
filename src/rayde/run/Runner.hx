@@ -1,5 +1,6 @@
 package rayde.run;
 
+import rayde.workspace.Fs;
 import rayde.lang.CompilerServer;
 import rayde.lang.Display;
 
@@ -56,7 +57,7 @@ class Runner {
 		}
 		if (display.project != null && display.project.runtime == "caribou") {
 			if (!display.project.runnable) { building = false; state = "failed"; exitCode = 1; append("A workspace has no project to build. Open one of its members.\n"); return; }
-			sys.FileSystem.createDirectory(out);
+			Fs.createDirectory(out);
 			state = "building"; append("Building with Caribou…\n");
 			launchCaribou("build", "build.log");
 			return;
@@ -90,21 +91,21 @@ class Runner {
 			state = "failed"; append("This project has no application entry point. Open a runnable build to use Run.\n"); return;
 		}
 		if (display.project != null && display.project.runtime == "caribou") {
-			sys.FileSystem.createDirectory(out);
+			Fs.createDirectory(out);
 			building = false; state = "running"; append("Running with Caribou…\n");
 			launchCaribou("run", "run.log");
 			return;
 		}
 		if (display.project != null && display.project.runtime == "rayzor") {
-			sys.FileSystem.createDirectory(out);
+			Fs.createDirectory(out);
 			building = false; state = "running"; append("Running with Rayzor…\n");
 			job = new Job(rayde.lang.RayzorBinary.find() ?? "rayzor", ["run"], haxe.io.Path.join([out, "run.log"]), null, display.cwd, true);
 			job.start(); return;
 		}
 		display.server.ensure();
-		if (sys.FileSystem.exists(program()))
-			sys.FileSystem.deleteFile(program());
-		sys.FileSystem.createDirectory(out);
+		if (Fs.exists(program()))
+			Fs.deleteFile(program());
+		Fs.createDirectory(out);
 		building = true;
 		state = "building";
 		append("Building…\n");
@@ -156,7 +157,7 @@ class Runner {
 				append(code == 0 ? "Build succeeded.\n" : "Build failed with " + code + ".\n");
 				return;
 			}
-			if (code != 0 || !sys.FileSystem.exists(program())) {
+			if (code != 0 || !Fs.exists(program())) {
 				state = "failed";
 				append("The build did not make a program.\n");
 				return;
@@ -177,7 +178,7 @@ class Runner {
 		var caribou = rayde.project.CaribouProject.binary() ?? "caribou";
 		diagnostics = haxe.io.Path.join([out, "diagnostics.jsonl"]);
 		diagnosticsSize = -1;
-		if (sys.FileSystem.exists(diagnostics)) sys.FileSystem.deleteFile(diagnostics);
+		if (Fs.exists(diagnostics)) Fs.deleteFile(diagnostics);
 		building = command == "build";
 		job = new Job(caribou, [command, "--diagnostics", diagnostics, display.project.file], haxe.io.Path.join([out, log]), null, display.cwd, true);
 		job.start();
@@ -185,11 +186,11 @@ class Runner {
 
 	/** Takes the findings Caribou has written so far, when the file has grown. */
 	function readDiagnostics():Void {
-		if (diagnostics == null || !sys.FileSystem.exists(diagnostics)) return;
-		var size = sys.FileSystem.stat(diagnostics).size;
+		if (diagnostics == null || !Fs.exists(diagnostics)) return;
+		var size = Fs.stat(diagnostics).size;
 		if (size == diagnosticsSize) return;
 		diagnosticsSize = size;
-		problems = CaribouDiagnostics.parse(sys.io.File.getContent(diagnostics));
+		problems = CaribouDiagnostics.parse(Fs.getContent(diagnostics));
 		revision++;
 	}
 

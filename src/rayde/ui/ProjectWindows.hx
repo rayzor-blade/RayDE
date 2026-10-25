@@ -1,6 +1,7 @@
 package rayde.ui;
 
 #if ashui_window
+import rayde.workspace.Fs;
 import ashui.app.WindowConfig;
 import ashui.app.WindowedApp;
 import ashui.reactive.Owner;
@@ -81,7 +82,7 @@ class ProjectWindows {
 	static function prepare(entry:Null<String>):PreparedWindow {
 		var server = new CompilerServer();
 		var workspace = WorkspaceWindow.describe(server, entry);
-		if (entry != null) entry = sys.FileSystem.fullPath(entry);
+		if (entry != null) entry = Fs.fullPath(entry);
 		var appearance = rayde.settings.Appearance.read(workspace.display.cwd);
 		if (entry != null)
 			rayde.settings.RecentProjects.remember(entry);

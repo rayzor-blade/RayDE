@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.canvaskit.CanvasKit;
 import ashui.canvaskit.Viewport2D;
 import ashui.components.Button;
@@ -67,11 +68,11 @@ class ImagePreview extends Component<ImagePreviewProps> {
 	function surface(source:Null<String>, ?converted:haxe.io.Bytes):Element {
 		available.set(false);
 		try {
-			var picture:Element, file = props.file, size = sys.FileSystem.stat(file).size;
+			var picture:Element, file = props.file, size = Fs.stat(file).size;
 			if (converted == null && extraCodec(file)) {
 				info.set(haxe.io.Path.withoutDirectory(file));
 				var result = Signal.make((null:{bytes:Null<haxe.io.Bytes>, error:Null<String>}));
-				Owner.onCleanup(RasterDecode.start(sys.io.File.getBytes(file), haxe.io.Path.extension(file).toLowerCase() == "avif", (bytes, error) -> result.set({bytes:bytes,error:error})));
+				Owner.onCleanup(RasterDecode.start(Fs.getBytes(file), haxe.io.Path.extension(file).toLowerCase() == "avif", (bytes, error) -> result.set({bytes:bytes,error:error})));
 				return <for {decoded in [result.get()]}>{
 					if (decoded == null) <div id="rayde-image-loading" class="flex flex-1 items-center justify-center"><text class="text-sm text-text-secondary">Loading image…</text></div>;
 					else if (decoded.error != null) failure(decoded.error);
@@ -83,12 +84,12 @@ class ImagePreview extends Component<ImagePreviewProps> {
 				}</for>;
 			}
 			if (isSvg(file)) {
-				var doc = SvgDocuments.acquire(source == null ? sys.io.File.getContent(file) : source);
+				var doc = SvgDocuments.acquire(source == null ? Fs.getContent(file) : source);
 				Owner.onCleanup(() -> SvgDocuments.release(doc));
 				dimensions = {width:doc.width, height:doc.height};
 				picture = new ashui.ui.Svg(doc, {width:(doc.width:Single), height:(doc.height:Single)});
 			} else {
-				var image = ashui.types.Bitmap.fromBytes(converted == null ? sys.io.File.getBytes(file) : converted);
+				var image = ashui.types.Bitmap.fromBytes(converted == null ? Fs.getBytes(file) : converted);
 				// Converted PNG bytes are transient; a remounted preview decodes its original file again.
 				if (converted != null) @:privateAccess image.encoded = null;
 				bitmap = image;

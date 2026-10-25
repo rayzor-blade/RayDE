@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.TreeView;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
@@ -44,7 +45,7 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 						var path = line.trim();
 						if (path != "" && !path.startsWith("-")) {
 							if (!haxe.io.Path.isAbsolute(path)) path = haxe.io.Path.join([props.root, path]);
-							if (sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) && paths.indexOf(path) < 0) paths.push(path);
+							if (Fs.exists(path) && Fs.isDirectory(path) && paths.indexOf(path) < 0) paths.push(path);
 						}
 					}
 					initial[index] = {entry:lib.entry, name:lib.name, version:lib.version, paths:paths, error:paths.length == 0 ? "Library sources unavailable; check Libraries settings" : ""};
@@ -56,7 +57,7 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 		});
 		return <div id="rayde-dependencies-scroll" class="flex flex-col flex-1 min-h-0 overflow-auto">
 			<if {message.get() != ""}><div class="px-3 py-2"><text class="text-xs text-text-secondary">${message.get()}</text></div></if>
-			<for {items in [rows.get()]}><tree-view id="rayde-dependencies-tree" onSelect={path -> { if (haxe.io.Path.isAbsolute(path) && sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) props.onOpen(path); }}>{[for (folder in props.folders) directory(folder.dir, folder.label)].concat([for (lib in items) library(lib)])}</tree-view></for>
+			<for {items in [rows.get()]}><tree-view id="rayde-dependencies-tree" onSelect={path -> { if (haxe.io.Path.isAbsolute(path) && Fs.exists(path) && !Fs.isDirectory(path)) props.onOpen(path); }}>{[for (folder in props.folders) directory(folder.dir, folder.label)].concat([for (lib in items) library(lib)])}</tree-view></for>
 		</div>;
 	}
 
@@ -73,11 +74,11 @@ class ExplorerDependencies extends Component<ExplorerDependenciesProps> {
 		return <tree-item id={"rayde-library-" + haxe.crypto.Md5.encode(path)} value={path} label={label} icon={Icons.FOLDER_LINE} load={() -> childrenOf(path)}/>;
 
 	function childrenOf(path:String):Array<Element> {
-		var names = try sys.FileSystem.readDirectory(path) catch (_:Dynamic) [];
+		var names = try Fs.readDirectory(path) catch (_:Dynamic) [];
 		names.sort(Reflect.compare);
 		return [for (name in names) {
 			var full = haxe.io.Path.join([path, name]);
-			sys.FileSystem.isDirectory(full) ? directory(full, name) : <tree-item id={"rayde-library-file-" + haxe.crypto.Md5.encode(full)} value={full} label={name} icon={FileIcons.of(full)}/>;
+			Fs.isDirectory(full) ? directory(full, name) : <tree-item id={"rayde-library-file-" + haxe.crypto.Md5.encode(full)} value={full} label={name} icon={FileIcons.of(full)}/>;
 		}];
 	}
 }

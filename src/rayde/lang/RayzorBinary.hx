@@ -1,9 +1,11 @@
 package rayde.lang;
 
+import rayde.workspace.Fs;
+
 /** Finds the packaged server, an installed server, or the existing sibling development build. */
 class RayzorBinary {
 	static function existing(paths:Array<String>):Null<String> {
-		for (path in paths) if (sys.FileSystem.exists(path) && !sys.FileSystem.isDirectory(path)) return sys.FileSystem.fullPath(path);
+		for (path in paths) if (Fs.exists(path) && !Fs.isDirectory(path)) return Fs.fullPath(path);
 		return null;
 	}
 
@@ -28,7 +30,7 @@ class RayzorBinary {
 		for (_ in 0...6) {
 			for (suffix in ["haxe-std", "compiler/haxe-std"]) {
 				var path = haxe.io.Path.normalize(dir + "/" + suffix);
-				if (sys.FileSystem.exists(path + "/Std.hx")) return sys.FileSystem.fullPath(path);
+				if (Fs.exists(path + "/Std.hx")) return Fs.fullPath(path);
 			}
 			var parent = haxe.io.Path.directory(dir);
 			if (parent == dir || parent == "") break;

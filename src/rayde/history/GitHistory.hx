@@ -1,8 +1,7 @@
 package rayde.history;
 
+import rayde.workspace.Fs;
 import haxe.io.Path;
-import sys.FileSystem;
-import sys.io.File;
 import rayde.history.LineOwners.OwnedText;
 
 typedef GitRevision = {id:String, label:String, author:String};
@@ -41,14 +40,14 @@ class GitHistory {
 			while ((code = process.exitCode(false)) == null) {
 				if (cancelled() || haxe.Timer.stamp() > until)
 					throw cancelled() ? "Cancelled" : "Git history timed out";
-				if (FileSystem.exists(log) && FileSystem.stat(log).size > MAX_BYTES)
+				if (Fs.exists(log) && Fs.stat(log).size > MAX_BYTES)
 					throw "File history exceeds the preview size limit";
 				Sys.sleep(.015);
 			}
-			if (FileSystem.exists(log)) {
-				if (FileSystem.stat(log).size > MAX_BYTES)
+			if (Fs.exists(log)) {
+				if (Fs.stat(log).size > MAX_BYTES)
 					throw "File history exceeds the preview size limit";
-				result = File.getContent(log);
+				result = Fs.getContent(log);
 			}
 			if (code != 0)
 				throw StringTools.trim(result);
@@ -63,9 +62,9 @@ class GitHistory {
 				process.close()
 			catch (_:Dynamic) {}
 		}
-		if (FileSystem.exists(log))
+		if (Fs.exists(log))
 			try
-				FileSystem.deleteFile(log)
+				Fs.deleteFile(log)
 			catch (_:Dynamic) {}
 		if (failure != null)
 			throw failure;

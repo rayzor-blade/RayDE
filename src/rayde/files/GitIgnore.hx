@@ -1,7 +1,7 @@
 package rayde.files;
 
+import rayde.workspace.Fs;
 import haxe.io.Path;
-import sys.FileSystem;
 
 using StringTools;
 
@@ -29,7 +29,7 @@ class GitIgnore {
 		searched = true;
 		var dir = root;
 		while (true) {
-			if (FileSystem.exists(dir + "/.git")) return repository = dir;
+			if (Fs.exists(dir + "/.git")) return repository = dir;
 			var up = Path.directory(dir);
 			if (up == dir || up == "") return null;
 			dir = up;
@@ -59,7 +59,7 @@ class GitIgnore {
 		for (i in 0...parts.length) {
 			at = at == "" ? parts[i] : at + "/" + parts[i];
 			if (parts[i] == ".git") return true;
-			var directory = i < parts.length - 1 || FileSystem.isDirectory(full);
+			var directory = i < parts.length - 1 || Fs.isDirectory(full);
 			if (matches(base, at, directory)) return true;
 		}
 		return false;
@@ -89,17 +89,17 @@ class GitIgnore {
 	function rulesOf(file:String, scope:String):Array<Rule> {
 		var known = parsed.get(file);
 		if (known != null && known.generation == generation) return known.rules;
-		if (!FileSystem.exists(file) || FileSystem.isDirectory(file)) {
+		if (!Fs.exists(file) || Fs.isDirectory(file)) {
 			parsed.set(file, {stamp: "", rules: [], generation: generation});
 			return [];
 		}
-		var stat = FileSystem.stat(file), stamp = Std.string(stat.mtime.getTime()) + ":" + stat.size;
+		var stat = Fs.stat(file), stamp = Std.string(stat.mtime.getTime()) + ":" + stat.size;
 		if (known != null && known.stamp == stamp) {
 			known.generation = generation;
 			return known.rules;
 		}
 		var rules = [];
-		for (line in sys.io.File.getContent(file).split("\n")) {
+		for (line in Fs.getContent(file).split("\n")) {
 			var rule = parse(line, scope);
 			if (rule != null) rules.push(rule);
 		}

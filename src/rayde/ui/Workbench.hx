@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -394,7 +395,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function restorableTab(file:String):Bool
-		return persistableTab(file) && (isVirtual(file) || sys.FileSystem.exists(file) && !sys.FileSystem.isDirectory(file));
+		return persistableTab(file) && (isVirtual(file) || Fs.exists(file) && !Fs.isDirectory(file));
 
 	function sessionSnapshot():TabSession {
 		var files = [for (file in open.get()) if (persistableTab(file)) isVirtual(file) ? file : relative(file)];
@@ -497,7 +498,7 @@ class Workbench extends Component<WorkbenchProps> {
 		explorerPart.dependenciesRevision.set(explorerPart.dependenciesRevision.get() + 1);
 		var manifest = projectManifest();
 		if (manifest != null && documentsPart.buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0)
-			documentsPart.buffers.get(manifest).set(sys.io.File.getContent(manifest));
+			documentsPart.buffers.get(manifest).set(Fs.getContent(manifest));
 		buildRevision.set(buildRevision.get() + 1);
 		for (file in open.get())
 			if (file != SETTINGS)
@@ -583,10 +584,10 @@ class Workbench extends Component<WorkbenchProps> {
 
 	function loadRecent():Void {
 		var list = [];
-		if (sys.FileSystem.exists(recentFile()))
-			for (line in sys.io.File.getContent(recentFile()).split("\n")) {
+		if (Fs.exists(recentFile()))
+			for (line in Fs.getContent(recentFile()).split("\n")) {
 				var path = haxe.io.Path.join([props.display.cwd, line]);
-				if (line != "" && sys.FileSystem.exists(path))
+				if (line != "" && Fs.exists(path))
 					list.push(path);
 			}
 		recent.set(list);
@@ -598,9 +599,9 @@ class Workbench extends Component<WorkbenchProps> {
 		recent.set(list);
 		try {
 			var dir = haxe.io.Path.join([props.display.cwd, ".rayde"]);
-			if (!sys.FileSystem.exists(dir))
-				sys.FileSystem.createDirectory(dir);
-			sys.io.File.saveContent(recentFile(), [for (f in list) relative(f)].join("\n"));
+			if (!Fs.exists(dir))
+				Fs.createDirectory(dir);
+			Fs.saveContent(recentFile(), [for (f in list) relative(f)].join("\n"));
 		} catch (_:Dynamic) {}
 	}
 
@@ -610,14 +611,14 @@ class Workbench extends Component<WorkbenchProps> {
 	/** The file of the build's main class, when the build names one and a source folder has it; for an extension, its main script. */
 	function mainFile():Null<String> {
 		if (extension != null)
-			return sys.FileSystem.exists(extension.mainPath()) ? extension.mainPath() : null;
-		if (props.display.project != null && props.display.project.main != null && sys.FileSystem.exists(props.display.project.main)) return props.display.project.main;
+			return Fs.exists(extension.mainPath()) ? extension.mainPath() : null;
+		if (props.display.project != null && props.display.project.main != null && Fs.exists(props.display.project.main)) return props.display.project.main;
 		var args = props.display.args;
 		for (i in 0...args.length - 1)
 			if (args[i] == "--main" || args[i] == "-main" || args[i] == "-m")
 				for (cp in explorerPart.classpaths()) {
 					var path = haxe.io.Path.join([cp.dir, args[i + 1].split(".").join("/") + ".hx"]);
-					if (sys.FileSystem.exists(path))
+					if (Fs.exists(path))
 						return path;
 				}
 		return null;
@@ -849,12 +850,12 @@ class Workbench extends Component<WorkbenchProps> {
 		var full = haxe.io.Path.normalize(haxe.io.Path.isAbsolute(path) ? path : haxe.io.Path.join([props.display.cwd, path]));
 		function physical(path:String):String {
 			var tail:Array<String> = [];
-			while (!sys.FileSystem.exists(path)) {
+			while (!Fs.exists(path)) {
 				var parent = haxe.io.Path.directory(path);
 				if (parent == path || parent == "") return path;
 				tail.unshift(haxe.io.Path.withoutDirectory(path)); path = parent;
 			}
-			return haxe.io.Path.join([sys.FileSystem.fullPath(path)].concat(tail));
+			return haxe.io.Path.join([Fs.fullPath(path)].concat(tail));
 		}
 		var resolved = physical(full);
 		function contains(root:String):Bool {
@@ -868,9 +869,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Reads a project image within the preview's file-size budget. */
 	function imageBytes(path:String):Null<haxe.io.Bytes> {
 		var full = projectPath(path, true);
-		if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) return null;
-		if (sys.FileSystem.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
-		return sys.io.File.getBytes(full);
+		if (!Fs.exists(full) || Fs.isDirectory(full)) return null;
+		if (Fs.stat(full).size > 8 * 1024 * 1024) throw "Preview images are limited to 8 MiB";
+		return Fs.getBytes(full);
 	}
 
 	function runtime():String {

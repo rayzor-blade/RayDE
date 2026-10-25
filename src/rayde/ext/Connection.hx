@@ -1,5 +1,7 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
+
 /** Workspace services answered by the editor and capability checked by the connection. */
 typedef WorkspaceServices = {
 	readFile:String->Null<String>,
@@ -149,9 +151,9 @@ class Connection {
 			return;
 		}
 		mocks = {};
-		if (useMocks && sys.FileSystem.exists(mocksPath()))
+		if (useMocks && Fs.exists(mocksPath()))
 			try
-				mocks = haxe.Json.parse(sys.io.File.getContent(mocksPath()))
+				mocks = haxe.Json.parse(Fs.getContent(mocksPath()))
 			catch (e:Dynamic)
 				note("console", "error", 'Cannot read mocks file: $e');
 		try {

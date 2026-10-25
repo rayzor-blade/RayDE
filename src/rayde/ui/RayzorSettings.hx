@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
@@ -104,7 +105,7 @@ class RayzorSettings extends Component<RayzorSettingsProps> {
 				var value = text.get().trim();
 				if (path.join(".") == "project.hxml" && value != "") {
 					var full = haxe.io.Path.isAbsolute(value) ? value : haxe.io.Path.join([haxe.io.Path.directory(props.path), value]);
-					if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) throw "HXML file not found: " + value;
+					if (!Fs.exists(full) || Fs.isDirectory(full)) throw "HXML file not found: " + value;
 				}
 				file.set(path, value == "" ? null : value);
 			});

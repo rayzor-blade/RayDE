@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Tooltip;
@@ -138,7 +139,7 @@ class ThemeTypography extends Component<ThemeTypographyProps> {
 	}
 
 	function fileRow(dir:String, name:String):Element {
-		var present = sys.FileSystem.exists(haxe.io.Path.join([dir, name]));
+		var present = Fs.exists(haxe.io.Path.join([dir, name]));
 		return <div class="flex items-center gap-2 pl-3">
 			<if {present}><icon document={Icons.CHECK_LINE} class="size-4 shrink-0 text-success"/>
 			<else><icon document={Icons.ERROR_WARNING_LINE} class="size-4 shrink-0 text-warning"/></if>
@@ -160,7 +161,7 @@ class ThemeTypography extends Component<ThemeTypographyProps> {
 		if (given == "")
 			return;
 		var source = haxe.io.Path.isAbsolute(given) ? given : haxe.io.Path.join([dir, given]);
-		if (!sys.FileSystem.exists(source) || sys.FileSystem.isDirectory(source)) {
+		if (!Fs.exists(source) || Fs.isDirectory(source)) {
 			refused.set('Nothing at $source.');
 			return;
 		}
@@ -168,7 +169,7 @@ class ThemeTypography extends Component<ThemeTypographyProps> {
 			refused.set("A font file is .ttf, .otf, .ttc or .woff2.");
 			return;
 		}
-		var bytes = sys.io.File.getBytes(source);
+		var bytes = Fs.getBytes(source);
 		var carried = FontName.of(bytes);
 		var family = fontFamily.get().trim();
 		if (family == "")
@@ -182,7 +183,7 @@ class ThemeTypography extends Component<ThemeTypographyProps> {
 		try {
 			if (!inside) {
 				Themes.ensure(haxe.io.Path.join([dir, "fonts"]));
-				sys.io.File.saveBytes(haxe.io.Path.join([dir, relative]), bytes);
+				Fs.saveBytes(haxe.io.Path.join([dir, relative]), bytes);
 			}
 		} catch (e:Dynamic) {
 			refused.set('Cannot copy $given: $e');

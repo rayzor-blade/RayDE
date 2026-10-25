@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import rayde.run.Job;
 import ashui.animation.AnimationScheduler;
 import ashui.reactive.Owner;
@@ -22,7 +23,7 @@ class ExplorerJob {
 		serial++;
 		if (job != null) job.stop();
 		job = null;
-		for (suffix in [".log", ".input"]) if (sys.FileSystem.exists(base + suffix)) sys.FileSystem.deleteFile(base + suffix);
+		for (suffix in [".log", ".input"]) if (Fs.exists(base + suffix)) Fs.deleteFile(base + suffix);
 	}
 
 	public function run(command:String, args:Array<String>, done:(Int, String)->Void, ?input:String):Void {
@@ -32,8 +33,8 @@ class ExplorerJob {
 		AnimationScheduler.main.after(.18, () -> {
 			if (!live || request != serial) return;
 			try {
-				sys.FileSystem.createDirectory(haxe.io.Path.directory(base));
-				if (input != null) sys.io.File.saveContent(base + ".input", input);
+				Fs.createDirectory(haxe.io.Path.directory(base));
+				if (input != null) Fs.saveContent(base + ".input", input);
 				job = new Job(command, args, base + ".log", input == null ? null : base + ".input", root);
 				job.start();
 				function poll():Void {
@@ -41,7 +42,7 @@ class ExplorerJob {
 					if (job.running()) { AnimationScheduler.main.after(.03, poll); return; }
 					var code = job.exit, text = job.read();
 					job = null;
-					for (suffix in [".log", ".input"]) if (sys.FileSystem.exists(base + suffix)) sys.FileSystem.deleteFile(base + suffix);
+					for (suffix in [".log", ".input"]) if (Fs.exists(base + suffix)) Fs.deleteFile(base + suffix);
 					done(code, text);
 				}
 				poll();

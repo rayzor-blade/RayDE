@@ -879,6 +879,7 @@ class Checks {
 		EditorGroupsChecks.run();
 		ProjectChecks.run();
 		CaribouProjectChecks.run();
+		WorkspaceChecks.run();
 		ProjectStarterChecks.run();
 		CodeActionChecks.run();
 		CodeActionExtensionChecks.run();

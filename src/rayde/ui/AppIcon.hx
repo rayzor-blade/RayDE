@@ -1,6 +1,7 @@
 package rayde.ui;
 
 #if macro
+import rayde.workspace.Fs;
 import haxe.macro.Context;
 import haxe.macro.Expr;
 #end
@@ -17,7 +18,7 @@ class AppIcon {
 	/** The icon, embedded: `{pixels, width, height}`. */
 	public static macro function window():Expr {
 		var path = "assets/icons/rayde-256.rgba";
-		var bytes = try sys.io.File.getBytes(path) catch (e:Dynamic) Context.error('app icon: cannot read $path; run scripts/icons.sh', Context.currentPos());
+		var bytes = try Fs.getBytes(path) catch (e:Dynamic) Context.error('app icon: cannot read $path; run scripts/icons.sh', Context.currentPos());
 		var side = Std.int(Math.sqrt(bytes.length / 4));
 		if (side * side * 4 != bytes.length)
 			Context.error('app icon: $path is not square RGBA', Context.currentPos());

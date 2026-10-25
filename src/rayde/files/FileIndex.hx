@@ -1,5 +1,6 @@
 package rayde.files;
 
+import rayde.workspace.Fs;
 import rayde.run.Worker;
 
 /** A workspace path snapshot; directory traversal belongs to its data-only worker. */
@@ -29,8 +30,8 @@ class FileIndex {
 			if (cancelled()) return;
 			var real:String, names:Array<String>;
 			try {
-				real = sys.FileSystem.fullPath(dir);
-				names = sys.FileSystem.readDirectory(dir);
+				real = Fs.fullPath(dir);
+				names = Fs.readDirectory(dir);
 			} catch (_:Dynamic) { return; }
 			if (seen.exists(real)) return;
 			seen.set(real, true);
@@ -39,7 +40,7 @@ class FileIndex {
 				if (cancelled()) return;
 				if (StringTools.startsWith(name, ".")) continue;
 				var path = haxe.io.Path.join([dir, name]), directory:Bool;
-				try directory = sys.FileSystem.isDirectory(path) catch (_:Dynamic) { continue; }
+				try directory = Fs.isDirectory(path) catch (_:Dynamic) { continue; }
 				if (directory) walk(path); else paths.push(path);
 			}
 		}

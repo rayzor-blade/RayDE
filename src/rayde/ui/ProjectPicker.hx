@@ -1,5 +1,7 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
+
 typedef ProjectPickRequest = {mode:String, ?kind:String, ?name:String, ?selected:String, ?scaffold:rayde.project.ProjectTemplates.ProjectScaffold};
 
 /** Native path selection, invoked by a worker only after an explicit Welcome action. */
@@ -22,13 +24,13 @@ class ProjectPicker {
 		};
 		if (chosen == null || chosen == "" || cancelled()) return null;
 		if (request.mode == "new") return rayde.project.ProjectFile.create(chosen, request.name, request.kind, request.scaffold);
-		if (folder && !sys.FileSystem.isDirectory(chosen)) throw "Choose a folder workspace";
+		if (folder && !Fs.isDirectory(chosen)) throw "Choose a folder workspace";
 		return chosen;
 	}
 
 	static function available(command:String):Bool {
 		var path = Sys.getEnv("PATH");
-		return path != null && Lambda.exists(path.split(":"), directory -> sys.FileSystem.exists(haxe.io.Path.join([directory, command])));
+		return path != null && Lambda.exists(path.split(":"), directory -> Fs.exists(haxe.io.Path.join([directory, command])));
 	}
 
 	static function run(command:String, args:Array<String>, cancelled:Void->Bool):Null<String> {

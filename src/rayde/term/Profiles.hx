@@ -1,5 +1,7 @@
 package rayde.term;
 
+import rayde.workspace.Fs;
+
 /** A program a terminal can run: what it is called, where it is, and the arguments to give it (a login shell's when left out). */
 typedef Profile = {
 	name:String,
@@ -17,7 +19,7 @@ class Profiles {
 	public static function list():Array<Profile> {
 		var out:Array<Profile> = [], seen = new Map<String, Bool>();
 		function add(path:Null<String>, ?name:String):Void {
-			if (path == null || path == "" || !sys.FileSystem.exists(path) || sys.FileSystem.isDirectory(path))
+			if (path == null || path == "" || !Fs.exists(path) || Fs.isDirectory(path))
 				return;
 			var label = name != null ? name : StringTools.replace(haxe.io.Path.withoutDirectory(path), ".exe", "");
 			if (seen.exists(label))
@@ -34,8 +36,8 @@ class Profiles {
 			add(onPath("pwsh.exe"), "pwsh");
 		} else {
 			add(Sys.getEnv("SHELL"));
-			if (sys.FileSystem.exists("/etc/shells"))
-				for (line in sys.io.File.getContent("/etc/shells").split("\n")) {
+			if (Fs.exists("/etc/shells"))
+				for (line in Fs.getContent("/etc/shells").split("\n")) {
 					var path = StringTools.trim(line);
 					if (path == "" || StringTools.startsWith(path, "#") || path.indexOf("nologin") >= 0 || StringTools.endsWith(path, "/false"))
 						continue;
@@ -56,7 +58,7 @@ class Profiles {
 			return null;
 		for (dir in path.split(Sys.systemName() == "Windows" ? ";" : ":")) {
 			var candidate = haxe.io.Path.join([dir, name]);
-			if (dir != "" && sys.FileSystem.exists(candidate) && !sys.FileSystem.isDirectory(candidate))
+			if (dir != "" && Fs.exists(candidate) && !Fs.isDirectory(candidate))
 				return candidate;
 		}
 		return null;

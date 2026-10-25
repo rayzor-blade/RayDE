@@ -1,5 +1,6 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
 import rayde.ext.Manifest.NativeLibrary;
 import rayde.settings.Extensions;
 import rayde.settings.Store;
@@ -8,7 +9,7 @@ import rayde.settings.Store;
 class NativeTrust {
 	static function identity(value:Dynamic, manifest:Manifest, library:NativeLibrary):Bool
 		return value != null && Reflect.isObject(value) && !Std.isOfType(value, Array) && !Std.isOfType(value, String)
-			&& value.id == manifest.id && value.extension == sys.FileSystem.fullPath(manifest.file)
+			&& value.id == manifest.id && value.extension == Fs.fullPath(manifest.file)
 			&& value.library == library.name;
 
 	static function same(value:Dynamic, manifest:Manifest, library:NativeLibrary):Bool
@@ -29,7 +30,7 @@ class NativeTrust {
 		var home = home ?? Extensions.home(), section = Store.section(home, "extensions");
 		var values = [for (v in approvals(home)) if (!identity(v, manifest, library)) v];
 		if (allow)
-			values.push({id: manifest.id, extension: sys.FileSystem.fullPath(manifest.file), library: library.name, path: library.path, sha256: library.sha256});
+			values.push({id: manifest.id, extension: Fs.fullPath(manifest.file), library: library.name, path: library.path, sha256: library.sha256});
 		Reflect.setField(section, "nativeApprovals", values);
 		Store.save(home, "extensions", section);
 		return approved(manifest, library, home) == allow;

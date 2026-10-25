@@ -1,5 +1,6 @@
 package rayde.run;
 
+import rayde.workspace.Fs;
 import rayde.lang.Display;
 
 /** A command to run in a terminal: what it is called, the shell command, and where it comes from. */
@@ -21,11 +22,11 @@ class Tasks {
 	/** The file made if there is none, and its path. */
 	public static function ensure(root:String):String {
 		var path = file(root);
-		if (!sys.FileSystem.exists(path)) {
+		if (!Fs.exists(path)) {
 			var dir = haxe.io.Path.directory(path);
-			if (!sys.FileSystem.exists(dir))
-				sys.FileSystem.createDirectory(dir);
-			sys.io.File.saveContent(path, template());
+			if (!Fs.exists(dir))
+				Fs.createDirectory(dir);
+			Fs.saveContent(path, template());
 		}
 		return path;
 	}
@@ -37,8 +38,8 @@ class Tasks {
 	public static function list(display:Display):Array<Task> {
 		var out:Array<Task> = [];
 		try {
-			if (sys.FileSystem.exists(file(display.cwd))) {
-				var json:Dynamic = haxe.Json.parse(sys.io.File.getContent(file(display.cwd)));
+			if (Fs.exists(file(display.cwd))) {
+				var json:Dynamic = haxe.Json.parse(Fs.getContent(file(display.cwd)));
 				var tasks:Array<Dynamic> = json.tasks;
 				if (tasks != null)
 					for (t in tasks)
@@ -56,9 +57,9 @@ class Tasks {
 				detail: "ash"
 			});
 		}
-		for (entry in sys.FileSystem.readDirectory(display.cwd)) {
+		for (entry in Fs.readDirectory(display.cwd)) {
 			var path = haxe.io.Path.join([display.cwd, entry]);
-			if (StringTools.endsWith(entry, ".hxml") && !sys.FileSystem.isDirectory(path))
+			if (StringTools.endsWith(entry, ".hxml") && !Fs.isDirectory(path))
 				out.push({label: "Build " + entry, command: "haxe " + quote(entry), detail: "haxe"});
 		}
 		return out;

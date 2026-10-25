@@ -1,5 +1,7 @@
 package rayde.build;
 
+import rayde.workspace.Fs;
+
 using StringTools;
 
 /** One line of a build file as it is written, and what it says when it is an argument. */
@@ -36,7 +38,7 @@ class HxmlFile {
 	}
 
 	public static function read(path:String):HxmlFile
-		return new HxmlFile(path, sys.io.File.getContent(path));
+		return new HxmlFile(path, Fs.getContent(path));
 
 	static function parseLine(raw:String):Line {
 		var line = raw.trim();
@@ -193,5 +195,5 @@ class HxmlFile {
 		return [for (l in lines) l.text].join("\n");
 
 	public function save():Void
-		sys.io.File.saveContent(path, text());
+		Fs.saveContent(path, text());
 }

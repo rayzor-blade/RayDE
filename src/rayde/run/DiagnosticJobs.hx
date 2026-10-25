@@ -1,5 +1,6 @@
 package rayde.run;
 
+import rayde.workspace.Fs;
 import rayde.lang.Display;
 
 private typedef Request = {file:String, text:String, args:Array<String>, serial:Int, cwd:String, haxe:String, base:String, payload:Dynamic};
@@ -44,9 +45,9 @@ class DiagnosticJobs {
 		var result:DiagnosticResult = null;
 		try {
 			var rpc = haxe.Json.stringify({jsonrpc:"2.0", id:request.serial, method:"display/diagnostics", params:{file:request.file, contents:request.text}});
-			sys.FileSystem.createDirectory(haxe.io.Path.directory(config));
+			Fs.createDirectory(haxe.io.Path.directory(config));
 			// An hxml keeps unsaved buffers out of the command-line size limit.
-			sys.io.File.saveContent(config, ["--cwd", request.cwd].concat(request.args).concat(["--no-output", "--display", rpc]).join("\n") + "\n");
+			Fs.saveContent(config, ["--cwd", request.cwd].concat(request.args).concat(["--no-output", "--display", rpc]).join("\n") + "\n");
 			job = new Job(request.haxe, [config], log);
 			job.start();
 			while (!cancelled() && job.running()) Sys.sleep(.02);
@@ -59,7 +60,7 @@ class DiagnosticJobs {
 				problems:[{file:request.file, range:null, severity:1, message:"Diagnostic worker: " + Std.string(failure)}], lsp:false};
 		}
 		if (job != null) job.stop();
-		for (path in [config, log]) if (sys.FileSystem.exists(path)) sys.FileSystem.deleteFile(path);
+		for (path in [config, log]) if (Fs.exists(path)) Fs.deleteFile(path);
 		return result;
 	}
 

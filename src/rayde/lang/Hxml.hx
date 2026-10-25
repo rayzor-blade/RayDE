@@ -1,5 +1,7 @@
 package rayde.lang;
 
+import rayde.workspace.Fs;
+
 using StringTools;
 
 /**
@@ -20,7 +22,7 @@ class Hxml {
 	/** Includes every compilation when inspecting build-wide options. */
 	public static function readAll(file:String):Array<String> {
 		var out:Array<String> = [];
-		file = sys.FileSystem.fullPath(file);
+		file = Fs.fullPath(file);
 		expand(file, haxe.io.Path.directory(file), out, 0);
 		return out;
 	}
@@ -46,7 +48,7 @@ class Hxml {
 	static function expand(file:String, cwd:String, out:Array<String>, depth:Int):Void {
 		if (depth > 16)
 			throw 'hxml files include each other too deeply at $file';
-		for (arg in parse(sys.io.File.getContent(file)))
+		for (arg in parse(Fs.getContent(file)))
 			if (arg.endsWith(".hxml") && !arg.startsWith("-"))
 				expand(haxe.io.Path.isAbsolute(arg) ? arg : haxe.io.Path.join([cwd, arg]), cwd, out, depth + 1);
 			else

@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.CodeEditor;
 import rayde.lang.LspProtocol;
 import rayde.lang.WorkspaceEdits;
@@ -146,12 +147,12 @@ class EditorCommands {
 	}
 
 	static function apply(wb:Workbench, origin:String, documents:Array<DocumentEdits>, snapshots:Map<String, String>):Void {
-		var plans = [], root = haxe.io.Path.addTrailingSlash(haxe.io.Path.normalize(sys.FileSystem.fullPath(wb.props.display.cwd)));
+		var plans = [], root = haxe.io.Path.addTrailingSlash(haxe.io.Path.normalize(Fs.fullPath(wb.props.display.cwd)));
 		for (document in documents) {
 			var file = document.file;
-			if (!sys.FileSystem.exists(file) || sys.FileSystem.isDirectory(file))
+			if (!Fs.exists(file) || Fs.isDirectory(file))
 				throw "An edit targets a missing file.";
-			file = haxe.io.Path.normalize(sys.FileSystem.fullPath(file));
+			file = haxe.io.Path.normalize(Fs.fullPath(file));
 			if (!StringTools.startsWith(file, root))
 				throw "An edit targets a file outside the workspace.";
 			if (wb.contributions.readOnly(file))
@@ -159,7 +160,7 @@ class EditorCommands {
 			var client = wb.languagesPart.languageServers.client(file);
 			if (document.version != null && (client == null || client.version(file) != document.version))
 				throw "A document changed; invoke the action again.";
-			var text = wb.documentsPart.buffers.exists(file) ? wb.documentsPart.buffer(file).get() : sys.io.File.getContent(file);
+			var text = wb.documentsPart.buffers.exists(file) ? wb.documentsPart.buffer(file).get() : Fs.getContent(file);
 			if (snapshots.exists(file) && snapshots.get(file) != text)
 				throw "A document changed; invoke the action again.";
 			var edits = WorkspaceEdits.edits(text, document.edits),

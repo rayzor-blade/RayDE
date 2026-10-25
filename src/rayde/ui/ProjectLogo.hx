@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Icon;
 import ashui.layout.Element;
 import ashui.reactive.Owner;
@@ -20,7 +21,7 @@ class ProjectLogo extends Component<{template:ProjectTemplate}> {
 	function render():Element {
 		var template = props.template;
 		if (template.owner != null) {
-			var icon = template.iconPath == null ? ViewIcons.named(null, template.icon) : try SvgDocument.parse(sys.io.File.getContent(template.iconPath)) catch (_:Dynamic) null;
+			var icon = template.iconPath == null ? ViewIcons.named(null, template.icon) : try SvgDocument.parse(Fs.getContent(template.iconPath)) catch (_:Dynamic) null;
 			return vector(icon ?? Icons.CODE_BOX_LINE);
 		}
 		return switch template.id {

@@ -1,5 +1,6 @@
 package rayde.ext;
 
+import rayde.workspace.Fs;
 import rayde.ext.OrderedJson.J;
 
 /** A view an extension declares: the id its script mounts it under, its title and icon, the part of the layout it goes in, and the buttons of its header. */
@@ -207,7 +208,7 @@ class Manifest {
 				seen.push(t.id);
 			}
 		contributions(Reflect.field(json, "contributes"));
-		if (!sys.FileSystem.exists(mainPath()))
+		if (!Fs.exists(mainPath()))
 			problems.push('Main script ${main} not found.');
 	}
 
@@ -247,7 +248,7 @@ class Manifest {
 	/** One view's declaration, with its tools; what is wrong with it goes to `problems`. */
 	function readView(view:Dynamic, id:String):ViewDecl {
 		var icon = text(view, "icon", "");
-		if (icon != "" && StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+		if (icon != "" && StringTools.endsWith(icon, ".svg") && !Fs.exists(absolute(icon)))
 			problems.push(id == "main" ? 'Icon $icon not found.' : 'Icon $icon of view "$id" not found.');
 		var where = text(view, "location", "sidebar");
 		if (LOCATIONS.indexOf(where) < 0) {
@@ -274,7 +275,7 @@ class Manifest {
 					continue;
 				}
 				var toolIcon = text(t, "icon", "");
-				if (StringTools.endsWith(toolIcon, ".svg") && !sys.FileSystem.exists(absolute(toolIcon)))
+				if (StringTools.endsWith(toolIcon, ".svg") && !Fs.exists(absolute(toolIcon)))
 					problems.push('Icon $toolIcon of tool "$tid" not found.');
 				tools.push({id: tid, title: text(t, "title", tid), icon: toolIcon == "" ? null : toolIcon});
 			}
@@ -303,7 +304,7 @@ class Manifest {
 					continue;
 				}
 				var icon = text(x, "icon", "");
-				if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+				if (StringTools.endsWith(icon, ".svg") && !Fs.exists(absolute(icon)))
 					problems.push('Icon $icon of command "$id" not found.');
 				commands.push({id: id, title: text(x, "title", id), icon: icon == "" ? null : icon});
 			}
@@ -336,7 +337,7 @@ class Manifest {
 					if (!Lambda.exists(commands, k -> k.id == command))
 						problems.push('Menu item in $location names unknown command "$command".');
 					var icon = text(x, "icon", "");
-					if (StringTools.endsWith(icon, ".svg") && !sys.FileSystem.exists(absolute(icon)))
+					if (StringTools.endsWith(icon, ".svg") && !Fs.exists(absolute(icon)))
 						problems.push('Icon $icon of a menu item in $location not found.');
 					var when:Dynamic = Reflect.field(x, "when");
 					var kind = when == null ? "" : text(when, "kind", "");
@@ -402,14 +403,14 @@ class Manifest {
 		var json:Dynamic = {};
 		var why:Null<String> = null;
 		try
-			json = haxe.Json.parse(sys.io.File.getContent(file))
+			json = haxe.Json.parse(Fs.getContent(file))
 		catch (e:Dynamic)
 			why = 'Invalid JSON: $e';
 		if (why == null && (json == null || Std.isOfType(json, Array) || !Reflect.isObject(json))) {
 			why = "The config must be a JSON object.";
 			json = {};
 		}
-		var m = new Manifest(sys.FileSystem.fullPath(file), why == null ? json : {});
+		var m = new Manifest(Fs.fullPath(file), why == null ? json : {});
 		if (why != null)
 			m.problems.unshift(why);
 		return m;
@@ -465,14 +466,14 @@ class Manifest {
 	 * this does not know are kept. Throws when the file is not JSON, so a form never overwrites what it cannot read.
 	 */
 	public static function update(file:String, edit:J->Void):Void {
-		var text = sys.FileSystem.exists(file) ? sys.io.File.getContent(file) : "";
+		var text = Fs.exists(file) ? Fs.getContent(file) : "";
 		var json = StringTools.trim(text) == "" ? Obj([]) : OrderedJson.parse(text);
 		switch json {
 			case Obj(_):
 			case _: throw "The config must be a JSON object.";
 		}
 		edit(json);
-		sys.io.File.saveContent(file, OrderedJson.stringify(json) + "\n");
+		Fs.saveContent(file, OrderedJson.stringify(json) + "\n");
 	}
 
 	/** Sets `field` of the config file to `value`, or takes it out for null or empty text; inside the view `viewId` (`main` by default) when `inView`. */
@@ -740,7 +741,7 @@ class Manifest {
 		var out = [];
 		for (s in sources) {
 			var dir = absolute(s);
-			if (sys.FileSystem.exists(dir) && sys.FileSystem.isDirectory(dir))
+			if (Fs.exists(dir) && Fs.isDirectory(dir))
 				out.push({label: s, dir: dir});
 		}
 		return out;

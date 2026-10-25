@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -152,7 +153,7 @@ class RunPart {
 	}
 
 	function writeFile(file:String):Void {
-		sys.io.File.saveContent(file, wb.documentsPart.buffer(file).get());
+		Fs.saveContent(file, wb.documentsPart.buffer(file).get());
 		wb.documentsPart.localHistory.saved(file, wb.documentsPart.buffer(file).get(), wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
 		var studio = wb.extensionsPart.studios.get(file);
 		if (studio != null && !studio.live.get()) studio.reload();

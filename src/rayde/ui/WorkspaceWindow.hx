@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.reactive.Owner;
@@ -24,9 +25,9 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 
 	public static function describe(server:CompilerServer, ?entry:String):WorkbenchProps {
 		if (entry == null) return {display:new Display(server, rayde.settings.Extensions.home(), []), name:"Welcome", runtime:"", empty:true};
-		if (!sys.FileSystem.exists(entry)) throw "Workspace does not exist: " + entry;
-		entry = sys.FileSystem.fullPath(entry);
-		var folder = sys.FileSystem.isDirectory(entry);
+		if (!Fs.exists(entry)) throw "Workspace does not exist: " + entry;
+		entry = Fs.fullPath(entry);
+		var folder = Fs.isDirectory(entry);
 		var extension = !folder && rayde.ext.Manifest.isManifest(entry) ? rayde.ext.Manifest.read(entry) : null;
 		var theme = !folder && rayde.theme.ThemeFile.isThemeFile(entry) ? rayde.theme.ThemeFile.read(entry) : null;
 		var root = folder ? entry : haxe.io.Path.directory(entry);
@@ -46,7 +47,7 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		var next = describe(props.server, entry);
 		rayde.settings.RecentProjects.remember(entry);
 		current.set(next);
-		if (props.onWorkspaceChanged != null) props.onWorkspaceChanged(sys.FileSystem.fullPath(entry));
+		if (props.onWorkspaceChanged != null) props.onWorkspaceChanged(Fs.fullPath(entry));
 	}
 
 	function render():Element {

@@ -1,5 +1,7 @@
 package rayde.lang;
 
+import rayde.workspace.Fs;
+
 typedef TextPosition = {line:Int, character:Int};
 typedef TextRange = {start:TextPosition, end:TextPosition};
 typedef Location = {file:String, range:TextRange};
@@ -73,7 +75,7 @@ class Display {
 
 	/** A project read from its `.hxml`, run from that file's folder. */
 	public static function ofHxml(server:CompilerServer, hxml:String):Display {
-		var full = sys.FileSystem.fullPath(hxml);
+		var full = Fs.fullPath(hxml);
 		return new Display(server, haxe.io.Path.directory(full), Hxml.read(full), full);
 	}
 
@@ -124,7 +126,7 @@ class Display {
 	public function diagnostics(?file:String, ?contents:String):Array<Diagnostic> {
 		var params:Dynamic = {};
 		if (file != null) {
-			params.file = sys.FileSystem.fullPath(file);
+			params.file = Fs.fullPath(file);
 			fresh(params.file, contents);
 		}
 		if (contents != null)
@@ -144,7 +146,7 @@ class Display {
 
 	function place(file:String, offset:Int, contents:Null<String>, ?extra:Dynamic):Dynamic {
 		var params:Dynamic = extra == null ? {} : extra;
-		params.file = sys.FileSystem.fullPath(file);
+		params.file = Fs.fullPath(file);
 		params.offset = offset;
 		fresh(params.file, contents);
 		if (contents != null)

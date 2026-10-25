@@ -1,5 +1,7 @@
 package rayde.settings;
 
+import rayde.workspace.Fs;
+
 /**
  * The workspace's settings: `.rayde/settings.json`, one object with a section for each area of the Settings
  * page. A section is replaced whole when it is saved; sections this version does not know stay as they are.
@@ -11,8 +13,8 @@ class Store {
 	/** The whole file as an object: empty when there is none or it cannot be read. */
 	public static function read(root:String):Dynamic {
 		try {
-			if (sys.FileSystem.exists(file(root))) {
-				var json:Dynamic = haxe.Json.parse(sys.io.File.getContent(file(root)));
+			if (Fs.exists(file(root))) {
+				var json:Dynamic = haxe.Json.parse(Fs.getContent(file(root)));
 				if (Reflect.isObject(json) && !Std.isOfType(json, Array))
 					return json;
 			}
@@ -32,8 +34,8 @@ class Store {
 			var all = read(root);
 			Reflect.setField(all, name, value);
 			var dir = haxe.io.Path.join([root, ".rayde"]);
-			if (!sys.FileSystem.exists(dir))
-				sys.FileSystem.createDirectory(dir);
-			sys.io.File.saveContent(file(root), haxe.Json.stringify(all, null, "\t") + "\n");
+			if (!Fs.exists(dir))
+				Fs.createDirectory(dir);
+			Fs.saveContent(file(root), haxe.Json.stringify(all, null, "\t") + "\n");
 		} catch (_:Dynamic) {}
 }

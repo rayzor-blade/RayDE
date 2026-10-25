@@ -1,5 +1,6 @@
 package rayde.settings;
 
+import rayde.workspace.Fs;
 import rayde.run.Worker;
 
 typedef EditorLayoutSession = {
@@ -25,8 +26,8 @@ class WorkspaceSession {
 
 	public function read():Null<TabSession> {
 		try {
-			if (!sys.FileSystem.exists(file) || sys.FileSystem.stat(file).size > 256 * 1024) return null;
-			var data:Dynamic = haxe.Json.parse(sys.io.File.getContent(file));
+			if (!Fs.exists(file) || Fs.stat(file).size > 256 * 1024) return null;
+			var data:Dynamic = haxe.Json.parse(Fs.getContent(file));
 			if (data.version != 1 || !Std.isOfType(data.files, Array) || !Std.isOfType(data.active, String)) return null;
 			var files:Array<String> = [];
 			for (entry in (data.files:Array<Dynamic>)) if (Std.isOfType(entry, String) && entry != "" && files.indexOf(entry) < 0) files.push(entry);
@@ -61,9 +62,9 @@ class WorkspaceSession {
 		request.mutex.acquire();
 		try {
 			if (!cancelled()) {
-				sys.FileSystem.createDirectory(haxe.io.Path.directory(request.file));
-				sys.io.File.saveContent(request.temporary, haxe.Json.stringify({version:1, files:request.session.files, active:request.session.active, layout:request.session.layout, group:request.session.group}));
-				sys.FileSystem.rename(request.temporary, request.file);
+				Fs.createDirectory(haxe.io.Path.directory(request.file));
+				Fs.saveContent(request.temporary, haxe.Json.stringify({version:1, files:request.session.files, active:request.session.active, layout:request.session.layout, group:request.session.group}));
+				Fs.rename(request.temporary, request.file);
 			}
 		} catch (_:Dynamic) { request.mutex.release(); return false; }
 		request.mutex.release();

@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -148,7 +149,7 @@ class ExtensionsPart {
 	}
 
 	function runExtensionCommand(id:String, command:String, path:Null<String>, ?range:{from:Int,to:Int}):Void {
-		var kind:Null<String> = path == null ? null : sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) ? "folder" : "file";
+		var kind:Null<String> = path == null ? null : Fs.exists(path) && Fs.isDirectory(path) ? "folder" : "file";
 		var args:Dynamic = {path:path,kind:kind};
 		if (range != null) args.range = range;
 		if (!extensionManager.command(id, command, args)) wb.say('Extension $id is not running.');
@@ -382,7 +383,7 @@ class ExtensionsPart {
 			},
 			readFile: p -> {
 				var full = wb.projectPath(p, true);
-				wb.documentsPart.buffers.exists(full) ? wb.documentsPart.buffers.get(full).get() : sys.FileSystem.exists(full) && !sys.FileSystem.isDirectory(full) ? sys.io.File.getContent(full) : null;
+				wb.documentsPart.buffers.exists(full) ? wb.documentsPart.buffers.get(full).get() : Fs.exists(full) && !Fs.isDirectory(full) ? Fs.getContent(full) : null;
 			},
 			activeFile: () -> wb.realFile(wb.active.get()),
 			root: () -> wb.props.display.cwd,
@@ -402,9 +403,9 @@ class ExtensionsPart {
 			},
 			writeFile: (p, text) -> {
 				var full = wb.projectPath(p);
-				var b = wb.documentsPart.buffers.get(full), before = b != null ? b.get() : sys.FileSystem.exists(full) ? sys.io.File.getContent(full) : "";
+				var b = wb.documentsPart.buffers.get(full), before = b != null ? b.get() : Fs.exists(full) ? Fs.getContent(full) : "";
 				wb.documentsPart.localHistory.record(full, before, text, null, "Extension edit");
-				sys.io.File.saveContent(full, text);
+				Fs.saveContent(full, text);
 				wb.documentsPart.localHistory.saved(full, text, null);
 				if (b != null)
 					b.set(text);
@@ -555,8 +556,8 @@ class ExtensionsPart {
 	/** Opens the file that answers the extension's remote calls while it is developed, making it when there is none. */
 	function openMocks(studio:Studio):Void {
 		var path = studio.mocksPath();
-		if (!sys.FileSystem.exists(path))
-			sys.io.File.saveContent(path, "{\n}\n");
+		if (!Fs.exists(path))
+			Fs.saveContent(path, "{\n}\n");
 		wb.openFile(path);
 	}
 

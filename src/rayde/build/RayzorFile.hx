@@ -1,7 +1,7 @@
 package rayde.build;
 
+import rayde.workspace.Fs;
 import haxe.io.Bytes;
-import sys.io.File;
 
 /** A TOML project manifest (rayzor.toml, or a Caribou .cbproj) edited one field at a time, keeping unrelated TOML intact. */
 class RayzorFile {
@@ -50,8 +50,8 @@ class RayzorFile {
 	public function removeAt(path:Array<String>, index:Int):Void edit({path:path, index:index, action:"remove-index"});
 
 	function source():String {
-		if (sys.FileSystem.stat(path).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";
-		return File.getContent(path);
+		if (Fs.stat(path).size > 2 * 1024 * 1024) throw "Project manifest exceeds 2 MiB";
+		return Fs.getContent(path);
 	}
 
 	/** Read the current file before every edit so external changes are preserved. */
@@ -59,7 +59,7 @@ class RayzorFile {
 		Reflect.setField(request, "source", source());
 		var bytes = Bytes.ofString(haxe.Json.stringify(request));
 		var result = unpack(editNative(bytes.getData(), bytes.length));
-		File.saveContent(path, result.source);
+		Fs.saveContent(path, result.source);
 		reload();
 	}
 

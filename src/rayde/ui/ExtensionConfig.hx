@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
@@ -156,11 +157,11 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 
 	function scripts():Array<Element> {
 		var out:Array<Element> = [text("Main script", "Entry script, relative to the .rayext", "rayde-ext-main", main, "main.rays", () -> save("main", main))];
-		out.push(sys.FileSystem.exists(m.mainPath())
+		out.push(Fs.exists(m.mainPath())
 			? <div class="flex items-center gap-2"><icon document={Icons.CHECK_LINE} class="size-4 text-success"/><text id="rayde-ext-main-found" class="text-xs text-text-secondary">${relative(m.mainPath())}</text></div>
 			: <div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-ext-main-missing" class="text-xs text-warning">${m.main + " not found"}</text></div>);
 		for (s in m.sources)
-			out.push(row(Icons.FOLDER_LINE, s, sys.FileSystem.exists(absolute(s)) ? null : "Not found", () -> change(() -> Manifest.setList(m.file, "sources", [for (x in m.sources) if (x != s) x]))));
+			out.push(row(Icons.FOLDER_LINE, s, Fs.exists(absolute(s)) ? null : "Not found", () -> change(() -> Manifest.setList(m.file, "sources", [for (x in m.sources) if (x != s) x]))));
 		out.push(<div class="flex items-center gap-2">
 			<input height={32} id="rayde-ext-source" value={newSource} placeholder="Source folder" class="rayde-control-wide" onKeyDown={e -> if (e.key.match(Named(Enter))) addSource()}/>
 			<button id="rayde-ext-source-add" variant={Secondary} size={Sm} class="rayde-add" onClick={_ -> addSource()}>Add</button>
@@ -219,7 +220,7 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 	function viewBlock(v:ViewDecl):Element {
 		var doc = ViewIcons.ofView(m, v);
 		var items:Array<Element> = [for (l in locations) <select-item value={l.id}>${l.label}</select-item>];
-		var file = m.iconFile(v.icon), found = file == null ? null : sys.FileSystem.exists(file);
+		var file = m.iconFile(v.icon), found = file == null ? null : Fs.exists(file);
 		var title = field(v, "title"), icon = field(v, "icon");
 		var out:Array<Element> = [
 			<div class="flex items-center gap-3">
@@ -452,13 +453,13 @@ class ExtensionConfig extends Component<ExtensionConfigProps> {
 		function walk(dir:String, depth:Int):Void {
 			if (depth > 3)
 				return;
-			var names = sys.FileSystem.readDirectory(dir);
+			var names = Fs.readDirectory(dir);
 			names.sort(Reflect.compare);
 			for (n in names) {
 				var path = haxe.io.Path.join([dir, n]);
 				if (n.startsWith("."))
 					continue;
-				if (sys.FileSystem.isDirectory(path))
+				if (Fs.isDirectory(path))
 					walk(path, depth + 1);
 				else if (n.endsWith(".svg"))
 					out.push(relative(path));

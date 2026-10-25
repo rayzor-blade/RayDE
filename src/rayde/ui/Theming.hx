@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.css.Css;
 import ashui.css.Stylesheet;
 import ashui.theme.ColorScheme;
@@ -163,13 +164,13 @@ class Theming {
 	static function registerFonts(t:ThemeFile):Array<String> {
 		var failed = [];
 		for (path in t.fontPaths()) {
-			if (!sys.FileSystem.exists(path))
+			if (!Fs.exists(path))
 				continue;
-			var stamp = sys.FileSystem.stat(path).mtime.getTime();
+			var stamp = Fs.stat(path).mtime.getTime();
 			if (registered.get(path) == stamp)
 				continue;
 			try {
-				ashui.text.Fonts.register(sys.io.File.getBytes(path));
+				ashui.text.Fonts.register(Fs.getBytes(path));
 				registered.set(path, stamp);
 			} catch (e:Dynamic)
 				failed.push('${haxe.io.Path.withoutDirectory(path)}: $e');

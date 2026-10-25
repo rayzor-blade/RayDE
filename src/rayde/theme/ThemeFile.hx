@@ -1,5 +1,7 @@
 package rayde.theme;
 
+import rayde.workspace.Fs;
+
 /** A colour as the theme file gives it: red, green, blue and alpha, each from 0 to 1. */
 typedef Color = {r:Float, g:Float, b:Float, a:Float};
 
@@ -255,7 +257,7 @@ class ThemeFile {
 					problem('css file "$path" must be a path beside the theme file, without ".." or a drive.', at);
 				else {
 					css.push({text: null, file: path});
-					if (!sys.FileSystem.exists(haxe.io.Path.join([haxe.io.Path.directory(file), path])))
+					if (!Fs.exists(haxe.io.Path.join([haxe.io.Path.directory(file), path])))
 						problem('css file "$path" not found.', at);
 				}
 			} else
@@ -299,11 +301,11 @@ class ThemeFile {
 					continue;
 				}
 				var full = haxe.io.Path.join([haxe.io.Path.directory(file), path]);
-				if (!sys.FileSystem.exists(full) || sys.FileSystem.isDirectory(full)) {
+				if (!Fs.exists(full) || Fs.isDirectory(full)) {
 					problem('Font file "$path" not found.', where);
 					continue;
 				}
-				var carried = try FontName.of(sys.io.File.getBytes(full)) catch (_:Dynamic) null;
+				var carried = try FontName.of(Fs.getBytes(full)) catch (_:Dynamic) null;
 				if (carried != null && carried.indexOf(family) < 0)
 					problem('Font file "$path" is "${carried[0]}", not "$family"; text set in "$family" will not find it.', where);
 			}
@@ -319,7 +321,7 @@ class ThemeFile {
 		return [
 			for (f in fonts)
 				for (name in f.files)
-					if (beside(name) && FontName.isFontFile(name) && sys.FileSystem.exists(haxe.io.Path.join([dir, name])))
+					if (beside(name) && FontName.isFontFile(name) && Fs.exists(haxe.io.Path.join([dir, name])))
 						haxe.io.Path.join([dir, name])
 		];
 	}
@@ -400,15 +402,15 @@ class ThemeFile {
 				continue;
 			}
 			var path = haxe.io.Path.join([haxe.io.Path.directory(file), s.file]);
-			if (sys.FileSystem.exists(path))
-				out.push(sys.io.File.getContent(path));
+			if (Fs.exists(path))
+				out.push(Fs.getContent(path));
 		}
 		return out;
 	}
 
 	/** Reads a theme file; one that cannot be read gives a theme that changes nothing, with the reason in `problems`. */
 	public static function read(file:String):ThemeFile {
-		var text = try sys.io.File.getContent(file) catch (e:Dynamic) null;
+		var text = try Fs.getContent(file) catch (e:Dynamic) null;
 		if (text == null) {
 			var t = new ThemeFile(file, {});
 			t.unreadable = true;

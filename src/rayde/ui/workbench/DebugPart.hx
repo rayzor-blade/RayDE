@@ -1,5 +1,6 @@
 package rayde.ui.workbench;
 
+import rayde.workspace.Fs;
 import rayde.ui.Contributions.ActivityEntry;
 import ashui.components.Breadcrumb;
 import ashui.components.ContextMenu;
@@ -134,7 +135,7 @@ class DebugPart {
 	/** The extension stopped: its place is shown in the editor and its stack and variables in the panel. */
 	function showStop(studio:Studio, stop:rayde.ext.Debugger.Stop):Void {
 		var top = stop.frames[0];
-		if (top != null && sys.FileSystem.exists(top.file))
+		if (top != null && Fs.exists(top.file))
 			wb.goTo(top.file, top.line - 1, Std.int(Math.max(0, top.col - 1)));
 		studio.panel.set("debug");
 		wb.panelsPart.showPanel("extension");

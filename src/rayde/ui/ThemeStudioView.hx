@@ -1,5 +1,6 @@
 package rayde.ui;
 
+import rayde.workspace.Fs;
 import ashui.components.Button;
 import ashui.components.Icon;
 import ashui.components.Select;
@@ -250,9 +251,9 @@ class ThemeStudioView extends Component<ThemeStudioViewProps> {
 		}
 		var full = haxe.io.Path.join([haxe.io.Path.directory(props.studio.file), file]);
 		try {
-			if (!sys.FileSystem.exists(full)) {
+			if (!Fs.exists(full)) {
 				Themes.ensure(haxe.io.Path.directory(full));
-				sys.io.File.saveContent(full, "");
+				Fs.saveContent(full, "");
 			}
 		} catch (e:Dynamic) {
 			refused.set('Cannot create $file: $e');
