@@ -11,6 +11,8 @@ typedef ActivityEntry = {id:String, title:String, icon:ashui.svg.SvgDocument, ?p
 /** An item in the status bar, built where it is shown: `place` is `left` or `right`, and it reads whatever signals it needs. */
 typedef StatusEntry = {id:String, ?place:String, ?order:Int, build:Void->Element};
 
+typedef ComparisonSource = {id:String, label:String, text:String};
+
 private typedef Ordered<T> = {order:Int, serial:Int, value:T};
 
 /**
@@ -38,6 +40,8 @@ class Contributions {
 	final retainers:Array<Void->Array<String>> = [];
 	final refusals:Array<(String, String)->Null<String>> = [];
 	final closeHooks:Array<Void->Void> = [];
+	final authorChecks:Array<String->Null<String>> = [];
+	final comparisonSources:Array<String->Null<ComparisonSource>> = [];
 	final readOnlyChecks:Array<String->Bool> = [];
 
 	public function new() {}
@@ -181,6 +185,19 @@ class Contributions {
 	public function readOnly(file:String):Bool {
 		for (check in readOnlyChecks) if (check(file)) return true;
 		return false;
+	}
+
+	/** The known author of the edit currently being checkpointed, supplied by a collaboration feature. */
+	public function editAuthor(check:String->Null<String>):Void authorChecks.push(check);
+	public function authorOf(file:String):Null<String> {
+		for (check in authorChecks) { var author = check(file); if (author != null) return author; }
+		return null;
+	}
+	/** A stable comparison baseline, such as the beginning of a live collaboration session. */
+	public function comparisonSource(source:String->Null<ComparisonSource>):Void comparisonSources.push(source);
+	public function comparisonOf(file:String):Null<ComparisonSource> {
+		for (source in comparisonSources) { var value = source(file); if (value != null) return value; }
+		return null;
 	}
 
 	/** Called when the workbench is closing. */

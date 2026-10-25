@@ -211,7 +211,7 @@ class EditorPart {
 	}
 
 	function tabLabel(file:String):String
-		return file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
+		return file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
 
 	function viewTabTitle(file:String):String {
 		var v = wb.viewOfTab(file);
@@ -219,6 +219,7 @@ class EditorPart {
 	}
 
 	function tabIcon(file:String):ashui.svg.SvgDocument {
+		if (file.startsWith(Workbench.DIFF_TAB)) return Icons.FILE_HISTORY_LINE;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return Icons.HISTORY_LINE;
 		if (Workbench.isTab(file)) {
 			var studio = wb.extensionsPart.studios.get(Workbench.tabStudio(file));
@@ -237,6 +238,7 @@ class EditorPart {
 		var actions = <div class="flex items-center gap-1">
 			<tooltip label={"Split Editor Right (Vertical)" + shortcut("splitright")} side="bottom"><button id="rayde-split-right" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("horizontal"); }}><icon document={Icons.LAYOUT_COLUMN_LINE} class="size-4"/></button></tooltip>
 			<tooltip label={"Split Editor Down (Horizontal)" + shortcut("splitdown")} side="bottom"><button id="rayde-split-down" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("vertical"); }}><icon document={Icons.LAYOUT_ROW_LINE} class="size-4"/></button></tooltip>
+			<tooltip label="File History Diff" side="bottom"><button id="rayde-open-history-diff" variant={Ghost} size={Icon} class="rayde-panel-button" disabled={Computed.make(() -> { var file=wb.realFile(group.active.get()); return file == null || ImagePreview.isRaster(file); })} onClick={_ -> { groups.select(group); wb.documentsPart.openComparison(group.active.get()); }}><icon document={Icons.FILE_HISTORY_LINE} class="size-4"/></button></tooltip>
 			${wb.menusPart.editorMenu(group)}
 		</div>;
 		return new TabContextMenu({workbench:wb,group:group,label:tabLabel,icon:tabIcon,trailing:actions});
@@ -273,6 +275,7 @@ class EditorPart {
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
+		if (file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file), "History diff"])}</breadcrumb>;
 		if (file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file), "Local history"])}</breadcrumb>;
 		if (file == Workbench.SETTINGS)
 			return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs(["Settings", SettingsPage.labelOf(SettingsPage.category(wb.settingsCategory.get()), wb.extension)])}</breadcrumb>;
@@ -301,6 +304,7 @@ class EditorPart {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String, selected:Signal<String>):Element {
+		if (file.startsWith(Workbench.DIFF_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.comparisonPage(file)}</if></tabs-content>;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;
 		if (file == Workbench.THEME_TAB && wb.themePart.themeStudio != null)
 			return <tabs-content value={file} class="flex-1 min-h-0">

@@ -67,3 +67,13 @@ The right end of the bottom status bar names the language of the file in front (
 `EditorCommands` exposes language actions to the command center and keymaps, gates requests on server capabilities, and rejects stale results. Rename and formatting validate all text edits before changing buffers, retain per-file undo, and leave disk files unsaved. File operations and edits needing confirmation are rejected. `DocumentHistory.edit` applies patches to unmounted document data without constructing an editor.
 
 Run `SNAPSHOT_ONLY=context-menu scripts/snapshot.sh` for interaction, LSP and extension checks and screenshots in both themes.
+
+## Live history comparisons
+
+`DocumentsPart` owns one `FileComparison` per source file under a virtual history-diff tab. A comparison retains its source buffer while open, but only its visible `HistoryDiff` mounts a worker, watch and completion hook. Hiding cancels pending work; closing releases the catalog, baseline, hunks and author labels. These transient tabs are excluded from session restoration and close when their source is renamed or deleted.
+
+`GitHistory` runs read-only Git commands on the comparison worker, with bounded redirected output, cancellation and a timeout. It discovers the repository from the source file, including dependency paths. The catalog holds HEAD and up to forty commits at the current pathname; rename traversal is not included. Missing Git, untracked files and unborn repositories still allow local comparisons. Git data refreshes explicitly; no idle Git polling occurs.
+
+`LocalHistory.snapshot` transfers immutable patch metadata to the worker. Optional revision authors and compacted base ownership remain compatible with older journals. `LineOwners` preserves untouched line authors across patch insertions/deletions; no-op Save checkpoints do not change ownership. The worker maps HEAD blame through the unsaved buffer, then supplies known local authors for changed lines. Unattributed edits remain explicit rather than borrowing a previous committer's name. No email metadata is retained for hints.
+
+Features register `Contributions.editAuthor` for the edit being checkpointed and `comparisonSource` for a fixed comparison snapshot. Jam supplies the actual update sender's display name and its initial synchronized text. Recovery or updates from an unknown sender use `Jam sync`; historical CRDT operations are not retroactively assigned to a guessed participant. Baseline text stays fixed until the user selects another source. Worker requests coalesce and stale results never replace a newer buffer. Each open diff retains one ownership checkpoint, applying only later patches until compaction requires a rebuild. Comparisons are limited to text files within the preview size limit.

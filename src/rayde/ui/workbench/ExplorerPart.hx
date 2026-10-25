@@ -441,6 +441,7 @@ class ExplorerPart {
 				if (refused != null) throw refused;
 				for (f in FileOps.under(wb.open.get(), path))
 					wb.closeFile(f);
+				wb.documentsPart.closeComparisonsUnder(path);
 				FileOps.delete(wb.props.display.cwd, path);
 				for (f in FileOps.under([for (k in wb.documentsPart.buffers.keys()) k], path))
 					wb.documentsPart.buffers.remove(f);
@@ -451,6 +452,7 @@ class ExplorerPart {
 
 	/** A file or folder was renamed: the tabs, buffers and edits under it follow it to the new path. */
 	function moveTabs(from:String, to:String):Void {
+		wb.documentsPart.closeComparisonsUnder(from);
 		wb.documentsPart.localHistory.move(from, to);
 		for (entry in wb.documentsPart.historyTabs) if (entry.file == from || entry.file.startsWith(haxe.io.Path.addTrailingSlash(from))) entry.file = to + entry.file.substr(from.length);
 		var moved = FileOps.moved(wb.open.get(), from, to);

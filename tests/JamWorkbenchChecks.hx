@@ -128,11 +128,14 @@ class JamWorkbenchChecks {
 			check(ja.following.get()=="","Editing did not stop following");
 			until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Exact multi-range edits did not arrive");
 			check(jb.serial==guestSerial,"Remote apply echoed as a local transaction");
+			check(b.documentsPart.localHistory.entries(fb,b.documentsPart.buffer(fb).get())[0].author=="Host","Remote history used a local or missing author");
+			check(a.contributions.comparisonOf(fa).text==source,"Jam baseline changed after live edits");
 			ea.undo(); until(() -> a.documentsPart.buffer(fa).get()==source && b.documentsPart.buffer(fb).get()==source,"Multi-range action did not undo together");
 			ea.select(8,8); ea.editing.replace(" A");
 			until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Typed edit did not arrive");
 			eb.select(0,0); eb.editing.replace("B: ");
 			until(() -> a.documentsPart.buffer(fa).get()==b.documentsPart.buffer(fb).get(),"Guest edit did not arrive");
+			check(a.documentsPart.localHistory.entries(fa,a.documentsPart.buffer(fa).get())[0].author==Lambda.find(ja.people.get(),p -> p.id==jb.peer).name,"Guest update lost its actual participant name");
 			ea.undo(); until(() -> a.documentsPart.buffer(fa).get()=="B: "+source && b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Author undo removed another participant's edit");
 			ea.redo(); until(() -> b.documentsPart.buffer(fb).get()==a.documentsPart.buffer(fa).get(),"Author redo did not arrive");
 			eb.select(1,1); ea.applyEdits([{from:0,to:0,text:"Z"}]);

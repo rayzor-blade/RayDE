@@ -195,7 +195,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || file == THEME_TAB || file.startsWith(HISTORY_TAB) || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -230,6 +230,8 @@ class Workbench extends Component<WorkbenchProps> {
 	var sessionReady = false;
 
 	final restoredTabs = new Map<String, Bool>();
+
+	static inline var DIFF_TAB = "@history-diff:";
 
 	static inline var HISTORY_TAB = "@local-history:";
 
@@ -494,6 +496,9 @@ class Workbench extends Component<WorkbenchProps> {
 		var rest = files.copy();
 		rest.splice(at, 1);
 		documentsPart.historyTabs.remove(file);
+		var comparison=documentsPart.comparisonTabs.get(file);
+		if (comparison != null) comparison.dispose();
+		documentsPart.comparisonTabs.remove(file);
 		if (!isVirtual(file)) documentsPart.localHistory.flush(file);
 		var studio = extensionsPart.studios.get(file);
 		if (studio != null && !studio.managed) {
@@ -524,7 +529,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The file a page stands for, null for the pages that are not files. */
 	function realFile(file:String):Null<String>
-		return file.startsWith(HISTORY_TAB) && documentsPart.historyTabs.exists(file) ? documentsPart.historyTabs.get(file).file : file == "" || isVirtual(file) ? null : file;
+		return file.startsWith(DIFF_TAB) && documentsPart.comparisonTabs.exists(file) ? documentsPart.comparisonTabs.get(file).file : file.startsWith(HISTORY_TAB) && documentsPart.historyTabs.exists(file) ? documentsPart.historyTabs.get(file).file : file == "" || isVirtual(file) ? null : file;
 
 	/** Adds the tabs of an extension to the editor, and takes those it has unmounted away. */
 	function syncTabs(studio:Studio, list:Array<TabView>):Void {
@@ -952,6 +957,8 @@ class Workbench extends Component<WorkbenchProps> {
 			languagesPart.languagesScheduled = false;
 			if (workspaceSession != null) workspaceSession.close(sessionReady ? sessionSnapshot() : null);
 			explorerPart.fileIndex.dispose();
+			for (comparison in documentsPart.comparisonTabs) comparison.dispose();
+			documentsPart.comparisonTabs.clear();
 			documentsPart.localHistory.dispose();
 			for (syntax in editorPart.nativeSyntax) if (syntax != null) syntax.dispose();
 			editorPart.nativeSyntax.clear();

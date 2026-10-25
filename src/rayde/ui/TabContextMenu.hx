@@ -24,6 +24,7 @@ typedef TabContextMenuProps = {
 @:access(rayde.ui.Workbench)
 @:access(rayde.ui.workbench.EditorPart)
 @:access(rayde.ui.workbench.MenusPart)
+@:access(rayde.ui.workbench.DocumentsPart)
 class TabContextMenu extends Component<TabContextMenuProps> {
 	final opened = Signal.make(false);
 	final target = Signal.make("");
@@ -151,6 +152,7 @@ class TabContextMenu extends Component<TabContextMenuProps> {
 			<context-menu-item id="rayde-tab-menu-close-saved" disabled={saved.length == 0} onSelect={() -> run(file,() -> close(file,"saved"))}>Close Saved Tabs</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-close-all" onSelect={() -> run(file,() -> close(file,"all"))}>Close All Tabs</context-menu-item>
 			<context-menu-separator/>
+			<context-menu-item id="rayde-tab-menu-history" disabled={path == null || ImagePreview.isRaster(path)} onSelect={() -> run(file,() -> wb.documentsPart.openComparison(file))}>Open History Diff</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-split-right" onSelect={() -> run(file,() -> { activate(file); wb.editorPart.splitEditor("horizontal"); })}>Split Editor Right</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-split-down" onSelect={() -> run(file,() -> { activate(file); wb.editorPart.splitEditor("vertical"); })}>Split Editor Down</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-move" disabled={oneGroup} onSelect={() -> run(file,() -> { activate(file); wb.editorPart.moveEditor(); })}>Move to Next Group</context-menu-item>

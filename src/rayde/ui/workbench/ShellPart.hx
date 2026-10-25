@@ -111,6 +111,7 @@ class ShellPart {
 			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: wb.runPart.stopRun},
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: wb.runPart.saveAll},
 			{id: "close", label: "Close Tab", icon: Icons.CLOSE_LINE, run: () -> if (wb.active.get() != "") wb.closeFile(wb.active.get())},
+			{id:"filehistorydiff", label:"File: Open History Diff", icon:Icons.FILE_HISTORY_LINE, run:() -> wb.documentsPart.openComparison()},
 			{id:"splitright", label:"Split Editor Right (Vertical)", icon:Icons.LAYOUT_COLUMN_LINE, run:() -> wb.editorPart.splitEditor("horizontal")},
 			{id:"splitdown", label:"Split Editor Down (Horizontal)", icon:Icons.LAYOUT_ROW_LINE, run:() -> wb.editorPart.splitEditor("vertical")},
 			{id:"focusnextgroup", label:"Focus Next Editor Group", icon:Icons.ARROW_RIGHT_LINE, run:() -> wb.editorPart.focusGroup()},

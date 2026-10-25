@@ -17,6 +17,8 @@ Participants see each other's carets, selections and names. Undo and redo affect
 
 Choose **Follow** beside a participant to follow their selection and viewport. Your own editing, navigation, tab switch or a disconnect stops following. **Stop Following** also stops it explicitly. Following does not take keyboard focus or publish the followed movements as your own.
 
+To watch how the file changes, open [File History Diff](editor.md#file-history-diff), choose **Jam start**, and keep it in another split. It follows unsaved edits and shows participant names beside their changed lines.
+
 ## Recover a session
 
 **Saved locally** means queued edits have reached the recovery files. **Save Recovery Checkpoint** compacts that recovery; it does not save the source file. A crash can lose edits still marked **saving locally**.

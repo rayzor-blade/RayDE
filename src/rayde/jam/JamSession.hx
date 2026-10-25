@@ -14,6 +14,10 @@ typedef JamPosition = {id:String, name:String, caret:Int, anchor:Int, view:Null<
 class JamSession {
 	public final file:String;
 	public final host:Bool;
+	public var initialText(default,null):String;
+	public final comparisonId = "jam:" + haxe.crypto.Sha256.encode(Std.string(Sys.time()) + ":" + Std.random(0x3fffffff)).substr(0,16);
+	public var changeAuthor(default,null):Null<String>;
+	final localName:String;
 	public final status = Signal.make("connecting");
 	public final invite = Signal.make("");
 	public final people = Signal.make(([] : Array<{id:String,name:String}>));
@@ -38,7 +42,7 @@ class JamSession {
 	public var closed(default,null) = false;
 
 	public function new(file:String,state:CodeEditorState,host:Bool,name:String,invitation:String,changed:Void->Void,recovery:String,restore:Bool=false) {
-		this.file=file; this.state=state; this.host=host; this.changed=changed; known=state.value.get();
+		this.file=file; this.state=state; this.host=host; this.changed=changed; known=state.value.get(); initialText=known; localName=name;
 		seeded=host && !restore;
 		document=NativeJam.document(seeded ? state.value.get() : "");
 		try {
@@ -57,7 +61,7 @@ class JamSession {
 		try {
 			if (edit.before != known) throw "Jam document and editor are out of sync";
 			var result=NativeJam.call(document,{op:"edit",parts:edit.parts});
-			known=edit.after; selection=edit.next;
+			known=edit.after; selection=edit.next; changeAuthor=localName;
 			publish(result.update);
 			refreshCursors();
 		} catch (error:Dynamic) fail(Std.string(error));
@@ -80,7 +84,7 @@ class JamSession {
 		try {
 			var result=NativeJam.call(document,{op:"undo",redo:redo});
 			selection={caret:Std.int(Math.min(selection.caret,result.text.length)),anchor:Std.int(Math.min(selection.anchor,result.text.length))};
-			known=result.text; state.applyRemote(result.text,selection); publish(result.update); changed(); refreshCursors();
+			known=result.text; changeAuthor=localName; state.applyRemote(result.text,selection); publish(result.update); changed(); refreshCursors();
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
 	public function remember(caret:Int,anchor:Int,?view:JamViewport):Void {
@@ -122,7 +126,9 @@ class JamSession {
 				apply(message.state); durableHost.set(message.durable == true);
 				publish(NativeJam.call(document,{op:"diff",vector:message.vector}).update);
 				initialized.set(true); status.set("connected"); moved(selection.caret,selection.anchor);
-			case "update": apply(message.update);
+			case "update":
+				var person = Lambda.find(people.get(), p -> p.id == message.peer);
+				apply(message.update, person == null ? null : person.name);
 			case "cursor": if (message.peer != peer) { cursors.set(message.peer,message); refreshCursors(); }
 			case "peers":
 				people.set(cast message.list);
@@ -138,12 +144,14 @@ class JamSession {
 			default: throw "Unexpected Jam event";
 		} catch (error:Dynamic) fail(Std.string(error));
 	}
-	function apply(update:String):Void {
+	function apply(update:String, ?author:String):Void {
 		var before=state.value.get();
 		var current:CodeSelection=initialized.get() || seeded ? selection : {caret:0,anchor:0};
 		var result=NativeJam.call(document,{op:"apply",update:update,caret:current.caret,anchor:current.anchor});
 		selection={caret:result.caret,anchor:result.anchor};
-		known=result.text; state.applyRemote(result.text,selection);
+		known=result.text; changeAuthor=author ?? "Jam sync";
+		if (!initialized.get()) initialText=result.text;
+		state.applyRemote(result.text,selection);
 		if (before != result.text) changed();
 		refreshCursors();
 	}

@@ -96,6 +96,8 @@ class DocumentsPart {
 
 	final historyPending = new Map<String, Bool>();
 
+	final comparisonTabs = new Map<String, rayde.history.FileComparison>();
+
 	final historyTabs = new Map<String, {file:String, revision:Int, text:String}>();
 
 	final buffers = new Map<String, Signal<String>>();
@@ -134,7 +136,7 @@ class DocumentsPart {
 	/** Closed saved files need no cache. Unsaved text and live development previews still do. */
 	function releaseClosedDocuments():Void {
 		var opened = wb.open.get(), changed = wb.dirty.get();
-		opened = opened.concat(wb.contributions.retained());
+		opened = opened.concat(wb.contributions.retained()).concat([for (comparison in comparisonTabs) comparison.file]);
 		if (wb.languagesPart.languageServers != null) wb.languagesPart.languageServers.retain(opened);
 		for (file in wb.editorPart.imageViews.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) wb.editorPart.imageViews.remove(file);
 		for (file in wb.editorPart.imageTextModes.keys()) if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) wb.editorPart.imageTextModes.remove(file);
@@ -178,10 +180,32 @@ class DocumentsPart {
 	function checkpointHistory(file:String):Void {
 		var state = documents.get(file), text = buffer(file).get();
 		var before = localHistory.current(file, text);
-		localHistory.record(file, before, text, state == null ? null : DocumentHistory.snapshot(state));
+		localHistory.record(file, before, text, state == null ? null : DocumentHistory.snapshot(state), "Edit", wb.contributions.authorOf(file) ?? "Local edit");
 		if (historyPending.exists(file)) return;
 		historyPending.set(file, true);
 		ashui.animation.AnimationScheduler.main.after(.35, () -> { historyPending.remove(file); if (!wb.gone) localHistory.flush(file); });
+	}
+
+	public function openComparison(?file:String, ?revision:Int):Void {
+		file = wb.realFile(file ?? wb.active.get());
+		if (file == null || ImagePreview.isRaster(file)) { wb.say("Open a text file to compare its history."); return; }
+		var id=Workbench.DIFF_TAB + file;
+		var text=buffer(file).get();
+		if (text.indexOf("\x00") >= 0) { wb.say("History diff is available for text files."); return; }
+		if (!comparisonTabs.exists(id)) comparisonTabs.set(id,new rayde.history.FileComparison(file,text));
+		if (revision != null) { comparisonTabs.get(id).update(text,localHistory.snapshot(file,text),wb.contributions.comparisonOf(file)); comparisonTabs.get(id).refresh(); comparisonTabs.get(id).choose("local:" + revision); }
+		wb.openFile(id);
+	}
+	function closeComparisonsUnder(path:String):Void {
+		for (id in [for (id => comparison in comparisonTabs) if (FileOps.inside(path,comparison.file)) id]) wb.closeFile(id);
+	}
+
+	function comparisonPage(id:String):Element {
+		var comparison=comparisonTabs.get(id);
+		if (comparison == null) return <div/>;
+		var file=comparison.file;
+		return new HistoryDiff({comparison:comparison,buffer:buffer(file),
+			journal:() -> localHistory.snapshot(file,buffer(file).get()),source:() -> wb.contributions.comparisonOf(file),onOpen:() -> wb.openFile(file)});
 	}
 
 	function previewHistory(file:String, revision:Int):Void {
@@ -207,6 +231,7 @@ class DocumentsPart {
 		return <div class="flex flex-col flex-1 min-h-0">
 			<div class="flex items-center gap-2 px-3 py-2 shrink-0 border-b">
 				<text class="text-xs text-text-secondary flex-1">Local revision ${Std.string(entry.revision)} · ${haxe.io.Path.withoutDirectory(entry.file)}</text>
+				<tooltip label="Compare this revision with the live buffer" side="bottom"><button id="rayde-history-compare" variant={Ghost} size={Icon} onClick={_ -> openComparison(entry.file,entry.revision)}><icon document={Icons.FILE_HISTORY_LINE} class="size-4"/></button></tooltip>
 				<tooltip label="Restore this revision to the unsaved buffer; the change can be undone" side="bottom"><button id="rayde-history-restore" variant={Ghost} size={Icon} onClick={_ -> restoreHistory(entry.file, text)}><icon document={Icons.HISTORY_LINE} class="size-4"/></button></tooltip>
 			</div>
 			<code-view id="rayde-history-preview" value={text} language={EditorPart.languageOf(entry.file)} lineNumbers={true} minimap={false} class="flex-1 min-h-0"/>

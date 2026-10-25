@@ -39,6 +39,12 @@ Splitting moves the current tab when other tabs remain in its group; with one ta
 
 **Cmd+\\** splits right; **Cmd+Option+\\** splits down. **Cmd+Option+Right/Left** focuses the next/previous group. On Windows and Linux use Ctrl and Alt. These commands also appear in **View**, the command center and shortcut settings.
 
+## File history diff
+
+Click the **history** icon beside the split controls, or run **File: Open History Diff**. Choose Git HEAD, an earlier Git commit, or a local Timeline revision to compare with the current unsaved buffer. The baseline stays fixed as you edit. Use the layout button for inline or side-by-side views, and the arrows to step through changes. The tab context menu also offers **Open History Diff**.
+
+Put the diff beside your editor to watch progress during a [Jam](jam.md); **Jam start** compares with the beginning of the current session. Author names appear beside changed lines. Git supplies committed authors; known Jam edits retain participant names. Older local history without attribution is labeled as local history. Refresh updates the available revisions. A local revision preview also has a **Compare** action.
+
 ## Find and replace
 
 Press Enter / Shift+Enter in Find to move to the next / previous match. Enter in Replace replaces one match; Cmd+Enter or Ctrl+Enter replaces all in one undo operation. Escape closes the panel.

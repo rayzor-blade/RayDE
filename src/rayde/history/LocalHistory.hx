@@ -1,12 +1,13 @@
 package rayde.history;
 
 import haxe.crypto.Sha256;
+import rayde.history.LineOwners.HistoryJournal;
 import sys.FileSystem;
 import sys.io.File;
 
-typedef Revision = {id:Int, parent:Int, time:Float, kind:String, from:Int, removed:String, inserted:String};
-typedef HistoryEntry = {id:Int, time:Float, kind:String};
-private typedef Journal = {version:Int, file:String, base:String, baseId:Int, baseTime:Float, revisions:Array<Revision>, savedHash:String, undo:Dynamic};
+typedef Revision = {id:Int, parent:Int, time:Float, kind:String, from:Int, removed:String, inserted:String, ?author:String};
+typedef HistoryEntry = {id:Int, time:Float, kind:String, ?author:String};
+private typedef Journal = {version:Int, file:String, base:String, baseId:Int, baseTime:Float, revisions:Array<Revision>, savedHash:String, undo:Dynamic, ?baseOwners:Array<Null<String>>};
 private typedef Cached = {data:Journal, text:String, modified:Bool};
 
 /** Bounded per-file patch journals, independent of source control and editor/view ownership. */
@@ -60,7 +61,7 @@ class LocalHistory {
 		return item.text == text ? item.data.undo : null;
 	}
 
-	public function record(file:String, before:String, after:String, undo:Dynamic, kind = "Edit"):Void {
+	public function record(file:String, before:String, after:String, undo:Dynamic, kind = "Edit", ?author:String):Void {
 		var item = load(file, before);
 		if (item.text != before) append(item, before, "Disk version");
 		if (kind == "Edit" && undo != null && item.data.undo != null) try {
@@ -69,25 +70,29 @@ class LocalHistory {
 			else if (undo.redo.length < previous.redo.length && undo.undo.length > previous.undo.length
 				&& haxe.Json.stringify(undo.undo[Std.int(undo.undo.length) - 1]) == haxe.Json.stringify(previous.redo[Std.int(previous.redo.length) - 1])) kind = "Redo";
 		} catch (_:Dynamic) {}
-		if (item.text != after) append(item, after, kind);
+		if (item.text != after) append(item, after, kind, author);
 		item.data.undo = undo; item.modified = true;
 		changed();
 	}
 
-	function append(item:Cached, next:String, kind:String):Void {
+	function append(item:Cached, next:String, kind:String, ?author:String):Void {
 		var before = item.text, from = 0, suffix = 0;
 		while (from < before.length && from < next.length && before.charCodeAt(from) == next.charCodeAt(from)) from++;
 		while (suffix < before.length - from && suffix < next.length - from && before.charCodeAt(before.length - suffix - 1) == next.charCodeAt(next.length - suffix - 1)) suffix++;
 		var rows = item.data.revisions, parent = rows.length == 0 ? item.data.baseId : rows[rows.length - 1].id;
 		rows.push({id:parent + 1, parent:parent, time:Date.now().getTime(), kind:kind, from:from,
-			removed:before.substring(from, before.length - suffix), inserted:next.substring(from, next.length - suffix)});
+			removed:before.substring(from, before.length - suffix), inserted:next.substring(from, next.length - suffix), author:author});
 		item.text = next; item.modified = true;
 		while (rows.length > MAX_ENTRIES) trim(item);
 	}
 
 	function trim(item:Cached):Void {
 		var first = item.data.revisions.shift();
-		item.data.base = apply(item.data.base, first);
+		if (item.data.baseOwners == null && first.author == null) item.data.base = apply(item.data.base,first);
+		else {
+			var snapshot = LineOwners.patch({text:item.data.base, owners:item.data.baseOwners ?? []}, first);
+			item.data.base = snapshot.text; item.data.baseOwners = snapshot.owners;
+		}
 		item.data.baseId = first.id; item.data.baseTime = first.time;
 	}
 
@@ -105,7 +110,7 @@ class LocalHistory {
 
 	public function entries(file:String, disk:String):Array<HistoryEntry> {
 		var item = load(file, disk), out:Array<HistoryEntry> = [{id:item.data.baseId, time:item.data.baseTime, kind:"Original"}];
-		for (row in item.data.revisions) out.push({id:row.id, time:row.time, kind:row.kind});
+		for (row in item.data.revisions) out.push({id:row.id, time:row.time, kind:row.kind, author:row.author});
 		out.reverse(); return out;
 	}
 
@@ -114,6 +119,14 @@ class LocalHistory {
 		if (id == item.data.baseId) return text;
 		for (row in item.data.revisions) { text = apply(text, row); if (row.id == id) return text; }
 		throw "Local revision is no longer available";
+	}
+
+	/** A data-only copy for comparison workers; no worker reads the mutable journal cache. */
+	public function snapshot(file:String, disk:String):HistoryJournal {
+		var data = load(file,disk).data;
+		return {base:data.base, baseId:data.baseId, owners:data.baseOwners == null ? [] : data.baseOwners.copy(),
+			revisions:[for (row in data.revisions) {id:row.id,parent:row.parent,time:row.time,kind:row.kind,from:row.from,
+				removed:row.removed,inserted:row.inserted,author:row.author}]};
 	}
 
 	/** Atomic replacement keeps a failed write from destroying the previous checkpoint. */

@@ -52,6 +52,9 @@ class JamFeature {
 		c.onNavigate(stopFollowing);
 		c.onActive(file -> { var current = session.get(); if (current != null && file != current.file) current.stopFollowing(); });
 		c.onEdited(file -> { var current = session.get(); if (current != null && current.file == file) current.acceptBuffer(); });
+		c.editAuthor(file -> { var current=session.get(); return current != null && current.file == file ? current.changeAuthor : null; });
+		c.comparisonSource(file -> { var current=session.get(); return current != null && current.file == file && current.initialized.get()
+			? {id:current.comparisonId,label:"Jam start",text:current.initialText} : null; });
 		c.onFrame(pollJam);
 		c.retains(() -> session.get() == null ? [] : [session.get().file]);
 		c.refuses((path, doing) -> session.get() != null && rayde.files.FileOps.inside(path, session.get().file) ? "Leave the Jam before " + doing + " its shared document" : null);
