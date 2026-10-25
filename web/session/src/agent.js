@@ -46,6 +46,22 @@ export const start = ask => serve(ask, {
           let reply;
           if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), remote: !!client, project: query.get("project") };
           else if (request.op === "page.load") reply = { entries: (await files("readonly", store => store.getAll())).filter(entry => localPath(entry.path)) };
+          else if (request.op === "page.seed") {
+            const entries = request.entries;
+            if (client || !Array.isArray(entries) || entries.some(entry => !localPath(entry?.path) || !(entry.path === "/work" || entry.path.startsWith("/work/")))) throw new Error("The sample must use page storage.");
+            // The root record and its initial files become durable together.
+            await files("readwrite", store => {
+              const root = store.get("/work");
+              root.onsuccess = () => {
+                if (root.result?.directory) return;
+                for (const entry of entries) {
+                  const existing = store.get(entry.path);
+                  existing.onsuccess = () => { if (existing.result === undefined) store.put(entry); };
+                }
+              };
+            });
+            reply = {};
+          }
           else if (request.op === "page.store") {
             if (!localPath(request.entry?.path)) throw new Error("The path is not page storage.");
             await files("readwrite", store => request.entry.remove ? store.delete(request.entry.path) : store.put(request.entry));

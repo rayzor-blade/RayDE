@@ -145,6 +145,24 @@ class WorkspaceChecks {
 		check(ids.indexOf("markdown") >= 0 && ids.indexOf("rayzor") >= 0, 'RayDE finds the embedded extensions: $ids');
 		var none = Procs.start("true", []);
 		check(none.exitCode() == 127 && none.stderr.readAll().toString().indexOf("session") >= 0, "a program started in a page with no session has ended, unsuccessfully, saying why");
+		var partial = [{path:"/work/.rayde/settings.json", directory:false, bytes:Bytes.ofString("{}") }];
+		entry = PageHost.install(null, partial);
+		check(entry == "/work/build.hxml" && Fs.exists(entry) && Fs.exists("/work/src/Main.hx"), "saved settings with implicit parents do not suppress sample initialization");
+		var edited = "class Main { static function main() { trace('kept λ'); } }\n", build = "-cp src\n-main Main\n--interp\n-D kept\n";
+		partial.push({path:"/work/src/Main.hx", directory:false, bytes:Bytes.ofString(edited)});
+		partial.push({path:"/work/build.hxml", directory:false, bytes:Bytes.ofString(build)});
+		partial.push({path:"/work/src/notes.txt", directory:false, bytes:Bytes.ofString("keep this file")});
+		PageHost.install(null, partial);
+		check(Fs.getContent("/work/src/Main.hx") == edited && Fs.getContent("/work/build.hxml") == build, "repair preserves saved source and build edits");
+		var saved = [for (file in PageHost.storage.entries()) if (StringTools.startsWith(file.path, "/work")) file];
+		PageHost.install(null, saved);
+		check(Fs.getContent("/work/src/Main.hx") == edited && Fs.getContent("/work/src/notes.txt") == "keep this file", "an initialized sample restores its saved files");
+		Fs.rename("/work/src/Main.hx", "/work/src/Renamed.hx"); Fs.deleteFile("/work/build.hxml");
+		saved = [for (file in PageHost.storage.entries()) if (StringTools.startsWith(file.path, "/work")) file];
+		entry = PageHost.install(null, saved);
+		check(entry == "/work" && !Fs.exists("/work/build.hxml") && !Fs.exists("/work/src/Main.hx") && Fs.getContent("/work/src/Renamed.hx") == edited,
+			"deleted or renamed sample files stay absent and the folder remains openable");
+		check(rayde.project.ProjectFile.read(entry).kind == "folder", "a sample without its build file opens as a folder workspace");
 		Fs.current = before;
 		Procs.current = beforeLauncher;
 		#end
@@ -167,6 +185,17 @@ class WorkspaceChecks {
 			var real = sys.FileSystem.fullPath(root);
 			check(client.root == real, 'the session reports its root: ${client.root} vs $real');
 			conform(new SessionWorkspace(client), client.root, "session workspace");
+			#if rayde_page
+			var beforeFiles = Fs.current, beforePrograms = Procs.current;
+			try {
+				var remote = new SessionWorkspace(client);
+				remote.saveContent(client.root + "/remote.txt", "session workspace");
+				var entry = PageHost.install(client, [{path:"/home/web/.rayde/settings.json", directory:false, bytes:Bytes.ofString("{}") }]);
+				check(entry == client.root && Fs.getContent(client.root + "/remote.txt") == "session workspace" && !PageHost.storage.exists("/work"), "a remote page mounts its session without creating the local sample");
+				remote.deleteFile(client.root + "/remote.txt");
+			} catch (error:Dynamic) { Fs.current = beforeFiles; Procs.current = beforePrograms; throw error; }
+			Fs.current = beforeFiles; Procs.current = beforePrograms;
+			#end
 			check(fails(() -> new SessionWorkspace(client).getContent("/elsewhere/file")), "a path outside the session's workspace fails");
 			conformLauncher(new SessionLauncher(client), "session launcher");
 			// The same session over frames on a byte stream, which is how a page reaches it.

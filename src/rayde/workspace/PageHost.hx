@@ -23,6 +23,13 @@ class PageHost {
 			bytes:entry.directory == true ? null : haxe.crypto.Base64.decode(entry.data)}];
 		session = bridge.remote ? bridge : null;
 		var entry = install(session, saved);
+		if (session == null && !hasSample(saved)) {
+			var known = new Map<String, Bool>();
+			for (file in saved) known.set(file.path, true);
+			var entries = [for (file in storage.entries()) if (!known.exists(file.path) && (file.path == SAMPLE || StringTools.startsWith(file.path, SAMPLE + "/")))
+				{path:file.path, directory:file.directory, data:file.directory ? null : haxe.crypto.Base64.encode(file.bytes)}];
+			bridge.request("page.seed", {entries:entries});
+		}
 		storage.onChange = (path, kind) -> {
 			if (!StringTools.startsWith(path, HOME + "/") && (session != null || !StringTools.startsWith(path, SAMPLE + "/"))) return;
 			var found = storage.exists(path), directory = found && storage.isDirectory(path);
@@ -43,6 +50,10 @@ class PageHost {
 	/** The folder of the sample project when there is no session. */
 	public static inline var SAMPLE = "/work";
 
+	/** The saved root is committed atomically with the initial sample files. Implicit parent directories do not count. */
+	static function hasSample(saved:Null<Array<{path:String, directory:Bool, bytes:Null<Bytes>}>>):Bool
+		return saved != null && Lambda.exists(saved, entry -> entry.path == SAMPLE && entry.directory);
+
 	/**
 	 * Makes `Fs` and `Procs` answer for a page. With a `session` its folder is the workspace; without one a small sample project is. Returns the path to open.
 	 * `saved` is what the page kept of its own files from an earlier visit.
@@ -62,14 +73,16 @@ class PageHost {
 			Procs.current = session.exec ? new SessionLauncher(session) : new NoLauncher();
 			return session.root;
 		}
-		if (!storage.exists(SAMPLE)) {
-			storage.createDirectory(SAMPLE + "/src");
-			storage.saveContent(SAMPLE + "/src/Main.hx", 'class Main {\n\tstatic function main() {\n\t\ttrace("Hello from RayDE in a page");\n\t}\n}\n');
-			storage.saveContent(SAMPLE + "/build.hxml", "-cp src\n-main Main\n--interp\n");
+		storage.createDirectory(SAMPLE);
+		if (!hasSample(saved)) {
+			if (!storage.exists(SAMPLE + "/src")) storage.createDirectory(SAMPLE + "/src");
+			if (storage.isDirectory(SAMPLE + "/src") && !storage.exists(SAMPLE + "/src/Main.hx"))
+				storage.saveContent(SAMPLE + "/src/Main.hx", 'class Main {\n\tstatic function main() {\n\t\ttrace("Hello from RayDE in a page");\n\t}\n}\n');
+			if (!storage.exists(SAMPLE + "/build.hxml")) storage.saveContent(SAMPLE + "/build.hxml", "-cp src\n-main Main\n--interp\n");
 		}
 		Fs.current = routed;
 		Procs.current = new NoLauncher();
-		return SAMPLE + "/build.hxml";
+		return storage.exists(SAMPLE + "/build.hxml") && !storage.isDirectory(SAMPLE + "/build.hxml") ? SAMPLE + "/build.hxml" : SAMPLE;
 	}
 
 	/** The themes and extension scripts and manifests that ship with RayDE; native libraries cannot run in a page and are left out. */

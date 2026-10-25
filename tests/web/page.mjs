@@ -23,6 +23,7 @@ const visitor = option("--visitor", "");
 const scheme = option("--scheme", "");
 const flip = args.includes("--flip");
 const probe = args.includes("--probe");
+if (args.includes("--reload") && !probe) throw new Error("--reload needs --probe");
 const envs = [args.includes("--standalone") && "RAYDE_STANDALONE=1", ...args.flatMap((arg, i) => arg === "--env" ? [args[i + 1]] : [])].filter(Boolean);
 const chrome = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 mkdirSync(shots, { recursive: true });
@@ -60,6 +61,7 @@ if (probe) {
   server = httpServer((request, response) => {
     try {
       const name = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      if (name === "/storage-probe.html") { response.writeHead(200, {"Content-Type":"text/html"}); response.end("<!doctype html><title>Storage probe</title>"); return; }
       const file = resolve(dir, "." + (name === "/" ? "/index.html" : name));
       if (!file.startsWith(dir + "/")) throw new Error("outside output");
       let body = ["/gpu-probe.mjs", "/queue-probe.mjs"].includes(name) ? readFileSync(join(here, name.slice(1))) : readFileSync(file);
@@ -122,10 +124,37 @@ try {
   const started = Date.now();
   const query = new URLSearchParams(envs.map(e => ["env", e]));
   if (session) { query.set("session", `ws://127.0.0.1:${sessionPort}/session`); query.set("project", "build.hxml"); }
+  async function pageFiles(put = [], remove = []) {
+    return page.evaluate(({put, remove}) => new Promise((resolve, reject) => {
+      const open = indexedDB.open("rayde-page", 1);
+      open.onupgradeneeded = () => open.result.createObjectStore("files", {keyPath:"path"});
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const db = open.result, transaction = db.transaction("files", put.length || remove.length ? "readwrite" : "readonly"), store = transaction.objectStore("files");
+        for (const entry of put) store.put(entry);
+        for (const path of remove) store.delete(path);
+        const request = store.getAll();
+        transaction.oncomplete = () => { resolve(request.result); db.close(); };
+        transaction.onerror = () => { reject(transaction.error); db.close(); };
+      };
+    }), {put, remove});
+  }
+  const savedMain = 'class Main {\n\tstatic function main() { trace("kept edit λ"); }\n}\n';
+  if (args.includes("--reload")) {
+    if (session) throw new Error("--reload checks the browser's local sample");
+    await page.goto(`http://127.0.0.1:${port}/storage-probe.html`);
+    await pageFiles([
+      {path:"/work/.rayde/settings.json", directory:false, data:Buffer.from("{}").toString("base64")},
+      {path:"/work/src/Main.hx", directory:false, data:Buffer.from(savedMain).toString("base64")},
+      {path:"/work/src/notes.txt", directory:false, data:Buffer.from("keep this file").toString("base64")},
+    ]);
+  }
   await page.goto(`http://127.0.0.1:${port}/index.html?${query}${session ? "#token=page-test" : ""}`);
-  await page.waitForFunction(() => /RayDE/.test(document.title), { timeout: 120000 });
-  const titled = Date.now() - started;
-  for (let i = 0; i < 400 && !lines.some((l) => /ashui: ready|RayDE stopped:|uncaught exception/.test(l)); i++) await sleep(100);
+  let titled = 0;
+  for (let i = 0; i < 1200 && !lines.some((l) => /ashui: ready|RayDE stopped:|uncaught exception/.test(l)); i++) {
+    if (!titled && /RayDE/.test(await page.title())) titled = Date.now() - started;
+    await sleep(100);
+  }
   const ready = Date.now() - started;
   if (!lines.some(l => l === "ashui: ready")) throw new Error("window did not become ready:\n" + lines.join("\n"));
   await sleep(Number(option("--settle", "2")) * 1000);
@@ -143,7 +172,7 @@ try {
   result.visitor = await page.evaluate(() => new URLSearchParams(location.search).getAll("env").find(e => e.startsWith("RAYDE_VISITOR=")));
   if (visitor && result.visitor !== "RAYDE_VISITOR=" + visitor) throw new Error("shortcuts do not follow the browser platform");
   result.readyMs = ready;
-  result.titledMs = titled;
+  result.titledMs = titled || ready;
   result.afterReady = memory(browser.process().pid);
   async function sample(label) {
     if (!probe) return;
@@ -156,6 +185,26 @@ try {
     if (result.idleSubmissions > 2) throw new Error("idle session work kept rendering GPU frames: " + result.idleSubmissions);
   }
   await page.screenshot({ path: join(shots, "welcome.png") });
+  if (args.includes("--reload")) {
+    const assertSaved = async missing => {
+      const files = await pageFiles(), main = files.find(file => file.path === "/work/src/Main.hx");
+      if (missing ? main != null || files.some(file => file.path === "/work/build.hxml") : !main || Buffer.from(main.data, "base64").toString() !== savedMain || !files.some(file => file.path === "/work/build.hxml")) throw new Error("sample files were lost, overwritten or recreated");
+      if (!files.some(file => file.path === "/work" && file.directory) || !files.some(file => file.path === "/work/src/notes.txt" && Buffer.from(file.data, "base64").toString() === "keep this file")) throw new Error("sample bootstrap or custom file was not preserved");
+    };
+    const reloadReady = async label => {
+      const from = lines.length;
+      await page.reload({waitUntil:"domcontentloaded"});
+      for (let i = 0; i < 1000 && !lines.slice(from).some(line => /ashui: ready|RayDE stopped:|uncaught exception/.test(line)); i++) await sleep(100);
+      if (!lines.slice(from).includes("ashui: ready")) throw new Error("reload failed: " + lines.slice(from).join("\n"));
+      await sleep(500); await page.screenshot({path:join(shots, label + ".png")});
+    };
+    await assertSaved(false);
+    await reloadReady("restored"); await assertSaved(false);
+    await pageFiles([], ["/work/src/Main.hx", "/work/build.hxml"]);
+    await reloadReady("folder-fallback"); await assertSaved(true);
+    result.reload = {migration:true, preservedEdits:true, deletedFilesStayDeleted:true, folderFallback:true};
+    result.afterEdit = memory(browser.process().pid);
+  }
   if (args.includes("--text-input")) {
     await page.mouse.click(140, session ? 165 : 140, {button:"right"}); await sleep(500);
     await page.screenshot({path:join(shots, "new-file-menu.png")});
@@ -216,7 +265,7 @@ try {
     await page.screenshot({ path: join(shots, "flipped.png") });
   }
 
-  if (!args.includes("--settings-only") && !args.includes("--input-only")) {
+  if (!args.includes("--settings-only") && !args.includes("--input-only") && !args.includes("--reload-only")) {
   // Open Main.hx from the Explorer, then type into it.
   if (session) await page.mouse.click(480, 412);
   else await page.mouse.click(147, 165);
