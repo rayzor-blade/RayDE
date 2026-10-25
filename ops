@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1792891081,"nonce":"Q23qDVvaRriLiMz/VhuYANVWryY=","status":1}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":2,"timestamp":1792891081,"nonce":"3z7k0lICW7HeiBhAVS/4cngVfzY=","title":"Align tab tops while keeping inactive bottom spacing","was":"Align inactive tab height with the active notch"}]}
