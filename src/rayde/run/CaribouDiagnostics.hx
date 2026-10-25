@@ -41,7 +41,8 @@ class CaribouDiagnostics {
 	/** The message, led by where it came from when that is a guest language: `[lua game/hello] message`. */
 	static function message(data:Dynamic):String {
 		var language = data.language == null ? "" : Std.string(data.language), module = data.module == null ? "" : Std.string(data.module);
-		var where = StringTools.trim(language + " " + module);
+		// Haxe's own errors name their file and line already; a guest language's say which language and module.
+		var where = language == "haxe" ? "" : StringTools.trim(language + " " + module);
 		return (where == "" ? "" : "[" + where + "] ") + Std.string(data.message);
 	}
 }

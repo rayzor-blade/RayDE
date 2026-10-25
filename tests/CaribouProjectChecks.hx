@@ -26,7 +26,21 @@ class CaribouProjectChecks {
 		var project = ProjectFile.read(example);
 		check(project.kind == "caribou" && project.name == "flock" && project.args[0] == "--cwd" && project.args.indexOf("-cp") > 0 && project.args[project.args.indexOf("-cp") + 1] == "src", 'the real project: ${project.args}');
 		check(project.args.indexOf("-main") > 0 && project.args.indexOf("-hl") > 0, "the real arguments carry -main and -hl");
-		Sys.println("Caribou real: the project in the caribou repository opens as caribou describes it");
+		// A program that does not compile: Caribou's own finding arrives at the line, through the runner.
+		var scratch = Sys.getCwd() + "bin/caribou-real-" + Std.random(0x3fffffff);
+		sys.FileSystem.createDirectory(scratch); sys.FileSystem.createDirectory(scratch + "/src");
+		sys.io.File.saveContent(scratch + "/scratch.cbproj", '[project]\nname = "scratch"\nentry = "haxe:Main"\nlanguages = ["haxe"]\n');
+		sys.io.File.saveContent(scratch + "/src/Main.hx", 'class Main {\n  static function main() {\n    var x:Int = "oops";\n    trace(x);\n  }\n}\n');
+		var runner = new Runner(Display.ofProject(new CompilerServer(), scratch + "/scratch.cbproj"));
+		runner.start();
+		var end = haxe.Timer.stamp() + 120;
+		while (runner.active() && haxe.Timer.stamp() < end) { runner.tick(); Sys.sleep(.05); }
+		runner.tick();
+		var found = [for (p in runner.problems) if (p.message == "String should be Int") p];
+		if (found.length == 0 && runner.console.indexOf("--diagnostics") >= 0) { Sys.println("Caribou real: skipped the run, this caribou has no --diagnostics"); return; }
+		check(runner.state == "finished" && runner.exitCode != 0, 'a program that does not compile ends with a failure: ${runner.state} ${runner.exitCode}');
+		check(found.length == 1 && found[0].file == sys.FileSystem.fullPath(scratch) + "/src/Main.hx" && found[0].range.start.line == 2 && found[0].range.start.character == 4 && found[0].severity == 1, 'the error is at its line: ${runner.problems}\n${runner.console}');
+		Sys.println("Caribou real: the project in the caribou repository opens as caribou describes it, and a compile error arrives at its line");
 	}
 
 	/** A Caribou project in the workbench: its file's problems are workspace problems, and the file is in the Explorer. */
