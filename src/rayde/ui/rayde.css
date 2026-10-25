@@ -284,6 +284,14 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde #git-diff-view .ui-code-diff { border: 0; border-radius: 0; }
 #rayde #rayde-tree [data-ignored] > .ui-tree-row { color: var(--text-tertiary); }
 #rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-icon, #rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-label { opacity: .55; }
+@media (prefers-color-scheme: light) {
+	#rayde #rayde-tree .ui-tree-row { color: var(--text-primary); }
+	#rayde #rayde-tree [data-ignored] > .ui-tree-row { color: var(--text-secondary); }
+	#rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-icon,
+	#rayde #rayde-tree [data-ignored] > .ui-tree-row > .ui-tree-label { opacity: 1; }
+	#rayde #rayde-tree [data-ignored] > .ui-tree-row[data-selected],
+	#rayde #rayde-tree [data-ignored] > .ui-tree-row:hover { color: var(--text-primary); }
+}
 #rayde #rayde-tree .ui-tree-chevron { width: 12px; height: 12px; }
 #rayde #rayde-tree .ui-tree-chevron-space { width: 12px; }
 
