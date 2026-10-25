@@ -240,6 +240,7 @@ class CodeActionsPart {
 		var done = false;
 		try done = codeActions.execute(key,file,version,(context, action) -> {
 			if (wb.editorOf(file) != editor || context.text != editor.value.get()) return false;
+			if (editor.editing.readOnly && action.edits != null && action.edits.length > 0) { wb.say("This document is read-only."); return false; }
 			if (action.edits != null && action.edits.length > 0) editor.applyEdits(action.edits);
 			return true;
 		}) catch (error:Dynamic) wb.say(Std.string(error));

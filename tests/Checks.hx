@@ -139,7 +139,7 @@ class Checks {
 		again.save(root);
 		check(!sys.FileSystem.exists(root + "/.rayde/keybindings.json") && !again.anyChanged(), "with nothing changed there is no file");
 
-		// Keymaps: each key of each is a chord, and no keymap gives one key to two commands, on a Mac or elsewhere.
+		// Each binding is a chord; shared keys belong to distinct focus contexts.
 		for (m in Keymaps.all)
 			for (mac in [true, false]) {
 				var seen = new Map<String, String>();
@@ -149,7 +149,7 @@ class Checks {
 					check(Keymaps.order.indexOf(e.command) >= 0, '${m.id} binds ${e.command}, which no keymap order names');
 					if (chord == null)
 						continue;
-					check(!seen.exists(chord.toString()), '${m.id} gives ${chord.label(mac)} to ${seen.get(chord.toString())} and ${e.command}');
+					check(!seen.exists(chord.toString()) || Keymaps.differentContexts(e.command,seen.get(chord.toString())), '${m.id} gives ${chord.label(mac)} to ${seen.get(chord.toString())} and ${e.command}');
 					seen.set(chord.toString(), e.command);
 				}
 			}
@@ -158,6 +158,7 @@ class Checks {
 		check(jetbrains.label("quickopen") == "⇧⌘O" && jetbrains.label("run") == "⌃R" && jetbrains.label("terminal") == "⌥F12", 'IntelliJ on a Mac: ${jetbrains.label("quickopen")} ${jetbrains.label("run")} ${jetbrains.label("terminal")}');
 		check(new KeyBindings(false, "intellij").label("quickopen") == "Ctrl+Shift+N" && new KeyBindings(false, "intellij").label("settings") == "Ctrl+Alt+S", "IntelliJ elsewhere");
 		var vs = new KeyBindings(true), plain = new KeyBindings(false);
+		check(vs.label("renamesymbol") == "F2" && vs.conflicts("renamesymbol").indexOf("filerename") < 0 && plain.conflicts("filerename").indexOf("renamesymbol") < 0,"Contextual rename keys are missing or reported as conflicts");
 		check(vs.label("filecopy") == "⌘C" && vs.label("filecut") == "⌘X" && vs.label("filepaste") == "⌘V" && vs.label("filerename") == "F2" && vs.label("fileduplicate") == "⌘D", 'file keys on a Mac: ${vs.label("filecopy")} ${vs.label("filepaste")} ${vs.label("filerename")}');
 		check(vs.label("filedelete") == "⌘⌫" && plain.label("filedelete") == "Delete" && parse("mod+enter", true).label(true) == "⌘↩", 'delete is Command+Backspace on a Mac and Delete elsewhere: ${vs.label("filedelete")} ${plain.label("filedelete")}');
 		check(plain.label("filecopypath") == "Alt+Shift+C" && vs.label("filecopypath") == "⌥⌘C" && plain.label("filereveal") == "Alt+Shift+R", 'copy path and reveal have keys: ${plain.label("filecopypath")} ${vs.label("filecopypath")} ${plain.label("filereveal")}');
@@ -465,9 +466,9 @@ class Checks {
 		// An item shows its command's icon unless it has one of its own; an SVG file that is missing is named.
 		sys.io.File.saveContent(dir + "/places.rayext", '{"name": "P", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a"}], "menus": {"editor/title": [{"command": "a"}], "explorer/context": [{"command": "a"}], "moon/context": [{"command": "a"}]}}}');
 		var places = Manifest.read(dir + "/places.rayext");
-		check(places.problems.length == 1 && places.problems[0].indexOf('"moon/context"') > 0 && places.problems[0].indexOf("explorer/context or editor/title") > 0, 'a menu location that does not exist is named with the ones that do: ${places.problems}');
+		check(places.problems.length == 1 && places.problems[0].indexOf('"moon/context"') > 0 && places.problems[0].indexOf(Hooks.menuIds().join(" or ")) > 0, 'a menu location that does not exist is named with the ones that do: ${places.problems}');
 		check(places.menuFor("editor/title", "a.md", "file").length == 1, "each location has its own items");
-		check(Hooks.knownEvent("file.saved") && Hooks.knownEvent("view.visibility") && !Hooks.knownEvent("file.save") && Hooks.knownMenu("editor/title") && !Hooks.knownMenu("editor/context"), "hooks and menus are told apart by name");
+		check(Hooks.knownEvent("file.saved") && Hooks.knownEvent("view.visibility") && !Hooks.knownEvent("file.save") && Hooks.knownMenu("editor/title") && Hooks.knownMenu("editor/context") && !Hooks.knownMenu("editor/unknown"), "hooks and menus are told apart by name");
 		sys.io.File.saveContent(dir + "/icons.rayext", '{"name": "I", "main": "ext/main.rays", "contributes": {"commands": [{"id": "a", "title": "A", "icon": "ext/notes.svg"}, {"id": "b", "title": "B", "icon": "eye"}, {"id": "c", "title": "C", "icon": "gone.svg"}, {"id": "d"}], "menus": {"explorer/context": [{"command": "a"}, {"command": "b", "icon": "star"}, {"command": "d"}, {"command": "d", "icon": "nowhere.svg"}]}}}');
 		var icons = Manifest.read(dir + "/icons.rayext");
 		var shown = icons.menuFor("explorer/context", "x", "file").map(i -> i.command + ":" + i.icon);

@@ -57,3 +57,11 @@ Launch overrides for Settings and panels are listed under [build environment](bu
 ## Status bar
 
 The right end of the bottom status bar names the language of the file in front (from its name: `Haxe`, `JSON`, `Plain Text` for an unknown extension) and, last, the project's runtime. Pages that are not files, such as Welcome or Settings, and image previews show no language; a local history revision shows its file's. Extensions' status items, such as the Git branch, sit at the left.
+
+## Code context menu
+
+`EditorContextMenu` wraps each mounted editor. Its rows exist only while open; selection survives the menu's focus change, and actions target the editor and split pane that opened it. The context-menu key and Shift+F10 anchor it at the caret. `editor/context` contributions receive the file and selection offsets through the existing command activation path.
+
+`EditorCommands` exposes language actions to the command center and keymaps, gates requests on server capabilities, and rejects stale results. Rename and formatting validate all text edits before changing buffers, retain per-file undo, and leave disk files unsaved. File operations and edits needing confirmation are rejected. `DocumentHistory.edit` applies patches to unmounted document data without constructing an editor.
+
+Run `SNAPSHOT_ONLY=context-menu scripts/snapshot.sh` for interaction, LSP and extension checks and screenshots in both themes.

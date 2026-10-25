@@ -158,7 +158,7 @@ class KeyBindings {
 		var chord = of(command);
 		if (chord == null)
 			return [];
-		return [for (c in commandsWithKeys()) if (c != command && chord.equals(of(c))) c];
+		return [for (c in commandsWithKeys()) if (c != command && !Keymaps.differentContexts(c,command) && chord.equals(of(c))) c];
 	}
 
 	/** The command a press of `chord` runs, or null. */

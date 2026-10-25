@@ -144,6 +144,7 @@ class KeymapPart {
 		if (chord == null)
 			return;
 		var id = bindings.commandFor(chord);
+		if (id == "renamesymbol" && wb.explorerPart.explorerFocused() && chord.equals(bindings.of("filerename"))) id = "filerename";
 		var action = id == null ? null : Lambda.find(wb.commandList, a -> a.id == id);
 		if (action == null)
 			return;

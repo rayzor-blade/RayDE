@@ -9,6 +9,7 @@ fi
 stage_natives bin
 main=Snapshots
 [ "${SNAPSHOT_ONLY:-}" != readiness ] || main=ExtensionLoadingChecks
+[ "${SNAPSHOT_ONLY:-}" != context-menu ] || main=EditorContextMenuChecks
 haxe "${ui_args[@]}" -cp tests -main "$main" -hl bin/snapshots.hl
 export ASHUI_SNAPSHOT_DIR=${ASHUI_SNAPSHOT_DIR:-$here/bin/snapshots}
 exec "$ash" --preset application bin/snapshots.hl "$@"

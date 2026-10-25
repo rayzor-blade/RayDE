@@ -58,10 +58,11 @@ typedef NativeLibrary = {name:String, path:String, sha256:String};
  * goes to the first view; `tab:<title>` opens a tab, which needs no declaration.
  *
  * `contributes` adds to the workbench: `commands` (each an `id`, a `title` and optionally an `icon`; the script
- * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`, `editor/title`), each a list of
+ * handles one with `registerCommand(id, handler)`) and `menus`, by location (`explorer/context`, `editor/title`, `editor/context`), each a list of
  * items naming a `command` and a `when`: `{"kind": "file", "ext": [".md"], "name": "README*"}`. A menu item runs its
  * command with `{path, kind}` of what the menu was opened on, and shows the command's `icon` unless it has one of
- * its own. An `icon` is an SVG file, relative to the config, or the name of one of RayDE's own.
+ * its own. The code editor's context menu also sends `range: {from, to}` in UTF-16 buffer offsets.
+ * An `icon` is an SVG file, relative to the config, or the name of one of RayDE's own.
  *
  * `tools` are the buttons in the view's header, beside its title: each has an `id`, a `title` (its tooltip) and an
  * `icon`, an SVG file or the name of one of RayDE's own (`add`, `refresh`, `search`...). Choosing one tells the

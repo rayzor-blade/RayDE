@@ -271,12 +271,13 @@ registerCommand('preview', (args) -> show(args.path));
 
 A menu item runs a command with `{path, kind}` of what the menu was opened on, where `kind` is `file` or `folder`. It appears when its `when` holds: all of the conditions it gives must match. `kind` is `file` or `folder`, `ext` lists extensions with their dot (compared without regard to case), and `name` is a pattern in which `*` matches any run of characters (`README*`).
 
-There are two menu locations:
+Menu locations:
 
 | Location | Where | Runs on |
 | --- | --- | --- |
 | `explorer/context` | the right-click menu of a file or folder in the Explorer | that row |
 | `editor/title` | the editor's `…` menu | the file in front |
+| `editor/context` | the code editor's right-click menu | the clicked file; also receives `range: {from, to}` as UTF-16 offsets in its current buffer |
 
 ![The editor's menu, with Preview for the file in front](images/markdown-title-menu.png)
 

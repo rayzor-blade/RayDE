@@ -391,6 +391,6 @@ class EditorPart {
 		wb.codeActionsPart.watchCodeActions(file, mounted);
 		wb.contributions.editorMade(file, mounted);
 		Owner.onCleanup(() -> { wb.assist.stop(file, mounted); state.compact(); });
-		return editor;
+		return new EditorContextMenu({workbench:wb,file:file,editor:mounted});
 	}
 }

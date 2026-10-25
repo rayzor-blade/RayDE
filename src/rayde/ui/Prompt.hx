@@ -52,7 +52,7 @@ class Prompt extends Component<PromptProps> {
 			// The field exists once the dialog has been laid out.
 			ashui.animation.AnimationScheduler.main.after(.05, () -> {
 				var field = input.get();
-				if (field != null)
+				if (field != null && open.get() && props.request.get() == r)
 					field.focus();
 			});
 		});

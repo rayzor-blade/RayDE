@@ -23,6 +23,8 @@ Hover a symbol for its type and documentation, or an underlined range for its di
 
 Use the minimap to navigate and fold controls to hide code regions. **Show Code Actions** (Cmd+.) offers actions for the current selection. Gutter icons run actions on their line; the configured main class has a **Run Project** action.
 
+Right-click code, or press the context-menu key, for navigation, **Code Actions…**, clipboard commands, Find and Replace. **Shift+F10** also opens it unless your keymap assigns that key to another command. A right-click inside a selection keeps it. Language actions such as references, rename and formatting are enabled when the server supports them; edits remain unsaved and can be undone. The default keymap uses **Shift+F12** for references, **F2** for symbol rename and **Shift+Alt+F** for formatting.
+
 Tabs retain their selection, scroll position, folds and undo history when you switch away. Reopening RayDE restores your previous [windows and tabs](window.md#restoring-a-session).
 
 Drag a tab along its strip to reorder it, or onto another split pane to move it. A thumbnail of its page follows the pointer. The insertion marker shows its position; dropping on a pane's content appends it. Crowded strips scroll when you hold the dragged tab near an edge. Press Escape or drop outside the editor to cancel. Tab order is restored with your workspace.

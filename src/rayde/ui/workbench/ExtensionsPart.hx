@@ -147,9 +147,11 @@ class ExtensionsPart {
 		return out;
 	}
 
-	function runExtensionCommand(id:String, command:String, path:Null<String>):Void {
+	function runExtensionCommand(id:String, command:String, path:Null<String>, ?range:{from:Int,to:Int}):Void {
 		var kind:Null<String> = path == null ? null : sys.FileSystem.exists(path) && sys.FileSystem.isDirectory(path) ? "folder" : "file";
-		if (!extensionManager.command(id, command, {path: path, kind: kind})) wb.say('Extension $id is not running.');
+		var args:Dynamic = {path:path,kind:kind};
+		if (range != null) args.range = range;
+		if (!extensionManager.command(id, command, args)) wb.say('Extension $id is not running.');
 	}
 
 	function contributedMenu(location:String, path:String, kind:String):Array<{extension:Manifest, item:rayde.ext.Manifest.MenuEntry}> {

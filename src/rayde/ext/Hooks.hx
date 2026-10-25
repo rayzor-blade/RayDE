@@ -24,6 +24,7 @@ class Hooks {
 	/** Menus, for `contributes.menus`. An item runs its command with `{ path, kind }` of what the menu was opened on. */
 	public static final menus:Array<MenuLocation> = [
 		{id: "explorer/context", label: "Explorer context menu", detail: "Files and folders in the Explorer"},
+		{id: "editor/context", label: "Code editor context menu", detail: "The file and selection in the code editor"},
 		{id: "editor/title", label: "Editor title menu", detail: "The editor's actions menu, for the file in front"}
 	];
 

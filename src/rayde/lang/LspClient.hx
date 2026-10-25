@@ -184,7 +184,7 @@ class LspClient {
 			clientInfo:{name:"RayDE", version:"0.1.0"},
 			workspaceFolders:[{uri:LspProtocol.uri(root), name:haxe.io.Path.withoutDirectory(root)}],
 			capabilities:{general:{positionEncodings:["utf-16"]},
-				window:{workDoneProgress:true}, workspace:{configuration:true}, experimental:{rayzorIndexProgress:true}, textDocument:{
+				window:{workDoneProgress:true}, workspace:{configuration:true,workspaceEdit:{documentChanges:true}}, experimental:{rayzorIndexProgress:true}, textDocument:{
 					synchronization:{didSave:true}, publishDiagnostics:{versionSupport:true},
 					completion:{completionItem:{snippetSupport:false}}, hover:{contentFormat:["markdown", "plaintext"]},
 					documentSymbol:{hierarchicalDocumentSymbolSupport:true}, signatureHelp:{signatureInformation:{parameterInformation:{labelOffsetSupport:true}}}}},

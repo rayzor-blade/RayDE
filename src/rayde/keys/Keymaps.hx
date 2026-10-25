@@ -18,10 +18,14 @@ typedef Keymap = {id:String, label:String, note:String, platform:String, keys:Ar
 class Keymaps {
 	public static inline var DEFAULT = "vscode";
 
+	/** File rename belongs to Explorer; symbol rename belongs to the code editor. */
+	public static function differentContexts(a:String, b:String):Bool
+		return a == "filerename" && b == "renamesymbol" || a == "renamesymbol" && b == "filerename";
+
 	/** The commands that can have a key, in the order a key shared by two of them is settled: the first runs. */
 	public static final order = [
 		"splitright", "splitdown", "focusnextgroup", "focuspreviousgroup", "moveeditorgroup", "joingroups", "closeeditorgroup",
-		"newwindow", "closewindow", "quickopen", "commands", "gotoline", "find", "replace", "findnext", "findprevious", "codeactions", "buildproject", "run", "stop", "save", "close", "definition", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
+		"newwindow", "closewindow", "quickopen", "commands", "gotoline", "find", "replace", "findnext", "findprevious", "codeactions", "buildproject", "run", "stop", "save", "close", "definition", "typedefinition", "implementation", "references", "renamesymbol", "formatdocument", "suggest", "parameterhints", "panel", "explorer", "problems", "output", "terminal", "newterminal",
 		"splitterminal", "settings", "minimize", "fullscreen", "togglebreakpoint", "pause", "stepover", "stepinto", "stepout", "filerename", "filedelete", "filecopy", "filecut", "filepaste", "fileduplicate", "filecopypath", "filereveal"
 	];
 	static final editorGroups = [
@@ -53,6 +57,7 @@ class Keymaps {
 			keys: [
 				k("buildproject", "mod+shift+b"),
 				k("codeactions", "mod+."),
+				k("implementation", "mod+f12"), k("references", "shift+f12"), k("renamesymbol", "f2"), k("formatdocument", "shift+alt+f"),
 				k("newwindow", "mod+shift+n"), k("closewindow", "mod+shift+w"), k("quickopen", "mod+p"), k("commands", "mod+shift+p"), k("gotoline", "ctrl+g"), k("find", "mod+f"), k("replace", "ctrl+h", "alt+cmd+f"), k("findnext", "f3", "cmd+g"), k("findprevious", "shift+f3", "shift+cmd+g"), k("run", "f5"), k("stop", "shift+f5"), k("save", "mod+s"),
 				k("close", "mod+w"), k("definition", "f12"), k("suggest", "ctrl+space"), k("parameterhints", "mod+shift+space"), k("panel", "mod+j"), k("explorer", "mod+b"), k("problems", "mod+shift+m"), k("output", "mod+shift+u"),
 				k("terminal", "ctrl+`"), k("newterminal", "ctrl+shift+`"), k("splitterminal", "ctrl+shift+5"), k("settings", "mod+,"),
