@@ -30,6 +30,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN: ${{ inputs.run_id }}
         run: gh run download "$SOURCE_RUN" --repo "$GITHUB_REPOSITORY" --name failed-package-windows-x86_64 --dir package
+      - name: Capture Windows startup crashes
+        shell: pwsh
+        run: |
+          $folder = New-Item -ItemType Directory -Force crash-reports
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\RayDE.exe'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -Value $folder.FullName -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -Value 2 -PropertyType DWord -Force | Out-Null
       - name: Check the extracted package
         run: |
           python3 - <<'PY'
@@ -48,3 +57,35 @@ jobs:
               raise SystemExit('Package checksum mismatch')
           subprocess.run([sys.executable, 'tests/distribution_smoke.py', str(archive), '--platform', 'windows'], check=True)
           PY
+      - name: Inspect a startup crash
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -like '*RayDE.exe*' } |
+            Format-List TimeCreated, Id, Message | Out-String | Tee-Object crash-reports/events.txt
+          $dump = Get-ChildItem crash-reports -Filter '*.dmp' | Select-Object -First 1
+          $debugger = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits" -Filter cdb.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } | Select-Object -First 1
+          if ($dump -and $debugger) {
+            $archive = Get-ChildItem package -Filter '*.zip' | Select-Object -First 1
+            Expand-Archive -LiteralPath $archive.FullName -DestinationPath debug-package
+            $program = Get-ChildItem debug-package -Filter RayDE.exe -Recurse | Select-Object -First 1
+            & $debugger.FullName -z $dump.FullName -logo crash-reports/debugger.txt -c ".symfix; .exepath+ $($program.DirectoryName); .reload; .ecxr; k; r; u @rip-20 L30; lm; q"
+          } else {
+            Write-Output "Crash dump: $($dump.FullName); debugger: $($debugger.FullName)"
+          }
+      - name: Remove temporary memory dumps
+        if: always()
+        shell: pwsh
+        run: Get-ChildItem crash-reports -Filter '*.dmp' -ErrorAction SilentlyContinue | Remove-Item -Force
+      - name: Preserve startup crash reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-startup-crash
+          path: |
+            crash-reports/events.txt
+            crash-reports/debugger.txt
+          if-no-files-found: warn
+          retention-days: 5
