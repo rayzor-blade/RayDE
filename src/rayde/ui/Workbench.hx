@@ -912,7 +912,7 @@ class Workbench extends Component<WorkbenchProps> {
 			themePart.themeStudio = themePart.makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
 		shellPart.registerShell();
-		keymapPart.bindings = KeyBindings.read(props.display.cwd, Sys.systemName() == "Mac");
+		keymapPart.bindings = KeyBindings.read(props.display.cwd, rayde.Platform.shortcutsMac());
 		libraries = new LibraryManager(props.display.cwd);
 		codeActionsPart.setupCodeActions();
 		extensionsPart.startExtensions();
@@ -1042,7 +1042,8 @@ class Workbench extends Component<WorkbenchProps> {
 		ashui.css.Identity.of(root.tree, root.node.id).bindAttribute("data-theme", Computed.make(() -> Theming.current.get()));
 		ashui.css.Identity.of(root.tree, root.node.id).bindBooleanAttribute("data-sans", Computed.make(() -> Theming.ownSans.get()));
 		identity.bindBooleanAttribute("data-round", Computed.make(() -> chrome.resizable() && windowStyle.get() != "windows"));
-		identity.bindBooleanAttribute("data-outline", Computed.make(() -> chrome.resizable() && windowStyle.get() != "macos"));
+		// A Mac's window frame draws the window's edge, unless the window is in a page, which has no frame: it draws the outline, until it is fullscreen.
+		identity.bindBooleanAttribute("data-outline", Computed.make(() -> chrome.resizable() && (windowStyle.get() != "macos" || !rayde.Platform.systemFrame())));
 		return root;
 	}
 
@@ -1054,6 +1055,6 @@ class Workbench extends Component<WorkbenchProps> {
 		var item = <div id="rayde-panel-toggle" class="rayde-status-item action flex" onClick={_ -> panelsPart.togglePanel()}><icon document={Icons.LAYOUT_BOTTOM_LINE} class="size-3.5"/></div>;
 		if (on)
 			ashui.css.Identity.of(item.tree, item.node.id).setAttribute("data-on", "");
-		return <tooltip label={"Toggle panel (" + (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + "J)"} side="top">{item}</tooltip>;
+		return <tooltip label={"Toggle panel (" + (rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl+") + "J)"} side="top">{item}</tooltip>;
 	}
 }

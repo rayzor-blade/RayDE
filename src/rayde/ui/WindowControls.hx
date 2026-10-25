@@ -32,6 +32,7 @@ class WindowControls extends Component<WindowControlsProps> {
 	public static final styles = [
 		{id: "auto", label: "Platform default"},
 		{id: "macos", label: "macOS: lights on the left"},
+		{id: "icon", label: "RayDE icon on the left, for a standalone app"},
 		{id: "windows", label: "Windows: flat, on the right"},
 		{id: "gnome", label: "GNOME: round, on the right"},
 		{id: "kde", label: "KDE: flat and rounded, on the right"}
@@ -41,8 +42,11 @@ class WindowControls extends Component<WindowControlsProps> {
 	public static function styleFor(setting:String):String {
 		if (setting != "auto")
 			return setting;
+		if (rayde.Platform.standalone())
+			return "icon";
+		if (rayde.Platform.isMac())
+			return "macos";
 		return switch Sys.systemName() {
-			case "Mac": "macos";
 			case "Windows": "windows";
 			case _:
 				var desktop = Sys.getEnv("XDG_CURRENT_DESKTOP");
@@ -52,12 +56,12 @@ class WindowControls extends Component<WindowControlsProps> {
 
 	/** Whether the controls sit at the left edge of the bar, as macOS's do. */
 	public static function onLeft(style:String):Bool
-		return style == "macos";
+		return style == "macos" || style == "icon";
 
 	/** How wide the group is, so the other end of the bar can hold the same and keep what is between centred. */
 	public static function width(style:String):Int
 		return switch style {
-			case "macos": 88;
+			case "macos" | "icon": 88;
 			case "windows": 138;
 			case "gnome": 108;
 			case _: 112;
@@ -82,6 +86,13 @@ class WindowControls extends Component<WindowControlsProps> {
 				</div>;
 				ashui.css.Identity.of(lights.tree, lights.node.id).setAttribute("data-focused", focused ? "true" : "false");
 				lights;
+			case "icon":
+				// A page that is an app of its own has no window to close or minimise: the icon stands where the buttons would.
+				var bitmap = ashui.types.Bitmap.fromBytes(AppIcon.png());
+				ashui.reactive.Owner.onCleanup(bitmap.dispose);
+				bitmap.shrink(96);
+				var image = new ashui.ui.Image(bitmap, {width: 22, height: 22, fit: Contain});
+				<div id="rayde-app-icon" class="flex items-center pl-4">{image}</div>;
 			case "windows":
 				<div class="flex items-stretch ml-auto" height={40}>
 					<tooltip label="Minimize" side="bottom"><button id="rayde-win-minimize" class="rayde-caption" onClick={_ -> c.minimize()}><icon document={Icons.SUBTRACT_LINE} class="size-4"/></button></tooltip>

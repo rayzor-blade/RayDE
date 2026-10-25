@@ -24,7 +24,7 @@ class Appearance {
 
 	public function new() {}
 
-	public static final controlStyles = ["auto", "macos", "windows", "gnome", "kde"];
+	public static final controlStyles = ["auto", "macos", "icon", "windows", "gnome", "kde"];
 
 	public static function read(root:String):Appearance {
 		var a = new Appearance(), json = Store.section(root, "appearance");

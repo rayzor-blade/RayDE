@@ -15,6 +15,14 @@ import haxe.macro.Expr;
 class AppIcon {
 	static inline var RESOURCE = "rayde.icon";
 
+	/** The icon as a PNG, embedded, for drawing in the window. */
+	public static macro function png():Expr {
+		var path = "assets/rayde-icon.png";
+		var bytes = try Fs.getBytes(path) catch (e:Dynamic) Context.error('app icon: cannot read $path', Context.currentPos());
+		Context.addResource("rayde.icon.png", bytes);
+		return macro haxe.Resource.getBytes("rayde.icon.png");
+	}
+
 	/** The icon, embedded: `{pixels, width, height}`. */
 	public static macro function window():Expr {
 		var path = "assets/icons/rayde-256.rgba";

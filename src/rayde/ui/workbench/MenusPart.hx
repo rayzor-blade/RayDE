@@ -105,7 +105,7 @@ class MenusPart {
 		Owner.onCleanup(() -> { if (menuRefs.get(group.id) == menuRef) menuRefs.remove(group.id); });
 		var noFile = Computed.make(() -> wb.active.get() == ""), noSaved = Computed.make(() -> wb.open.get().length == wb.dirty.get().length);
 		var noGroups = Computed.make(() -> wb.editorPart.groups.all().length < 2);
-		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl+";
+		var mod = rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl+";
 		return <tooltip label="Editor actions" side="bottom">
 			<dropdown-menu ref={menuRef} id="rayde-editor-menu">
 				<dropdown-menu-trigger id="rayde-editor-menu-trigger" variant={Ghost} size={Icon} class="rayde-more"><icon document={Icons.MORE_FILL} class="size-4"/></dropdown-menu-trigger>
@@ -149,7 +149,8 @@ class MenusPart {
 
 	function desktopMenuBar():Element {
 		#if ashui_window
-		if (Sys.systemName() != "Mac" || Sys.getEnv("RAYDE_MENU_BAR") == "1") return new DesktopMenus({groups:menuGroups});
+		// A Mac keeps its menus in the system menu bar, and a page has none: no bar is drawn in the window.
+		if (!rayde.Platform.isMac() || Sys.getEnv("RAYDE_MENU_BAR") == "1") return new DesktopMenus({groups:menuGroups});
 		#end
 		return <div/>;
 	}
@@ -173,14 +174,14 @@ class MenusPart {
 				run:command == null ? null : command.run};
 		}
 		function edit(id:String, label:String, key:String, shift = false):ashui.app.ApplicationMenu.MenuItem {
-			var mac = Sys.systemName() == "Mac";
+			var mac = rayde.Platform.shortcutsMac();
 			return {label:label, shortcut:(mac ? "⌘" : "Ctrl+") + (shift ? (mac ? "⇧" : "Shift+") : "") + key.toUpperCase(),
 				key:{key:key, meta:mac, ctrl:!mac, alt:false, shift:shift}, run:() -> ashui.input.Keyboard.edit(wb.tree, id)};
 		}
 		var separator:ashui.app.ApplicationMenu.MenuItem = {separator:true};
 		var files = [item("newwindow"), item("newproject"), separator, item("openfolder"), item("openproject"), item("recentprojects"), separator,
 			item("save"), {label:"Save All", enabled:wb.dirty.get().length > 0, run:wb.runPart.saveAll}, separator, item("close"), item("closewindow")];
-		if (Sys.systemName() != "Mac") files.push({label:"Exit", run:ProjectWindows.quit});
+		if (!rayde.Platform.isMac()) files.push({label:"Exit", run:ProjectWindows.quit});
 		var windows = [item("minimize"), item("maximize"), item("fullscreen"), separator];
 		for (app in ashui.app.WindowedApp.windows()) windows.push({label:app.window.title(), run:() -> app.window.focus()});
 		return [

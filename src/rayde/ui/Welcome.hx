@@ -44,7 +44,7 @@ typedef WelcomeProps = {
  */
 class Welcome extends Component<WelcomeProps> {
 	function render():Element {
-		var mod = Sys.systemName() == "Mac" ? "⌘" : "Ctrl";
+		var mod = rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl";
 		return <div id="rayde-welcome" class="rayde-welcome flex flex-col flex-1 min-h-0 items-center overflow-auto">
 			<div class="flex flex-col gap-7 px-10 py-6 max-w-full my-auto shrink-0" width={900}>
 				<div class="flex flex-col gap-3">

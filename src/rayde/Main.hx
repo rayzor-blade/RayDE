@@ -8,7 +8,17 @@ class Main {
 			checkInstall();
 			return;
 		}
+		#if (wasm || rayde_page)
+		// In a page there is no disk and no argument: host storage and the session, or a sample, stand in.
+		try rayde.ui.ProjectWindows.run(rayde.workspace.PageHost.install())
+		catch (e:haxe.Exception) {
+			// The page shows only that the program stopped; say why in its log.
+			Sys.println("RayDE stopped: " + e.message + "\n" + haxe.CallStack.toString(e.stack));
+			throw e;
+		}
+		#else
 		rayde.ui.ProjectWindows.run(args.length == 0 ? null : args[0]);
+		#end
 	}
 
 	/** Exercises the packaged runtime and extension VM without opening a window. */

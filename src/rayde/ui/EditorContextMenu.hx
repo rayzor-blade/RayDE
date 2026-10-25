@@ -62,7 +62,7 @@ class EditorContextMenu extends Component<{workbench:Workbench, file:String, edi
 				return;
 			// A preset may already use Shift+F10, as IntelliJ does for Run.
 			if (!menuKey
-				&& props.workbench.keymapPart.bindings.commandFor(rayde.keys.Chord.parse("shift+f10", Sys.systemName() == "Mac")) != null)
+				&& props.workbench.keymapPart.bindings.commandFor(rayde.keys.Chord.parse("shift+f10", rayde.Platform.shortcutsMac())) != null)
 				return;
 			event.preventDefault();
 			event.stopPropagation();
@@ -111,7 +111,7 @@ class EditorContextMenu extends Component<{workbench:Workbench, file:String, edi
 	}
 
 	function editKey(key:String, shift = false):String
-		return (Sys.systemName() == "Mac" ? "⌘" : "Ctrl+") + (shift ? Sys.systemName() == "Mac" ? "⇧" : "Shift+" : "") + key;
+		return (rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl+") + (shift ? rayde.Platform.shortcutsMac() ? "⇧" : "Shift+" : "") + key;
 
 	function languageItem(command:String, label:String):Element {
 		var wb = props.workbench, offset = contextOffset;
@@ -137,7 +137,7 @@ class EditorContextMenu extends Component<{workbench:Workbench, file:String, edi
 			${extensionItems()}
 			<context-menu-separator/>
 			<context-menu-item id="rayde-code-menu-undo" shortcut={editKey("Z")} disabled={readOnly || !DocumentHistory.canUndo(editor.state)} onSelect={() -> run(editor.undo)}>Undo</context-menu-item>
-			<context-menu-item id="rayde-code-menu-redo" shortcut={Sys.systemName() == "Mac" ? editKey("Z",true) : editKey("Y")} disabled={readOnly || !DocumentHistory.canUndo(editor.state,true)} onSelect={() -> run(editor.redo)}>Redo</context-menu-item>
+			<context-menu-item id="rayde-code-menu-redo" shortcut={rayde.Platform.shortcutsMac() ? editKey("Z",true) : editKey("Y")} disabled={readOnly || !DocumentHistory.canUndo(editor.state,true)} onSelect={() -> run(editor.redo)}>Redo</context-menu-item>
 			<context-menu-separator/>
 			<context-menu-item id="rayde-code-menu-cut" shortcut={editKey("X")} disabled={readOnly || !selected} onSelect={() -> run(() -> { Clipboard.setText(editor.editing.selection()); editor.editing.replace(""); })}>Cut</context-menu-item>
 			<context-menu-item id="rayde-code-menu-copy" shortcut={editKey("C")} disabled={!selected} onSelect={() -> run(() -> Clipboard.setText(editor.editing.selection()))}>Copy</context-menu-item>

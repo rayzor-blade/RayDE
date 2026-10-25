@@ -318,7 +318,7 @@ class ExplorerPart {
 		items.push(<context-menu-separator/>);
 		items.push(menuItem("Copy Path", "filecopypath", () -> ashui.input.Clipboard.setText(path)));
 		items.push(menuItem("Copy Relative Path", "filecopyrelative", () -> ashui.input.Clipboard.setText(FileOps.relative(wb.props.display.cwd, path))));
-		items.push(menuItem(Sys.systemName() == "Mac" ? "Reveal in Finder" : "Reveal in File Manager", "filereveal", () -> FileOps.reveal(path)));
+		items.push(menuItem(rayde.Platform.isMac() ? "Reveal in Finder" : "Reveal in File Manager", "filereveal", () -> FileOps.reveal(path)));
 		if (!top) {
 			items.push(<context-menu-separator/>);
 			items.push(menuItem("Rename…", "filerename", () -> askRename(path)));

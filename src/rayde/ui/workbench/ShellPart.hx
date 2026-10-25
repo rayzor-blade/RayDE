@@ -148,7 +148,7 @@ class ShellPart {
 			{id: "fileduplicate", label: "Duplicate File", icon: Icons.FILE_COPY_2_LINE, run: () -> wb.explorerPart.withSelected(wb.explorerPart.duplicateFile)},
 			{id: "filecopypath", label: "Copy File Path", icon: Icons.LINK_M, run: () -> wb.explorerPart.withSelected(p -> ashui.input.Clipboard.setText(p))},
 			{id: "filecopyrelative", label: "Copy Relative File Path", icon: Icons.LINK_M, run: () -> wb.explorerPart.withSelected(p -> ashui.input.Clipboard.setText(FileOps.relative(wb.props.display.cwd, p)))},
-			{id: "filereveal", label: Sys.systemName() == "Mac" ? "Reveal File in Finder" : "Reveal File in File Manager", icon: Icons.FOLDER_OPEN_LINE, run: () -> wb.explorerPart.withSelected(FileOps.reveal)},
+			{id: "filereveal", label: rayde.Platform.isMac() ? "Reveal File in Finder" : "Reveal File in File Manager", icon: Icons.FOLDER_OPEN_LINE, run: () -> wb.explorerPart.withSelected(FileOps.reveal)},
 			{id: "minimize", label: "Minimize Window", icon: Icons.SUBTRACT_LINE, run: () -> wb.chrome.minimize()},
 			{id: "fullscreen", label: "Toggle Full Screen", icon: Icons.FULLSCREEN_LINE, run: () -> wb.chrome.toggleFullscreen()},
 			{id: "maximize", label: "Toggle Maximize Window", icon: Icons.CHECKBOX_BLANK_LINE, run: () -> wb.chrome.toggleMaximize()},
@@ -252,7 +252,7 @@ class ShellPart {
 
 	/** The project in a pill in the middle, which opens the command center, and the window's controls at one end; the bar moves the window. */
 	function titleBar():Element {
-		var hint = Sys.systemName() == "Mac" ? "⌘P" : "Ctrl+P";
+		var hint = rayde.Platform.shortcutsMac() ? "⌘P" : "Ctrl+P";
 		wb.pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onPointerDown={e -> e.stopPropagation()} onClick={_ -> if (wb.quickOpen.get()) wb.quickOpen.set(false) else wb.openCenter()}>
 			<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
 			<text class="text-xs flex-1">${wb.props.name}</text>

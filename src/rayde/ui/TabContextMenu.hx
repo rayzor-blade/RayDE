@@ -160,7 +160,7 @@ class TabContextMenu extends Component<TabContextMenuProps> {
 			<context-menu-item id="rayde-tab-menu-save" disabled={Workbench.isVirtual(file) || wb.dirty.get().indexOf(file) < 0 || wb.contributions.readOnly(file)} onSelect={() -> run(file,() -> wb.runPart.saveFile(file))}>Save</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-copy-path" disabled={path == null} onSelect={() -> run(file,() -> copyPath(path,false))}>Copy Path</context-menu-item>
 			<context-menu-item id="rayde-tab-menu-copy-relative" disabled={path == null} onSelect={() -> run(file,() -> copyPath(path,true))}>Copy Relative Path</context-menu-item>
-			<context-menu-item id="rayde-tab-menu-reveal" disabled={path == null} onSelect={() -> run(file,() -> rayde.files.FileOps.reveal(path))}>${Sys.systemName() == "Mac" ? "Reveal in Finder" : "Reveal in File Manager"}</context-menu-item>
+			<context-menu-item id="rayde-tab-menu-reveal" disabled={path == null} onSelect={() -> run(file,() -> rayde.files.FileOps.reveal(path))}>${rayde.Platform.isMac() ? "Reveal in Finder" : "Reveal in File Manager"}</context-menu-item>
 			${wb.menusPart.titleItems(file,action -> run(file,action))}
 		</div>;
 	}
