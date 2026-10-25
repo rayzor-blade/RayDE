@@ -165,7 +165,8 @@ class FileTabs extends Component<FileTabsProps> {
 		corner(path, right - r, r, r, k, 1.5 * Math.PI, 2 * Math.PI);
 		path.lineTo(right, h - s);
 		corner(path, full, h - s, s, k, Math.PI, Math.PI / 2);
-		path.close();
+		// Fills close implicitly; the outline stays open where the tab meets its page.
+		if (!outlined) path.close();
 		ctx.fillPath(path, Brush.solid(theme.color(Surface).rgb()));
 		if (outlined) {
 			ctx.strokePath(path,new ashui.draw.Stroke(1),theme.color(Border).toBrush());
