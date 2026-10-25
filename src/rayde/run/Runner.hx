@@ -172,14 +172,14 @@ class Runner {
 		append("Exited with " + code + ".\n");
 	}
 
-	/** Runs Caribou on the project file. It builds what the project needs, and writes its findings as JSON lines to a file that is read as it grows. */
+	/** Runs Caribou on the project file. It builds what the project needs, and writes its findings as JSON lines to a file that is read as it grows. The flag comes before the file: what follows the program is the program's own arguments. */
 	function launchCaribou(command:String, log:String):Void {
 		var caribou = rayde.project.CaribouProject.binary() ?? "caribou";
 		diagnostics = haxe.io.Path.join([out, "diagnostics.jsonl"]);
 		diagnosticsSize = -1;
 		if (sys.FileSystem.exists(diagnostics)) sys.FileSystem.deleteFile(diagnostics);
 		building = command == "build";
-		job = new Job(caribou, [command, display.project.file, "--diagnostics", diagnostics], haxe.io.Path.join([out, log]), null, display.cwd, true);
+		job = new Job(caribou, [command, "--diagnostics", diagnostics, display.project.file], haxe.io.Path.join([out, log]), null, display.cwd, true);
 		job.start();
 	}
 

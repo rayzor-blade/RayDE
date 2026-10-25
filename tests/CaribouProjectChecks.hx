@@ -114,10 +114,10 @@ class CaribouProjectChecks {
 		check(runner.state == "finished" && runner.exitCode == 0 && runner.console.indexOf("hello from guest") >= 0, 'run output: ${runner.state} ${runner.exitCode} ${runner.console}');
 		check(runner.problems.length == 2 && runner.problems[0].file == project + "/src/game/hello.lua", 'the findings are the problems: ${runner.problems.length}');
 		var calls = sys.io.File.getContent(log);
-		check(calls.indexOf("run " + project + "/game.cbproj --diagnostics " + project + "/.rayde/run/diagnostics.jsonl") >= 0, 'run goes through the project file: $calls');
+		check(calls.indexOf("run --diagnostics " + project + "/.rayde/run/diagnostics.jsonl " + project + "/game.cbproj") >= 0, 'run goes through the project file: $calls');
 		runner.build(); finish("build");
 		check(runner.state == "built" && runner.problems.length == 2, 'build: ${runner.state}');
-		check(sys.io.File.getContent(log).indexOf("build " + project + "/game.cbproj --diagnostics") >= 0, "build goes through the project file");
+		check(sys.io.File.getContent(log).indexOf("build --diagnostics " + project + "/.rayde/run/diagnostics.jsonl " + project + "/game.cbproj") >= 0, "build goes through the project file");
 		var stopped = Display.ofProject(server, ws + "/ws.cbproj"), idle = new Runner(stopped);
 		idle.start();
 		check(idle.state == "failed" && idle.console.indexOf("no application entry point") >= 0, 'a workspace does not run: ${idle.state}');
