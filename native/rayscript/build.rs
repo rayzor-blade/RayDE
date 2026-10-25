@@ -12,6 +12,10 @@ fn main() {
                 println!("cargo:rustc-link-lib=dylib=libhl");
             }
         }
+        _ if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") => {
+            // AVIF assembly addresses its own exported tables directly inside the HDLL.
+            println!("cargo:rustc-cdylib-link-arg=-Wl,-Bsymbolic");
+        }
         _ => {}
     }
 }
