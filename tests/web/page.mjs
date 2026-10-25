@@ -45,6 +45,16 @@ function memory(pid) {
 }
 
 const port = await freePort();
+const workspace = option("--session-root", null);
+let session, sessionPort;
+if (workspace) {
+  sessionPort = await freePort();
+  session = spawn(join(root, "native/session/target/debug/rayde-session"), [
+    "--root", resolve(workspace), "--port", String(sessionPort), "--token", "page-test",
+    "--origin", `http://127.0.0.1:${port}`, "--exec", "--extension-host", join(root, "bin/rayde-extension-host"),
+    "--extensions", join(root, "extensions"),
+  ], { stdio: "ignore" });
+}
 let server;
 if (probe) {
   server = httpServer((request, response) => {
@@ -56,6 +66,7 @@ if (probe) {
       if (name === "/gpu-worker.mjs") body = Buffer.from('import "./gpu-probe.mjs";\n' + body);
       if (name === "/gpu-agent.mjs") body = Buffer.from(body.toString().replace("execute(wire, words[2] >>> 0, words[3] >>> 0);", "globalThis.raydeBatch(wire, words[2] >>> 0, words[3] >>> 0); execute(wire, words[2] >>> 0, words[3] >>> 0);"));
       if (name === "/ashui-host.mjs" && args.includes("--agents")) body = Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)", String(Number(option("--agents", "3")))));
+      if (name === "/rayde_session.mjs" && args.includes("--trace")) body = Buffer.from('console.log("session agent", location.search);\n' + body);
       response.writeHead(200, { "Content-Type": /\.wasm$/.test(name) ? "application/wasm" : /\.(m?js)$/.test(name) ? "text/javascript" : "text/html", "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" });
       response.end(body);
     } catch { response.writeHead(404).end(); }
@@ -86,17 +97,39 @@ try {
   });
   const lines = [];
   result.console = lines;
-  page.on("console", (m) => lines.push(m.text()));
-  page.on("pageerror", (e) => lines.push("PAGE ERROR " + e.message));
+  const log = line => { lines.push(line); if (args.includes("--trace")) writeFileSync(join(shots, "console.log"), lines.join("\n")); };
+  page.on("console", (m) => log(m.text()));
+  page.on("pageerror", (e) => log("PAGE ERROR " + e.message));
+  if (args.includes("--trace")) {
+    const debug = await page.createCDPSession(); await debug.send("Network.enable");
+    const trace = [];
+    for (const event of ["Network.webSocketFrameSent", "Network.webSocketFrameReceived"]) debug.on(event, value => {
+      let message; try { message = JSON.parse(value.response.payloadData); } catch { return; }
+      delete message.token;
+      trace.push({event, message}); writeFileSync(join(shots, "session.json"), JSON.stringify(trace, null, 2));
+    });
+  }
   if (scheme) await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
   const started = Date.now();
-  await page.goto(`http://127.0.0.1:${port}/index.html?${new URLSearchParams(envs.map(e => ["env", e]))}`);
+  const query = new URLSearchParams(envs.map(e => ["env", e]));
+  if (session) { query.set("session", `ws://127.0.0.1:${sessionPort}/session`); query.set("project", "build.hxml"); }
+  await page.goto(`http://127.0.0.1:${port}/index.html?${query}${session ? "#token=page-test" : ""}`);
   await page.waitForFunction(() => /RayDE/.test(document.title), { timeout: 120000 });
   const titled = Date.now() - started;
   for (let i = 0; i < 400 && !lines.some((l) => /ashui: ready|RayDE stopped:|uncaught exception/.test(l)); i++) await sleep(100);
   const ready = Date.now() - started;
   if (!lines.some(l => l === "ashui: ready")) throw new Error("window did not become ready:\n" + lines.join("\n"));
   await sleep(Number(option("--settle", "2")) * 1000);
+  await page.screenshot({ path: join(shots, "initial.png") });
+  if (probe) result.initial = await page.evaluate(() => ({ marks:raydeProbe.marks, url:location.href }));
+  if (args.includes("--extension-proof")) {
+    const proof = join(resolve(workspace), "extension-proof.txt");
+    for (let i = 0; i < 200; i++) {
+      try { if (readFileSync(proof, "utf8") === "remote extension answered\nlarge file: \n" + "🙂漢字".repeat(9000)) { result.extension = true; break; } } catch {}
+      await sleep(100);
+    }
+    if (!result.extension) throw new Error("the remote extension did not answer its workspace service call:\n" + lines.join("\n"));
+  }
   result.title = await page.title();
   result.visitor = await page.evaluate(() => new URLSearchParams(location.search).getAll("env").find(e => e.startsWith("RAYDE_VISITOR=")));
   if (visitor && result.visitor !== "RAYDE_VISITOR=" + visitor) throw new Error("shortcuts do not follow the browser platform");
@@ -108,6 +141,11 @@ try {
     result[label] = await page.evaluate(() => ({ marks: raydeProbe.marks, timeOrigin: performance.timeOrigin, wasmBytes: raydeProbe.memory?.buffer.byteLength, gpu: raydeProbe.gpu, jsHeap: performance.memory?.usedJSHeapSize }));
   }
   await sample("readyProbe");
+  if (session && probe) {
+    await sleep(1500); await sample("idleProbe");
+    result.idleSubmissions = result.idleProbe.gpu.submissions - result.readyProbe.gpu.submissions;
+    if (result.idleSubmissions > 2) throw new Error("idle session work kept rendering GPU frames: " + result.idleSubmissions);
+  }
   await page.screenshot({ path: join(shots, "welcome.png") });
   if (args.includes("--timeline")) for (const t of [3, 6, 10]) { await sleep(t * 1000 - (t > 3 ? (t === 6 ? 3000 : 6000) : 0)); await page.screenshot({ path: join(shots, `t${t}.png`) }); }
 
@@ -119,7 +157,8 @@ try {
   }
 
   // Open Main.hx from the Explorer, then type into it.
-  await page.mouse.click(147, 165);
+  if (session) await page.mouse.click(480, 412);
+  else await page.mouse.click(147, 165);
   for (const t of [1, 3, 6]) {
     await sleep(t === 1 ? 1000 : t === 3 ? 2000 : 3000);
     await page.screenshot({ path: join(shots, `open-${t}s.png`) });
@@ -143,6 +182,15 @@ try {
   await page.keyboard.type("// typed in a page", { delay: 15 });
   await sleep(1000);
   await page.screenshot({ path: join(shots, "typed.png") });
+  if (session) {
+    const modifier = result.visitor === "RAYDE_VISITOR=Mac" ? "Meta" : "Control";
+    await page.keyboard.down(modifier); await page.keyboard.press("S"); await page.keyboard.up(modifier);
+    for (let i = 0; i < 100; i++) {
+      if (readFileSync(join(resolve(workspace), "src/Main.hx"), "utf8").includes("// typed in a page")) { result.saved = true; break; }
+      await sleep(100);
+    }
+    if (!result.saved) throw new Error("the editor's save did not reach the session file");
+  }
   result.afterEdit = memory(browser.process().pid);
   await sample("editProbe");
   if (probe && (!result.editProbe.gpu?.completed || !result.editProbe.gpu.batches || result.editProbe.gpu.crossBatchSubmits)) throw new Error("GPU frames did not complete in one batch");
@@ -174,6 +222,7 @@ try {
   if (probe) writeFileSync(join(shots, "probe.json"), JSON.stringify(result, null, 2));
   await browser.close();
   if (probe) server.close(); else server.kill();
+  session?.kill();
 }
 const fmt = (m) => `renderer ${mb(m.renderer)}, gpu ${mb(m.gpu)}, other ${mb(m.other)}, total ${mb(m.renderer + m.gpu + m.other)}`;
 console.log(`title: ${result.title}`);

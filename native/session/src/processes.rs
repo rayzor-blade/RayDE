@@ -24,12 +24,18 @@ pub struct ChildPrograms {
     running: Arc<Mutex<HashMap<u64, Running>>>,
     next: AtomicU64,
     limit: usize,
+    extensions: Option<serde_json::Value>,
 }
 
 impl ChildPrograms {
     pub fn new(root: PathBuf, limit: usize) -> Self {
         let root = std::fs::canonicalize(&root).unwrap_or(root);
-        Self { root, running: Arc::new(Mutex::new(HashMap::new())), next: AtomicU64::new(1), limit }
+        Self { root, running: Arc::new(Mutex::new(HashMap::new())), next: AtomicU64::new(1), limit, extensions: None }
+    }
+
+    pub fn with_extensions(mut self, host: PathBuf, root: Option<PathBuf>) -> Self {
+        self.extensions = Some(json!({"host": host, "root": root}));
+        self
     }
 
     pub fn running(&self) -> usize {
@@ -48,6 +54,7 @@ async fn pump(mut reader: impl AsyncReadExt + Unpin, stream: &'static str, id: u
 }
 
 impl Programs for ChildPrograms {
+    fn extensions(&self) -> Option<serde_json::Value> { self.extensions.clone() }
     fn spawn(&self, command: &str, args: &[String], cwd: &str, env: &HashMap<String, String>, emit: Out) -> Result<u64> {
         if command.is_empty() {
             return Err(SessionError::new("bad-request", "The command is empty."));

@@ -28,3 +28,25 @@ With `--auth-secret S --login-url URL`, anyone may look, but every change answer
 ## Tests
 
 `cargo test --manifest-path native/session/Cargo.toml` runs the protocol against a real socket. `cd web/session && npm test` drives the demo page in headless Chromium.
+
+## RayDE in the browser
+
+Build the page with `scripts/build-web.sh`. It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm`, and `channel-agent.mjs`; `ASH_CHANNEL_ROOT` selects that checkout and `ASH_CHANNEL_WEB` its built side module. `WEB_LIBS` selects the ashui, window and GPU web libraries. Use matching Ash and window libraries with future-aware browser idle waits. The page agent is bundled with `web/session`'s development dependencies (`npm ci` there first).
+
+To use an existing workspace and installed extensions:
+
+```sh
+native/session/target/debug/rayde-session --root path/to/workspace --exec \
+  --web bin/web/rayde --extension-host "$PWD/bin/rayde-extension-host" \
+  --extensions "$PWD/extensions"
+```
+
+Open the printed HTTP address with `?session=ws://127.0.0.1:7070/session&project=build.hxml#token=TOKEN`. Use the actual host, port and printed token; a published HTTPS page needs a `wss://` session. A page served elsewhere needs its exact origin allowed with `--origin`. The token belongs in the fragment, which is not sent as an HTTP request parameter.
+
+The page mounts the session's directory and saves files there. Extensions run in separate processes on the session machine; their views render in the browser and their service calls keep the existing capability checks. The server operator selects the host binary and built-in extension directory. Execution still requires `--exec` and, when configured, sign-in.
+
+Requests, process startup, output and shutdown use `ash.Future`. Readers park until a reply or stream event arrives; one sleeping deadline worker handles timeouts. UI polling only drains available messages. Page settings and the local sample files are stored in IndexedDB. With no session URL, RayDE opens the local sample.
+
+The full editor currently uses file reads and explicit saves over the session. The demo client's Yjs offline document synchronization is separate; it is not yet bound to the full editor's text buffers. Remote language-server transport and PTYs are also separate work.
+
+`node tests/web/session.mjs --dir bin/web/rayde` checks opening, editing and saving a real session file, large replies and an extension service round trip. It creates a temporary workspace from `tests/fixtures/browser-session`. `tests/SessionAsyncChecks.hx` checks concurrent replies, deadlines, early process output and disconnection under Ash.

@@ -1,0 +1,1 @@
+{"id":"browser-probe","name":"Browser probe","main":"main.rays","activationEvents":["onStartup"],"capabilities":["workspace.read","workspace.write"]}

@@ -104,7 +104,7 @@ export class Doc {
 
 export class SessionClient {
   /**
-   * @param {{url: string, token?: string, credential?: string, persist?: boolean, reconnect?: boolean}} options
+   * @param {{url: string, token?: string, credential?: string, persist?: boolean, reconnect?: boolean, timeout?: number}} options
    *   `url` is the session's WebSocket address; `credential` is what the sign-in edge gave, if the person has signed in.
    */
   constructor(options) {
@@ -138,6 +138,9 @@ export class SessionClient {
   connect() {
     return new Promise((resolve, reject) => {
       let first = true;
+      const initial = setTimeout(() => {
+        if (first) { first = false; this.close(); reject(new Error("The workspace session did not connect in time.")); }
+      }, this.options.timeout ?? 30000);
       const open = () => {
         if (this.stopped) return;
         const socket = new WebSocket(this.options.url);
@@ -153,9 +156,9 @@ export class SessionClient {
             this.pendingAuth = !!this.hello.signin && !this.identity;
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc) => doc.sync().catch(() => {})));
-            if (first) { first = false; resolve(this.hello); }
+            if (first) { first = false; clearTimeout(initial); resolve(this.hello); }
           } catch (error) {
-            if (first) { first = false; reject(error); }
+            if (first) { first = false; clearTimeout(initial); this.close(); reject(error); }
           }
         };
         socket.onclose = () => {
@@ -164,7 +167,7 @@ export class SessionClient {
           for (const [, reply] of this.waiting) reply.reject(new Error("The connection closed."));
           this.waiting.clear();
           if (wasReady) this.emit("disconnected");
-          if (first && !wasReady && this.options.reconnect === false) { first = false; reject(new Error("Could not connect.")); }
+          if (first && !wasReady && this.options.reconnect === false) { first = false; clearTimeout(initial); reject(new Error("Could not connect.")); }
           if (!this.stopped && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5000));
         };
       };
@@ -191,9 +194,17 @@ export class SessionClient {
   rawRequest(op, params = {}) {
     return new Promise((resolve, reject) => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return reject(new Error("Not connected."));
+      if (this.waiting.size >= 4096) return reject(new Error("Too many session requests are waiting."));
       const id = this.next++;
-      this.waiting.set(id, { resolve, reject });
-      this.socket.send(JSON.stringify({ ...params, op, id }));
+      const timer = setTimeout(() => {
+        this.waiting.delete(id); reject(new Error(`The session did not answer ${op}.`));
+      }, this.options.timeout ?? 60000);
+      this.waiting.set(id, {
+        resolve(value) { clearTimeout(timer); resolve(value); },
+        reject(error) { clearTimeout(timer); reject(error); },
+      });
+      try { this.socket.send(JSON.stringify({ ...params, op, id })); }
+      catch (error) { this.waiting.get(id).reject(error); this.waiting.delete(id); }
     });
   }
 

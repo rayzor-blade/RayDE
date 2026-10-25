@@ -24,6 +24,8 @@ pub type Out = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Programs a session runs, in directories of its workspace. A session that must not run programs has none.
 pub trait Programs: Send + Sync + 'static {
+    /// Trusted extension-host installation on the session machine, when configured by its runner.
+    fn extensions(&self) -> Option<Value> { None }
     fn spawn(&self, command: &str, args: &[String], cwd: &str, env: &HashMap<String, String>, emit: Out) -> Result<u64>;
     fn write(&self, id: u64, data: &[u8]) -> Result<()>;
     fn close_input(&self, id: u64) -> Result<()>;
@@ -154,7 +156,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
+                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;

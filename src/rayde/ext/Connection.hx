@@ -128,8 +128,12 @@ class Connection {
 	public function hasEvents():Bool return nextMessage < messages.length || host != null && host.pending();
 	public function canWake():Bool return host != null && host.canWake();
 	public function hostDescription():String {
+		#if wasm
+		return state + " · workspace session" + (host != null && host.processId != null ? " (PID " + host.processId + ")" : "");
+		#else
 		var isolated = manifest != null && manifest.natives.length > 0;
 		return state + (isolated ? " · isolated process" + (host != null && host.processId != null ? " (PID " + host.processId + ")" : "") : " · embedded");
+		#end
 	}
 
 	/** Deadlines for local delayed events and replies; native output wakes an otherwise quiet window. */

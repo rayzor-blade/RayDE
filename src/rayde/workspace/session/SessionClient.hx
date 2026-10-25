@@ -1,92 +1,212 @@
 package rayde.workspace.session;
 
-/** A request the session refused. `code` is stable (`not-found`, `auth-required`, `outside`…), `message` is a sentence. */
+/** A request the session refused. `code` is stable; `message` is a sentence. */
 class SessionFailure {
 	public final code:String;
 	public final message:String;
-	/** Where to sign in, when the code is `auth-required`. */
 	public final login:Null<String>;
-
-	public function new(code:String, message:String, ?login:String) {
-		this.code = code;
-		this.message = message;
-		this.login = login;
-	}
-
+	public function new(code:String, message:String, ?login:String) { this.code = code; this.message = message; this.login = login; }
 	public function toString():String return message;
 }
 
-/** One connection to a session, used synchronously: a request returns when its response has arrived, and events that come meanwhile are routed on. */
+private typedef Waiting = {future:ash.Future<Dynamic>, deadline:Float, op:String};
+
+/** Multiplexed session RPC. One receiver completes futures; UI consumers drain events without waiting. */
 class SessionClient {
 	public var root(default, null) = "";
 	public var name(default, null) = "";
 	public var exec(default, null) = false;
-	/** Where to sign in, when the session asks for it before changes. */
+	public var remote(default, null) = true;
+	public var project(default, null):Null<String>;
+	public var extensionHost(default, null):Null<String>;
+	public var extensionsRoot(default, null):Null<String>;
 	public var signin(default, null):Null<String>;
-	/** Called for every event the session sends that is not a response. */
 	public var onEvent:Null<Dynamic->Void>;
-
+	public var onWake:Null<Void->Void>;
+	final listeners:Array<Dynamic->Void> = [];
+	final programs:Array<Dynamic->Void> = [];
 	final channel:Channel;
+	final mutex = new sys.thread.Mutex();
+	final changed = new sys.thread.Lock();
+	final sendWake = new sys.thread.Lock();
+	var outgoing:Array<{text:String, id:Null<Int>}> = [];
+	var outgoingBytes = 0;
+	final waiting = new Map<Int, Waiting>();
+	var events:Array<{message:Dynamic, size:Int}> = [];
+	var eventBytes = 0;
 	var next = 1;
-	final responses = new Map<Int, Dynamic>();
+	var nextWait = -1;
+	var closed = false;
 
 	function new(channel:Channel) {
 		this.channel = channel;
+		sys.thread.Thread.create(receive);
+		sys.thread.Thread.create(deadlines);
+		sys.thread.Thread.create(transmit);
 	}
 
-	/** Connects over a WebSocket to `host:port`'s `/session`. */
-	public static function connect(host:String, port:Int, ?token:String):SessionClient
-		return over(WebSocket.connect(host, port, "/session"), token);
+	public static function connect(host:String, port:Int, ?token:String):SessionClient return over(WebSocket.connect(host, port, "/session"), token);
+	public static function connectFramed(host:String, port:Int, ?token:String):SessionClient return over(FramedChannel.connect(host, port), token);
 
-	/** Connects over frames on a TCP stream, to a session's raw port. */
-	public static function connectFramed(host:String, port:Int, ?token:String):SessionClient
-		return over(FramedChannel.connect(host, port), token);
-
-	/** Says hello on `channel` and returns the client for it. */
 	public static function over(channel:Channel, ?token:String):SessionClient {
 		var client = new SessionClient(channel);
 		try {
-			var hello = client.request("hello", {token: token});
-			client.root = hello.root;
-			client.name = hello.name;
-			client.exec = hello.exec == true;
-			client.signin = hello.signin;
-		} catch (e:Dynamic) {
-			channel.close();
-			throw e;
-		}
+			var hello = client.request("hello", {token:token});
+			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
+			client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
+			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
+			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
+		} catch (error:Dynamic) { client.close(); throw error; }
 		return client;
 	}
 
-	public function request(op:String, ?params:Dynamic, timeout = 60.):Dynamic {
-		var id = next++, message:Dynamic = {};
-		if (params != null) for (field in Reflect.fields(params)) if (Reflect.field(params, field) != null) Reflect.setField(message, field, Reflect.field(params, field));
-		Reflect.setField(message, "op", op);
-		Reflect.setField(message, "id", id);
-		channel.sendText(haxe.Json.stringify(message));
-		var until = haxe.Timer.stamp() + timeout;
-		while (!responses.exists(id)) {
-			if (haxe.Timer.stamp() > until) throw new SessionFailure("timeout", "The session did not answer " + op + ".");
-			pump(.5);
-		}
-		var reply = responses.get(id);
-		responses.remove(id);
-		if (reply.ok != true) throw new SessionFailure(reply.code, reply.message, reply.login);
-		return reply;
+	public function isClosed():Bool { mutex.acquire(); var value = closed; mutex.release(); return value; }
+
+	public function subscribe(listener:Dynamic->Void):Void->Void {
+		mutex.acquire(); listeners.push(listener); mutex.release();
+		return () -> { mutex.acquire(); listeners.remove(listener); mutex.release(); };
 	}
 
-	/** Reads one message if one arrives within `seconds`, and routes it. Returns whether one did. */
+	/** Program streams are consumed on the receiver, where their futures can wake readers without a UI frame. */
+	public function subscribePrograms(listener:Dynamic->Void):Void->Void {
+		mutex.acquire(); programs.push(listener); mutex.release();
+		return () -> { mutex.acquire(); programs.remove(listener); mutex.release(); };
+	}
+
+	/** Sends without waiting for a response. Page storage uses this after a local write. */
+	public function notify(op:String, params:Dynamic):Void {
+		var message:Dynamic = {op:op};
+		if (params != null) for (field in Reflect.fields(params)) Reflect.setField(message, field, Reflect.field(params, field));
+		send(message);
+	}
+
+	function send(message:Dynamic):Void {
+		var text = haxe.Json.stringify(message);
+		mutex.acquire();
+		if (closed || outgoingBytes + text.length > 32 * 1024 * 1024) { mutex.release(); throw "The session send queue is unavailable."; }
+		outgoing.push({text:text, id:message.id}); outgoingBytes += text.length;
+		mutex.release(); sendWake.release();
+	}
+
+	function transmit():Void {
+		try while (true) {
+			mutex.acquire();
+			if (closed) { mutex.release(); return; }
+			var next = outgoing.shift();
+			if (next != null) outgoingBytes -= next.text.length;
+			var expired = next != null && next.id != null && !waiting.exists(next.id);
+			mutex.release();
+			if (next == null) sendWake.wait();
+			else if (!expired) channel.sendText(next.text);
+		} catch (error:Dynamic) { finish(error); }
+	}
+
+	/** Starts an RPC without occupying the caller until its answer; failures reject the future. */
+	public function requestAsync(op:String, ?params:Dynamic, timeout = 60.):ash.Future<Dynamic> {
+		var future = new ash.Future<Dynamic>(), message:Dynamic = {};
+		if (params != null) for (field in Reflect.fields(params)) if (Reflect.field(params, field) != null) Reflect.setField(message, field, Reflect.field(params, field));
+		mutex.acquire();
+		if (closed) { mutex.release(); future.reject(new SessionFailure("closed", "The session connection is closed.")); return future; }
+		if (Lambda.count(waiting) >= 4096) { mutex.release(); future.reject(new SessionFailure("busy", "Too many session requests are waiting.")); return future; }
+		var id = next++;
+		waiting.set(id, {future:future, deadline:haxe.Timer.stamp() + timeout, op:op});
+		mutex.release(); changed.release();
+		Reflect.setField(message, "op", op); Reflect.setField(message, "id", id);
+		try send(message) catch (error:Dynamic) {
+			mutex.acquire(); waiting.remove(id); mutex.release(); future.reject(error);
+		}
+		return future;
+	}
+
+	/** Synchronous provider compatibility; Ash parks this fiber while the receiver completes the RPC. */
+	public function request(op:String, ?params:Dynamic, timeout = 60.):Dynamic return requestAsync(op, params, timeout).await();
+
+	function receive():Void {
+		try while (true) {
+			mutex.acquire(); var stop = closed; mutex.release(); if (stop) return;
+			var text = channel.receive(3600);
+			if (text == null) continue;
+			var message:Dynamic = haxe.Json.parse(text);
+			var completions:Array<ash.Future<Dynamic>> = [];
+			mutex.acquire();
+			if (message.id != null) {
+				var pending = waiting.get(message.id); waiting.remove(message.id); mutex.release(); changed.release();
+				if (pending != null) {
+					if (message.ok == true) pending.future.resolve(message);
+					else pending.future.reject(new SessionFailure(message.code, message.message, message.login));
+				}
+				if (onWake != null) onWake();
+			} else {
+				var stream = message.ev == "proc.out" || message.ev == "proc.exit" || message.ev == "session.disconnected";
+				var consumers = stream ? programs.copy() : [];
+				var queued = message.ev != null && (!stream || consumers.length == 0 || message.ev == "session.disconnected");
+				if (queued) {
+					if (eventBytes + text.length > 32 * 1024 * 1024) { mutex.release(); throw "The session event queue is full."; }
+					events.push({message:message, size:text.length}); eventBytes += text.length;
+					for (id in [for (id in waiting.keys()) if (id < 0) id]) { completions.push(waiting.get(id).future); waiting.remove(id); }
+				}
+				mutex.release();
+				for (consumer in consumers) consumer(message);
+				for (future in completions) future.resolve(true);
+				if (message.ev != null && onWake != null) onWake();
+			}
+		} catch (error:Dynamic) { finish(error); }
+	}
+
+	/** One sleeping deadline worker per connection; no timer or poll runs while there are no pending requests. */
+	function deadlines():Void {
+		while (true) {
+			var now = haxe.Timer.stamp(), delay:Null<Float> = null, expired:Array<Waiting> = [];
+			mutex.acquire();
+			if (closed) { mutex.release(); return; }
+			for (id in [for (id in waiting.keys()) id]) {
+				var item = waiting.get(id), remaining = item.deadline - now;
+				if (remaining <= 0) { expired.push(item); waiting.remove(id); }
+				else if (delay == null || remaining < delay) delay = remaining;
+			}
+			mutex.release();
+			for (item in expired) if (item.op == "_event") item.future.resolve(false) else item.future.reject(new SessionFailure("timeout", "The session did not answer " + item.op + "."));
+			changed.wait(delay);
+		}
+	}
+
+	/** Dispatches one event, optionally awaiting its arrival as a future. With zero seconds the UI never waits. */
 	public function pump(seconds:Float):Bool {
-		var text = channel.receive(seconds);
-		if (text == null) return false;
-		var message:Dynamic = haxe.Json.parse(text);
-		if (message.id != null) responses.set(message.id, message);
-		else if (message.ev != null && onEvent != null) onEvent(message);
+		mutex.acquire(); var event = events.shift(); if (event != null) eventBytes -= event.size;
+		if (event == null && seconds > 0 && !closed) {
+			var future = new ash.Future<Dynamic>(), id = nextWait--;
+			waiting.set(id, {future:future, deadline:haxe.Timer.stamp() + seconds, op:"_event"});
+			mutex.release(); changed.release();
+			future.await();
+			return pump(0);
+		}
+		var callbacks = listeners.copy();
+		mutex.release();
+		if (event == null) return false;
+		if (onEvent != null) onEvent(event.message);
+		for (listener in callbacks) listener(event.message);
 		return true;
 	}
 
-	/** Takes everything that has already arrived. */
 	public function drain():Void while (pump(0)) {}
 
-	public function close():Void channel.close();
+	function finish(error:Dynamic):Void {
+		mutex.acquire();
+		if (closed) { mutex.release(); return; }
+		closed = true;
+		var pending = [for (item in waiting) item.future]; waiting.clear();
+		outgoing = []; outgoingBytes = 0;
+		var message = {ev:"session.disconnected"};
+		events.push({message:message, size:0});
+		var consumers = programs.copy();
+		mutex.release(); changed.release(); sendWake.release();
+		for (future in pending) future.reject(error);
+		for (consumer in consumers) consumer(message);
+		try channel.close() catch (_:Dynamic) {}
+		if (onWake != null) onWake();
+	}
+
+	public function close():Void {
+		finish(new SessionFailure("closed", "The session connection is closed."));
+	}
 }

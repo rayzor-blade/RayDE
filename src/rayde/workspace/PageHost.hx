@@ -10,6 +10,30 @@ import rayde.workspace.session.SessionWorkspace;
  * (settings, themes, built-in extensions), and, when there is one, a session for the workspace and its programs.
  */
 class PageHost {
+	public static var session(default, null):Null<SessionClient>;
+	public static var bridge(default, null):Null<SessionClient>;
+
+	/** Restores page storage and mounts the session selected by the browser's URL. */
+	public static function open():String {
+		#if wasm
+		var channel = new rayde.workspace.session.BrowserChannel();
+		bridge = SessionClient.over(channel);
+		var entries:Array<Dynamic> = bridge.request("page.load").entries;
+		var saved = [for (entry in entries) {path:(entry.path:String), directory:entry.directory == true,
+			bytes:entry.directory == true ? null : haxe.crypto.Base64.decode(entry.data)}];
+		session = bridge.remote ? bridge : null;
+		var entry = install(session, saved);
+		storage.onChange = (path, kind) -> {
+			if (!StringTools.startsWith(path, HOME + "/") && (session != null || !StringTools.startsWith(path, SAMPLE + "/"))) return;
+			var found = storage.exists(path), directory = found && storage.isDirectory(path);
+			bridge.notify("page.store", {entry:{path:path, remove:!found, directory:directory, data:!found || directory ? null : haxe.crypto.Base64.encode(storage.getBytes(path))}});
+		};
+		if (session != null && bridge.project != null && bridge.project != "") return session.root + "/" + bridge.project;
+		return entry;
+		#else
+		return install();
+		#end
+	}
 	/** The page's own files. A page saves them from `storage.onChange` and loads them with `storage.load` before `install`. */
 	public static var storage(default, null):MemoryWorkspace;
 

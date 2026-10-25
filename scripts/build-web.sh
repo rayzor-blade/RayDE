@@ -15,10 +15,17 @@ for need in blinc_abi.wasm hlwindow-web hlwgpu-web; do
   [ -e "$libs/$need" ] || { echo "build-web.sh: $libs/$need is missing; run ashui's tests/wasm/run.sh --no-open once, or set WEB_LIBS" >&2; exit 1; }
 done
 out=${1:-$here/bin/web/rayde}
+channel=${ASH_CHANNEL_ROOT:-$siblings/ash-channel}
+channel_libs=${ASH_CHANNEL_WEB:-$channel/target/wasm-channel}
+[ -f "$channel_libs/ash_channel.wasm" ] || fail "build Ash's ash-channel wasm side module first, or set ASH_CHANNEL_WEB"
+[ -x "$here/web/session/node_modules/.bin/esbuild" ] || fail "run npm ci in web/session to build the page agent"
 mkdir -p "$out"
 cp "$libs/blinc_abi.wasm" "$out/"
+cp "$channel_libs/ash_channel.wasm" "$channel_libs/channel-agent.mjs" "$out/"
+(cd "$here/web/session" && npm run build >/dev/null)
+cp "$here/web/session/dist/rayde_session.js" "$out/rayde_session.mjs"
 cd "$here"
-haxe "${ui_args[@]}" -D wasm -D ashui_no_hdll -D ashui_window -D rayde_page -D "hlwgpu_web=$libs/hlwgpu-web" -D "hlwindow_web=$libs/hlwindow-web" \
+haxe "${ui_args[@]}" -cp "$channel/haxelib/ash-channel" -D wasm -D ashui_no_hdll -D ashui_window -D rayde_page -D "hlwgpu_web=$libs/hlwgpu-web" -D "hlwindow_web=$libs/hlwindow-web" \
   -dce full --macro "ashui.core.render.UiFramework.register()" --macro "ashui.macro.DefaultFonts.stage()" --macro "rayde.workspace.PageFonts.stage()" --macro "ashui.macro.WebPage.stage()" \
   --macro "hlwgpu.macro.NativeInstall.stage()" --macro "hlwindow.macro.NativeInstall.stage()" \
   -main rayde.Main -hl "$out/rayde.hl"

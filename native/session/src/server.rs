@@ -34,6 +34,9 @@ pub struct Options {
     pub origins: Vec<String>,
     /// Whether programs may be run.
     pub exec: bool,
+    /// The trusted installed extension host; its processes still require the session's execution permission.
+    pub extension_host: Option<PathBuf>,
+    pub extensions: Option<PathBuf>,
     /// Who may edit; without it every connection may.
     pub authority: Option<Arc<dyn crate::auth::Authority>>,
     /// A directory of files for pages to load, served beside the session.
@@ -46,7 +49,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -86,7 +89,16 @@ struct Shared {
 
 pub async fn start(options: Options) -> std::io::Result<Running> {
     let store = Arc::new(DirStore::new(&options.root)?);
-    let programs: Option<Arc<dyn Programs>> = options.exec.then(|| Arc::new(ChildPrograms::new(store.root().to_path_buf(), 16)) as Arc<dyn Programs>);
+    let extension_host = options.extension_host.as_ref().map(std::fs::canonicalize).transpose()?;
+    let extensions = options.extensions.as_ref().map(std::fs::canonicalize).transpose()?;
+    if extension_host.is_some() && !options.exec {
+        return Err(std::io::Error::other("The extension host requires --exec."));
+    }
+    let programs: Option<Arc<dyn Programs>> = options.exec.then(|| {
+        let mut programs = ChildPrograms::new(store.root().to_path_buf(), 16);
+        if let Some(host) = extension_host { programs = programs.with_extensions(host, extensions); }
+        Arc::new(programs) as Arc<dyn Programs>
+    });
     // The workspace needs a way to schedule a flush, and the flush needs the workspace: the weak link breaks the cycle.
     let link: Arc<OnceLock<Weak<Workspace<DirStore>>>> = Arc::new(OnceLock::new());
     let generations: Arc<Mutex<HashMap<String, u64>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -249,7 +261,9 @@ async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
                 Some("json" | "map") => "application/json",
                 _ => "application/octet-stream",
             };
-            Response::builder().header(header::CONTENT_TYPE, kind).header(header::CACHE_CONTROL, "no-store").body(Body::from(bytes)).unwrap()
+            Response::builder().header(header::CONTENT_TYPE, kind).header(header::CACHE_CONTROL, "no-store")
+                .header("Cross-Origin-Opener-Policy", "same-origin").header("Cross-Origin-Embedder-Policy", "require-corp")
+                .body(Body::from(bytes)).unwrap()
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }

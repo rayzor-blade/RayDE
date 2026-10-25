@@ -120,6 +120,15 @@ class ProjectWindows {
 				app = WindowedApp.current;
 				Owner.onCleanup(server.stop);
 				GpuProgress.attach(app.device, app.tree, () -> app.frames);
+				#if wasm
+				var bridge = rayde.workspace.PageHost.bridge;
+				if (bridge != null) {
+					bridge.onWake = ashui.core.Work.notify;
+					var receive:ashui.layout.LayoutTree->Void = tree -> if (tree == app.tree) bridge.drain();
+					ashui.layout.LayoutTree.flushHooks.push(receive);
+					Owner.onCleanup(() -> ashui.layout.LayoutTree.flushHooks.remove(receive));
+				}
+				#end
 				host = new WorkspaceWindow({
 					initial: workspace,
 					server: server,

@@ -298,3 +298,42 @@ async fn the_protocol_also_runs_as_length_prefixed_frames_over_tcp_and_as_websoc
     assert_eq!(n, 0);
     running.shutdown().await;
 }
+
+#[tokio::test]
+async fn extension_hosts_require_execution_and_hello_reports_the_installation() {
+    use rayde_session::server::{Options, start};
+    let dir = tempfile::tempdir().unwrap();
+    let host = std::env::current_exe().unwrap().canonicalize().unwrap();
+    let mut options = Options::new(dir.path());
+    options.extension_host = Some(host.clone());
+    assert!(start(options).await.is_err());
+    let mut options = Options::new(dir.path());
+    options.exec = true;
+    options.extension_host = Some(host.clone());
+    options.extensions = Some(dir.path().to_path_buf());
+    let running = start(options).await.unwrap();
+    let mut client = Client::connect(&running).await;
+    let hello = client.request(json!({"op":"hello"})).await;
+    assert_eq!(hello["exec"], true);
+    assert_eq!(hello["extensions"]["host"], host.to_str().unwrap());
+    assert_eq!(hello["extensions"]["root"], dir.path().canonicalize().unwrap().to_str().unwrap());
+    running.shutdown().await;
+}
+
+#[tokio::test]
+async fn served_pages_allow_shared_wasm_memory() {
+    use rayde_session::server::{Options, start};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("index.html"), "page").unwrap();
+    let mut options = Options::new(dir.path());
+    options.web = Some(dir.path().to_path_buf());
+    let running = start(options).await.unwrap();
+    let mut stream = tokio::net::TcpStream::connect(running.address).await.unwrap();
+    stream.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut response = String::new(); stream.read_to_string(&mut response).await.unwrap();
+    let response = response.to_ascii_lowercase();
+    assert!(response.contains("cross-origin-opener-policy: same-origin"));
+    assert!(response.contains("cross-origin-embedder-policy: require-corp"));
+    running.shutdown().await;
+}

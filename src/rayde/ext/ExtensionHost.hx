@@ -14,6 +14,9 @@ class ExtensionHost {
 	var diagnostics = "";
 	var lines:Array<String> = [];
 	var nextLine = 0;
+	#if wasm
+	var remote:Null<SessionExtensionHost>;
+	#end
 
 	public function new(?root:String, isolated = false, extension = "") {
 		this.root = root;
@@ -24,11 +27,27 @@ class ExtensionHost {
 	public function running():Bool
 		return state == "running";
 
-	public function pending():Bool return nextLine < lines.length || handle >= 0 && (isolated ? processPending(handle) : pendingNative(handle));
-	public function canWake():Bool return handle >= 0 && (isolated ? processCanWake(handle) : canWakeNative(handle));
+	public function pending():Bool {
+		#if wasm
+		return remote != null && remote.pending();
+		#else
+		return nextLine < lines.length || handle >= 0 && (isolated ? processPending(handle) : pendingNative(handle));
+		#end
+	}
+	public function canWake():Bool {
+		#if wasm
+		return rayde.workspace.PageHost.bridge != null;
+		#else
+		return handle >= 0 && (isolated ? processCanWake(handle) : canWakeNative(handle));
+		#end
+	}
 
 	public function start():Void {
 		stop();
+		#if wasm
+		remote = new SessionExtensionHost(root, extension);
+		exitCode = null; processId = null; diagnostics = ""; state = "running";
+		#else
 		var bytes = haxe.io.Bytes.ofString(isolated ? haxe.Json.stringify({binary:hostBinary(),root:root ?? "",extension:extension}) : root ?? "");
 		handle = isolated ? processOpen(bytes.getData(),bytes.length) : openNative(bytes.getData(), bytes.length);
 		if (handle < 0)
@@ -37,20 +56,35 @@ class ExtensionHost {
 		processId = null;
 		diagnostics = "";
 		state = "running";
+		#end
 	}
 
 	public function send(message:Dynamic):Bool {
 		if (!running()) return false;
+		#if wasm
+		return remote != null && remote.send(message);
+		#else
 		if (!isolated && message.t == "closed") return closeViewNative(handle, Std.int(message.root)) != 0;
 		var bytes = haxe.io.Bytes.ofString(haxe.Json.stringify(message));
 		return isolated ? processSend(handle,bytes.getData(),bytes.length) : sendNative(handle, bytes.getData(), bytes.length) != 0;
+		#end
 	}
 
 	/** Requests collection at a VM safepoint, without waiting on the UI thread. */
 	public function collect():Bool
+		#if wasm
+		return send({t:"collect"});
+		#else
 		return running() && (isolated ? send({t:"collect"}) : collectNative(handle) != 0);
+		#end
 
 	public function poll():Array<Dynamic> {
+		#if wasm
+		if (remote == null) return [];
+		var messages = remote.poll(); processId = remote.processId;
+		if (remote.ended) { exitCode = remote.exitCode; state = "exited"; }
+		return messages;
+		#else
 		var messages:Array<Dynamic> = [];
 		if (handle < 0) return messages;
 		// Read status first: a completed runtime has already published its final output.
@@ -83,6 +117,7 @@ class ExtensionHost {
 			handle = -1;
 		}
 		return messages;
+		#end
 	}
 
 	public function errors():String
@@ -90,7 +125,12 @@ class ExtensionHost {
 
 	/** Requests cleanup without waiting; an isolated host is forcibly reaped if cleanup stalls. */
 	public function stop():Void {
+		#if wasm
+		if (remote != null) remote.stop();
+		remote = null;
+		#else
 		if (handle >= 0) { if (isolated) processClose(handle); else closeNative(handle); }
+		#end
 		handle = -1;
 		processId = null;
 		lines = []; nextLine = 0;

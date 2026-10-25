@@ -1,0 +1,7 @@
+import rayde.workspace.readFile;
+import rayde.workspace.writeFile;
+var content = await readFile('large.txt');
+var pieces = [];
+for (i in 0...9000) pieces.push('🙂漢字');
+await writeFile('extension-proof.txt', 'remote extension answered\n' + content.substr(0, 12) + '\n' + pieces.join(''));
+trace('Remote extension service round trip completed');

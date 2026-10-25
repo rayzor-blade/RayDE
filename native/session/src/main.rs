@@ -8,7 +8,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let option = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     if args.iter().any(|a| a == "--help") {
-        println!("rayde-session [--root DIR] [--port N] [--host ADDR] [--token T] [--origin URL]... [--web DIR] [--exec]\n              [--raw-port N] [--auth-secret S --login-url URL]\nrayde-session issue --auth-secret S --login NAME --id N [--ttl SECONDS]\n\nServes DIR (default: the current directory) to RayDE over a WebSocket at /session.\nPrograms run only with --exec. Without --token a random one is made and printed.\nWith --auth-secret, changes need a credential the sign-in edge signed with that secret; `issue` mints one for development.");
+        println!("rayde-session [--root DIR] [--port N] [--host ADDR] [--token T] [--origin URL]... [--web DIR] [--exec]\n              [--raw-port N] [--extension-host BIN --extensions DIR] [--auth-secret S --login-url URL]\nrayde-session issue --auth-secret S --login NAME --id N [--ttl SECONDS]\n\nServes DIR (default: the current directory) to RayDE over a WebSocket at /session.\nPrograms run only with --exec. --extension-host enables a supervised RayScript host per extension; --extensions locates the built-in installation. Without --token a random one is made and printed.\nWith --auth-secret, changes need a credential the sign-in edge signed with that secret; `issue` mints one for development.");
         return;
     }
     if args.first().map(String::as_str) == Some("issue") {
@@ -31,6 +31,8 @@ fn main() {
     options.address = address;
     options.token = Some(token.clone());
     options.exec = args.iter().any(|a| a == "--exec");
+    options.extension_host = option("--extension-host").map(PathBuf::from);
+    options.extensions = option("--extensions").map(PathBuf::from);
     options.web = option("--web").map(PathBuf::from);
     options.raw = option("--raw-port").and_then(|p| p.parse::<u16>().ok()).map(|p| SocketAddr::new(address.ip(), p));
     if let Some(secret) = option("--auth-secret") {

@@ -10,7 +10,7 @@ class Main {
 		}
 		#if (wasm || rayde_page)
 		// In a page there is no disk and no argument: host storage and the session, or a sample, stand in.
-		try rayde.ui.ProjectWindows.run(rayde.workspace.PageHost.install())
+		try rayde.ui.ProjectWindows.run(rayde.workspace.PageHost.open())
 		catch (e:haxe.Exception) {
 			// The page shows only that the program stopped; say why in its log.
 			Sys.println("RayDE stopped: " + e.message + "\n" + haxe.CallStack.toString(e.stack));
