@@ -70,6 +70,19 @@ class SessionEditorChecks {
 		check(wire.sent.pop(true).op == "view.close" && state.onUndo == null && state.onTransaction == null,"closing releases protocol and editor hooks");
 		check(!docs.owns("/work/a.txt") && failures.length == 0,"no document binding remains after release");
 		docs.close(); client.close();
+		for (initial in ["saved", "buffer"]) {
+			var restoredWire = new EditorChannel(), restoredClient = SessionClient.over(restoredWire), restoredState = new CodeEditorState();
+			var restoredChanges:Array<Bool> = [];
+			restoredState.value.set(initial);
+			var restoredDocs = new EditorDocuments(restoredClient, (_, local) -> restoredChanges.push(local), message -> { throw message; }, _ -> {caret:0,anchor:0}, _ -> false);
+			restoredDocs.attach("/work/recovered.txt", restoredState, "saved");
+			var request = restoredWire.sent.pop(true);
+			restoredWire.reply({id:request.id,ok:true,result:{text:"buffer",epoch:0,serial:0,dirty:true}});
+			settle(restoredClient,restoredDocs,() -> !restoredDocs.readOnly("/work/recovered.txt"));
+			check(restoredState.value.get() == "buffer" && restoredChanges.length == 1 && restoredChanges[0],"restored unsaved buffers become dirty even when their text already matches browser recovery");
+			restoredWire.sent.pop(true);
+			restoredDocs.close(); restoredClient.close();
+		}
 		Sys.println("session editor: readiness, projections, edits, undo, save failure, context warning deduplication and release passed");
 	}
 	static function settle(client:SessionClient, docs:EditorDocuments, ready:Void->Bool):Void {

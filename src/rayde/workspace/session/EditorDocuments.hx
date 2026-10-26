@@ -172,7 +172,8 @@ private class EditorBinding {
 						state.applyRemote(initial); changed(true);
 					} else failed("Workspace changes loaded for " + haxe.io.Path.withoutDirectory(file) + ". Your recovered text is still in Local History.");
 				}
-				if (previous != state.value.get()) changed(false);
+				if (result.dirty == true) changed(true);
+				else if (previous != state.value.get()) changed(false);
 				initial = disk = "";
 			} else {
 				apply(result); blocked.set(false);

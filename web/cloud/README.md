@@ -56,6 +56,8 @@ Snapshots are keyed by path and native recovery generation within the workspace 
 
 The trusted control plane can call the Durable Object's internal `/checkpoints` (IDs and usage), `/checkpoint` (`{owner, id}`), and `/checkpoint/import` (`{owner, path, source, checkpoint}`) operations. They are not public Worker routes. After selecting a saved generation, a provider can restore a released document on replacement compute with native `doc.restore {path, checkpoint}` before starting workspace programs. That operation checks write authorization, path containment, checksum and complete CRDT state; it refuses a document already materialized in memory. Browser-forwarded `doc.restore` is denied.
 
+For an unsaved journal, materialize the selected saved file first, then use native `doc.restore {path, checkpoint, mode:"buffer", diskSha256}` with `hello.bufferedRestore = 1`. The existing UTF-8 file must match the supplied SHA-256. This installs the graph in private session state without writing it to the file; background flush, close and restart preserve the distinction. A pending Save records the graph and both disk hashes together, allowing recovery before or after its disk write. Explicit Save checks the disk baseline; unrelated changes stop recovery rather than replacing either version. These checks do not fence concurrent external writes, and the provider must still supply a consistent filesystem/Git manifest, stable identities and compute leases before automatic recovery can be enabled.
+
 ## Unsaved edit recovery
 
 Hosted `doc.update` acknowledgements wait for a Durable Object journal write. Hosts advertise `hello.journals = 1`; the gateway requests a delta against its durable vector and strips that private payload from browser replies. The browser receives `durableUpdate {id, sequence}`. Its `hello.durableUpdates` flag also requests a barrier on reconnect, even when compute already has every local edit. A failed write keeps edits unsynchronized in browser recovery.
@@ -78,7 +80,7 @@ The trusted control plane calls `/recovery/plan {owner, source, revision?}` to l
 
 `/recovery/file {owner, source, mutation, revision}` exports a confirmed write's bytes as base64. Source and revision are mandatory; pending, uncertain and refused operations cannot be exported. Length and SHA-256 are checked on export, and the catalog revision is checked again after object I/O. This is an `operation-payload`, not the current file contents: a materializer must apply the complete ordered history and respect later moves/deletions. Neither this route nor R2 object keys are exposed through the public gateway.
 
-The response is a partial `confirmed-document-heads` catalog with `automaticRestore:false`. Full filesystem state, reconciliation of external/program writes and path identities, and fenced compute leases are required before automatic restoration. Uncertain mutations cannot be cleared by a later snapshot alone.
+The response is a partial `confirmed-document-heads` catalog with `automaticRestore:false`. Full filesystem state, reconciliation of external/program writes and path identities, and fenced compute leases are required before automatic restoration. Uncertain mutations cannot be cleared by a later snapshot alone. `node test/browser-flow.mjs <bundle> --buffered-restore` checks the restored dirty tab in the full WASM editor, an initial Save before typing, unsaved edits staying off disk, durable Save and reload.
 
 ## Recovery identity
 

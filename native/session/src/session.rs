@@ -205,7 +205,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "journals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -261,7 +261,7 @@ impl<S: FileStore> Connection<S> {
                 if !self.docs.contains(&path) {
                     self.docs.push(path);
                 }
-                Ok(json!({"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text}))
+                Ok(json!({"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty}))
             }
             "doc.update" => {
                 let path = clean(text(request, "path")?)?;
@@ -286,6 +286,18 @@ impl<S: FileStore> Connection<S> {
             "doc.restore" => {
                 let path = clean(text(request,"path")?)?;
                 let checkpoint = serde_json::from_value(request["checkpoint"].clone()).map_err(|_| SessionError::new("bad-checkpoint","The document checkpoint is invalid."))?;
+                let mode = match request.get("mode") {
+                    None => "replace",
+                    Some(Value::String(mode)) => mode.as_str(),
+                    _ => return Err(SessionError::new("bad-request","The document restore mode is invalid.")),
+                };
+                if mode == "buffer" {
+                    let (mtime,dirty) = workspace.docs.restore_buffer(&path,&checkpoint,text(request,"diskSha256")?).await?;
+                    return Ok(json!({"mtime":mtime,"buffered":true,"dirty":dirty}));
+                }
+                if mode != "replace" || request.get("diskSha256").is_some() {
+                    return Err(SessionError::new("bad-request","Choose buffer mode when preserving a saved file."));
+                }
                 let mtime = workspace.docs.restore(&path,&checkpoint).await?;
                 Ok(json!({"mtime":mtime}))
             }

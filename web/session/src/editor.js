@@ -62,7 +62,7 @@ export class EditorDocument {
     this.shadow.on("update", this.publish);
   }
 
-  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial}; }
+  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial, ...(this.doc.restoredDirty ? {dirty:true} : {})}; }
 
   local(request) {
     if (!this.ready || request.epoch !== this.epoch || request.serial !== this.serial + 1 || !Array.isArray(request.parts))

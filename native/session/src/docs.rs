@@ -1,4 +1,4 @@
-//! Text documents open in the session: one Yrs document per file, written back to the workspace once edits settle.
+//! One Yrs document per file. Buffered recovery persists privately until an explicit Save.
 use crate::{
     error::{Result, SessionError},
     store::FileStore,
@@ -31,6 +31,7 @@ struct OpenDoc {
     subscribers: Mutex<HashMap<String, Send_>>,
     /// What the file held when the session last wrote or read it, so its own writes are not taken for outside edits.
     last_disk: Mutex<String>,
+    buffered: bool,
     saving: AsyncMutex<()>,
 }
 
@@ -79,6 +80,8 @@ pub struct Opened {
     /// The session's state vector, so the client can send back what the session lacks.
     pub vector: Vec<u8>,
     pub text: String,
+    pub buffered: bool,
+    pub dirty: bool,
 }
 
 pub struct Saved {
@@ -130,13 +133,33 @@ impl<S: FileStore> DocHub<S> {
     pub async fn write(&self, path: &str, data: &[u8]) -> Result<()> {
         let _opening = self.opening.lock().await;
         if self.conflicts(&[path],false,Some(path)).await? {return Err(SessionError::new("document-open","Close aliased shared documents before writing this file."));}
-        if let Some(open) = self.get(path) {
-            let next = std::str::from_utf8(data).map_err(|_|SessionError::new("not-text","Close this shared text document before replacing it with binary data."))?;
+        let registered = self.get(path);
+        let live = registered.is_some();
+        let open = match registered {
+            Some(open) => Some(open),
+            None => match self.store.read_state(&format!("doc:{path}")).await? {
+                Some(state) if crate::buffer_state::unpack(&state)?.is_some() => Some(self.load(path).await?),
+                _ => None,
+            },
+        };
+        if let Some(open) = open {
             let _saving = open.saving.lock().await;
+            if open.buffered && open.text.get_string(&open.doc.transact()) != *open.last_disk.lock().unwrap() {
+                return Err(SessionError::new("buffer-dirty", "Save or reconcile the recovered buffer before replacing its file."));
+            }
+            if open.buffered {self.verify_disk(path,&open).await?;}
+            let next = match std::str::from_utf8(data) {
+                Ok(next) => next,
+                Err(_) if !live => {
+                    self.store.write(path,data).await?;
+                    return self.store.write_state(&format!("doc:{path}"),&state_of(&open.doc)).await;
+                }
+                Err(_) => return Err(SessionError::new("not-text","Close this shared text document before replacing it with binary data.")),
+            };
             self.store.write(path,data).await?;
             *open.last_disk.lock().unwrap() = next.into();
             apply_diff(&open.doc,&open.text,next,DISK);
-            self.store.write_state(&format!("doc:{path}"),&state_of(&open.doc)).await?;
+            self.persist(path,&open,&state_of(&open.doc),None).await?;
             Ok(())
         } else {
             self.store.write(path,data).await
@@ -164,14 +187,24 @@ impl<S: FileStore> DocHub<S> {
         let disk = String::from_utf8(bytes).map_err(|_| SessionError::new("not-text", "The file is not UTF-8 text."))?;
         let doc = Doc::with_options(Options { offset_kind: OffsetKind::Utf16, ..Options::default() });
         let text = doc.get_or_insert_text("text");
+        let mut buffered = false;
         if let Some(saved) = self.store.read_state(&format!("doc:{path}")).await? {
-            if let Ok(update) = Update::decode_v1(&saved) {
-                let _ = doc.transact_mut_with(yrs::Origin::from(LOAD)).apply_update(update);
-            }
+            let state = if let Some((baseline,state)) = crate::buffer_state::unpack(&saved)? {
+                if !baseline.accepts(&crate::checkpoint::digest(disk.as_bytes())) {
+                    return Err(Self::disk_conflict());
+                }
+                buffered = true;
+                state
+            } else { &saved };
+            let update = Update::decode_v1(state).map_err(|_|SessionError::new("bad-buffer-state","Stored document recovery is invalid."))?;
+            let mut txn = doc.transact_mut_with(yrs::Origin::from(LOAD));
+            txn.apply_update(update).map_err(|_|SessionError::new("bad-buffer-state","Stored document recovery cannot be applied."))?;
+            if txn.has_missing_updates() {return Err(SessionError::new("bad-buffer-state","Stored document recovery is incomplete."));}
         }
         // The file may have changed while the session was away: its text wins, as an edit on top of the saved history.
-        apply_diff(&doc, &text, &disk, DISK);
+        if !buffered { apply_diff(&doc, &text, &disk, DISK); }
         let state = state_of(&doc);
+        let state = if buffered {crate::buffer_state::pack(&state,&crate::checkpoint::digest(disk.as_bytes()),None)?} else {state};
         self.store.write_state(&format!("doc:{path}"), &state).await?;
 
         let subscribers: Mutex<HashMap<String, Send_>> = Mutex::new(HashMap::new());
@@ -193,7 +226,7 @@ impl<S: FileStore> DocHub<S> {
                     }
             })
             .expect("a document accepts an update observer");
-            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), saving: AsyncMutex::new(()) }
+            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), buffered, saving: AsyncMutex::new(()) }
         });
         Ok(open)
     }
@@ -219,7 +252,9 @@ impl<S: FileStore> DocHub<S> {
         };
         open.subscribers.lock().unwrap().insert(client.to_string(), send);
         let txn = open.doc.transact();
-        Ok(Opened { update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text: open.text.get_string(&txn) })
+        let text = open.text.get_string(&txn);
+        let dirty = open.buffered && text != *open.last_disk.lock().unwrap();
+        Ok(Opened { update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty })
     }
 
     /// Applies a client's update; the other subscribers get it from the document's update event.
@@ -255,13 +290,36 @@ impl<S: FileStore> DocHub<S> {
         self.open.lock().unwrap().iter().filter(|(_, open)| open.subscribers.lock().unwrap().is_empty()).map(|(path, _)| path.clone()).collect()
     }
 
-    /// Writes the document's text to its file, and its state to the session's, if they changed.
+    /// Flush recovered buffers privately; ordinary documents also write through to the file.
     pub async fn flush(&self, path: &str) -> Result<(bool, u64)> {
-        let saved = self.save(path, false).await?;
+        let saved = self.save_inner(path, false, false).await?;
         Ok((saved.written,saved.mtime))
     }
 
     pub async fn save(&self, path: &str, checkpoint: bool) -> Result<Saved> {
+        self.save_inner(path,checkpoint,true).await
+    }
+
+    fn disk_conflict() -> SessionError {
+        SessionError::new("recovery-conflict", "The saved file changed. Reconcile it with the recovered buffer before saving.")
+    }
+
+    async fn persist(&self, path: &str, open: &OpenDoc, state: &[u8], saving: Option<&str>) -> Result<()> {
+        if !open.buffered {return self.store.write_state(&format!("doc:{path}"),state).await;}
+        let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
+        let state = crate::buffer_state::pack(state,&baseline,saving)?;
+        self.store.write_state(&format!("doc:{path}"),&state).await
+    }
+
+    async fn verify_disk(&self, path: &str, open: &OpenDoc) -> Result<()> {
+        let entry = self.store.stat(path).await?.ok_or_else(Self::disk_conflict)?;
+        if entry.kind != "file" || entry.size > crate::session::MAX_READ {return Err(Self::disk_conflict());}
+        let disk = self.store.read(path).await?;
+        if disk.as_slice() != open.last_disk.lock().unwrap().as_bytes() {return Err(Self::disk_conflict());}
+        Ok(())
+    }
+
+    async fn save_inner(&self, path: &str, checkpoint: bool, explicit: bool) -> Result<Saved> {
         let Some(open) = self.get(path) else {
             return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
         };
@@ -271,12 +329,20 @@ impl<S: FileStore> DocHub<S> {
             (open.text.get_string(&txn),txn.encode_state_as_update_v1(&StateVector::default()))
         };
         if checkpoint && state.len() > crate::checkpoint::MAX_BYTES { return Err(SessionError::new("too-large", "The document checkpoint exceeds the recovery size limit.")); }
+        if open.buffered && !explicit {
+            self.persist(path,&open,&state,None).await?;
+            return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0,|entry|entry.mtime),state:None});
+        }
+        if open.buffered {
+            self.verify_disk(path,&open).await?;
+        }
         let changed = *open.last_disk.lock().unwrap() != text;
         if changed {
+            if open.buffered {self.persist(path,&open,&state,Some(&crate::checkpoint::digest(text.as_bytes()))).await?;}
             self.store.write(path, text.as_bytes()).await?;
             *open.last_disk.lock().unwrap() = text;
         }
-        self.store.write_state(&format!("doc:{path}"), &state).await?;
+        self.persist(path,&open,&state,None).await?;
         Ok(Saved {written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
     }
 
@@ -290,6 +356,21 @@ impl<S: FileStore> DocHub<S> {
         self.store.write_state(&format!("doc:{path}"), &state).await?;
         self.store.write(path,text.as_bytes()).await?;
         Ok(self.store.stat(path).await?.map_or(0, |entry| entry.mtime))
+    }
+
+    pub async fn restore_buffer(&self, path: &str, checkpoint: &crate::checkpoint::Checkpoint, disk_sha256: &str) -> Result<(u64,bool)> {
+        let _opening = self.opening.lock().await;
+        if !crate::buffer_state::digest(disk_sha256) {return Err(SessionError::new("bad-request","The saved-file digest is invalid."));}
+        if self.conflicts(&[path],false,None).await? {return Err(SessionError::new("document-open","Close aliased shared documents before restoring this buffer."));}
+        let state = crate::checkpoint::unpack(checkpoint)?;
+        let text = crate::checkpoint::text(&state)?;
+        let entry = self.store.stat(path).await?.ok_or_else(Self::disk_conflict)?;
+        if entry.kind != "file" || entry.size > crate::session::MAX_READ {return Err(Self::disk_conflict());}
+        let disk = self.store.read(path).await?;
+        let disk_text = std::str::from_utf8(&disk).map_err(|_|Self::disk_conflict())?;
+        if crate::checkpoint::digest(&disk) != disk_sha256 {return Err(Self::disk_conflict());}
+        self.store.write_state(&format!("doc:{path}"),&crate::buffer_state::pack(&state,disk_sha256,None)?).await?;
+        Ok((entry.mtime,text != disk_text))
     }
 
     /// Flushes and releases a document nobody has open.
@@ -310,6 +391,7 @@ impl<S: FileStore> DocHub<S> {
     pub async fn changed(&self, path: &str) {
         let Some(open) = self.get(path) else { return };
         let _saving = open.saving.lock().await;
+        if open.buffered {return;}
         let Ok(bytes) = self.store.read(path).await else { return };
         let Ok(disk) = String::from_utf8(bytes) else { return };
         {

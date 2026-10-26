@@ -110,6 +110,7 @@ export class Doc {
     if (this.closed || !this.client.ready) return;
     const reply = await this.client.request("doc.open", { path: this.path, vector: b64.encode(Y.encodeStateVector(this.ydoc)) });
     if (this.closed) return;
+    this.restoredDirty = reply.buffered === true && reply.dirty === true;
     Y.applyUpdate(this.ydoc, b64.decode(reply.update), "session");
     const missing = Y.encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
     // An empty update is two bytes: nothing to send.

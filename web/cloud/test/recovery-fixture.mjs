@@ -38,6 +38,7 @@ export async function setup(t,settings={}){
  async function start(state="state"){native=spawn(resolve("../../native/session/target/debug/rayde-session"),["--root",root,"--state-root",join(base,state),"--port",String(nativePort),"--token","compute-secret","--origin",origin],{stdio:"ignore"});await listening(nativePort,native);}
  async function restartCloud(next={}){Object.assign(settings,next);await cloud?.mf.dispose();cloud=await fixture({persist,endpoint,...settings});}
  await start();await restartCloud();
+ async function direct(){const socket=new WebSocket(`ws://127.0.0.1:${nativePort}/session`);await once(socket,"open");const request=rpc(socket);const hello=await request("hello",{token:"compute-secret"});return{socket,request,hello};}
  t.after(async()=>{for(const send of delayed.splice(0))send();await cloud?.mf.dispose();await stop();for(const socket of sockets)socket.terminate();await new Promise(resolve=>proxy.close(resolve));await rm(base,{recursive:true,force:true});});
  async function workspace(user){
   const opening=await(await cloud.fetch("/api/workspaces/open",{method:"POST",headers:user.headers,body:'{"repository":111}'})).json(),path="/api/workspaces/"+opening.id;
@@ -46,7 +47,7 @@ export async function setup(t,settings={}){
   const connect=async()=>{const response=await cloud.fetch(path+"/socket",{headers:{...user.headers,Upgrade:"websocket"}});assert.equal(response.status,101);const socket=response.webSocket;socket.accept();const request=rpc(socket),hello=await request("hello");assert.equal(hello.fileMutations,1);return {socket,request};};
   return{path,control,connect};
  }
- return{root,get cloud(){return cloud;},workspace,start,stop,restartCloud,observeWrites(callback){observer=callback;},block(path){blocked=path;},release(){blocked=null;for(const send of delayed.splice(0))send();},get delayed(){return delayed.length;}};
+ return{root,get cloud(){return cloud;},workspace,direct,start,stop,restartCloud,observeWrites(callback){observer=callback;},block(path){blocked=path;},release(){blocked=null;for(const send of delayed.splice(0))send();},get delayed(){return delayed.length;}};
 }
 export async function seed(client,workspace,path,data){
  assert.equal((await client.request("fs.write",{path,data})).ok,true);

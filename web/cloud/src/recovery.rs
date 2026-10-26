@@ -369,6 +369,9 @@ impl Checkpoints {
                     | "unauthorised"
                     | "document-open"
                     | "not-text"
+                    | "buffer-dirty"
+                    | "recovery-conflict"
+                    | "bad-buffer-state"
             )
         ) {
             "refused"

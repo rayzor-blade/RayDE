@@ -2,8 +2,23 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { SessionClient, Doc } from "../src/client.js";
 import * as Y from "yjs";
+import {EditorDocument} from "../src/editor.js";
 
 globalThis.WebSocket = { OPEN:1 };
+
+test("restored buffer dirtiness crosses synchronization and the editor projection without rewriting disk", async () => {
+  const server = new Y.Doc(); server.getText("text").insert(0,"recovered buffer");
+  let dirty = true;
+  const client = {ready:true, async request(op,params) {
+    assert.equal(op,"doc.open");
+    return {update:Buffer.from(Y.encodeStateAsUpdate(server,Buffer.from(params.vector,"base64"))).toString("base64"),vector:Buffer.from(Y.encodeStateVector(server)).toString("base64"),buffered:true,dirty};
+  }};
+  const doc = new Doc(client,"file.txt"); await doc.sync();
+  const view = new EditorDocument(doc,"view",()=>{});
+  assert.equal(view.snapshot().text,"recovered buffer"); assert.equal(view.snapshot().dirty,true);
+  dirty = false; await doc.sync(); assert.equal(view.snapshot().dirty,undefined);
+  view.dispose(); doc.ydoc.destroy(); server.destroy();
+});
 
 test("an unanswered browser request times out and releases its response slot", async () => {
   const client = new SessionClient({url:"ws://unused", timeout:20});
