@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { SessionClient, Doc } from "../src/client.js";
+import * as Y from "yjs";
 
 globalThis.WebSocket = { OPEN:1 };
 
@@ -54,6 +55,38 @@ test("a delayed acknowledgement cannot mark a later offline edit as synchronized
   assert.equal(doc.unsent,true);
   await assert.rejects(doc.save(),/Reconnect before saving/);
   doc.ydoc.destroy();
+});
+
+test("hosted reconnect waits for durable recovery even when compute already has every edit", async () => {
+  const server = new Y.Doc(), calls = [];
+  let failing = false;
+  const encode = bytes => Buffer.from(bytes).toString("base64");
+  const client = {ready:true, hello:{durableUpdates:true}, async request(op,params) {
+    calls.push({op,...params});
+    if(op === "doc.open") return {update:encode(Y.encodeStateAsUpdate(server,Buffer.from(params.vector,"base64"))),vector:encode(Y.encodeStateVector(server))};
+    if(op === "doc.update") {
+      Y.applyUpdate(server,Buffer.from(params.update,"base64"));
+      if(failing)throw Object.assign(new Error("Recovery storage unavailable"),{code:"journal-failed"});
+      return {durableUpdate:{id:"journal",sequence:calls.length}};
+    }
+    return {};
+  }};
+  const doc = new Doc(client,"main.hx");
+  await doc.sync();
+  failing = true;
+  doc.text.insert(0,"kept in compute but not yet durable");
+  await Promise.all([...doc.pending]);
+  assert.equal(server.getText("text").toString(),doc.text.toString());
+  assert.equal(doc.unsent,true);
+  await doc.sync();
+  assert.equal(Buffer.from(calls.at(-1).update,"base64").length,2,"an empty update still establishes a durable barrier");
+  assert.equal(doc.unsent,true,"compute equality cannot acknowledge a failed durable write");
+  await assert.rejects(doc.save(),/Reconnect before saving/);
+  assert.equal(calls.some(call=>call.op==="doc.save"),false);
+  failing = false;
+  await doc.sync();
+  assert.equal(doc.unsent,false);
+  doc.ydoc.destroy();server.destroy();
 });
 
 test("a process handle from an earlier connection cannot reach a reused remote PID", async () => {

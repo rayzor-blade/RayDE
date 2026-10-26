@@ -192,6 +192,20 @@ impl<S: FileStore> DocHub<S> {
         Ok(())
     }
 
+    /// Capture missing recovery state in the same transaction as the edit.
+    pub fn receive_journal(&self, path: &str, client: &str, update: &[u8], vector: &str) -> Result<crate::checkpoint::Delta> {
+        let from = crate::checkpoint::decode_vector(vector)?;
+        let update = Update::decode_v1(update).map_err(|_| SessionError::new("bad-request", "The update is not valid."))?;
+        let open = self.get(path).ok_or_else(|| SessionError::new("not-open", "The document is not open."))?;
+        let mut txn = open.doc.transact_mut_with(origin_of(client));
+        if !matches!(txn.state_vector().partial_cmp(&from), Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)) {
+            return Err(SessionError::new("journal-conflict", "The workspace is missing previously acknowledged document history."));
+        }
+        txn.apply_update(update).map_err(|_| SessionError::new("bad-request", "The update does not apply."))?;
+        if txn.has_missing_updates() { return Err(SessionError::new("bad-request", "The document update is missing earlier edits. Reconnect before retrying.")); }
+        crate::checkpoint::pack_delta(&txn.encode_state_as_update_v1(&from), &txn.state_vector().encode_v1())
+    }
+
     pub fn detach(&self, path: &str, client: &str) {
         if let Some(open) = self.get(path) {
             open.subscribers.lock().unwrap().remove(client);

@@ -91,6 +91,18 @@ With `hello.checkpoints = 1`, `doc.save` accepts `checkpoint:true` and returns v
 
 The hosted gateway reserves restoration for its trusted control plane and stores checkpoints before acknowledging Save. See [saved document recovery](../../web/cloud/README.md#saved-document-recovery) for gateway storage and restore behavior.
 
+### Unsaved edit journals
+
+With `hello.journals = 1`, native `doc.update {journal:true, vector}` returns a checksummed `journal` delta and its state vector from the edit's transaction. The vector selects all missing compute changes, including outside edits. It does not force a file write.
+
+The hosted gateway supplies the durable vector and commits each delta before returning `durableUpdate {id, sequence}`. Its `hello.durableUpdates` flag makes the browser send a barrier during synchronization even when compute already has every local edit. A failed durable write cannot become a successful synchronization merely by reconnecting.
+
+Updates and Save share a bounded FIFO queue. Journals compact after 64 segments or 256 KiB of delta payload, reuse chunk slots and materialize a graph only for compaction or export. Saved checkpoints and journals have separate records but share the workspace's recovery quota. Storage failures preserve the previous manifest, payload and accounting.
+
+Internal owner-checked `/journals` and `/journal {owner, id}` operations list usage and export a complete checkpoint for trusted restoration. The browser cannot access these routes. Native `journal-conflict` rejects a compute graph missing previously acknowledged history; the control plane must restore it before continuing.
+
+This protects acknowledged browser edits and dependencies captured at their barriers. Complete filesystem/tombstone recovery, changes made after the last barrier and automatic compute replacement remain separate work. Recovery contexts still change on a fresh compute generation.
+
 ## Syntax and process services
 
 | Capability | Requests and events | Behavior |
@@ -131,7 +143,10 @@ Hidden terminals continue running with bounded scrollback but stop streaming scr
 | Shared UTF-8 file | 8 MiB |
 | Unique document subscriptions per connection | 256 |
 | Distinct retained documents per workspace | 512 |
-| Encoded Save checkpoint | 4 MiB |
+| Save checkpoint payload | 4 MiB |
+| Journal payload per document | 4 MiB |
+| Saved checkpoint and journal records combined | 512 records / 64 MiB raw payload |
+| Queued recovery operations / encoded update payload | 256 / 8 MiB |
 | Terminals per connection / workspace | 4 / 8 |
 | Terminal screen | 300 columns × 100 rows |
 | Scrollback per terminal | 1,000 lines |

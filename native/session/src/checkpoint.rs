@@ -9,12 +9,93 @@ use yrs::{
 };
 
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
+const MAX_VECTOR: usize = 64 * 1024;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub version: u32,
     pub update: String,
     pub sha256: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Delta {
+    pub version: u32,
+    pub update: String,
+    pub vector: String,
+    pub sha256: String,
+}
+
+pub fn decode_vector(encoded: &str) -> Result<StateVector> {
+    if encoded.len() > MAX_VECTOR.div_ceil(3) * 4 {
+        return Err(invalid());
+    }
+    let bytes = B64.decode(encoded).map_err(|_| invalid())?;
+    StateVector::decode_v1(&bytes).map_err(|_| invalid())
+}
+
+pub fn pack_delta(bytes: &[u8], vector: &[u8]) -> Result<Delta> {
+    if bytes.len() > MAX_BYTES || vector.len() > MAX_VECTOR {
+        return Err(SessionError::new(
+            "too-large",
+            "The document exceeds the recovery size limit.",
+        ));
+    }
+    Ok(Delta {
+        version: 1,
+        update: B64.encode(bytes),
+        vector: B64.encode(vector),
+        sha256: digest(bytes),
+    })
+}
+
+pub fn unpack_delta(delta: &Delta) -> Result<Vec<u8>> {
+    if delta.version != 1 || delta.update.len() > MAX_BYTES.div_ceil(3) * 4 {
+        return Err(invalid());
+    }
+    let bytes = B64.decode(&delta.update).map_err(|_| invalid())?;
+    if bytes.len() > MAX_BYTES || digest(&bytes) != delta.sha256 {
+        return Err(invalid());
+    }
+    decode_vector(&delta.vector)?;
+    Update::decode_v1(&bytes).map_err(|_| invalid())?;
+    Ok(bytes)
+}
+
+pub fn follows(current: &str, next: &str) -> Result<bool> {
+    Ok(matches!(
+        decode_vector(next)?.partial_cmp(&decode_vector(current)?),
+        Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Greater)
+    ))
+}
+
+/// Rebuild a complete graph from a baseline and its ordered journal deltas.
+pub fn materialize(updates: &[Vec<u8>], vector: &str) -> Result<Vec<u8>> {
+    let expected = decode_vector(vector)?;
+    let doc = Doc::with_options(Options {
+        offset_kind: OffsetKind::Utf16,
+        ..Options::with_client_id(ClientID::new(0))
+    });
+    for bytes in updates {
+        if bytes.len() > MAX_BYTES {
+            return Err(invalid());
+        }
+        doc.transact_mut()
+            .apply_update(Update::decode_v1(bytes).map_err(|_| invalid())?)
+            .map_err(|_| invalid())?;
+    }
+    let txn = doc.transact();
+    if txn.has_missing_updates() || txn.state_vector() != expected {
+        return Err(invalid());
+    }
+    let state = txn.encode_state_as_update_v1(&StateVector::default());
+    if state.len() > MAX_BYTES {
+        return Err(SessionError::new(
+            "too-large",
+            "The document exceeds the recovery size limit.",
+        ));
+    }
+    Ok(state)
 }
 
 pub fn digest(bytes: &[u8]) -> String {

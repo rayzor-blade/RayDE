@@ -5,7 +5,7 @@ use rayde_session::checkpoint::{self, Checkpoint};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const CHUNK: usize = 40 * 1024;
+pub(crate) const CHUNK: usize = 40 * 1024;
 const MAX_RECORDS: usize = 512;
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 
@@ -22,14 +22,107 @@ pub struct Manifest {
     pub saved: u64,
 }
 #[derive(Default, Serialize, Deserialize)]
-struct Index {
-    ids: Vec<String>,
+pub(crate) struct Index {
+    #[serde(default)]
+    version: u32,
+    pub ids: Vec<String>,
+    pub bytes: usize,
+    #[serde(default)]
+    pub journal_bytes: usize,
+}
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Usage {
+    pub bytes: usize,
+    pub journal_bytes: usize,
+    records: usize,
+}
+pub(crate) async fn usage(storage: &Storage, index: &Index) -> AppResult<Usage> {
+    let stored = storage.get::<Usage>("recovery-usage").await?;
+    if stored.is_none() && index.version >= 2 {
+        return Err(bad(503, "The recovery accounting is unavailable."));
+    }
+    Ok(stored.unwrap_or(Usage {
+        bytes: index.bytes,
+        journal_bytes: index.journal_bytes,
+        records: index.ids.len(),
+    }))
+}
+
+/// Existing records update only small counters; the ID registry changes on admission.
+pub(crate) async fn reserve(
+    storage: &Storage,
+    id: &str,
+    old: Option<usize>,
     bytes: usize,
+    journal: bool,
+) -> AppResult<BTreeMap<String, Value>> {
+    let mut counters = storage.get::<Usage>("recovery-usage").await?;
+    let mut index = if old.is_none() || counters.is_none() {
+        Some(
+            storage
+                .get::<Index>("checkpoint-index")
+                .await?
+                .unwrap_or_default(),
+        )
+    } else {
+        None
+    };
+    let migrating = counters.is_none();
+    if migrating && index.as_ref().is_some_and(|index| index.version >= 2) {
+        return Err(bad(503, "The recovery accounting is unavailable."));
+    }
+    let mut counters = counters.take().unwrap_or_else(|| {
+        let index = index.as_ref().unwrap();
+        Usage {
+            bytes: index.bytes,
+            journal_bytes: index.journal_bytes,
+            records: index.ids.len(),
+        }
+    });
+    let mut values = BTreeMap::new();
+    if migrating {
+        let index = index.as_mut().unwrap();
+        index.version = 2;
+        values.insert("checkpoint-index".into(), json!(index));
+    }
+    if old.is_none() {
+        let index = index.as_mut().unwrap();
+        index.version = 2;
+        if counters.records >= MAX_RECORDS || index.ids.iter().any(|entry| entry == id) {
+            return Err(bad(507, "The workspace checkpoint limit was reached."));
+        }
+        counters.records += 1;
+        index.ids.push(id.into());
+        values.insert("checkpoint-index".into(), json!(index));
+    }
+    counters.bytes = counters
+        .bytes
+        .checked_sub(old.unwrap_or(0))
+        .and_then(|n| n.checked_add(bytes))
+        .ok_or_else(|| bad(503, "The checkpoint index is invalid."))?;
+    if counters.bytes > MAX_BYTES {
+        return Err(bad(
+            507,
+            "The workspace recovery storage limit was reached.",
+        ));
+    }
+    if journal {
+        counters.journal_bytes = counters
+            .journal_bytes
+            .checked_sub(old.unwrap_or(0))
+            .and_then(|n| n.checked_add(bytes))
+            .ok_or_else(|| bad(503, "The checkpoint index is invalid."))?;
+    }
+    if counters.journal_bytes > counters.bytes || counters.records > MAX_RECORDS {
+        return Err(bad(503, "The checkpoint index is invalid."));
+    }
+    values.insert("recovery-usage".into(), json!(counters));
+    Ok(values)
 }
 
 pub struct Checkpoints {
-    storage: Storage,
-    gate: Mutex<()>,
+    pub(crate) storage: Storage,
+    pub(crate) gate: Mutex<()>,
 }
 impl Checkpoints {
     pub fn new(storage: Storage) -> Self {
@@ -103,28 +196,14 @@ impl Checkpoints {
                 return Ok(old.clone());
             }
         }
-        let mut index = self
-            .storage
-            .get::<Index>("checkpoint-index")
-            .await?
-            .unwrap_or_default();
-        if !index.ids.contains(&id) {
-            if old.is_some() || index.ids.len() >= MAX_RECORDS {
-                return Err(bad(507, "The workspace checkpoint limit was reached."));
-            }
-            index.ids.push(id.clone());
-        }
-        index.bytes = index
-            .bytes
-            .checked_sub(old.as_ref().map_or(0, |entry| entry.bytes))
-            .and_then(|size| size.checked_add(bytes.len()))
-            .ok_or_else(|| bad(503, "The checkpoint index is invalid."))?;
-        if index.bytes > MAX_BYTES {
-            return Err(bad(
-                507,
-                "The workspace recovery storage limit was reached.",
-            ));
-        }
+        let mut values = reserve(
+            &self.storage,
+            &id,
+            old.as_ref().map(|entry| entry.bytes),
+            bytes.len(),
+            false,
+        )
+        .await?;
         let chunks = bytes.len().div_ceil(CHUNK);
         let manifest = Manifest {
             version: 1,
@@ -137,7 +216,6 @@ impl Checkpoints {
             allocated: old.as_ref().map_or(chunks, |old| old.allocated.max(chunks)),
             saved: now(),
         };
-        let mut values = BTreeMap::new();
         for (number, chunk) in bytes.chunks(CHUNK).enumerate() {
             values.insert(
                 format!("checkpoint-data:{id}:{number}"),
@@ -149,23 +227,7 @@ impl Checkpoints {
             values.insert(format!("checkpoint-data:{id}:{number}"), json!(""));
         }
         values.insert(key, json!(&manifest));
-        values.insert("checkpoint-index".into(), json!(index));
-        // Bulk storage consumes own string properties on a plain object.
-        let object = worker::js_sys::Object::new();
-        for (key, value) in values {
-            let value = match value {
-                Value::String(value) => worker::wasm_bindgen::JsValue::from_str(&value),
-                value => worker::js_sys::JSON::parse(&value.to_string())
-                    .map_err(|_| bad(503, "The checkpoint could not be encoded."))?,
-            };
-            worker::js_sys::Reflect::set(
-                &object,
-                &worker::wasm_bindgen::JsValue::from_str(&key),
-                &value,
-            )
-            .map_err(|_| bad(503, "The checkpoint could not be encoded."))?;
-        }
-        self.storage.put_multiple_raw(object).await?;
+        put(&self.storage, values).await?;
         Ok(manifest)
     }
 
@@ -192,6 +254,29 @@ impl Checkpoints {
             .get::<Index>("checkpoint-index")
             .await?
             .unwrap_or_default();
-        Ok(json!({"ids":index.ids,"bytes":index.bytes}))
+        let usage = usage(&self.storage, &index).await?;
+        Ok(
+            json!({"ids":index.ids.into_iter().filter(|id|!id.starts_with("journal:")).collect::<Vec<_>>(),"bytes":usage.bytes.saturating_sub(usage.journal_bytes),"totalBytes":usage.bytes}),
+        )
     }
+}
+
+pub(crate) async fn put(storage: &Storage, values: BTreeMap<String, Value>) -> AppResult<()> {
+    // Bulk storage consumes own string properties on a plain object.
+    let object = worker::js_sys::Object::new();
+    for (key, value) in values {
+        let value = match value {
+            Value::String(value) => worker::wasm_bindgen::JsValue::from_str(&value),
+            value => worker::js_sys::JSON::parse(&value.to_string())
+                .map_err(|_| bad(503, "The recovery record could not be encoded."))?,
+        };
+        worker::js_sys::Reflect::set(
+            &object,
+            &worker::wasm_bindgen::JsValue::from_str(&key),
+            &value,
+        )
+        .map_err(|_| bad(503, "The recovery record could not be encoded."))?;
+    }
+    storage.put_multiple_raw(object).await?;
+    Ok(())
 }

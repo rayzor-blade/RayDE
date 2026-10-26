@@ -37,48 +37,22 @@ struct Pending {
     hello: BTreeSet<String>,
     source: Option<String>,
     checkpoints: bool,
-    saves: BTreeMap<String, PendingSave>,
-}
-struct PendingSave {
-    path: String,
-    source: String,
-    reply: futures_channel::oneshot::Sender<Value>,
-}
-impl PendingSave {
-    async fn finish(self, checkpoints: &crate::checkpoints::Checkpoints, mut reply: Value) {
-        if reply["ok"] == true {
-            let checkpoint = serde_json::from_value(
-                reply
-                    .as_object_mut()
-                    .and_then(|object| object.remove("checkpoint"))
-                    .unwrap_or(Value::Null),
-            );
-            let stored = match checkpoint {
-                Ok(checkpoint) => checkpoints.save(&self.path, &self.source, checkpoint).await,
-                Err(_) => Err(bad(502, "The workspace host returned no valid checkpoint.")),
-            };
-            reply = match stored {
-                Ok(manifest) => {
-                    reply["durable"] = json!({"id":manifest.id,"sha256":manifest.sha256});
-                    reply
-                }
-                Err(error) => save_failure(
-                    reply["id"].clone(),
-                    &format!(
-                        "The workspace file was saved, but durable recovery could not be recorded. {}",
-                        error.message
-                    ),
-                ),
-            };
-        }
-        let _ = self.reply.send(reply);
-    }
+    journals: bool,
+    serial: u64,
+    requests: BTreeMap<String, futures_channel::oneshot::Sender<Value>>,
 }
 type Backend = (WebSocket, WebSocket, Rc<RefCell<Pending>>);
-struct SaveAdmission(Rc<Cell<usize>>);
-impl Drop for SaveAdmission {
+struct RecoveryAdmission {
+    count: Rc<Cell<usize>>,
+    bytes: Rc<Cell<usize>>,
+    size: usize,
+    finished: Option<futures_channel::oneshot::Sender<()>>,
+}
+impl Drop for RecoveryAdmission {
     fn drop(&mut self) {
-        self.0.set(self.0.get() - 1);
+        self.count.set(self.count.get() - 1);
+        self.bytes.set(self.bytes.get() - self.size);
+        drop(self.finished.take());
     }
 }
 
@@ -100,8 +74,59 @@ fn save_failure(id: Value, message: &str) -> Value {
     json!({"id":id,"ok":false,"code":"checkpoint-failed","message":message})
 }
 
+fn update_failure(id: Value, message: &str) -> Value {
+    json!({"id":id,"ok":false,"code":"journal-failed","message":message})
+}
+
+async fn compute(backend: &WebSocket, pending: &Rc<RefCell<Pending>>, mut request: Value) -> std::result::Result<Value, &'static str> {
+    let (sender, receiver) = futures_channel::oneshot::channel();
+    let key = {
+        let mut pending = pending.borrow_mut();
+        if pending.closed { return Err("The workspace disconnected. Reconnect before retrying."); }
+        pending.serial = pending.serial.checked_add(1).ok_or("Reconnect before retrying.")?;
+        request["id"] = json!(["recovery",pending.serial]);
+        let key = request["id"].to_string();
+        pending.requests.insert(key.clone(),sender);
+        key
+    };
+    let result = if backend.send(&request).is_err() { Err(()) } else { deadline(receiver,25).await };
+    pending.borrow_mut().requests.remove(&key);
+    match result {
+        Ok(Ok(reply)) => Ok(reply),
+        _ => Err("The workspace did not confirm document recovery. Reconnect before retrying."),
+    }
+}
+
+async fn forward_update(
+    gate: Rc<futures_util::lock::Mutex<()>>, checkpoints: Rc<crate::checkpoints::Checkpoints>,
+    backend: WebSocket, pending: Rc<RefCell<Pending>>, id: Value, path: String, update: String, expires: u64,
+) -> Value {
+    let Ok(_guard) = deadline(gate.lock(),20).await else { return update_failure(id,"The recovery queue is busy. Reconnect before retrying."); };
+    if expires < now() { return update_failure(id,"Sign in again before synchronizing edits."); }
+    let source = pending.borrow().source.clone().filter(|_|pending.borrow().journals);
+    let Some(source) = source else { return update_failure(id,"Update or reconnect the workspace host before synchronizing durable edits."); };
+    let vector = match checkpoints.journal_vector(&path,&source).await {
+        Ok(vector)=>vector, Err(error)=>return update_failure(id,&error.message),
+    };
+    let mut reply = match compute(&backend,&pending,json!({"op":"doc.update","path":path,"update":update,"journal":true,"vector":vector})).await {
+        Ok(reply)=>reply, Err(message)=>return update_failure(id,message),
+    };
+    reply["id"] = id.clone();
+    if reply["ok"] != true { return reply; }
+    let delta = serde_json::from_value(reply.as_object_mut().and_then(|reply|reply.remove("journal")).unwrap_or(Value::Null));
+    let stored = match delta {
+        Ok(delta)=>checkpoints.journal_append(&path,&source,&vector,delta).await,
+        Err(_)=>Err(bad(502,"The workspace host returned no valid recovery delta.")),
+    };
+    match stored {
+        Ok(record)=>{reply["durableUpdate"] = json!({"id":record.id,"sequence":record.sequence});reply},
+        Err(error)=>update_failure(id,&format!("Edits remain in this browser; durable recovery could not be recorded. {}",error.message)),
+    }
+}
+
 async fn forward_save(
     gate: Rc<futures_util::lock::Mutex<()>>,
+    checkpoints: Rc<crate::checkpoints::Checkpoints>,
     backend: WebSocket,
     pending: Rc<RefCell<Pending>>,
     id: Value,
@@ -131,34 +156,19 @@ async fn forward_save(
             "Update or reconnect the workspace host before saving durable recovery.",
         );
     };
-    let key = id.to_string();
-    let (sender, receiver) = futures_channel::oneshot::channel();
-    pending.borrow_mut().saves.insert(
-        key.clone(),
-        PendingSave {
-            path: path.clone(),
-            source,
-            reply: sender,
-        },
-    );
-    if backend
-        .send(&json!({"id":id,"op":"doc.save","path":path,"checkpoint":true}))
-        .is_err()
-    {
-        pending.borrow_mut().saves.remove(&key);
-        return save_failure(
-            id,
-            "The workspace disconnected before saving. Reconnect and try again.",
-        );
-    }
-    let result = deadline(receiver, 25).await;
-    pending.borrow_mut().saves.remove(&key);
-    match result {
-        Ok(Ok(reply)) => reply,
-        _ => save_failure(
-            id,
-            "The workspace did not confirm durable recovery. Try saving again.",
-        ),
+    let mut reply = match compute(&backend,&pending,json!({"op":"doc.save","path":path,"checkpoint":true})).await {
+        Ok(reply)=>reply, Err(message)=>return save_failure(id,message),
+    };
+    reply["id"] = id.clone();
+    if reply["ok"] != true { return reply; }
+    let checkpoint = serde_json::from_value(reply.as_object_mut().and_then(|reply|reply.remove("checkpoint")).unwrap_or(Value::Null));
+    let stored = match checkpoint {
+        Ok(checkpoint)=>checkpoints.save(&path,&source,checkpoint).await,
+        Err(_)=>Err(bad(502,"The workspace host returned no valid checkpoint.")),
+    };
+    match stored {
+        Ok(manifest)=>{reply["durable"] = json!({"id":manifest.id,"sha256":manifest.sha256});reply},
+        Err(error)=>save_failure(id,&format!("The workspace file was saved, but durable recovery could not be recorded. {}",error.message)),
     }
 }
 
@@ -171,6 +181,8 @@ pub struct WorkspaceSession {
     checkpoints: Rc<crate::checkpoints::Checkpoints>,
     saving: Rc<futures_util::lock::Mutex<()>>,
     save_waiting: Rc<Cell<usize>>,
+    queued_bytes: Rc<Cell<usize>>,
+    recovery_tail: RefCell<Option<futures_channel::oneshot::Receiver<()>>>,
     connecting: Openings,
 }
 impl DurableObject for WorkspaceSession {
@@ -184,6 +196,8 @@ impl DurableObject for WorkspaceSession {
             checkpoints,
             saving: Rc::new(futures_util::lock::Mutex::new(())),
             save_waiting: Rc::new(Cell::new(0)),
+            queued_bytes: Rc::new(Cell::new(0)),
+            recovery_tail: RefCell::new(None),
             connecting: Rc::new(RefCell::new(Vec::new())),
         }
     }
@@ -221,33 +235,51 @@ impl DurableObject for WorkspaceSession {
             self.disconnect(&ws);
             return ws.close(Some(1008), Some("Invalid session message"));
         };
+        if !data["id"].is_null() && !data["id"].is_string() && !data["id"].is_number() {
+            self.disconnect(&ws);
+            return ws.close(Some(1008),Some("Invalid session request ID"));
+        }
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
         }
-        if data["op"] == "doc.save" {
+        if data["op"] == "doc.save" || data["op"] == "doc.update" {
+            let editing = data["op"] == "doc.update";
             let id = data["id"].clone();
             let path = data["path"]
                 .as_str()
                 .and_then(|path| rayde_session::store::clean(path).ok())
                 .filter(|path| !path.is_empty() && path.len() <= 4096);
             if id.to_string().len() > 128 || path.is_none() {
-                return ws.send(&save_failure(id, "The Save request is invalid."));
+                return ws.send(&if editing {update_failure(id,"The document update is invalid.")} else {save_failure(id, "The Save request is invalid.")});
             }
-            if self.save_waiting.get() >= 256 {
-                return ws.send(&save_failure(
-                    id,
-                    "Too many saves are waiting. Try saving again.",
-                ));
+            let update = if editing { data["update"].as_str().map(str::to_owned) } else { None };
+            let size = update.as_ref().map_or(0,String::len);
+            if editing && (update.is_none() || size > rayde_session::checkpoint::MAX_BYTES.div_ceil(3)*4) {
+                return ws.send(&update_failure(id,"The document update exceeds the recovery size limit."));
+            }
+            if self.save_waiting.get() >= 256 || self.queued_bytes.get().saturating_add(size) > 8*1024*1024 {
+                return ws.send(&if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"Too many saves are waiting. Try saving again.")});
             }
             self.save_waiting.set(self.save_waiting.get() + 1);
-            let admission = SaveAdmission(self.save_waiting.clone());
+            self.queued_bytes.set(self.queued_bytes.get() + size);
+            // Reserve FIFO order before yielding; dependent edits must reach compute in arrival order.
+            let (finished,next) = futures_channel::oneshot::channel();
+            let previous = self.recovery_tail.replace(Some(next));
+            let admission = RecoveryAdmission { count:self.save_waiting.clone(), bytes:self.queued_bytes.clone(), size, finished:Some(finished) };
             let gate = self.saving.clone();
+            let checkpoints = self.checkpoints.clone();
             let expires = attachment["expires"].as_u64().unwrap_or(0);
             drop(data);
             drop(message);
             self.state.wait_until(async move {
-                let reply =
-                    forward_save(gate, backend, handshakes, id, path.unwrap(), expires).await;
+                let timed_out = match previous {Some(previous)=>deadline(previous,20).await.is_err(),None=>false};
+                let reply = if timed_out {
+                    if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"The recovery queue is busy. Try saving again.")}
+                } else if editing {
+                    forward_update(gate,checkpoints,backend,handshakes,id,path.unwrap(),update.unwrap(),expires).await
+                } else {
+                    forward_save(gate,checkpoints,backend,handshakes,id,path.unwrap(),expires).await
+                };
                 let _ = ws.send(&reply);
                 drop(admission);
             });
@@ -321,7 +353,7 @@ impl WorkspaceSession {
             .retain(|(client, backend, pending)| {
                 if client == ws {
                     pending.borrow_mut().closed = true;
-                    pending.borrow_mut().saves.clear();
+                    pending.borrow_mut().requests.clear();
                     let _ = backend.close(Some(1000), Some("Closed"));
                     false
                 } else {
@@ -364,11 +396,17 @@ impl WorkspaceSession {
         if req.path() == "/checkpoint"
             || req.path() == "/checkpoints"
             || req.path() == "/checkpoint/import"
+            || req.path() == "/journal"
+            || req.path() == "/journals"
         {
             if value.is_none() {
                 return Err(bad(404, "Workspace not found."));
             }
-            let result = if req.path() == "/checkpoints" {
+            let result = if req.path() == "/journals" {
+                self.checkpoints.journal_list().await?
+            } else if req.path() == "/journal" {
+                self.checkpoints.journal_get(text(&data,"id")?).await?
+            } else if req.path() == "/checkpoints" {
                 self.checkpoints.list().await?
             } else if req.path() == "/checkpoint/import" {
                 let checkpoint = serde_json::from_value(data["checkpoint"].clone())
@@ -452,7 +490,6 @@ impl WorkspaceSession {
             drop(admission);
             let client = pair.server.clone();
             let backends = self.backends.clone();
-            let checkpoints = self.checkpoints.clone();
             self.state.wait_until(async move {
                 if let Ok(mut events) = backend.events() {
                     while let Some(event) = events.next().await {
@@ -461,13 +498,13 @@ impl WorkspaceSession {
                                 if let Some(text) = message.text() {
                                     let mut text = text;
                                     if let Ok(mut reply) = serde_json::from_str::<Value>(&text) {
-                                        let pending_save = handshakes.borrow_mut().saves.remove(&reply["id"].to_string());
-                                        if let Some(save) = pending_save {
-                                            save.finish(&checkpoints,reply).await;
+                                        let pending = handshakes.borrow_mut().requests.remove(&reply["id"].to_string());
+                                        if let Some(pending) = pending {
+                                            let _ = pending.send(reply);
                                             continue;
                                         }
                                         // Late checkpoint replies are internal payloads, including after a Save timeout.
-                                        if reply.get("checkpoint").is_some() {continue;}
+                                        if reply.get("checkpoint").is_some() || reply.get("journal").is_some() || reply["id"].is_array() {continue;}
                                         if reply.get("id").is_some()
                                             && handshakes.borrow_mut().hello.remove(&reply["id"].to_string())
                                             && reply["ok"] == true
@@ -482,8 +519,10 @@ impl WorkspaceSession {
                                                 let mut pending = handshakes.borrow_mut();
                                                 pending.source = valid.then(||hash(&json!([backend["authority"],backend["workspace"]]).to_string()));
                                                 pending.checkpoints = reply["checkpoints"]==1;
+                                                pending.journals = reply["journals"]==1;
                                             }
                                             reply["durableCheckpoints"] = json!(valid && reply["checkpoints"]==1);
+                                            reply["durableUpdates"] = json!(valid && reply["journals"]==1);
                                             reply["cacheIdentity"] = if valid {
                                                 json!({
                                                     "version": 1,
@@ -509,7 +548,7 @@ impl WorkspaceSession {
                     }
                 }
                 handshakes.borrow_mut().closed=true;
-                handshakes.borrow_mut().saves.clear();
+                handshakes.borrow_mut().requests.clear();
                 backends.borrow_mut().retain(|(ws, _, _)| *ws != client);
                 let _ = client.close(Some(1011), Some("Workspace disconnected"));
                 let _ = backend.close(Some(1000), Some("Closed"));

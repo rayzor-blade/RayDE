@@ -114,7 +114,7 @@ export class Doc {
     const missing = Y.encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
     // An empty update is two bytes: nothing to send.
     this.failed = false;
-    if (missing.length > 2) await this.send(missing);
+    if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
     else if (this.inflight === 0) this.unsent = false;
     this.listeners.forEach((listener) => listener("synced"));
   }

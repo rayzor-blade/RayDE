@@ -54,7 +54,17 @@ Snapshots are keyed by path and native recovery generation within the workspace 
 
 The trusted control plane can call the Durable Object's internal `/checkpoints` (IDs and usage), `/checkpoint` (`{owner, id}`), and `/checkpoint/import` (`{owner, path, source, checkpoint}`) operations. They are not public Worker routes. After selecting a saved generation, a provider can restore a released document on replacement compute with native `doc.restore {path, checkpoint}` before starting workspace programs. That operation checks write authorization, path containment, checksum and complete CRDT state; it refuses a document already materialized in memory. Browser-forwarded `doc.restore` is denied.
 
-These are explicit Save checkpoints. Unsaved-update journaling, complete filesystem/tombstone recovery, automatic compute restoration, leases, retention/cleanup and hibernation remain separate work. The current browser reconnect fence remains in force; checkpoint availability alone does not establish full workspace continuity.
+## Unsaved edit recovery
+
+Hosted `doc.update` acknowledgements wait for a Durable Object journal write. Hosts advertise `hello.journals = 1`; the gateway requests a delta against its durable vector and strips that private payload from browser replies. The browser receives `durableUpdate {id, sequence}`. Its `hello.durableUpdates` flag also requests a barrier on reconnect, even when compute already has every local edit. A failed write keeps edits unsynchronized in browser recovery.
+
+Journals use a complete baseline followed by incremental deltas. They compact after 64 segments or 256 KiB of tail payload and reuse bounded chunk slots. Small usage counters change on each write; the full ID registry changes only when a record is admitted. Journals and Save checkpoints share 512 records and 64 MiB of raw payload per workspace; each record is bounded to 4 MiB. These are prototype guards, separate from paid storage tiers.
+
+The internal owner-checked `/journals` and `/journal {owner, id}` operations list usage and export a complete checkpoint for trusted `doc.restore`. They are not public routes. Updates and Save share FIFO ordering, at most 256 queued operations and 8 MiB of encoded update payload. Native graph history missing a durable vector is refused with `journal-conflict` until the control plane restores it.
+
+This protects acknowledged browser edits and compute dependencies captured at their barriers. Complete filesystem/tombstone recovery, changes after the last barrier, automatic compute restoration, leases, retention/cleanup and hibernation remain separate work. Journal availability alone does not establish full workspace continuity.
+
+## Recovery identity
 
 On a successful handshake, the gateway scopes browser recovery to its Durable Object, logical workspace and verified owner, together with the compute document-state identity. Ordinary compute restarts retain recovery when that state directory is preserved. A fresh compute disk changes the recovery context and requires reopening rather than replaying an older replica into a new baseline. The provider must preserve or restore the document state to retain that continuity; durable CRDT authority remains a separate integration. Backends without a recovery identity disable durable browser recovery.
 

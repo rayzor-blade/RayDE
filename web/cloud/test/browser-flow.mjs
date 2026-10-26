@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { fixture, listening } from "./fixture.mjs";
 const puppeteer = createRequire(new URL("../../session/package.json", import.meta.url))("puppeteer-core");
+const Y = createRequire(new URL("../../session/package.json", import.meta.url))("yjs");
 const root = resolve("../.."), artifact = resolve(process.argv.slice(2).find(arg=>!arg.startsWith("--")) ?? "../../bin/web/repositories"), shots = join(root,"bin/web/github-flow");
 await mkdir(shots,{recursive:true});
 const sleep = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -75,19 +76,31 @@ try {
     const content='class Main { static function main() { trace("durable browser save"); } }';
     await page.mouse.click(700,300);await page.keyboard.down(modifier);await page.keyboard.press("a");await page.keyboard.up(modifier);
     await page.keyboard.type(content,{delay:3});
+    const namespace=await local.mf.getDurableObjectNamespace("WORKSPACES"),id=new URL(page.url()).pathname.slice(1),stub=namespace.get(namespace.idFromName(id));
+    const control=async(op,body={})=>{const response=await stub.fetch("https://internal/"+op,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner:1,...body})});assert.equal(response.status,200);return response.json();};
+    let recovered="";
+    for(let i=0;i<300 && recovered!==content;i++) {
+      const journals=await control("journals");
+      for(const journal of journals.ids) {
+        const record=await control("journal",{id:journal});
+        if(record.manifest.path!=="src/Main.hx")continue;
+        const doc=new Y.Doc();Y.applyUpdate(doc,Buffer.from(record.checkpoint.update,"base64"));recovered=doc.getText("text").toString();doc.destroy();
+      }
+      if(recovered!==content)await sleep(50);
+    }
+    assert.equal(recovered,content,"full-editor changes must be durably recoverable before Save");
     await page.keyboard.down(modifier);await page.keyboard.press("s");await page.keyboard.up(modifier);
     for(let i=0;i<300 && !lines.some(line=>line.startsWith("durable-save:"));i++)await sleep(50);
     const receipt=JSON.parse(lines.find(line=>line.startsWith("durable-save:"))?.slice(13)??"null");
     assert.ok(receipt?.id,"browser Save returned no durable checkpoint receipt");
     assert.equal(await readFile(join(directory,"src/Main.hx"),"utf8"),content);
-    const namespace=await local.mf.getDurableObjectNamespace("WORKSPACES"),id=new URL(page.url()).pathname.slice(1);
     const stored=await namespace.get(namespace.idFromName(id)).fetch("https://internal/checkpoint",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner:1,id:receipt.id})});
     assert.equal(stored.status,200);assert.equal((await stored.json()).manifest.sha256,receipt.sha256);
     const start=lines.length;await page.reload();await ready(start);await page.screenshot({path:join(shots,"restored-workspace.png")});
     assert.equal(local.calls.runner.length,1,"reload reprovisioned the workspace");
     assert.equal(await readFile(join(directory,"src/Main.hx"),"utf8"),content);
     assert.equal(lines.some(line=>/RayDE stopped:|uncaught exception|thread rejected:/.test(line)),false);
-    console.log("GitHub sign-in, repository chooser, real Rust gateway, full-editor durable Save and reload passed");
+    console.log("GitHub sign-in, repository chooser, unsaved edit recovery, durable Save and reload passed");
   }
 } catch(error){if(page)await page.screenshot({path:join(shots,"failure.png")});throw error;}
 finally{await writeFile(join(shots,"browser.log"),lines.join("\n"));await browser.close();await local.mf.dispose();await new Promise(resolve=>assets.close(resolve));native.kill();await rm(directory,{recursive:true,force:true});await rm(state,{recursive:true,force:true});}

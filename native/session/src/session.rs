@@ -205,7 +205,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "journals":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -266,7 +266,13 @@ impl<S: FileStore> Connection<S> {
             "doc.update" => {
                 let path = clean(text(request, "path")?)?;
                 if !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before editing it.")); }
-                workspace.docs.receive(&path, &self.name, &bytes(request, "update")?).map(|_| json!({}))
+                let update = bytes(request, "update")?;
+                if request["journal"] == true {
+                    let delta = workspace.docs.receive_journal(&path, &self.name, &update, text(request, "vector")?)?;
+                    Ok(json!({"journal":delta}))
+                } else {
+                    workspace.docs.receive(&path, &self.name, &update).map(|_| json!({}))
+                }
             }
             "doc.save" => {
                 let path = clean(text(request, "path")?)?;
