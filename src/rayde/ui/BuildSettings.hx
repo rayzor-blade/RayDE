@@ -10,6 +10,8 @@ import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.build.HxmlFile;
+import rayde.ui.BuildLookup.BuildLookupRequest;
+import rayde.ui.BuildLookup.BuildLookupResult;
 
 using StringTools;
 
@@ -41,11 +43,23 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	final newFolder = Signal.make("");
 	final newKey = Signal.make("");
 	final newValue = Signal.make("");
+	final lookup = Signal.make((null:Null<BuildLookupResult>));
+	final lookupError = Signal.make("");
+	final lookupWorker = new rayde.run.Worker<BuildLookupRequest,BuildLookupResult>(BuildLookup.scan,ashui.core.Work.notify);
 
 	function render():Element {
 		mainClass.set(props.file.value("--main") == null ? "" : props.file.value("--main"));
 		var t = props.file.target();
 		output.set(t == null || t.output == null ? "" : t.output);
+		new ashui.reactive.Watch(() -> { revision.get(); {root:props.root,paths:props.file.values("-cp"),main:mainClass.get().trim()}; }, request -> {
+			lookup.set(null); lookupError.set(""); lookupWorker.submit("paths",request);
+		}, (a,b) -> a.root == b.root && a.main == b.main && a.paths.join("\n") == b.paths.join("\n"));
+		var receive:ashui.layout.LayoutTree->Void = tree -> {
+			if (tree != this.tree) return;
+			for (result in lookupWorker.poll()) if (result.error != null) lookupError.set(result.error); else if (result.value != null) lookup.set(result.value);
+		};
+		ashui.layout.LayoutTree.flushHooks.push(receive);
+		ashui.reactive.Owner.onCleanup(() -> { lookupWorker.dispose(); ashui.layout.LayoutTree.flushHooks.remove(receive); });
 		return <div id="rayde-build" class="rayde-settings flex flex-1 min-h-0 justify-center overflow-auto">
 			<div class="flex flex-col gap-6 px-8 py-8" width={780}>
 				${SettingsParts.header(Icons.HAMMER_LINE, "Build", haxe.io.Path.withoutDirectory(props.file.path) + ". Each change is written to the file at once.")}
@@ -130,12 +144,14 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	// Entry point
 
 	function entryFields():Array<Element> {
-		var name = mainClass.get().trim(), found = name == "" ? null : locate(name);
 		return [
 			field("Class", "Fully qualified, such as app.Main",
 				<input height={32} id="rayde-build-main" value={mainClass} placeholder="Main" class="rayde-control" onKeyDown={e -> if (e.key.match(Named(Enter))) commitMain()}/>),
-			<if {name != "" && found != null}><div class="flex items-center gap-2"><icon document={Icons.CHECK_LINE} class="size-4 text-success"/><text id="rayde-build-main-found" class="text-xs text-text-secondary">${relative(found)}</text></div>
-			<else><if {name != ""}><div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-build-main-missing" class="text-xs text-warning">${"No " + name.split(".").join("/") + ".hx on the class paths"}</text></div></if></if>
+			<for {result in [lookup.get()]}><if {mainClass.get().trim() != ""}>
+				<if {result == null}><text class="text-xs text-text-tertiary">${lookupError.get() == "" ? "Checking class paths…" : "Class paths could not be checked."}</text>
+				<else><if {result.found != null}><div class="flex items-center gap-2"><icon document={Icons.CHECK_LINE} class="size-4 text-success"/><text id="rayde-build-main-found" class="text-xs text-text-secondary">${relative(result.found)}</text></div>
+				<else><div class="flex items-center gap-2"><icon document={Icons.ERROR_WARNING_LINE} class="size-4 text-warning"/><text id="rayde-build-main-missing" class="text-xs text-warning">${"No " + result.main.split(".").join("/") + ".hx on the class paths"}</text></div></if></if>
+			</if></for>
 		];
 	}
 
@@ -146,19 +162,6 @@ class BuildSettings extends Component<BuildSettingsProps> {
 		change(() -> props.file.set("--main", value == "" ? null : value));
 	}
 
-	/** The file of the class `name` in the source folders, or null. */
-	function locate(name:String):Null<String> {
-		for (cp in props.file.values("-cp")) {
-			var path = haxe.io.Path.join([folderPath(cp), name.split(".").join("/") + ".hx"]);
-			if (Fs.exists(path))
-				return path;
-		}
-		return null;
-	}
-
-	function folderPath(cp:String):String
-		return haxe.io.Path.isAbsolute(cp) ? cp : haxe.io.Path.join([props.root, cp]);
-
 	function relative(path:String):String {
 		var root = haxe.io.Path.addTrailingSlash(props.root);
 		return path.startsWith(root) ? path.substr(root.length) : path;
@@ -168,13 +171,11 @@ class BuildSettings extends Component<BuildSettingsProps> {
 
 	function folderFields():Array<Element> {
 		var cps = props.file.values("-cp");
-		var out:Array<Element> = [for (cp in cps) row(Icons.FOLDER_LINE, cp, Fs.exists(folderPath(cp)) ? null : "Not found", () -> change(() -> props.file.remove("-cp", cp)))];
+		var out:Array<Element> = [<for {result in [lookup.get()]}><div class="flex flex-col gap-2">{[for (cp in cps) row(Icons.FOLDER_LINE, cp, result == null ? lookupError.get() == "" ? "Checking…" : "Unavailable" : result.folders.get(cp) == true ? null : "Not found", () -> change(() -> props.file.remove("-cp", cp)))]}</div></for>];
 		if (cps.length == 0)
 			out.push(<text class="text-xs text-text-tertiary">No class paths. The compiler searches only the working directory.</text>);
 		out.push(adder(newFolder, "Add a class path", "rayde-build-folder", () -> addFolder(newFolder.get())));
-		var suggestions = suggestedFolders(cps);
-		if (suggestions.length > 0)
-			out.push(chips("Detected", [for (s in suggestions) {label: s, run: () -> addFolder(s)}]));
+		out.push(<for {result in [lookup.get()]}><if {result != null && result.suggestions.length > 0}>${chips("Detected", [for (s in result.suggestions) {label:s,run:() -> addFolder(s)}])}</if></for>);
 		return out;
 	}
 
@@ -184,32 +185,6 @@ class BuildSettings extends Component<BuildSettingsProps> {
 			return;
 		newFolder.set("");
 		change(() -> props.file.add("-cp", value));
-	}
-
-	/** Folders just under the project's that hold Haxe files and are not source folders yet. */
-	function suggestedFolders(taken:Array<String>):Array<String> {
-		var out = [];
-		var names = Fs.readDirectory(props.root);
-		names.sort(Reflect.compare);
-		for (name in names) {
-			var path = haxe.io.Path.join([props.root, name]);
-			if (!name.startsWith(".") && Fs.isDirectory(path) && taken.indexOf(name) < 0 && holdsHaxe(path, 3))
-				out.push(name);
-		}
-		return out;
-	}
-
-	function holdsHaxe(dir:String, depth:Int):Bool {
-		if (depth == 0)
-			return false;
-		for (name in Fs.readDirectory(dir)) {
-			var path = haxe.io.Path.join([dir, name]);
-			if (name.startsWith("."))
-				continue;
-			if (Fs.isDirectory(path) ? holdsHaxe(path, depth - 1) : name.endsWith(".hx"))
-				return true;
-		}
-		return false;
 	}
 
 	// Defines

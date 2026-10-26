@@ -408,6 +408,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` in a tab, or brings its tab forward, and checks it. */
 	public function openFile(file:String):Void {
+		if (!prepareFile(file)) return;
 		contributions.navigated();
 		editorPart.groups.sync(open.get(),active.get());
 		var previousGroup = editorPart.groups.current();
@@ -423,6 +424,17 @@ class Workbench extends Component<WorkbenchProps> {
 		languagesPart.check(file);
 		if (fresh)
 			emit("file.opened", {path: file});
+	}
+
+	/** A target must be readable before reactive tab changes can mount its editor. */
+	function prepareFile(file:String):Bool {
+		if (isVirtual(file) || ImagePreview.isRaster(file) || documentsPart.buffers.exists(file)) return true;
+		try { documentsPart.buffer(file); return true; }
+		catch (error:Dynamic) {
+			Sys.println('Could not open "$file": ' + Std.string(error));
+			say("Could not open " + haxe.io.Path.withoutDirectory(file));
+			return false;
+		}
 	}
 
 	/** Opens the Settings page in a tab, or brings it forward, on the section `category` when one is named; the build file is read as it is now. */
@@ -639,6 +651,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens `file` with the cursor at `line` and `character` (from 0), scrolled into view, and gives the editor the keyboard. */
 	public function goTo(file:String, line:Int, character:Int):Void {
+		if (!prepareFile(file)) return;
 		if (ImagePreview.isSvg(file)) editorPart.imageTextMode(file).set(true);
 		openFile(file);
 		if (ImagePreview.isRaster(file)) return;
