@@ -9,7 +9,7 @@ fn main() {
     let option = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned();
     if args.iter().any(|a| a == "--help") {
         println!("rayde-session [--root DIR] [--port N] [--host ADDR] [--token T] [--origin URL]... [--web DIR] [--exec]\n              [--raw-port N] [--extension-host BIN --extensions DIR] [--auth-secret S --login-url URL]\nrayde-session issue --auth-secret S --login NAME --id N [--ttl SECONDS]\n\nServes DIR (default: the current directory) to RayDE over a WebSocket at /session.\nPrograms run only with --exec. --extension-host enables a supervised RayScript host per extension; --extensions locates the built-in installation. Without --token a random one is made and printed.\nWith --auth-secret, changes need a credential the sign-in edge signed with that secret; `issue` mints one for development.");
-        println!("State is stored under ~/.rayde-session, separated by workspace. --state-root DIR selects another private state directory.");
+        println!("Environment defaults load from ~/.rayde-session/environment.json; --env-file PATH selects another JSON string map.\nState is stored under ~/.rayde-session, separated by workspace. --state-root DIR selects another private state directory.");
         return;
     }
     if args.first().map(String::as_str) == Some("issue") {
@@ -29,6 +29,11 @@ fn main() {
         rand::thread_rng().sample_iter(rand::distributions::Alphanumeric).take(24).map(char::from).collect()
     });
     let mut options = Options::new(&root);
+    let environment_file=option("--env-file").map(PathBuf::from);
+    let default_environment=std::env::var_os(if cfg!(windows){"USERPROFILE"}else{"HOME"}).map(PathBuf::from).map(|home|home.join(".rayde-session/environment.json"));
+    if let Some(path)=environment_file.as_ref().or(default_environment.as_ref()) {
+        options.environment=rayde_session::environment::load(path,environment_file.is_some()).expect("valid session environment configuration");
+    }
     options.state_root = option("--state-root").map(PathBuf::from);
     options.address = address;
     options.token = Some(token.clone());

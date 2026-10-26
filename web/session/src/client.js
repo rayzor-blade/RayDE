@@ -250,7 +250,7 @@ export class SessionClient {
 
   /** The local bridge fences process handles before forwarding onto a replacement connection. */
   forward(op, params = {}) {
-    if (op.startsWith("proc.") && params.sessionGeneration !== undefined) {
+    if ((op.startsWith("proc.") || op.startsWith("term.")) && params.sessionGeneration !== undefined) {
       if (params.sessionGeneration !== this.generation) return Promise.reject(new Error("The program belongs to a disconnected session."));
       params = {...params}; delete params.sessionGeneration;
     }

@@ -17,6 +17,8 @@ class SessionClient {
 	public var name(default, null) = "";
 	public var exec(default, null) = false;
 	public var syntax(default, null) = false;
+	public var terminal(default,null) = false;
+	public var terminalProfiles(default,null):Array<rayde.term.Profiles.Profile> = [];
 	public var remote(default, null) = true;
 	public var demo(default, null) = false;
 	public var repositories(default, null) = false;
@@ -60,7 +62,8 @@ class SessionClient {
 		try {
 			var hello = client.request("hello", {token:token});
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
-			client.syntax = hello.syntax == true;
+			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
+			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
@@ -79,7 +82,7 @@ class SessionClient {
 		return () -> { mutex.acquire(); listeners.remove(listener); mutex.release(); };
 	}
 
-	/** Program streams are consumed on the receiver, where their futures can wake readers without a UI frame. */
+	/** Program and terminal streams are consumed on the receiver, where their futures can wake readers without a UI frame. */
 	public function subscribePrograms(listener:Dynamic->Void):Void->Void {
 		mutex.acquire(); programs.push(listener); mutex.release();
 		return () -> { mutex.acquire(); programs.remove(listener); mutex.release(); };
@@ -119,7 +122,7 @@ class SessionClient {
 		if (params != null) for (field in Reflect.fields(params)) if (Reflect.field(params, field) != null) Reflect.setField(message, field, Reflect.field(params, field));
 		mutex.acquire();
 		if (closed) { mutex.release(); future.reject(new SessionFailure("closed", "The session connection is closed.")); return future; }
-		if (StringTools.startsWith(op,"proc.") && params != null && params.sessionGeneration != null && (!online || params.sessionGeneration != generation)) {
+		if ((StringTools.startsWith(op,"proc.") || StringTools.startsWith(op,"term.")) && params != null && params.sessionGeneration != null && (!online || params.sessionGeneration != generation)) {
 			mutex.release(); future.reject(new SessionFailure("stale-process","The program belongs to a disconnected session.")); return future;
 		}
 		if (Lambda.count(waiting) >= 4096) { mutex.release(); future.reject(new SessionFailure("busy", "Too many session requests are waiting.")); return future; }
@@ -159,7 +162,7 @@ class SessionClient {
 				}
 				if (onWake != null) onWake();
 			} else {
-				var stream = message.ev == "proc.out" || message.ev == "proc.exit" || message.ev == "session.disconnected";
+				var stream = message.ev == "proc.out" || message.ev == "proc.exit" || (message.ev != null && StringTools.startsWith(message.ev,"term.")) || message.ev == "session.disconnected";
 				var consumers = stream ? programs.copy() : [];
 				var queued = message.ev != null && (!stream || consumers.length == 0 || message.ev == "session.disconnected");
 				if (queued) {

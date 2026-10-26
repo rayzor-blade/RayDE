@@ -112,10 +112,18 @@ class TerminalView extends Component<TerminalViewProps> {
 		new ashui.reactive.Watch(() -> ThemeState.get().revision.get(), _ -> repaintRows(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			if (pollTimer != null) pollTimer.cancel();
 			stopDrag();
 		});
-		measure();
-		poll();
+		if (props.terminal.remote) {
+            var tree = root.tree;
+            var hook:LayoutTree->Void = current -> {if (current == tree && !gone) poll();};
+            LayoutTree.flushHooks.push(hook);
+            new ashui.reactive.Watch(props.shown,on -> props.terminal.setVisible(on));
+            Owner.onCleanup(() -> {props.terminal.setVisible(false);for (i in 0...LayoutTree.flushHooks.length) if (Reflect.compareMethods(LayoutTree.flushHooks[i],hook)) {LayoutTree.flushHooks.splice(i,1);break;}});
+        }
+        measure();
+        poll();
 		return root;
 	}
 
@@ -143,6 +151,7 @@ class TerminalView extends Component<TerminalViewProps> {
 				LayoutTree.flushHooks.remove(hook);
 		};
 		LayoutTree.flushHooks.push(hook);
+		Owner.onCleanup(() -> {for (i in 0...LayoutTree.flushHooks.length) if (Reflect.compareMethods(LayoutTree.flushHooks[i],hook)) {LayoutTree.flushHooks.splice(i,1);break;}});
 	}
 
 	function rowElements(states:Array<RowState>):Array<Element>
@@ -202,10 +211,12 @@ class TerminalView extends Component<TerminalViewProps> {
 			if (b != null && b.width > 0) {
 				wantCols = Std.int((b.width - 2 * PAD) / cellWidth);
 				wantRows = Std.int((b.height - PAD) / cellHeight);
+				if (props.terminal.remote) {wantCols = Std.int(Math.min(300,wantCols));wantRows = Std.int(Math.min(100,wantRows));}
 			}
 			if (wantCols > 1 && wantRows > 0 && (wantCols != screen.cols || wantRows != screen.rows)) {
 				props.terminal.resize(wantCols, wantRows);
-				changed = true;
+				// A remote resize is painted when its screen revision arrives.
+				changed = !props.terminal.remote;
 			}
 			var r = props.terminal.revision();
 			if (r != seen || changed) {
@@ -233,6 +244,7 @@ class TerminalView extends Component<TerminalViewProps> {
 	}
 
 	function later(delay:Float):Void {
+		if (props.terminal.remote) return;
 		if (pollTimer != null)
 			pollTimer.cancel();
 		pollTimer = AnimationScheduler.main.after(delay, poll);

@@ -17,6 +17,10 @@ typedef Profile = {
  */
 class Profiles {
 	public static function list():Array<Profile> {
+		#if (wasm || rayde_page)
+		var client = rayde.workspace.PageHost.session;
+		return client == null ? [] : client.terminalProfiles.copy();
+		#else
 		var out:Array<Profile> = [], seen = new Map<String, Bool>();
 		function add(path:Null<String>, ?name:String):Void {
 			if (path == null || path == "" || !Fs.exists(path) || Fs.isDirectory(path))
@@ -49,6 +53,7 @@ class Profiles {
 		if (out.length > 0)
 			out[0].isDefault = true;
 		return out;
+		#end
 	}
 
 	/** Where `name` is on the search path, or null. */

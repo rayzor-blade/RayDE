@@ -37,6 +37,7 @@ pub struct Workspace<S: FileStore> {
     pub docs: DocHub<S>,
     pub programs: Option<Arc<dyn Programs>>,
     syntax:OnceLock<Arc<dyn crate::syntax::Syntax>>,
+    terminals:OnceLock<Arc<dyn crate::terminal::Terminals>>,
     /// When set, a connection may look at the workspace but changes nothing until it has signed in.
     authority: Option<Arc<dyn Authority>>,
     /// Seconds since the epoch; the runner supplies it, because a Durable Object has no `SystemTime`.
@@ -52,10 +53,12 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, syntax:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
     }
 
     pub fn set_syntax(&self,syntax:Arc<dyn crate::syntax::Syntax>)->bool {self.syntax.set(syntax).is_ok()}
+
+    pub fn set_terminals(&self,terminals:Arc<dyn crate::terminal::Terminals>)->bool {self.terminals.set(terminals).is_ok()}
 
     /// A session with no token is open to whoever reaches it.
     fn accepts(&self, token: Option<&str>) -> bool {
@@ -70,7 +73,7 @@ impl<S: FileStore> Workspace<S> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         self.connections.lock().unwrap().insert(id, out.clone());
         let syntax=crate::syntax::SyntaxJobs::new(self.syntax.get().cloned(),out.clone());
-        Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new(),syntax }
+        Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new(),terminals:Vec::new(),syntax }
     }
 
     /// A path changed in the workspace: open documents take it as an edit, and every connection hears of it.
@@ -103,6 +106,7 @@ pub struct Connection<S: FileStore> {
     docs: Vec<String>,
     programs: Vec<u64>,
     syntax:crate::syntax::SyntaxJobs,
+    terminals:Vec<u64>,
 }
 
 fn text<'a>(request: &'a Value, key: &str) -> Result<&'a str> {
@@ -155,7 +159,7 @@ impl<S: FileStore> Connection<S> {
         let workspace = self.workspace.clone();
         let store = &workspace.store;
         // Looking is open; changing, saving and running are for someone who has signed in.
-        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill");
+        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.");
         if changes && workspace.authority.is_some() && self.identity.is_none() {
             return Err(SessionError::new("auth-required", "Sign in with GitHub to make changes."));
         }
@@ -167,7 +171,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
+                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -234,6 +238,17 @@ impl<S: FileStore> Connection<S> {
                 workspace.docs.release(&path).await?;
                 Ok(json!({}))
             }
+            "term.open"=>{
+                let terminals=workspace.terminals.get().ok_or_else(||SessionError::new("no-exec","This session does not provide terminals."))?;
+                if self.terminals.len()>=4{return Err(SessionError::new("busy","This connection already has four terminals."));}
+                let id=terminals.open(request,self.out.clone())?;self.terminals.push(id);Ok(json!({"tid":id}))
+            }
+            "term.close"|"term.write"|"term.resize"|"term.scroll"|"term.visible"|"term.ack"=>{
+                let id=request["tid"].as_u64().filter(|id|self.terminals.contains(id)).ok_or_else(||SessionError::new("not-found","No such terminal."))?;
+                let terminals=workspace.terminals.get().ok_or_else(||SessionError::new("no-exec","This session does not provide terminals."))?;
+                if op=="term.close"{terminals.close(id);self.terminals.retain(|v|*v!=id);}else{terminals.command(id,request)?;}
+                Ok(json!({}))
+            }
             "proc.spawn" => {
                 let programs = workspace.programs.clone().ok_or_else(|| SessionError::new("no-exec", "This session does not run programs."))?;
                 let args: Vec<String> = request.get("args").and_then(Value::as_array).map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
@@ -263,6 +278,7 @@ impl<S: FileStore> Connection<S> {
     /// The connection is gone: its documents lose their subscriber, and the programs it started are stopped.
     pub fn close(&mut self) {
         self.syntax.close();
+        if let Some(terminals)=self.workspace.terminals.get(){for id in self.terminals.drain(..){terminals.close(id);}}
         self.workspace.connections.lock().unwrap().remove(&self.id);
         for path in self.docs.drain(..) {
             self.workspace.docs.detach(&path, &self.name);
@@ -274,3 +290,5 @@ impl<S: FileStore> Connection<S> {
         }
     }
 }
+
+impl<S:FileStore> Drop for Connection<S>{fn drop(&mut self){self.close();}}

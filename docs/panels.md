@@ -15,3 +15,5 @@ The status bar shows when an extension is starting or preparing a command. Its v
 ## Terminal
 
 The integrated terminal runs your shell. Configure profiles and terminal options in **Settings > Terminal**. Hiding the panel does not stop running commands.
+
+In a browser workspace, the shell and profiles belong to the session host. Terminal shows startup progress and reconnect errors; it is available when the session allows execution. After losing the session connection, start a new terminal when connected again.

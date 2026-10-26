@@ -169,7 +169,7 @@ class TerminalPart {
 		for (p in all)
 			if (p.name == terminalSettings.defaultProfile)
 				return p;
-		return all.length > 0 ? all[0] : {name: "sh", program: "/bin/sh"};
+		return all.length > 0 ? all[0] : {name: "shell", program: ""};
 	}
 
 	/** Starts the first terminal if none runs. */
@@ -181,7 +181,7 @@ class TerminalPart {
 	function startSession(profile:Profile, ?group:Int):Void {
 		var t = Terminal.open(100, 12, wb.props.display.cwd, profile.program, profile.args, true);
 		if (t == null) {
-			wb.say("Could not start " + profile.name);
+			wb.say("Could not start " + profile.name + ": this workspace has no available terminal service.");
 			return;
 		}
 		var session = {id: nextSession++, group: group == null ? nextGroup++ : group, terminal: t, profile: profile};
@@ -353,7 +353,7 @@ class TerminalPart {
 		}
 		var id = s.id;
 		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> wb.panelsPart.panelShown.get() && wb.panelsPart.bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision}
-			onExit={code -> wb.say(s.terminal.failedToStart() ? "Could not start " + s.profile.name : s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={wb.keymapPart.reservedKey}/>;
+			onExit={code -> wb.say(s.terminal.failedToStart() ? (s.terminal.failureReason() ?? "Could not start " + s.profile.name) : s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={wb.keymapPart.reservedKey}/>;
 	}
 
 	/** The terminals running down the right of the pane, a screen's terminals together; the one in front lit. */

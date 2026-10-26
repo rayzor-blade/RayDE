@@ -44,6 +44,8 @@ Problems come from the active language server, the fallback Haxe compiler and th
 
 Problems decoding, Output log processing and terminal I/O run independently of the UI. Superseded diagnostic requests are cancelled. Hidden Output views release their controls while retaining text and scroll position; reopening shows the latest data. Terminal sessions keep running when the panel closes.
 
+`rayde.term.Terminal` selects the native engine or a browser `RemoteTerminal` mirror. The Rust session reuses `native/terminal` without its optional HashLink FFI. Browser screen updates arrive through the session receiver, coalesce behind acknowledgements and wake the UI; the view has no terminal polling timer. Only changed rows update their controls, identical resize requests are suppressed, and hidden views suspend screen delivery. RPC failures retain an error state and release their remote PTY. Run `RemoteTerminalChecks`, `cargo test --manifest-path native/session/Cargo.toml --test terminal`, and `node tests/web/terminal.mjs bin/web/rayde`; set `RAYDE_TERMINAL_NO_EXEC=1` for the unavailable-session browser case.
+
 Output renders ANSI foreground and background colors (standard, bright, 256-color and RGB), bold, dim, italic, underline, strikethrough and inverse text. Reset sequences restore severity colors. Selection and copying use plain text without escape sequences; cursor-control sequences are ignored.
 
 ## Preview resources

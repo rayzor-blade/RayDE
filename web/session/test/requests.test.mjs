@@ -60,7 +60,7 @@ test("a process handle from an earlier connection cannot reach a reused remote P
   const sent = [], client = new SessionClient({url:"ws://unused",timeout:100});
   client.ready = true; client.generation = 2;
   client.socket = {readyState:1,send(text) { sent.push(JSON.parse(text)); }};
-  for (const op of ["proc.spawn","proc.write","proc.close-input","proc.kill"]) {
+  for (const op of ["proc.spawn","proc.write","proc.close-input","proc.kill","term.open","term.write","term.resize","term.close","term.ack"]) {
     await assert.rejects(client.forward(op,{pid:1,sessionGeneration:1}),/disconnected session/);
   }
   assert.equal(sent.length,0);

@@ -71,6 +71,8 @@ pub struct Options {
     pub origins: Vec<String>,
     /// Whether programs may be run.
     pub exec: bool,
+    /// Host-owned defaults; an explicit process configuration may override them.
+    pub environment: HashMap<String,String>,
     /// The trusted installed extension host; its processes still require the session's execution permission.
     pub extension_host: Option<PathBuf>,
     pub extensions: Option<PathBuf>,
@@ -86,7 +88,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -132,7 +134,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
         return Err(std::io::Error::other("The extension host requires --exec."));
     }
     let programs: Option<Arc<dyn Programs>> = options.exec.then(|| {
-        let mut programs = ChildPrograms::new(store.root().to_path_buf(), 16);
+        let mut programs = ChildPrograms::new(store.root().to_path_buf(), 16).with_environment(options.environment.clone());
         if let Some(host) = extension_host { programs = programs.with_extensions(host, extensions); }
         Arc::new(programs) as Arc<dyn Programs>
     });
@@ -166,6 +168,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
     workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));
+    if options.exec {workspace.set_terminals(Arc::new(crate::terminal::NativeTerminals::new(store.root().to_path_buf(),options.environment)));}
     let _ = link.set(Arc::downgrade(&workspace));
 
     // Outside changes arrive in bursts; each path is read once after they settle.

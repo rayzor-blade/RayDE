@@ -8,7 +8,12 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["ffi"]
+ffi = ["dep:hl_abi"]
+
 [dependencies]
-hl_abi = { git = "https://github.com/rayzor-blade/hl_abi" }
+hl_abi = { git = "https://github.com/rayzor-blade/hl_abi", optional = true }
 portable-pty = "0.9"
 vt100 = "0.15"
+libc = "0.2"

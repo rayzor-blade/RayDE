@@ -140,6 +140,7 @@ name = "rayde-terminal"
 version = "0.1.0"
 dependencies = [
  "hl_abi",
+ "libc",
  "portable-pty",
  "vt100",
 ]

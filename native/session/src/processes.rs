@@ -31,18 +31,21 @@ pub struct ChildPrograms {
     next: AtomicU64,
     limit: usize,
     extensions: Option<serde_json::Value>,
+    environment: HashMap<String,String>,
 }
 
 impl ChildPrograms {
     pub fn new(root: PathBuf, limit: usize) -> Self {
         let root = std::fs::canonicalize(&root).unwrap_or(root);
-        Self { root, running: Arc::new(Mutex::new(HashMap::new())), next: AtomicU64::new(1), limit, extensions: None }
+        Self { root, running: Arc::new(Mutex::new(HashMap::new())), next: AtomicU64::new(1), limit, extensions: None, environment:HashMap::new() }
     }
 
     pub fn with_extensions(mut self, host: PathBuf, root: Option<PathBuf>) -> Self {
         self.extensions = Some(json!({"host": host, "root": root}));
         self
     }
+
+    pub fn with_environment(mut self,environment:HashMap<String,String>)->Self {self.environment=environment;self}
 
     pub fn running(&self) -> usize {
         self.running.lock().unwrap().len()
@@ -76,6 +79,7 @@ impl Programs for ChildPrograms {
         }
         let mut command_line = Command::new(command);
         command_line.args(args)
+            .envs(&self.environment)
             .envs(env)
             .current_dir(directory)
             .stdin(Stdio::piped())

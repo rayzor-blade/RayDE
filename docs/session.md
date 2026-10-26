@@ -7,6 +7,14 @@ cargo build --manifest-path native/session/Cargo.toml
 native/session/target/debug/rayde-session --root path/to/workspace --exec
 ```
 
+Session process defaults load from `~/.rayde-session/environment.json`, or `--env-file PATH` for a selected JSON file. For example:
+
+```json
+{"RAYZOR_STD_PATH":"/path/to/rayzor/compiler/haxe-std"}
+```
+
+These values reach language servers, extension hosts, programs and terminal shells. Explicit per-process environment settings take precedence. Values stay on the host and are not included in the browser handshake. A configured `RAYZOR_STD_PATH` must contain `StdTypes.hx`; changing the file takes effect on the next session launch. Rayzor's own project-specific standard-library selection still applies.
+
 It prints the page's address and a token. `--web web/session/dist` serves the demo page and the browser client beside the socket (`cd web/session && npm install && npm run build`; the npm packages only build and test the browser bundle).
 
 ## What a client can do
@@ -19,8 +27,11 @@ Requests are JSON over `ws://host/session`; the first must be `hello` with the t
 | Documents | `doc.open`, `doc.update`, `doc.save`, `doc.close`. A text file is a Yrs document; clients exchange state vectors and updates, so edits made offline merge after a reconnect. The session writes the file once edits settle, and takes an edit made to the file outside the session as an edit of the document. |
 | Syntax | When `hello.syntax` is true, `syntax.highlight` accepts a request id, editor `key`, filename and source snapshot; `syntax.cancel` cancels that key. Results contain line token ranges in UTF-16 units. Queries run independently of ordered workspace operations. |
 | Programs | `proc.spawn`, `proc.write`, `proc.close-input`, `proc.kill`; output arrives as `proc.out` and `proc.exit` events. Only with `--exec`, only in workspace directories, and stopped when their connection closes. |
+| Terminals | When `hello.terminal` is true, `term.open` starts a connection-owned PTY with a client `key`, workspace-relative `cwd`, optional `program`/`args`, `cols` and `rows`. `term.write`, `term.resize`, `term.scroll`, `term.visible` and `term.close` operate on its `tid`. Host shell profiles arrive in `hello.terminalProfiles`. |
 
 The browser client (`web/session/src/client.js`) is local-first: edits go to a Yjs document in the page and IndexedDB first, and travel when the session is reachable.
+
+Terminal startup emits `term.ready` or `term.failed`. `term.update` contains base64-packed screen info and changed rows, with UTF-16 column boundaries for copying. Clients acknowledge each patch with `term.ack`; further output coalesces until acknowledged. Hidden terminals keep running with bounded scrollback and stop streaming screen updates. The session caps each connection at four terminals, eight per workspace, a 300 × 100 screen, 1,000 scrollback lines and a 256 KiB input queue. Opening and PTY I/O run outside ordered workspace RPC handling. Connection loss closes its terminals; handles cannot be reused after reconnecting.
 
 The host keeps CRDT recovery state under `~/.rayde-session/<workspace-id>/state`, outside the repository. The workspace ID hashes its canonical path, keeping projects separate. Existing workspace-local state is moved there on startup; conflicting copies are preserved for recovery. `--state-root DIR` selects another private storage location for a sandbox or test host.
 

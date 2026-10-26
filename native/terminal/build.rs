@@ -1,4 +1,5 @@
 fn main() {
+    if std::env::var_os("CARGO_FEATURE_FFI").is_none() { return; }
     // The VM's own symbols (hl_alloc_bytes) are resolved when it loads the library: Apple's linker needs telling,
     // Windows links the VM's import library from HL_LIB_DIR, and other Unixes leave them undefined as an hdll wants.
     println!("cargo:rerun-if-changed=build.rs");

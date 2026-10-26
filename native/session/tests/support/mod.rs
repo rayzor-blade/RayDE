@@ -84,6 +84,8 @@ impl Client {
         tokio::time::timeout(Duration::from_secs(5), answer).await.expect("a response arrives").unwrap()
     }
 
+    pub async fn close(&mut self) {self.sink.close().await.unwrap();}
+
     /// The next event of `kind`, skipping others.
     pub async fn event(&mut self, kind: &str) -> Value {
         tokio::time::timeout(Duration::from_secs(5), async {

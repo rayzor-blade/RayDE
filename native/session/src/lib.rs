@@ -5,9 +5,12 @@ pub mod error;
 pub mod session;
 pub mod store;
 pub mod syntax;
+pub mod terminal;
 
 #[cfg(feature = "server")]
 pub mod dir_store;
+#[cfg(feature = "server")]
+pub mod environment;
 #[cfg(feature = "server")]
 pub mod processes;
 #[cfg(feature = "server")]
