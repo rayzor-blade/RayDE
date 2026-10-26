@@ -205,7 +205,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "journals":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "journals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -239,11 +239,11 @@ impl<S: FileStore> Connection<S> {
             "fs.write" => {
                 let path = text(request, "path")?;
                 let data = if request.get("encoding").and_then(Value::as_str) == Some("base64") { bytes(request, "data")? } else { text(request, "data")?.as_bytes().to_vec() };
-                store.write(path, &data).await?;
+                workspace.docs.write(&clean(path)?, &data).await?;
                 Ok(json!({"mtime": store.stat(path).await?.map_or(0, |entry| entry.mtime)}))
             }
             "fs.mkdir" => store.mkdir(text(request, "path")?).await.map(|_| json!({})),
-            "fs.remove" => store.remove(text(request, "path")?, request.get("recursive").and_then(Value::as_bool).unwrap_or(false)).await.map(|_| json!({})),
+            "fs.remove" => workspace.docs.remove(&clean(text(request, "path")?)?, request.get("recursive").and_then(Value::as_bool).unwrap_or(false)).await.map(|_| json!({})),
             "fs.rename" => workspace.docs.rename(&clean(text(request, "from")?)?, &clean(text(request, "to")?)?).await.map(|_| json!({})),
             "doc.open" => {
                 let path = clean(text(request, "path")?)?;

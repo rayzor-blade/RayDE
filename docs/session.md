@@ -34,6 +34,6 @@ Avoid clearing browser storage when recovering unsaved edits: it contains local 
 
 Shared text files must be UTF-8 and no larger than 8 MiB. If the session reaches its open-document limit, close unused tabs and retry.
 
-Close shared documents before moving their file or containing folder. Moving an open shared document is currently refused.
+Close shared documents before moving or deleting their file or containing folder. These operations are refused while shared documents remain open.
 
 For self-hosting, environment settings, protocol details and tests, see the [session contributor reference](contributing/session.md). Account-gateway setup is in [the Cloudflare reference](../web/cloud/README.md).

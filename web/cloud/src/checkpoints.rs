@@ -165,7 +165,13 @@ impl Checkpoints {
         Ok(bytes)
     }
 
-    pub async fn save(&self, path: &str, source: &str, next: Checkpoint) -> AppResult<Manifest> {
+    pub async fn save(
+        &self,
+        path: &str,
+        source: &str,
+        next: Checkpoint,
+        confirmed: bool,
+    ) -> AppResult<Manifest> {
         let path = rayde_session::store::clean(path)
             .map_err(|_| bad(400, "The checkpoint path is invalid."))?;
         if path.is_empty() || path.len() > 4096 || !workspace_id(source) {
@@ -174,6 +180,13 @@ impl Checkpoints {
         let candidate = checkpoint::unpack(&next)
             .map_err(|_| bad(422, "The workspace returned an invalid checkpoint."))?;
         drop(next);
+        let candidate = if confirmed {
+            checkpoint::merge(&candidate, &candidate)
+                .map_err(|_| bad(422, "The workspace returned an invalid checkpoint."))?
+        } else {
+            candidate
+        };
+        let native_digest = confirmed.then(|| checkpoint::digest(&candidate));
         let _guard = self.gate.lock().await;
         let id = hash(&json!([source, path]).to_string());
         let key = format!("checkpoint:{id}");
@@ -191,8 +204,29 @@ impl Checkpoints {
             None => candidate,
         };
         let digest = checkpoint::digest(&bytes);
+        if native_digest.is_some_and(|expected| expected != digest) {
+            return Err(bad(
+                409,
+                "Saved recovery contains history missing from compute. Restore it before saving.",
+            ));
+        }
         if let Some(old) = &old {
             if old.sha256 == digest {
+                if confirmed {
+                    put(
+                        &self.storage,
+                        crate::recovery::confirm(
+                            &self.storage,
+                            source,
+                            &path,
+                            "checkpoint",
+                            &id,
+                            old.sha256.clone(),
+                        )
+                        .await?,
+                    )
+                    .await?;
+                }
                 return Ok(old.clone());
             }
         }
@@ -227,6 +261,30 @@ impl Checkpoints {
             values.insert(format!("checkpoint-data:{id}:{number}"), json!(""));
         }
         values.insert(key, json!(&manifest));
+        if confirmed {
+            values.extend(
+                crate::recovery::confirm(
+                    &self.storage,
+                    source,
+                    &manifest.path,
+                    "checkpoint",
+                    &id,
+                    manifest.sha256.clone(),
+                )
+                .await?,
+            );
+        } else {
+            values.extend(
+                crate::recovery::unconfirm(
+                    &self.storage,
+                    source,
+                    &manifest.path,
+                    "checkpoint",
+                    &id,
+                )
+                .await?,
+            );
+        }
         put(&self.storage, values).await?;
         Ok(manifest)
     }

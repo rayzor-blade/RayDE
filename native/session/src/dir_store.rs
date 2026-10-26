@@ -149,6 +149,23 @@ fn private_directories(path: &Path) -> io::Result<()> {
 
 impl FileStore for DirStore {
     fn cache_identity(&self) -> Option<StoreIdentity> { Some(self.identity.clone()) }
+    async fn recovery_path(&self, path: &str) -> Result<String> {
+        let mut probe=self.inside(path).await?;
+        let mut suffix=Vec::new();
+        loop {
+            match tokio::fs::canonicalize(&probe).await {
+                Ok(mut key)=>{
+                    for part in suffix.into_iter().rev() {key.push(part);}
+                    return Ok(key.to_string_lossy().replace('\\',"/"));
+                }
+                Err(_)=>{
+                    let name=probe.file_name().ok_or_else(||SessionError::new("outside","The path leaves the workspace."))?.to_os_string();
+                    suffix.push(name);
+                    if !probe.pop() {return Err(SessionError::new("outside","The path leaves the workspace."));}
+                }
+            }
+        }
+    }
     fn name(&self) -> String {
         self.root.file_name().map_or_else(|| "workspace".into(), |n| n.to_string_lossy().into_owned())
     }

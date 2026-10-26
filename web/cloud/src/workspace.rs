@@ -38,6 +38,7 @@ struct Pending {
     source: Option<String>,
     checkpoints: bool,
     journals: bool,
+    file_mutations: bool,
     serial: u64,
     requests: BTreeMap<String, futures_channel::oneshot::Sender<Value>>,
 }
@@ -76,6 +77,27 @@ fn save_failure(id: Value, message: &str) -> Value {
 
 fn update_failure(id: Value, message: &str) -> Value {
     json!({"id":id,"ok":false,"code":"journal-failed","message":message})
+}
+
+fn filesystem_failure(id: Value, message: &str) -> Value {
+    json!({"id":id,"ok":false,"code":"filesystem-recovery-failed","message":message})
+}
+
+async fn forward_filesystem(
+    gate: Rc<futures_util::lock::Mutex<()>>, checkpoints: Rc<crate::checkpoints::Checkpoints>,
+    backend: WebSocket, pending: Rc<RefCell<Pending>>, id: Value, request: Value, expires: u64,
+) -> Value {
+    let Ok(_guard) = deadline(gate.lock(),20).await else {return filesystem_failure(id,"The recovery queue is busy. Try the file operation again.");};
+    if expires < now() {return filesystem_failure(id,"Sign in again before changing files.");}
+    let source=pending.borrow().source.clone().filter(|_|pending.borrow().file_mutations && !pending.borrow().closed);
+    let Some(source)=source else {return filesystem_failure(id,"Update or reconnect the workspace host before changing files.");};
+    let mutation=match checkpoints.mutation_begin(&source,&request).await {Ok(mutation)=>mutation,Err(error)=>return filesystem_failure(id,&error.message)};
+    let result=compute(&backend,&pending,request).await;
+    if let Err(error)=checkpoints.mutation_finish(&mutation,result.as_ref().ok()).await {return filesystem_failure(id,&error.message);}
+    match result {
+        Ok(mut reply)=>{reply["id"]=id;reply["recoveryMutation"]=json!({"id":mutation.id});reply},
+        Err(message)=>filesystem_failure(id,message),
+    }
 }
 
 async fn compute(backend: &WebSocket, pending: &Rc<RefCell<Pending>>, mut request: Value) -> std::result::Result<Value, &'static str> {
@@ -163,7 +185,7 @@ async fn forward_save(
     if reply["ok"] != true { return reply; }
     let checkpoint = serde_json::from_value(reply.as_object_mut().and_then(|reply|reply.remove("checkpoint")).unwrap_or(Value::Null));
     let stored = match checkpoint {
-        Ok(checkpoint)=>checkpoints.save(&path,&source,checkpoint).await,
+        Ok(checkpoint)=>checkpoints.save(&path,&source,checkpoint,true).await,
         Err(_)=>Err(bad(502,"The workspace host returned no valid checkpoint.")),
     };
     match stored {
@@ -242,23 +264,27 @@ impl DurableObject for WorkspaceSession {
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
         }
-        if data["op"] == "doc.save" || data["op"] == "doc.update" {
+        let filesystem=matches!(data["op"].as_str(),Some("fs.write"|"fs.mkdir"|"fs.remove"|"fs.rename"));
+        if data["op"] == "doc.save" || data["op"] == "doc.update" || filesystem {
             let editing = data["op"] == "doc.update";
             let id = data["id"].clone();
             let path = data["path"]
                 .as_str()
                 .and_then(|path| rayde_session::store::clean(path).ok())
                 .filter(|path| !path.is_empty() && path.len() <= 4096);
-            if id.to_string().len() > 128 || path.is_none() {
-                return ws.send(&if editing {update_failure(id,"The document update is invalid.")} else {save_failure(id, "The Save request is invalid.")});
+            if id.to_string().len() > 128 || (!filesystem && path.is_none()) {
+                return ws.send(&if filesystem {filesystem_failure(id,"The file request is invalid.")} else if editing {update_failure(id,"The document update is invalid.")} else {save_failure(id, "The Save request is invalid.")});
             }
+            let filesystem_request=if filesystem {match crate::recovery::normalize(std::mem::take(&mut data)) {Ok(request)=>Some(request),Err(error)=>return ws.send(&filesystem_failure(id,&error.message))}} else {None};
             let update = if editing { data["update"].as_str().map(str::to_owned) } else { None };
-            let size = update.as_ref().map_or(0,String::len);
+            let size = if filesystem {message.len()} else {update.as_ref().map_or(0,String::len)};
+            if filesystem && size > rayde_session::session::MAX_MESSAGE-1024 {return ws.send(&filesystem_failure(id,"The file request exceeds the recovery queue limit."));}
             if editing && (update.is_none() || size > rayde_session::checkpoint::MAX_BYTES.div_ceil(3)*4) {
                 return ws.send(&update_failure(id,"The document update exceeds the recovery size limit."));
             }
-            if self.save_waiting.get() >= 256 || self.queued_bytes.get().saturating_add(size) > 8*1024*1024 {
-                return ws.send(&if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"Too many saves are waiting. Try saving again.")});
+            let budget=if filesystem {16*1024*1024} else {8*1024*1024};
+            if self.save_waiting.get() >= 256 || self.queued_bytes.get().saturating_add(size) > budget {
+                return ws.send(&if filesystem {filesystem_failure(id,"The recovery queue is busy. Try the file operation again.")} else if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"Too many saves are waiting. Try saving again.")});
             }
             self.save_waiting.set(self.save_waiting.get() + 1);
             self.queued_bytes.set(self.queued_bytes.get() + size);
@@ -274,7 +300,9 @@ impl DurableObject for WorkspaceSession {
             self.state.wait_until(async move {
                 let timed_out = match previous {Some(previous)=>deadline(previous,20).await.is_err(),None=>false};
                 let reply = if timed_out {
-                    if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"The recovery queue is busy. Try saving again.")}
+                    if filesystem {filesystem_failure(id,"The recovery queue is busy. Try the file operation again.")} else if editing {update_failure(id,"The recovery queue is busy. Reconnect before retrying.")} else {save_failure(id,"The recovery queue is busy. Try saving again.")}
+                } else if filesystem {
+                    forward_filesystem(gate,checkpoints,backend,handshakes,id,filesystem_request.unwrap(),expires).await
                 } else if editing {
                     forward_update(gate,checkpoints,backend,handshakes,id,path.unwrap(),update.unwrap(),expires).await
                 } else {
@@ -398,11 +426,15 @@ impl WorkspaceSession {
             || req.path() == "/checkpoint/import"
             || req.path() == "/journal"
             || req.path() == "/journals"
+            || req.path() == "/recovery/plan"
         {
             if value.is_none() {
                 return Err(bad(404, "Workspace not found."));
             }
-            let result = if req.path() == "/journals" {
+            let result = if req.path() == "/recovery/plan" {
+                let expected=match data.get("revision") {None|Some(Value::Null)=>None,Some(value)=>Some(value.as_u64().ok_or_else(||bad(400,"The recovery revision is invalid."))?)};
+                self.checkpoints.recovery_plan(text(&data,"source")?,expected).await?
+            } else if req.path() == "/journals" {
                 self.checkpoints.journal_list().await?
             } else if req.path() == "/journal" {
                 self.checkpoints.journal_get(text(&data,"id")?).await?
@@ -413,7 +445,7 @@ impl WorkspaceSession {
                     .map_err(|_| bad(400, "The checkpoint is invalid."))?;
                 json!(
                     self.checkpoints
-                        .save(text(&data, "path")?, text(&data, "source")?, checkpoint)
+                        .save(text(&data, "path")?, text(&data, "source")?, checkpoint,false)
                         .await?
                 )
             } else {
@@ -520,6 +552,7 @@ impl WorkspaceSession {
                                                 pending.source = valid.then(||hash(&json!([backend["authority"],backend["workspace"]]).to_string()));
                                                 pending.checkpoints = reply["checkpoints"]==1;
                                                 pending.journals = reply["journals"]==1;
+                                                pending.file_mutations = reply["fileMutations"]==1;
                                             }
                                             reply["durableCheckpoints"] = json!(valid && reply["checkpoints"]==1);
                                             reply["durableUpdates"] = json!(valid && reply["journals"]==1);

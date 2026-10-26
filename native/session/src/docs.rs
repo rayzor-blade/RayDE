@@ -104,14 +104,52 @@ impl<S: FileStore> DocHub<S> {
         self.open.lock().unwrap().get(path).cloned()
     }
 
+    async fn conflicts(&self, roots: &[&str], descendants: bool, except: Option<&str>) -> Result<bool> {
+        let paths:Vec<_>=self.open.lock().unwrap().keys().filter(|path|Some(path.as_str())!=except).cloned().collect();
+        if paths.is_empty() {return Ok(false);}
+        let inside=|path:&str,root:&str|path==root || (descendants && path.starts_with(&format!("{root}/")));
+        if paths.iter().any(|path|roots.iter().any(|root|inside(path,root))) {return Ok(true);}
+        let mut keys=Vec::new();for root in roots {keys.push(self.store.recovery_path(root).await?);}
+        for path in paths {
+            let path=self.store.recovery_path(&path).await?;
+            if keys.iter().any(|root|inside(&path,root)) {return Ok(true);}
+        }
+        Ok(false)
+    }
+
     /// A path-based document must be released before its file or parent can move.
     pub async fn rename(&self, from: &str, to: &str) -> Result<()> {
         let _opening = self.opening.lock().await;
-        let inside = |path: &str, root: &str| path == root || path.starts_with(&format!("{root}/"));
-        if self.open.lock().unwrap().keys().any(|path| inside(path, from) || inside(path, to)) {
+        if self.conflicts(&[from,to],true,None).await? {
             return Err(SessionError::new("document-open", "Close shared documents before moving this file or folder."));
         }
         self.store.rename(from, to).await
+    }
+
+    /// A direct write becomes a disk-origin edit before its acknowledgement.
+    pub async fn write(&self, path: &str, data: &[u8]) -> Result<()> {
+        let _opening = self.opening.lock().await;
+        if self.conflicts(&[path],false,Some(path)).await? {return Err(SessionError::new("document-open","Close aliased shared documents before writing this file."));}
+        if let Some(open) = self.get(path) {
+            let next = std::str::from_utf8(data).map_err(|_|SessionError::new("not-text","Close this shared text document before replacing it with binary data."))?;
+            let _saving = open.saving.lock().await;
+            self.store.write(path,data).await?;
+            *open.last_disk.lock().unwrap() = next.into();
+            apply_diff(&open.doc,&open.text,next,DISK);
+            self.store.write_state(&format!("doc:{path}"),&state_of(&open.doc)).await?;
+            Ok(())
+        } else {
+            self.store.write(path,data).await
+        }
+    }
+
+    /// Removing a shared file must not leave a live buffer able to recreate it.
+    pub async fn remove(&self, path: &str, recursive: bool) -> Result<()> {
+        let _opening = self.opening.lock().await;
+        if self.conflicts(&[path],true,None).await? {
+            return Err(SessionError::new("document-open","Close shared documents before removing this file or folder."));
+        }
+        self.store.remove(path,recursive).await
     }
 
     async fn load(&self, path: &str) -> Result<Arc<OpenDoc>> {

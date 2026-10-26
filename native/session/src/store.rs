@@ -26,6 +26,10 @@ pub trait FileStore: Send + Sync + 'static {
     fn root(&self) -> String;
     /// Opaque persistent identities for recovery caches; never an access credential or display name.
     fn cache_identity(&self) -> Option<StoreIdentity> { None }
+    /// A host-local path key used only to detect aliases during file mutation.
+    fn recovery_path(&self, path: &str) -> impl Future<Output = Result<String>> + Send {
+        async move { clean(path) }
+    }
     fn list(&self, path: &str) -> impl Future<Output = Result<Vec<Entry>>> + Send;
     fn stat(&self, path: &str) -> impl Future<Output = Result<Option<Entry>>> + Send;
     fn read(&self, path: &str) -> impl Future<Output = Result<Vec<u8>>> + Send;

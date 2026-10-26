@@ -64,6 +64,16 @@ The internal owner-checked `/journals` and `/journal {owner, id}` operations lis
 
 This protects acknowledged browser edits and compute dependencies captured at their barriers. Complete filesystem/tombstone recovery, changes after the last barrier, automatic compute restoration, leases, retention/cleanup and hibernation remain separate work. Journal availability alone does not establish full workspace continuity.
 
+## Filesystem fencing and restore selection
+
+Hosted `fs.write`, `fs.mkdir`, `fs.remove` and `fs.rename` use the same bounded FIFO as document recovery. Compute executes only after a mutation intent is durable. Confirmed outcomes return a `recoveryMutation` receipt; unknown outcomes remain fences. The ledger stores paths and outcomes, with no file body. Its prototype limits are 1,024 mutations, 512 selected document heads and 1 MiB of metadata. File requests may reserve up to 16 MiB of queue space; document updates retain their 8 MiB admission bound.
+
+Confirmed Save and journal records update a selected head atomically with their payload and accounting. Direct writes and directory operations invalidate older matching heads. Same-content barriers can reselect a record; recreating a directory cannot revive older child snapshots. Historical imports cannot promote a selection, and Save refuses imported history missing from compute.
+
+The trusted control plane calls `/recovery/plan {owner, source, revision?}` to list records, invalidations and mutation outcomes. The source is mandatory and ownership is checked; the endpoint is not public. A stale revision returns 409. Selected records carry a payload stamp for verification during materialization.
+
+The response is a partial `confirmed-document-heads` catalog with `automaticRestore:false`. Full filesystem state, reconciliation of external/program writes and path identities, and fenced compute leases are required before automatic restoration. Uncertain mutations cannot be cleared by a later snapshot alone.
+
 ## Recovery identity
 
 On a successful handshake, the gateway scopes browser recovery to its Durable Object, logical workspace and verified owner, together with the compute document-state identity. Ordinary compute restarts retain recovery when that state directory is preserved. A fresh compute disk changes the recovery context and requires reopening rather than replaying an older replica into a new baseline. The provider must preserve or restore the document state to retain that continuity; durable CRDT authority remains a separate integration. Backends without a recovery identity disable durable browser recovery.

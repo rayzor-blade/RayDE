@@ -103,6 +103,16 @@ Internal owner-checked `/journals` and `/journal {owner, id}` operations list us
 
 This protects acknowledged browser edits and dependencies captured at their barriers. Complete filesystem/tombstone recovery, changes made after the last barrier and automatic compute replacement remain separate work. Recovery contexts still change on a fresh compute generation.
 
+### Restore selection
+
+Hosted filesystem writes, directory creation, removal and rename share the document recovery FIFO. A durable intent precedes compute execution; its confirmed result precedes the reply. Interrupted or uncertain operations remain recovery fences. Catalog metadata is bounded separately from document payloads, and file request bodies are not stored in this ledger.
+
+Compute-confirmed Save and journal barriers atomically select a current record with a revision and payload stamp. Even an unchanged payload can supersede an older applied mutation. Historical checkpoint imports cannot select a head; changing a selected imported record invalidates it. Save refuses recovery history that compute does not contain, including deletion-only changes with unchanged vectors.
+
+The internal owner-checked `/recovery/plan {owner, source, revision?}` lists selected records, invalidations and mutations for one compute source. A stale revision returns 409. Directory invalidations respect path boundaries, and recreating a directory does not reselect older child snapshots. Pending and uncertain operations remain blocked until reconciled.
+
+Plans identify their scope as `confirmed-document-heads` and set `automaticRestore:false`. They cover tracked workspace-relative operations. Complete filesystem state, external changes, stable document identities and compute leases remain prerequisites for automatic restoration. A materializer must verify both the plan revision and record stamps before using it.
+
 ## Syntax and process services
 
 | Capability | Requests and events | Behavior |
@@ -147,6 +157,8 @@ Hidden terminals continue running with bounded scrollback but stop streaming scr
 | Journal payload per document | 4 MiB |
 | Saved checkpoint and journal records combined | 512 records / 64 MiB raw payload |
 | Queued recovery operations / encoded update payload | 256 / 8 MiB |
+| Queued filesystem request bodies (shared recovery queue) | 16 MiB |
+| Recovery catalog mutations / heads / metadata | 1,024 / 512 / 1 MiB |
 | Terminals per connection / workspace | 4 / 8 |
 | Terminal screen | 300 columns × 100 rows |
 | Scrollback per terminal | 1,000 lines |

@@ -155,6 +155,19 @@ impl Checkpoints {
         }
         if let Some(old) = &old {
             if old.last == delta.sha256 && old.vector == delta.vector {
+                put(
+                    &self.storage,
+                    crate::recovery::confirm(
+                        &self.storage,
+                        source,
+                        &path,
+                        "journal",
+                        &id,
+                        format!("{}:{}", old.sequence, old.last),
+                    )
+                    .await?,
+                )
+                .await?;
                 return Ok(old.clone());
             }
         }
@@ -236,6 +249,17 @@ impl Checkpoints {
             }
         }
         values.insert(key, json!(&record));
+        values.extend(
+            crate::recovery::confirm(
+                &self.storage,
+                source,
+                &record.path,
+                "journal",
+                &id,
+                format!("{}:{}", record.sequence, record.last),
+            )
+            .await?,
+        );
         put(&self.storage, values).await?;
         Ok(record)
     }
