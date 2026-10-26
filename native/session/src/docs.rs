@@ -150,26 +150,22 @@ impl<S: FileStore> DocHub<S> {
 
     /// Opens `path` for `client`, and returns what it needs to catch up. `update` and later updates go to `send`.
     pub async fn attach(&self, path: &str, client: &str, vector: Option<&[u8]>, send: Send_) -> Result<Opened> {
-        let open = match self.get(path) {
-            Some(open) => open,
-            None => {
-                let _opening = self.opening.lock().await;
-                match self.get(path) {
-                    Some(open) => open,
-                    None => {
-                        let open = self.load(path).await?;
-                        self.open.lock().unwrap().insert(path.to_string(), open.clone());
-                        open
-                    }
-                }
-            }
-        };
-        open.subscribers.lock().unwrap().insert(client.to_string(), send);
-        let txn = open.doc.transact();
         let from = match vector {
             Some(bytes) => StateVector::decode_v1(bytes).map_err(|_| SessionError::new("bad-request", "The state vector is not valid."))?,
             None => StateVector::default(),
         };
+        // Registering a subscriber and releasing the last one share the same gate.
+        let _opening = self.opening.lock().await;
+        let open = match self.get(path) {
+            Some(open) => open,
+            None => {
+                let open = self.load(path).await?;
+                self.open.lock().unwrap().insert(path.to_string(), open.clone());
+                open
+            }
+        };
+        open.subscribers.lock().unwrap().insert(client.to_string(), send);
+        let txn = open.doc.transact();
         Ok(Opened { update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text: open.text.get_string(&txn) })
     }
 
@@ -199,16 +195,10 @@ impl<S: FileStore> DocHub<S> {
         };
         let _saving = open.saving.lock().await;
         let text = open.text.get_string(&open.doc.transact());
-        let changed = {
-            let mut last = open.last_disk.lock().unwrap();
-            let changed = *last != text;
-            if changed {
-                *last = text.clone();
-            }
-            changed
-        };
+        let changed = *open.last_disk.lock().unwrap() != text;
         if changed {
             self.store.write(path, text.as_bytes()).await?;
+            *open.last_disk.lock().unwrap() = text;
         }
         let state = state_of(&open.doc);
         self.store.write_state(&format!("doc:{path}"), &state).await?;
@@ -217,6 +207,7 @@ impl<S: FileStore> DocHub<S> {
 
     /// Flushes and releases a document nobody has open.
     pub async fn release(&self, path: &str) -> Result<()> {
+        let _opening = self.opening.lock().await;
         if self.get(path).is_some_and(|open| open.subscribers.lock().unwrap().is_empty()) {
             self.flush(path).await?;
             self.open.lock().unwrap().remove(path);
@@ -231,6 +222,7 @@ impl<S: FileStore> DocHub<S> {
     /// The file changed in the workspace: if it is open and the change is not the session's own write, it becomes an edit.
     pub async fn changed(&self, path: &str) {
         let Some(open) = self.get(path) else { return };
+        let _saving = open.saving.lock().await;
         let Ok(bytes) = self.store.read(path).await else { return };
         let Ok(disk) = String::from_utf8(bytes) else { return };
         {

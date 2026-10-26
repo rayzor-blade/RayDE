@@ -35,8 +35,19 @@ fn entry(name: String, meta: &std::fs::Metadata) -> Entry {
 
 impl DirStore {
     pub fn new(root: impl AsRef<Path>) -> io::Result<Self> {
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+            .filter(|path| !path.is_empty()).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Set --state-root when the user's home directory is unavailable."))?;
+        Self::with_state_root(root, PathBuf::from(home).join(INTERNAL))
+    }
+
+    /// Each canonical workspace has its own state namespace under the user's private session directory.
+    pub fn with_state_root(root: impl AsRef<Path>, state_root: impl AsRef<Path>) -> io::Result<Self> {
         let root = std::fs::canonicalize(root)?;
-        Ok(Self { state: root.join(INTERNAL).join("state"), root, counter: AtomicU64::new(0) })
+        let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
+        let key = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let state = state_root.as_ref().join(key).join("state");
+        migrate_state(&root.join(INTERNAL).join("state"), &state)?;
+        Ok(Self { state, root, counter: AtomicU64::new(0) })
     }
 
     pub fn root(&self) -> &Path {
@@ -84,6 +95,50 @@ impl DirStore {
         }
         Ok(())
     }
+}
+
+/// Copy before removing the old file; interrupted moves can be resumed without overwriting newer state.
+fn migrate_state(old: &Path, new: &Path) -> io::Result<()> {
+    use std::io::Write;
+    if old == new || !old.try_exists()? { return Ok(()); }
+    for directory in [old.parent().unwrap(), old] {
+        if std::fs::symlink_metadata(directory)?.file_type().is_symlink() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "The legacy session directory must not be a symlink."));
+        }
+    }
+    for entry in std::fs::read_dir(old)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() || entry.path().extension().is_none_or(|extension| extension != "ydoc") { continue; }
+        let data = std::fs::read(entry.path())?;
+        private_directories(new)?;
+        let destination = new.join(entry.file_name());
+        let mut options = std::fs::OpenOptions::new(); options.write(true).create_new(true);
+        #[cfg(unix)] { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
+        match options.open(&destination) {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(&data).and_then(|_| file.sync_all()) { let _ = std::fs::remove_file(&destination); return Err(error); }
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                if std::fs::read(&destination)? != data { return Err(io::Error::new(io::ErrorKind::AlreadyExists, "Session state differs in the home and workspace directories; both copies have been preserved.")); }
+            }
+            Err(error) => return Err(error),
+        }
+        std::fs::remove_file(entry.path())?;
+    }
+    for directory in [old, old.parent().unwrap()] {
+        match std::fs::remove_dir(directory) {
+            Ok(()) => {}
+            Err(error) if matches!(error.kind(), io::ErrorKind::DirectoryNotEmpty | io::ErrorKind::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn private_directories(path: &Path) -> io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new(); builder.recursive(true);
+    #[cfg(unix)] { use std::os::unix::fs::DirBuilderExt; builder.mode(0o700); }
+    builder.create(path)
 }
 
 impl FileStore for DirStore {
@@ -195,6 +250,59 @@ impl FileStore for DirStore {
     }
 
     async fn write_state(&self, key: &str, data: &[u8]) -> Result<()> {
+        private_directories(&self.state).map_err(io_error)?;
         self.replace(&self.state_file(key), data).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn state_is_private_namespaced_and_survives_reopening() {
+        let workspace = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let state = home.path().join(INTERNAL);
+        let first = DirStore::with_state_root(workspace.path(), &state).unwrap();
+        first.write_state("doc:main.hx", b"kept").await.unwrap();
+        let again = DirStore::with_state_root(workspace.path().join("."), &state).unwrap();
+        assert_eq!(again.read_state("doc:main.hx").await.unwrap(), Some(b"kept".to_vec()));
+        let second = DirStore::with_state_root(other.path(), &state).unwrap();
+        assert!(second.read_state("doc:main.hx").await.unwrap().is_none());
+        assert!(!workspace.path().join(INTERNAL).exists());
+        assert!(!other.path().join(INTERNAL).exists());
+        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; assert_eq!(std::fs::metadata(&state).unwrap().permissions().mode() & 0o777, 0o700); }
+        assert!(DirStore::new(workspace.path()).unwrap().state.starts_with(PathBuf::from(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap()).join(INTERNAL)));
+    }
+
+    #[tokio::test]
+    async fn legacy_state_moves_without_losing_document_identity() {
+        let workspace = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let old = workspace.path().join(INTERNAL).join("state");
+        std::fs::create_dir_all(&old).unwrap();
+        let digest = Sha256::digest(b"doc:main.hx");
+        let file = digest.iter().map(|b| format!("{b:02x}")).collect::<String>() + ".ydoc";
+        std::fs::write(old.join(file), b"history").unwrap();
+        let store = DirStore::with_state_root(workspace.path(), home.path()).unwrap();
+        assert_eq!(store.read_state("doc:main.hx").await.unwrap(), Some(b"history".to_vec()));
+        assert!(!workspace.path().join(INTERNAL).exists());
+    }
+
+    #[tokio::test]
+    async fn migration_preserves_both_copies_on_conflict() {
+        let workspace = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let store = DirStore::with_state_root(workspace.path(), home.path()).unwrap();
+        store.write_state("doc:main.hx", b"new").await.unwrap();
+        let old = workspace.path().join(INTERNAL).join("state");
+        std::fs::create_dir_all(&old).unwrap();
+        let original = old.join(store.state_file("doc:main.hx").file_name().unwrap());
+        std::fs::write(&original, b"old").unwrap();
+        assert!(DirStore::with_state_root(workspace.path(), home.path()).is_err());
+        assert_eq!(std::fs::read(original).unwrap(), b"old");
+        assert_eq!(store.read_state("doc:main.hx").await.unwrap(), Some(b"new".to_vec()));
     }
 }

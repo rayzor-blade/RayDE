@@ -112,7 +112,7 @@ class ProjectPart {
 		function open():Void wb.props.onWorkspace(path);
 		if (wb.dirty.get().length > 0) {
 			wb.prompt.set({title:"Open another workspace", description:"Save your edited files before switching workspaces.", action:"Save and Open",
-				accept:_ -> { wb.runPart.saveAll(); open(); }});
+				accept:_ -> wb.runPart.saveBefore(open)});
 		} else try open() catch (error:Dynamic) wb.say(Std.string(error));
 	}
 
@@ -120,7 +120,7 @@ class ProjectPart {
 	public function mayCloseWindow(close:Void->Void):Bool {
 		if (wb.dirty.get().length == 0) return true;
 		if (wb.prompt.get() == null) wb.prompt.set({title:"Close Window", description:"Save your edited files before closing this window.", action:"Save and Close",
-			accept:_ -> { wb.runPart.saveAll(); if (wb.dirty.get().length > 0) throw "Some files could not be saved."; close(); },
+			accept:_ -> wb.runPart.saveBefore(close),
 			alternative:"Don't Save", discard:close});
 		return false;
 	}
@@ -155,10 +155,9 @@ class ProjectPart {
 
 	function repositoryReady(id:String, project:Null<String>):Void {
 		function connect():Void {
-			if (wb.dirty.get().length > 0) { wb.runPart.saveAll(); if (wb.dirty.get().length > 0) throw "Some files could not be saved."; }
 			rayde.workspace.PageHost.account("account.connect",{workspace:id, project:project});
 		}
-		if (wb.dirty.get().length > 0) wb.prompt.set({title:"Open repository", description:"Save your edited files before switching workspaces.", action:"Save and Open", accept:_ -> connect()});
+		if (wb.dirty.get().length > 0) wb.prompt.set({title:"Open repository", description:"Save your edited files before switching workspaces.", action:"Save and Open", accept:_ -> wb.runPart.saveBefore(connect)});
 		else connect();
 	}
 

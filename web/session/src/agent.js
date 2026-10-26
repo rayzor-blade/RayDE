@@ -1,6 +1,8 @@
 import { pageEntry } from "./entry.js";
 import { Accounts } from "./accounts.js";
 import { SessionClient } from "./client.js";
+import { EditorDocuments } from "./editor.js";
+import { documentation } from "./documentation.js";
 import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
 
@@ -39,9 +41,10 @@ export const start = ask => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at = 0; at < bytes.length; at += 16384) deliver(bytes.subarray(at, at + 16384));
     };
+    const documents = client ? new EditorDocuments(client, answer) : null;
     for (const event of ["proc.out", "proc.exit", "fs.changed", "doc.update"]) client?.on(event, answer);
-    client?.on("disconnected", () => answer({ ev: "session.disconnected" }));
-    client?.on("connected", () => answer({ ev: "session.connected" }));
+    client?.on("disconnected", () => answer({ ev: "session.disconnected", generation:client.generation }));
+    client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation }));
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -55,8 +58,17 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), remote: !!client, demo, repositories: query.get("repositories") === "1", project: project };
+          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), generation:client?.generation ?? 0, remote: !!client, documentBridge:!!documents, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          else if (request.op.startsWith("view.") && documents) {
+            reply = {result:await documents.request(request.op, request)};
+            if (request.id === undefined) return;
+          }
           else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
+          else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
+          else if (request.op === "page.external") {
+            if (typeof request.url !== "string" || !/^(https?:\/\/|mailto:)/i.test(request.url)) throw new Error("Unsupported link.");
+            globalThis.open(request.url,"_blank","noopener,noreferrer"); return;
+          }
           else if (request.op === "page.load") reply = { entries: (await files("readonly", store => store.getAll())).filter(entry => localPath(entry.path)) };
           else if (request.op === "page.project") {
             if (typeof request.path !== "string" || request.path.split("/").includes("..")) throw new Error("Choose a project in this workspace.");
@@ -86,17 +98,20 @@ export const start = ask => serve(ask, {
             return;
           } else if (client) {
             const { id, op, ...params } = request;
-            reply = await client.request(op, params);
+            reply = await client.forward(op, params);
           } else throw new Error("No workspace session is connected.");
           answer({ ...reply, id: request.id, ok: true });
         } catch (error) {
+          if (request.op.startsWith("view.") && request.id === undefined) {
+            answer({ev:"view.error", handle:request.handle, message:error.message}); return;
+          }
           answer({ id: request.id, ok: false, code: error.code ?? "session-error", message: error.message, login: error.login });
         }
       })();
     });
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { client?.close(); database.close(); closed("The page closed the session."); },
+      close() { documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

@@ -10,6 +10,7 @@ use yrs::{Doc, GetString, OffsetKind, Options as DocOptions, ReadTxn, StateVecto
 
 pub async fn server(root: &std::path::Path, exec: bool) -> Running {
     let mut options = Options::new(root);
+    options.state_root = Some(root.join(".rayde-session"));
     options.token = Some("secret".into());
     options.exec = exec;
     options.flush_delay = Duration::from_millis(30);

@@ -29,6 +29,15 @@ class CompilerServer {
 	public function running():Bool
 		return process != null && process.exitCode(false) == null;
 
+	/** The compiler socket is local to the editor process; remote workspaces use stdio language servers. */
+	public function canConnect():Bool {
+		#if wasm
+		return false;
+		#else
+		return !Std.isOfType(Procs.current,rayde.workspace.session.SessionLauncher);
+		#end
+	}
+
 	/** Starts the server when it is not running, so its port is known. */
 	public function ensure():Void
 		if (!running())
@@ -65,6 +74,7 @@ class CompilerServer {
 
 	/** Starts the server on the first free port from 7600 and waits until it accepts connections. */
 	public function start():Void {
+		if (!canConnect()) throw "Use a workspace language server for code inspection in a remote session.";
 		stop();
 		for (candidate in 7600...7700) {
 			if (taken(candidate))

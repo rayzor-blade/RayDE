@@ -26,6 +26,7 @@ class ManagedExtension {
 	public final outputKinds:Array<String> = [];
 	public var restarts:Array<Float> = [];
 	public var restartBlocked = false;
+	public var suspendedBySession = false;
 	public var onDisabled:Null<Bool->Void>;
 
 	public function new(installed:Extension, connection:Connection) {
@@ -54,10 +55,28 @@ class Manager {
 	final options:ManagerOptions;
 	var disposed = false;
 	var started = false;
+	var session:Null<rayde.workspace.session.SessionClient>;
+	var unsubscribe:Null<Void->Void>;
 
 	public function new(root:String, options:ManagerOptions) {
 		this.root = root;
 		this.options = options;
+		var launcher = rayde.workspace.Procs.current;
+		if (Std.isOfType(launcher,rayde.workspace.session.SessionLauncher)) {
+			session = (cast launcher:rayde.workspace.session.SessionLauncher).client;
+			unsubscribe = session.subscribe(event -> {
+				if (disposed) return;
+				if (event.ev == "session.disconnected") {
+					for (e in extensions) suspend(e);
+				} else if (event.ev == "session.connected") {
+					for (e in extensions) if (e.suspendedBySession) {
+						e.suspendedBySession = false;
+						if (!e.disabled && e.activation != null) e.connection.start();
+					}
+				} else return;
+				changed();
+			});
+		}
 	}
 
 	public static function commandKey(id:String, command:String):String
@@ -164,7 +183,7 @@ class Manager {
 		e.log('Activated by $event');
 		if (onOutput != null)
 			onOutput(e);
-		e.connection.start();
+		if (session != null && !session.isOnline()) e.suspendedBySession = true; else e.connection.start();
 		changed();
 		return e.connection.running();
 	}
@@ -207,6 +226,7 @@ class Manager {
 		if (e == null || e.disabled == disabled)
 			return;
 		e.disabled = disabled;
+		e.suspendedBySession = false;
 		e.restartBlocked = false;
 		e.restarts = [];
 		e.activation = null;
@@ -256,8 +276,10 @@ class Manager {
 			return;
 		var time = now ?? haxe.Timer.stamp();
 		for (e in extensions) {
+			if (session != null && !session.isOnline()) suspend(e);
 			if (pollConnections)
 				e.connection.tick();
+			if (session != null && !session.isOnline() || e.suspendedBySession) continue;
 			if (!e.disabled && e.activation != null && e.connection.state == "exited" && !e.restartBlocked) {
 				e.restarts = [for (t in e.restarts) if (time - t < options.restartWindow) t];
 				if (e.restarts.length >= options.restartLimit) {
@@ -275,6 +297,12 @@ class Manager {
 		}
 	}
 
+	function suspend(e:ManagedExtension):Void {
+		if (e.suspendedBySession || e.disabled || e.activation == null || e.restartBlocked || ["running", "exited"].indexOf(e.connection.state) < 0) return;
+		e.suspendedBySession = true;
+		e.connection.stop();
+	}
+
 	public function enabled():Array<ManagedExtension>
 		return [for (e in extensions) if (!e.disabled && e.installed.problem == null) e];
 
@@ -285,6 +313,7 @@ class Manager {
 
 	public function dispose():Void {
 		disposed = true;
+		if (unsubscribe != null) { unsubscribe(); unsubscribe = null; }
 		for (e in extensions)
 			e.connection.stop();
 	}

@@ -23,10 +23,47 @@ use std::{
     sync::{Arc, Mutex, OnceLock, Weak},
     time::Duration,
 };
-use tokio::{net::TcpListener, sync::{mpsc, oneshot}};
+use tokio::{net::TcpListener, sync::{Notify, mpsc, oneshot}};
+
+struct OutputState {
+    bytes: std::sync::atomic::AtomicUsize,
+    closed: std::sync::atomic::AtomicBool,
+    wake: Notify,
+}
+
+impl OutputState {
+    fn stop(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::Release);
+        self.wake.notify_one();
+    }
+    fn closed(&self) -> bool { self.closed.load(std::sync::atomic::Ordering::Acquire) }
+}
+
+/// The socket keeps its byte reservation until the write completes or is cancelled.
+struct OutputPermit { state: Arc<OutputState>, size: usize }
+impl Drop for OutputPermit {
+    fn drop(&mut self) { self.state.bytes.fetch_sub(self.size, std::sync::atomic::Ordering::AcqRel); }
+}
+
+fn outbox(capacity: usize, limit: usize) -> (Out, mpsc::Receiver<(String, OutputPermit)>, Arc<OutputState>) {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let (sender, receiver) = mpsc::channel(capacity);
+    let state = Arc::new(OutputState {bytes:AtomicUsize::new(0),closed:AtomicBool::new(false),wake:Notify::new()});
+    let owner = state.clone();
+    let out: Out = Arc::new(move |text| {
+        if owner.closed() { return; }
+        if owner.bytes.try_update(Ordering::AcqRel,Ordering::Acquire,|size| size.checked_add(text.len()).filter(|size| *size <= limit)).is_err() {
+            owner.stop(); return;
+        }
+        let permit = OutputPermit {state:owner.clone(),size:text.len()};
+        if sender.try_send((text,permit)).is_err() { owner.stop(); }
+    });
+    (out,receiver,state)
+}
 
 pub struct Options {
     pub root: PathBuf,
+    pub state_root: Option<PathBuf>,
     pub address: SocketAddr,
     /// The session's token; `None` opens it to whoever reaches it.
     pub token: Option<String>,
@@ -49,7 +86,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -88,7 +125,7 @@ struct Shared {
 }
 
 pub async fn start(options: Options) -> std::io::Result<Running> {
-    let store = Arc::new(DirStore::new(&options.root)?);
+    let store = Arc::new(match &options.state_root { Some(state) => DirStore::with_state_root(&options.root,state)?, None => DirStore::new(&options.root)? });
     let extension_host = options.extension_host.as_ref().map(std::fs::canonicalize).transpose()?;
     let extensions = options.extensions.as_ref().map(std::fs::canonicalize).transpose()?;
     if extension_host.is_some() && !options.exec {
@@ -197,24 +234,28 @@ async fn upgrade(State(shared): State<Shared>, headers: HeaderMap, socket: WebSo
 async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
     use futures_util::{SinkExt, StreamExt};
     let (mut sink, mut stream) = socket.split();
-    let (queue, mut outgoing) = mpsc::unbounded_channel::<String>();
-    let out: Out = Arc::new(move |text| {
-        let _ = queue.send(text);
-    });
+    let (out, mut outgoing, output) = outbox(512, 32 * 1024 * 1024);
     // A client that sends binary messages (a program with only a byte stream to the session) is answered in the same form.
     let binary = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let answers = binary.clone();
+    let written = output.clone();
     let writer = tokio::spawn(async move {
-        while let Some(text) = outgoing.recv().await {
+        while let Some((text, _permit)) = outgoing.recv().await {
             let message = if answers.load(std::sync::atomic::Ordering::Relaxed) { Message::Binary(frame(&text)) } else { Message::Text(text) };
             if sink.send(message).await.is_err() {
                 break;
             }
         }
+        written.stop();
     });
     let mut connection = workspace.connect(out);
     let mut frames = Frames::default();
-    while let Some(Ok(message)) = stream.next().await {
+    'read: loop {
+        let message = tokio::select! {
+            _ = output.wake.notified() => break,
+            message = stream.next() => message,
+        };
+        let Some(Ok(message)) = message else { break };
         match message {
             Message::Text(text) => connection.handle(&text).await,
             Message::Binary(bytes) => {
@@ -223,6 +264,7 @@ async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
                     Ok(texts) => {
                         for text in texts {
                             connection.handle(&text).await;
+                            if output.closed() { break 'read; }
                         }
                     }
                     Err(_) => break,
@@ -231,6 +273,7 @@ async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
             Message::Close(_) => break,
             _ => {}
         }
+        if output.closed() { break; }
     }
     connection.close();
     writer.abort();
@@ -311,20 +354,24 @@ impl Frames {
 async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStream) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (mut reader, mut writer) = stream.into_split();
-    let (queue, mut outgoing) = mpsc::unbounded_channel::<String>();
-    let out: Out = Arc::new(move |text| {
-        let _ = queue.send(text);
-    });
+    let (out, mut outgoing, output) = outbox(512, 32 * 1024 * 1024);
+    let written = output.clone();
     let sender = tokio::spawn(async move {
-        while let Some(text) = outgoing.recv().await {
+        while let Some((text, _permit)) = outgoing.recv().await {
             if writer.write_all(&frame(&text)).await.is_err() {
                 break;
             }
         }
+        written.stop();
     });
     let mut connection = workspace.connect(out);
     let (mut frames, mut buffer) = (Frames::default(), vec![0u8; 64 * 1024]);
-    'read: while let Ok(count) = reader.read(&mut buffer).await {
+    'read: loop {
+        let count = tokio::select! {
+            _ = output.wake.notified() => break,
+            count = reader.read(&mut buffer) => count,
+        };
+        let Ok(count) = count else { break };
         if count == 0 {
             break;
         }
@@ -332,6 +379,7 @@ async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStre
             Ok(texts) => {
                 for text in texts {
                     connection.handle(&text).await;
+                    if output.closed() { break 'read; }
                 }
             }
             Err(_) => break 'read,
@@ -339,4 +387,38 @@ async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStre
     }
     connection.close();
     sender.abort();
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[tokio::test]
+    async fn output_bytes_include_inflight_writes_and_release_when_dropped() {
+        let (out,mut queue,state) = outbox(8,8);
+        out("123456".into());
+        let message = queue.recv().await.unwrap();
+        assert_eq!(state.bytes.load(Ordering::Acquire),6);
+        out("789".into());
+        assert!(state.closed());
+        tokio::time::timeout(Duration::from_secs(1),state.wake.notified()).await.unwrap();
+        drop(message);
+        assert_eq!(state.bytes.load(Ordering::Acquire),0);
+        out("ignored".into());
+        assert!(queue.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn a_full_message_queue_closes_the_connection_without_retaining_failed_sends() {
+        let (out,mut queue,state) = outbox(1,100);
+        out("first".into()); out("second".into());
+        assert!(state.closed());
+        assert_eq!(state.bytes.load(Ordering::Acquire),5);
+        drop(queue.recv().await.unwrap());
+        assert_eq!(state.bytes.load(Ordering::Acquire),0);
+        drop(queue);
+        let (out,queue,state) = outbox(1,100); drop(queue); out("closed".into());
+        assert!(state.closed()); assert_eq!(state.bytes.load(Ordering::Acquire),0);
+    }
 }

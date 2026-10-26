@@ -32,7 +32,7 @@ pub trait FileStore: Send + Sync + 'static {
     fn write_state(&self, key: &str, data: &[u8]) -> impl Future<Output = Result<()>> + Send;
 }
 
-/// The name of the session's own directory inside a workspace.
+/// The private session directory in the user's home; its legacy workspace path stays reserved.
 pub const INTERNAL: &str = ".rayde-session";
 
 /// A virtual path: `/`-separated, relative to the workspace, with no `.` or `..` segments.

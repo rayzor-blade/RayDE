@@ -139,27 +139,54 @@ class RunPart {
 		wb.openFile(Tasks.ensure(wb.props.display.cwd));
 
 	/** Writes every edited buffer to its file: a build reads the files, so it should see them as they are in the editor. */
-	public function saveAll():Void {
-		for (file in wb.dirty.get()) writeFile(file);
-		if (wb.dirty.get().length > 0)
-			wb.dirty.set([]);
+	public function saveAll():Void saveFiles(wb.dirty.get().copy());
+	public function saveBefore(after:Void->Void):Void saveFiles(wb.dirty.get().copy(),after);
+	var saving = false;
+
+	function saveFiles(files:Array<String>, ?after:Void->Void):Void {
+		if (saving) { wb.say("Saving changes…"); return; }
+		saving = true;
+		function next():Void {
+			if (wb.gone) { saving = false; return; }
+			var file = files.shift();
+			if (file == null) {
+				saving = false;
+				if (after != null) {
+					if (wb.dirty.get().length > 0) wb.say("Files changed while saving. Save again before continuing.");
+					else try after() catch (error:Dynamic) wb.say(Std.string(error));
+				}
+				return;
+			}
+			try {
+				if (wb.documentsPart.sessionDocs != null && wb.documentsPart.sessionDocs.save(file, (error, text) -> {
+					if (wb.gone) return;
+					if (error != null) { saving = false; wb.say(haxe.io.Path.withoutDirectory(file) + ": " + error); return; }
+					try { fileSaved(file,text); next(); } catch (failure:Dynamic) { saving = false; wb.say(Std.string(failure)); }
+				})) return;
+				var text = wb.documentsPart.buffer(file).get();
+				Fs.saveContent(file,text); fileSaved(file,text); next();
+			} catch (error:Dynamic) { saving = false; wb.say(Std.string(error)); }
+		}
+		next();
 	}
 
 	/** Saves one tab without writing other dirty buffers. */
 	public function saveFile(file:String):Void {
 		if (Workbench.isVirtual(file) || wb.dirty.get().indexOf(file) < 0 || wb.contributions.readOnly(file)) return;
-		writeFile(file);
-		wb.dirty.set(wb.dirty.get().filter(path -> path != file));
+		saveFiles([file]);
 	}
 
-	function writeFile(file:String):Void {
-		Fs.saveContent(file, wb.documentsPart.buffer(file).get());
-		wb.documentsPart.localHistory.saved(file, wb.documentsPart.buffer(file).get(), wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
+	function fileSaved(file:String, text:String):Void {
+		var current = wb.documentsPart.buffer(file).get();
+		if (current == text) {
+			wb.documentsPart.localHistory.saved(file, text, wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
+		}
 		var studio = wb.extensionsPart.studios.get(file);
 		if (studio != null && !studio.live.get()) studio.reload();
 		wb.emit("file.saved", {path:file});
 		var client = wb.languagesPart.languageServers.client(file);
 		if (client != null) { wb.languagesPart.languageServers.sync(file,wb.documentsPart.buffer(file).get()); client.saved(file); }
+		if (current == text) wb.dirty.set(wb.dirty.get().filter(path -> path != file));
 	}
 
 	/** Saves what is edited, then builds the project and runs it. */
@@ -171,7 +198,10 @@ class RunPart {
 			d.resume("continue");
 			return;
 		}
-		saveAll();
+		saveBefore(runSaved);
+	}
+
+	function runSaved():Void {
 		if (wb.extension != null || ExtensionsPart.isExtension(wb.active.get())) {
 			(wb.extension != null ? wb.extensionsPart.extensionStudio() : wb.extensionsPart.studioOf(wb.active.get())).reload();
 			wb.panelsPart.showPanel("extension");
@@ -190,10 +220,7 @@ class RunPart {
 	/** Saves edited files and builds the project's declared targets on the process worker. */
 	public function buildProject():Void {
 		if (!canBuild() || runner.active()) return;
-		saveAll();
-		runner.build();
-		wb.panelsPart.showPanel("console");
-		poll();
+		saveBefore(() -> { runner.build(); wb.panelsPart.showPanel("console"); poll(); });
 	}
 
 	/** While a build or run is going, looks at it ten times a second; a window that is otherwise still draws no frames to do it from. */

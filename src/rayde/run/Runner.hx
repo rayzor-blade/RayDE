@@ -102,14 +102,15 @@ class Runner {
 			job = new Job(rayde.lang.RayzorBinary.find() ?? "rayzor", ["run"], haxe.io.Path.join([out, "run.log"]), null, display.cwd, true);
 			job.start(); return;
 		}
-		display.server.ensure();
+		var compilerArgs:Array<String> = [];
+		if (display.server.canConnect()) { display.server.ensure(); compilerArgs = ["--connect", Std.string(display.server.port)]; }
 		if (Fs.exists(program()))
 			Fs.deleteFile(program());
 		Fs.createDirectory(out);
 		building = true;
 		state = "building";
 		append("Building…\n");
-		job = new Job(display.server.haxe, ["--connect", Std.string(display.server.port), "--cwd", display.cwd].concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
+		job = new Job(display.server.haxe, compilerArgs.concat(["--cwd", display.cwd]).concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
 		job.start();
 	}
 

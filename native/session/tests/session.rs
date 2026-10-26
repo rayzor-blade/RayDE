@@ -73,6 +73,47 @@ async fn moving_an_open_crdt_file_or_parent_is_refused_without_losing_updates() 
 }
 
 #[tokio::test]
+async fn closing_the_last_document_releases_it_without_closing_the_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.txt"), "base").unwrap();
+    let running = server(dir.path(), false).await;
+    let (mut a, mut b) = (Client::hello(&running).await, Client::hello(&running).await);
+    let peer = Peer::new();
+    peer.apply(a.request(json!({"op":"doc.open","path":"a.txt"})).await["update"].as_str().unwrap());
+    b.request(json!({"op":"doc.open","path":"a.txt"})).await;
+    a.request(json!({"op":"doc.close","path":"a.txt"})).await;
+    assert!(running.workspace.docs.text("a.txt").is_some(), "another subscriber still owns the document");
+    let update = peer.edit(4, 0, "!");
+    assert_eq!(b.request(json!({"op":"doc.update","path":"a.txt","update":update})).await["ok"], true);
+    assert_eq!(b.request(json!({"op":"doc.close","path":"a.txt"})).await["ok"], true);
+    assert!(running.workspace.docs.text("a.txt").is_none());
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "base!");
+    assert_eq!(a.request(json!({"op":"fs.rename","from":"a.txt","to":"b.txt"})).await["ok"], true);
+    assert_eq!(a.request(json!({"op":"doc.open","path":"b.txt"})).await["text"], "base!");
+    running.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_failed_document_write_is_retried_instead_of_being_marked_saved() {
+    use base64::{Engine, engine::general_purpose::STANDARD as B64};
+    use rayde_session::{dir_store::DirStore, docs::DocHub};
+    use std::sync::Arc;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.txt");
+    fs::write(&path, "base").unwrap();
+    let state = tempfile::tempdir().unwrap();
+    let hub = DocHub::new(Arc::new(DirStore::with_state_root(dir.path(),state.path()).unwrap()), Arc::new(|_| {}));
+    let peer = Peer::new();
+    peer.apply(&B64.encode(hub.attach("a.txt", "a", None, Arc::new(|_| {})).await.unwrap().update));
+    hub.receive("a.txt", "a", &B64.decode(peer.edit(4, 0, "!")).unwrap()).unwrap();
+    fs::remove_file(&path).unwrap(); fs::create_dir(&path).unwrap();
+    assert!(hub.flush("a.txt").await.is_err());
+    fs::remove_dir(&path).unwrap(); fs::write(&path, "base").unwrap();
+    assert!(hub.flush("a.txt").await.unwrap().0);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "base!");
+}
+
+#[tokio::test]
 async fn paths_cannot_leave_the_workspace() {
     let dir = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();

@@ -126,7 +126,7 @@ class LspClient {
 	/** Replacing a scoped request cancels it locally and asks the server to cancel its work. */
 	public function request(method:String, params:Dynamic, done:Dynamic->Void, scope = "", timeout = 8.):Int {
 		if (scope != "") cancelScope(scope);
-		if (state != "ready" && method != "initialize" && method != "shutdown") { done(null); return -1; }
+		if (state != "ready" && method != "initialize" && method != "shutdown") { deliver(done,null); return -1; }
 		if (state == "ready") flush();
 		var id = ++nextId;
 		pending.set(id, {done:done, deadline:haxe.Timer.stamp() + timeout, scope:scope});
@@ -171,6 +171,7 @@ class LspClient {
 	}
 
 	function start():Void {
+		if (!LspTransport.available()) { disconnectSession(); return; }
 		var now = haxe.Timer.stamp();
 		attempts = [for (at in attempts) if (now - at < 60) at];
 		if (attempts.length >= 3) { state = "failed"; onLog("error", "Language server restart limit reached (three starts per minute)"); return; }
@@ -204,7 +205,7 @@ class LspClient {
 	/** A ready process sleeps without documents; explicit requests and lifecycle work still need replies. */
 	public function needsPolling():Bool {
 		if (state == "closing") return true;
-		if (disposed || state == "failed" || state == "idle" || state == "stopped") return false;
+		if (disposed || state == "failed" || state == "idle" || state == "stopped" || state == "disconnected") return false;
 		return state != "ready" || documents.keys().hasNext() || pending.keys().hasNext();
 	}
 
@@ -221,7 +222,7 @@ class LspClient {
 		read();
 		if (state == "starting" && now - startedAt > 22) { fail("Language server initialization timed out"); return; }
 		for (id in [for (id => p in pending) if (p.deadline <= now) id]) {
-			var p = pending.get(id); cancel(id); p.done(null);
+			var p = pending.get(id); cancel(id); deliver(p.done,null);
 			onLog("warning", "Language server request timed out");
 		}
 		if (state == "ready") flush();
@@ -288,7 +289,7 @@ class LspClient {
 						var waiting = indexing(file);
 						if (capabilities.experimental == null || capabilities.experimental.analysisStatusProvider != true) doc.analyzed = doc.version;
 						if (waiting != indexing(file)) onDocumentActivity(file);
-						onDiagnostics(params);
+						deliver(onDiagnostics,params);
 					}
 				case "window/logMessage" | "window/showMessage": onLog(params.type == 1 ? "error" : params.type == 2 ? "warning" : "info", params.message);
 				case _:
@@ -298,7 +299,14 @@ class LspClient {
 			if (p == null) return;
 			pending.remove(id);
 			if (message.error != null) onLog("warning", 'Language server request failed: ${message.error.message}');
-			p.done(message.error == null ? message.result : null);
+			deliver(p.done,message.error == null ? message.result : null);
+		}
+	}
+
+	/** View callbacks are consumers of valid messages; their failure does not invalidate the server. */
+	function deliver(done:Dynamic->Void, value:Dynamic):Void {
+		try done(value) catch (error:Dynamic) {
+			try onLog("error", "Language server result callback failed: " + Std.string(error)) catch (_:Dynamic) {}
 		}
 	}
 
@@ -347,7 +355,10 @@ class LspClient {
 
 	function fail(error:String):Void {
 		if (state == "closing") { forceClose(); return; }
-		if (disposed) return;
+		if (disposed || state == "disconnected") return;
+		if (!LspTransport.available() || transport != null && !transport.connected()) { disconnectSession(); return; }
+		// RAYDE_LSP_TRACE logs lifecycle failures to the host console for diagnostics.
+		if (Sys.getEnv("RAYDE_LSP_TRACE") == "1") Sys.println("lsp-failure: " + error);
 		clearProgress(); publishProgress();
 		if (transport != null) transport.close();
 		transport = null; capabilities = {}; state = "restarting";
@@ -356,7 +367,27 @@ class LspClient {
 		var callbacks = [for (p in pending) p]; pending.clear();
 		retryAt = haxe.Timer.stamp() + Math.min(4, Math.pow(2, attempts.length - 1));
 		onLog("error", error);
-		for (p in callbacks) p.done(null);
+		for (p in callbacks) deliver(p.done,null);
+	}
+
+	/** Network loss pauses supervision; current unsaved documents are replayed when the session returns. */
+	public function disconnectSession():Void {
+		if (state == "closing") { forceClose(); return; }
+		if (disposed || ["idle", "stopped", "failed", "disconnected"].indexOf(state) >= 0) return;
+		clearProgress(); publishProgress();
+		if (transport != null) transport.close();
+		transport = null; capabilities = {}; state = "disconnected";
+		for (doc in documents) { doc.sent = 0; doc.sentText = ""; doc.analyzed = 0; }
+		dirty = true;
+		var callbacks = [for (p in pending) p]; pending.clear();
+		for (p in callbacks) deliver(p.done,null);
+	}
+
+	public function reconnectSession():Void {
+		if (disposed || state != "disconnected") return;
+		attempts = []; retryAt = 0;
+		state = config.lazy == true && !documents.keys().hasNext() ? "idle" : "starting";
+		onWake();
 	}
 
 	/** Explicit controls retain document data; a new process replays the current unsaved text. */

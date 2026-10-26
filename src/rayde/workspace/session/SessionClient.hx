@@ -19,6 +19,8 @@ class SessionClient {
 	public var remote(default, null) = true;
 	public var demo(default, null) = false;
 	public var repositories(default, null) = false;
+	public var documentBridge(default, null) = false;
+	public var storageKey(default, null):Null<String>;
 	public var project(default, null):Null<String>;
 	public var extensionHost(default, null):Null<String>;
 	public var extensionsRoot(default, null):Null<String>;
@@ -39,6 +41,8 @@ class SessionClient {
 	var next = 1;
 	var nextWait = -1;
 	var closed = false;
+	var online = true;
+	var generation = 0;
 
 	function new(channel:Channel) {
 		this.channel = channel;
@@ -56,6 +60,8 @@ class SessionClient {
 			var hello = client.request("hello", {token:token});
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
+			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
+			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
 			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
 			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
 		} catch (error:Dynamic) { client.close(); throw error; }
@@ -63,6 +69,8 @@ class SessionClient {
 	}
 
 	public function isClosed():Bool { mutex.acquire(); var value = closed; mutex.release(); return value; }
+	public function isOnline():Bool { mutex.acquire(); var value = !closed && online; mutex.release(); return value; }
+	public function connectionEpoch():Int { mutex.acquire(); var value = generation; mutex.release(); return value; }
 
 	public function subscribe(listener:Dynamic->Void):Void->Void {
 		mutex.acquire(); listeners.push(listener); mutex.release();
@@ -109,6 +117,9 @@ class SessionClient {
 		if (params != null) for (field in Reflect.fields(params)) if (Reflect.field(params, field) != null) Reflect.setField(message, field, Reflect.field(params, field));
 		mutex.acquire();
 		if (closed) { mutex.release(); future.reject(new SessionFailure("closed", "The session connection is closed.")); return future; }
+		if (StringTools.startsWith(op,"proc.") && params != null && params.sessionGeneration != null && (!online || params.sessionGeneration != generation)) {
+			mutex.release(); future.reject(new SessionFailure("stale-process","The program belongs to a disconnected session.")); return future;
+		}
 		if (Lambda.count(waiting) >= 4096) { mutex.release(); future.reject(new SessionFailure("busy", "Too many session requests are waiting.")); return future; }
 		var id = next++;
 		waiting.set(id, {future:future, deadline:haxe.Timer.stamp() + timeout, op:op});
@@ -131,6 +142,13 @@ class SessionClient {
 			var message:Dynamic = haxe.Json.parse(text);
 			var completions:Array<ash.Future<Dynamic>> = [];
 			mutex.acquire();
+			if (message.ev == "session.disconnected") {
+				if (Std.isOfType(message.generation,Int)) generation = message.generation; else if (online) generation++;
+				online = false;
+			} else if (message.ev == "session.connected") {
+				if (Std.isOfType(message.generation,Int)) generation = message.generation;
+				online = true;
+			}
 			if (message.id != null) {
 				var pending = waiting.get(message.id); waiting.remove(message.id); mutex.release(); changed.release();
 				if (pending != null) {
@@ -168,6 +186,7 @@ class SessionClient {
 			}
 			mutex.release();
 			for (item in expired) if (item.op == "_event") item.future.resolve(false) else item.future.reject(new SessionFailure("timeout", "The session did not answer " + item.op + "."));
+			if (expired.length > 0 && onWake != null) onWake();
 			changed.wait(delay);
 		}
 	}
@@ -196,6 +215,8 @@ class SessionClient {
 		mutex.acquire();
 		if (closed) { mutex.release(); return; }
 		closed = true;
+		if (online) generation++;
+		online = false;
 		var pending = [for (item in waiting) item.future]; waiting.clear();
 		outgoing = []; outgoingBytes = 0;
 		var message = {ev:"session.disconnected"};

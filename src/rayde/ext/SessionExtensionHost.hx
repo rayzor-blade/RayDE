@@ -48,7 +48,6 @@ class SessionExtensionHost {
 
 	public function pending():Bool {
 		if (ended) return false;
-		PageHost.session.drain();
 		return process == null ? opening.isReady() : process.hasOutput() || process.exitCode(false) != null && !ended || Lambda.exists(writes, future -> future.isReady());
 	}
 

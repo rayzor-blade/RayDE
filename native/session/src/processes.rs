@@ -9,15 +9,21 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     process::Stdio,
-    sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}},
+    sync::{Arc, Mutex, atomic::{AtomicU64, AtomicUsize, Ordering}},
 };
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, process::Command, sync::mpsc};
 
 struct Running {
     /// Bytes for the program's stdin; `None` closes it.
-    input: mpsc::UnboundedSender<Option<Vec<u8>>>,
+    input: mpsc::Sender<Option<Vec<u8>>>,
+    input_bytes: Arc<AtomicUsize>,
+    input_closed: bool,
     os_id: Option<u32>,
+    #[cfg(not(unix))]
+    kill: mpsc::Sender<()>,
 }
+
+const MAX_INPUT: usize = 8 * 1024 * 1024;
 
 pub struct ChildPrograms {
     root: PathBuf,
@@ -59,27 +65,35 @@ impl Programs for ChildPrograms {
         if command.is_empty() {
             return Err(SessionError::new("bad-request", "The command is empty."));
         }
-        if self.running() >= self.limit {
-            return Err(SessionError::new("busy", "Too many programs are running."));
-        }
         // The directory is resolved first, so a symlink inside the workspace cannot lead a program out of it.
         let directory = std::fs::canonicalize(self.root.join(cwd)).map_err(|_| SessionError::new("not-found", "The directory does not exist."))?;
         if !directory.starts_with(&self.root) {
             return Err(SessionError::new("outside", "The path leaves the workspace."));
         }
-        let mut child = Command::new(command)
-            .args(args)
+        let mut processes = self.running.lock().unwrap();
+        if processes.len() >= self.limit {
+            return Err(SessionError::new("busy", "Too many programs are running."));
+        }
+        let mut command_line = Command::new(command);
+        command_line.args(args)
             .envs(env)
             .current_dir(directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        command_line.process_group(0);
+        let mut child = command_line.spawn()
             .map_err(|error| SessionError::new("spawn-failed", error.to_string()))?;
         let id = self.next.fetch_add(1, Ordering::Relaxed);
-        let (input, mut queue) = mpsc::unbounded_channel::<Option<Vec<u8>>>();
-        self.running.lock().unwrap().insert(id, Running { input, os_id: child.id() });
+        let (input, mut queue) = mpsc::channel::<Option<Vec<u8>>>(128);
+        let input_bytes = Arc::new(AtomicUsize::new(0));
+        let os_id = child.id();
+        #[cfg(not(unix))]
+        let (kill, mut killed) = mpsc::channel::<()>(1);
+        processes.insert(id, Running { input, input_bytes:input_bytes.clone(), input_closed:false, os_id, #[cfg(not(unix))] kill });
+        drop(processes);
         let mut stdin = child.stdin.take();
         let (stdout, stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
         let running = self.running.clone();
@@ -88,10 +102,15 @@ impl Programs for ChildPrograms {
                 while let Some(item) = queue.recv().await {
                     match item {
                         Some(data) => {
+                            let count = data.len();
                             if let Some(pipe) = stdin.as_mut() {
-                                if pipe.write_all(&data).await.is_err() {
+                                let result = pipe.write_all(&data).await;
+                                input_bytes.fetch_sub(count, Ordering::AcqRel);
+                                if result.is_err() {
                                     break;
                                 }
+                            } else {
+                                input_bytes.fetch_sub(count, Ordering::AcqRel);
                             }
                         }
                         None => stdin = None,
@@ -100,7 +119,16 @@ impl Programs for ChildPrograms {
             };
             let output = async { tokio::join!(pump(stdout, "stdout", id, emit.clone()), pump(stderr, "stderr", id, emit.clone())) };
             let wait = async {
+                #[cfg(unix)]
                 let status = child.wait().await;
+                #[cfg(not(unix))]
+                let status = tokio::select! {
+                    status = child.wait() => status,
+                    _ = killed.recv() => { let _ = child.start_kill(); child.wait().await }
+                };
+                // Descendants inherit the group's pipes and must not outlive its owning program.
+                #[cfg(unix)]
+                if let Some(pid) = os_id { unsafe { libc::kill(-(pid as i32),libc::SIGKILL); } }
                 status.ok()
             };
             tokio::pin!(writer, output, wait);
@@ -130,13 +158,27 @@ impl Programs for ChildPrograms {
     fn write(&self, id: u64, data: &[u8]) -> Result<()> {
         let running = self.running.lock().unwrap();
         let program = running.get(&id).ok_or_else(|| SessionError::new("not-found", "No such program."))?;
-        program.input.send(Some(data.to_vec())).map_err(|_| SessionError::new("not-found", "The program has ended."))
+        if program.input_closed {
+            return Err(SessionError::new("closed-input", "The program input is closed."));
+        }
+        program.input_bytes.try_update(Ordering::AcqRel,Ordering::Acquire,|size| size.checked_add(data.len()).filter(|size| *size <= MAX_INPUT))
+            .map_err(|_| SessionError::new("input-full", "The program input queue is full."))?;
+        if let Err(error) = program.input.try_send(Some(data.to_vec())) {
+            program.input_bytes.fetch_sub(data.len(),Ordering::AcqRel);
+            return Err(match error {
+                mpsc::error::TrySendError::Full(_) => SessionError::new("input-full", "The program input queue is full."),
+                mpsc::error::TrySendError::Closed(_) => SessionError::new("not-found", "The program has ended."),
+            });
+        }
+        Ok(())
     }
 
     fn close_input(&self, id: u64) -> Result<()> {
-        let running = self.running.lock().unwrap();
-        let program = running.get(&id).ok_or_else(|| SessionError::new("not-found", "No such program."))?;
-        let _ = program.input.send(None);
+        let mut running = self.running.lock().unwrap();
+        let program = running.get_mut(&id).ok_or_else(|| SessionError::new("not-found", "No such program."))?;
+        if program.input_closed { return Ok(()); }
+        program.input.try_send(None).map_err(|_| SessionError::new("input-full", "The program input queue is unavailable."))?;
+        program.input_closed = true;
         Ok(())
     }
 
@@ -153,10 +195,77 @@ impl Programs for ChildPrograms {
                 _ => return Err(SessionError::new("bad-request", "The signal is not one of TERM, INT, HUP or KILL.")),
             };
             // SAFETY: `kill` takes a process id and a signal number and touches no memory of ours.
-            unsafe { libc::kill(pid as i32, number) };
+            unsafe { libc::kill(-(pid as i32), number) };
         }
         #[cfg(not(unix))]
-        let _ = (program, signal);
+        {
+            if !["KILL", "SIGKILL", "TERM", "SIGTERM"].contains(&signal) {
+                return Err(SessionError::new("bad-request", "This host supports TERM and KILL."));
+            }
+            let _ = program.kill.try_send(());
+        }
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    async fn ended(programs: &ChildPrograms) {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while programs.running() != 0 { tokio::time::sleep(Duration::from_millis(5)).await; }
+        }).await.expect("programs and their output pipes close");
+    }
+
+    #[tokio::test]
+    async fn blocked_input_is_bounded_and_close_refuses_more_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let programs = ChildPrograms::new(dir.path().into(), 1);
+        let id = programs.spawn("/bin/sh", &["-c".into(),"sleep 20".into()], "", &HashMap::new(), Arc::new(|_| {})).unwrap();
+        let bytes = vec![0u8; MAX_INPUT/2];
+        programs.write(id,&bytes).unwrap(); programs.write(id,&bytes).unwrap();
+        assert_eq!(programs.write(id,b"overflow").unwrap_err().code,"input-full");
+        programs.close_input(id).unwrap();
+        assert_eq!(programs.write(id,b"late").unwrap_err().code,"closed-input");
+        programs.kill(id,"KILL").unwrap(); ended(&programs).await;
+    }
+
+    #[tokio::test]
+    async fn killing_a_program_closes_descendant_pipes_and_releases_its_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let programs = ChildPrograms::new(dir.path().into(), 1);
+        let ready = Arc::new(tokio::sync::Notify::new());
+        let signal = ready.clone();
+        let id = programs.spawn("/bin/sh", &["-c".into(),"sleep 20 & echo ready; wait".into()], "", &HashMap::new(), Arc::new(move |message| {
+            if message.contains("proc.out") { signal.notify_one(); }
+        })).unwrap();
+        tokio::time::timeout(Duration::from_secs(3),ready.notified()).await.unwrap();
+        programs.kill(id,"KILL").unwrap(); ended(&programs).await;
+        let next = programs.spawn("/bin/echo", &["next".into()], "", &HashMap::new(), Arc::new(|_| {}));
+        assert!(next.is_ok(),"the process slot is reusable after descendants exit");
+        ended(&programs).await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_starts_respect_the_process_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let programs = Arc::new(ChildPrograms::new(dir.path().into(), 1));
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let runtime = tokio::runtime::Handle::current();
+        let mut threads = Vec::new();
+        for _ in 0..2 {
+            let (programs,barrier,runtime) = (programs.clone(),barrier.clone(),runtime.clone());
+            threads.push(std::thread::spawn(move || {
+                let _runtime = runtime.enter(); barrier.wait();
+                programs.spawn("/bin/sleep", &["20".into()], "", &HashMap::new(), Arc::new(|_| {}))
+            }));
+        }
+        barrier.wait();
+        let results: Vec<_> = threads.into_iter().map(|thread| thread.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(),1);
+        for id in results.into_iter().flatten() { programs.kill(id,"KILL").unwrap(); }
+        ended(&programs).await;
     }
 }

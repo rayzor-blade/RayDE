@@ -65,6 +65,12 @@ class PageHost {
 	/** The folder of the sample project when there is no session. */
 	public static inline var SAMPLE = "/work";
 	public static function workspaceRoot():String return session == null ? SAMPLE : session.root;
+	/** Personal recovery and tab metadata never write into a shared repository. */
+	public static function personalRoot(root:String):String {
+		if (session == null || session.storageKey == null) return root;
+		var project = root == session.root ? "." : rayde.files.FileOps.relative(session.root,root);
+		return HOME + "/.rayde/workspaces/" + haxe.crypto.Sha256.encode(session.storageKey + "\n" + project);
+	}
 	public static function selected(path:String):Void {
 		#if wasm
 		if (bridge != null && rayde.files.FileOps.inside(workspaceRoot(),path))

@@ -122,6 +122,7 @@ class JamFeature {
 	/** Starts or joins a room on `file`; the prompts of the commands call it, and so do tests. */
 	public function begin(file:String,hosting:Bool,name:String,invitation:String,restore:Bool=false):Void {
 		if (session.get() != null || !host.hasBuffer(file)) throw "Open the document and leave any existing Jam first";
+		if (host.state(file).onTransaction != null) throw "This document is already shared by its workspace session.";
 		if ((!hosting || restore) && host.dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
 		var current=new JamSession(file,host.state(file),hosting,name,invitation,() -> { if (!host.closed()) host.edited(file); },jamRecovery(file),restore);
 		session.set(current);

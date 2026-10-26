@@ -219,6 +219,7 @@ impl<S: FileStore> Connection<S> {
                 let path = clean(text(request, "path")?)?;
                 workspace.docs.detach(&path, &self.name);
                 self.docs.retain(|open| *open != path);
+                workspace.docs.release(&path).await?;
                 Ok(json!({}))
             }
             "proc.spawn" => {

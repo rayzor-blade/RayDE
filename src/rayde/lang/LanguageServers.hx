@@ -14,8 +14,22 @@ class LanguageServers {
 	final root:String;
 	final entries:Array<Registration> = [];
 	final closing:Array<LspClient> = [];
+	final stopped = new Map<String, Bool>();
+	var unsubscribe:Null<Void->Void>;
 
-	public function new(root:String) this.root = root;
+	public function new(root:String) {
+		this.root = root;
+		var launcher = rayde.workspace.Procs.current;
+		if (Std.isOfType(launcher,rayde.workspace.session.SessionLauncher)) {
+			var session = (cast launcher:rayde.workspace.session.SessionLauncher).client;
+			unsubscribe = session.subscribe(event -> {
+				if (event.ev != "session.disconnected" && event.ev != "session.connected") return;
+				for (entry in entries.copy()) if (event.ev == "session.disconnected") entry.client.disconnectSession(); else entry.client.reconnectSession();
+				if (event.ev == "session.disconnected") for (client in closing.copy()) client.disconnectSession();
+				onChanged(); onWake();
+			});
+		}
+	}
 
 	static function strings(value:Dynamic):Array<String> {
 		if (!Std.isOfType(value, Array)) throw "Expected an array of strings";
@@ -57,6 +71,7 @@ class LanguageServers {
 		client.onProgress = () -> onProgress();
 		client.onWake = onWake;
 		entries.push({id:id, name:Std.isOfType(definition.name, String) ? definition.name : id, owner:owner, languages:languages, extensions:[for (ext in extensions) ext.toLowerCase()], client:client});
+		if (stopped.exists(owner + "#" + id)) client.stopSession(); else if (!LspTransport.available()) client.disconnectSession();
 		onChanged();
 		return id;
 	}
@@ -95,10 +110,11 @@ class LanguageServers {
 	public function control(id:String, action:String):Void {
 		var entry = Lambda.find(entries, e -> e.id == id);
 		if (entry == null) return;
+		var key = entry.owner + "#" + id;
 		switch action {
-			case "start": entry.client.startSession();
-			case "restart": entry.client.restartSession();
-			case "stop": entry.client.stopSession();
+			case "start": stopped.remove(key); entry.client.startSession();
+			case "restart": stopped.remove(key); entry.client.restartSession();
+			case "stop": stopped.set(key,true); entry.client.stopSession();
 			case _: return;
 		}
 		if (action != "start") for (file in entry.client.files()) onDiagnostics({uri:LspProtocol.uri(file), diagnostics:[]});
@@ -132,8 +148,10 @@ class LanguageServers {
 		return delay;
 	}
 	public function dispose():Void {
+		if (unsubscribe != null) { unsubscribe(); unsubscribe = null; }
 		for (entry in entries) entry.client.abort();
 		for (client in closing) client.abort();
 		entries.resize(0); closing.resize(0);
+		stopped.clear();
 	}
 }

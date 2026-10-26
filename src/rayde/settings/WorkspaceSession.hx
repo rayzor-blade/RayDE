@@ -17,10 +17,10 @@ class WorkspaceSession {
 	final mutex = new sys.thread.Mutex();
 	final worker = new Worker<Write, Bool>(write);
 
-	public function new(root:String, project:String) {
+	public function new(root:String, project:String, ?storageRoot:String) {
 		var prefix = haxe.io.Path.addTrailingSlash(root);
 		var key = StringTools.startsWith(project, prefix) ? project.substr(prefix.length) : project == root ? "." : project;
-		file = root + "/.rayde/sessions/" + haxe.crypto.Sha256.encode(key) + ".json";
+		file = (storageRoot ?? root) + "/.rayde/sessions/" + haxe.crypto.Sha256.encode(key) + ".json";
 		temporary = file + ".tmp-" + Std.random(0x3fffffff);
 	}
 

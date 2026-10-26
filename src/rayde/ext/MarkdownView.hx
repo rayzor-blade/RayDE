@@ -102,7 +102,7 @@ class MarkdownView {
 		if (kind == "code") {
 			var frame = box("rayde-md-code");
 			if (compact) {
-				var syntax = rayde.ui.TextMateSyntax.fromTokens(data.tokens), state = "";
+				var syntax = data.tokens == null ? ashui.components.code.CodeSyntax.forLanguage(Std.string(data.language)) : rayde.ui.TextMateSyntax.fromTokens(data.tokens), state = "";
 				for (line in Std.string(data.text).split("\n")) {
 					var row = box("ui-code-hint-line"), result = syntax.highlight(line, state);
 					state = result.state;

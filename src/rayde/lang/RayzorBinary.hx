@@ -10,6 +10,7 @@ class RayzorBinary {
 	}
 
 	public static function find():Null<String> {
+		if (Std.isOfType(rayde.workspace.Procs.current,rayde.workspace.session.SessionLauncher)) return "rayzor";
 		var named = Sys.getEnv("RAYZOR_LSP");
 		if (named != null && named != "") return named;
 		var name = Sys.systemName() == "Windows" ? "rayzor.exe" : "rayzor";

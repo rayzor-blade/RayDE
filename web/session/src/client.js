@@ -40,8 +40,12 @@ export class Doc {
     this.failed = false;
     this.listeners = new Set();
     this.persistence = null;
+    this.pending = new Set();
+    this.localVersion = 0;
+    this.acknowledgedVersion = 0;
     this.ydoc.on("update", (update, origin) => {
       if (origin === "session" || this.closed) return;
+      this.localVersion++;
       this.unsent = true;
       void this.send(update);
     });
@@ -62,9 +66,19 @@ export class Doc {
   }
 
   /** The handshake: tell the session what the page has, take what it has, and send what it lacks. */
-  async sync() {
+  sync() {
+    if (this.syncing) return this.syncing;
+    const work = this.synchronize();
+    this.syncing = work;
+    const clear = () => { if (this.syncing === work) this.syncing = null; };
+    work.then(clear,clear);
+    return work;
+  }
+
+  async synchronize() {
     if (this.closed || !this.client.ready) return;
     const reply = await this.client.request("doc.open", { path: this.path, vector: b64.encode(Y.encodeStateVector(this.ydoc)) });
+    if (this.closed) return;
     Y.applyUpdate(this.ydoc, b64.decode(reply.update), "session");
     const missing = Y.encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
     // An empty update is two bytes: nothing to send.
@@ -74,31 +88,50 @@ export class Doc {
     this.listeners.forEach((listener) => listener("synced"));
   }
 
-  async send(update) {
-    if (!this.client.ready) return;
+  send(update) {
+    if (!this.client.ready || this.closed) return Promise.resolve();
+    const work = this.transmit(update, this.localVersion);
+    this.pending.add(work);
+    work.finally(() => this.pending.delete(work));
+    return work;
+  }
+
+  async transmit(update, version) {
     this.inflight++;
     try {
       await this.client.request("doc.update", { path: this.path, update: b64.encode(update) });
+      this.acknowledgedVersion = Math.max(this.acknowledgedVersion,version);
     } catch (error) {
       this.failed = true;
       if (error.code === "auth-required") this.client.needSignIn(error.login);
       // Anything else is retried by the next handshake.
     } finally {
       // Unsent until every update in flight has been taken and none failed.
-      if (--this.inflight === 0 && !this.failed) this.unsent = false;
+      if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) this.unsent = false;
     }
   }
 
   async save() {
+    // Edits queued before Save must reach the session before its file is flushed.
+    await Promise.all([...this.pending]);
+    if (this.syncing) await this.syncing;
+    if (this.closed) throw new Error("The shared document is closed.");
+    if (this.unsent) await this.sync();
+    if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
     return this.client.request("doc.save", { path: this.path });
   }
 
-  async close() {
+  close() {
+    if (this.closing) return this.closing;
     this.closed = true;
-    await this.persistence?.destroy();
-    this.ydoc.destroy();
-    if (this.client.ready) await this.client.request("doc.close", { path: this.path }).catch(() => {});
-    this.client.docs.delete(this.path);
+    this.closing = (async () => {
+      await this.persistence?.destroy();
+      this.ydoc.destroy();
+      this.listeners.clear();
+      if (this.client.ready) await this.client.request("doc.close", { path: this.path }).catch(() => {});
+      if (this.client.docs.get(this.path) === this) this.client.docs.delete(this.path);
+    })();
+    return this.closing;
   }
 }
 
@@ -122,6 +155,7 @@ export class SessionClient {
     this.credential = options.credential ?? null;
     this.stopped = false;
     this.attempt = 0;
+    this.generation = 0;
   }
 
   on(event, handler) {
@@ -165,9 +199,9 @@ export class SessionClient {
         socket.onclose = () => {
           const wasReady = this.ready;
           this.ready = false;
+          if (wasReady) { this.generation++; this.emit("disconnected"); }
           for (const [, reply] of this.waiting) reply.reject(new Error("The connection closed."));
           this.waiting.clear();
-          if (wasReady) this.emit("disconnected");
           if (first && !wasReady && this.options.reconnect === false) { first = false; clearTimeout(initial); reject(new Error("Could not connect.")); }
           if (!this.stopped && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5000));
         };
@@ -214,6 +248,15 @@ export class SessionClient {
     return this.rawRequest(op, params);
   }
 
+  /** The local bridge fences process handles before forwarding onto a replacement connection. */
+  forward(op, params = {}) {
+    if (op.startsWith("proc.") && params.sessionGeneration !== undefined) {
+      if (params.sessionGeneration !== this.generation) return Promise.reject(new Error("The program belongs to a disconnected session."));
+      params = {...params}; delete params.sessionGeneration;
+    }
+    return this.request(op,params);
+  }
+
   /** The sign-in the session asks for: the page opens `url`, and later calls `login` with what the edge returns. */
   needSignIn(url) {
     this.pendingAuth = true;
@@ -233,11 +276,14 @@ export class SessionClient {
 
   async openDoc(path) {
     let doc = this.docs.get(path);
+    if (doc?.closed) { await doc.close(); return this.openDoc(path); }
     if (!doc) {
       doc = new Doc(this, path);
       this.docs.set(path, doc);
-      await doc.start();
+      doc.started = doc.start();
     }
+    try { await doc.started; }
+    catch (error) { await doc.close(); throw error; }
     return doc;
   }
 

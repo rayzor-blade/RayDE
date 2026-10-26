@@ -21,6 +21,8 @@ Requests are JSON over `ws://host/session`; the first must be `hello` with the t
 
 The browser client (`web/session/src/client.js`) is local-first: edits go to a Yjs document in the page and IndexedDB first, and travel when the session is reachable.
 
+The host keeps CRDT recovery state under `~/.rayde-session/<workspace-id>/state`, outside the repository. The workspace ID hashes its canonical path, keeping projects separate. Existing workspace-local state is moved there on startup; conflicting copies are preserved for recovery. `--state-root DIR` selects another private storage location for a sandbox or test host.
+
 ## Signing in before the first edit
 
 With `--auth-secret S --login-url URL`, anyone may look, but every change answers `auth-required` (with the login URL) until the connection sends `auth.login` with a credential signed with `S`: `base64url(payload).base64url(HMAC-SHA256)`, the payload being `{login, id, exp}`. This signed-credential mode is separate from the Cloudflare account gateway below; that gateway authenticates the connection and supplies the private compute token. `rayde-session issue --auth-secret S --login NAME --id N` mints one for development.
@@ -49,11 +51,17 @@ In the browser, Open Project and Open Folder open the GitHub repository chooser.
 
 Requests, process startup, output and shutdown use `ash.Future`. Readers park until a reply or stream event arrives; one sleeping deadline worker handles timeouts. UI polling only drains available messages. Page settings are stored in IndexedDB. On `rayde.org`, RayDE opens the local example with `Main.hx` already visible. `?demo=1` enables that entry in development, and `?demo=0` disables it. On the app host, an empty entry opens Welcome with Explorer collapsed; repository workspaces use `app.rayde.org/{session_id}` and require authentication.
 
-The full editor currently uses file reads and explicit saves over the session. The demo client's Yjs offline document synchronization is separate; it is not yet bound to the full editor's text buffers. Remote language-server transport and PTYs are also separate work.
+Text tabs in the full browser editor use Yjs documents synchronized with the session's Yrs documents. Typing continues offline; IndexedDB retains edits for reconnect and reload. Remote edits update inactive buffers too. Undo affects this editor's own transactions. Save waits for earlier updates to reach the session before flushing its file; a failed save leaves the tab dirty and reports the error. Builds and workspace changes wait for successful saves. Personal recovery history and tab layout stay in browser storage, scoped to the workspace.
+
+The browser bridge keeps a CRDT projection of the text the editor has acknowledged, so late typing cannot apply stale offsets to newer remote text. Binding lifetime follows the persistent buffer, not its mounted view. A closed, saved tab releases its projection, undo manager and document subscription; dirty buffers stay retained. The session also writes shared edits to files as they settle.
+
+Stdio language servers run on the session machine, using its executable paths, environment and workspace directory. Install `rayzor` on that host's PATH (and configure its standard library there). The built-in Rayzor extension starts it when a Haxe document opens; Welcome alone leaves it asleep. Hover documentation renders Markdown in the browser. Network loss pauses extension and language-server supervision; reconnect restarts active hosts and replays unsaved document text. An explicit language-server Stop remains stopped. Remote code inspection never probes the editor's localhost compiler ports; Build and Run launch compilers on the session host. Interactive PTYs remain separate work.
 
 The server currently refuses moving a file or folder while it contains an open CRDT document, including an open destination. Shared-document renames require stable document identities and coordinated path changes before this restriction can be lifted.
 
-`node tests/web/session.mjs --dir bin/web/rayde` checks opening, editing and saving a real session file, large replies and an extension service round trip. It creates a temporary workspace from `tests/fixtures/browser-session`. `tests/SessionAsyncChecks.hx` checks concurrent replies, deadlines, early process output and disconnection under Ash.
+`node tests/web/session.mjs --dir bin/web/rayde` checks opening, editing and saving a real session file, large replies and an extension service round trip. It creates a temporary workspace from `tests/fixtures/browser-session`. `tests/SessionAsyncChecks.hx` checks concurrent replies, deadlines, early process output and disconnection under Ash. `SessionEditorChecks` covers asynchronous readiness, stale projections, undo, save failure and binding cleanup. `node tests/web/collaboration.mjs bin/web/rayde` drives two full WASM editors with separate browser storage through edits, undo, Save, session restart and reload.
+
+`SessionLspChecks`, `SessionLspQueueChecks` and `SessionLspReconnectChecks` cover framed remote LSP, bounded queues, cancellation, idle wakeups, offline recovery and stale process handles. `node tests/web/lsp.mjs bin/web/rayde` opens the full browser editor with the built-in extension and a real session-hosted Rayzor, then checks semantic hover, Markdown, live diagnostics and recovery after a sustained connection loss. It needs built session and extension-host binaries plus Rayzor; `RAYDE_RAYZOR_LSP` and `RAYZOR_STD_PATH` select its executable and standard library.
 
 ## Cloudflare account gateway
 

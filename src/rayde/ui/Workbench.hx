@@ -312,7 +312,7 @@ class Workbench extends Component<WorkbenchProps> {
 		editorPart = new EditorPart(this);
 		documentsPart = new DocumentsPart(this);
 		if (props.empty == true) treeWidth.set(ACTIVITY);
-		documentsPart.localHistory = new LocalHistory(props.display.cwd);
+		documentsPart.localHistory = new LocalHistory(rayde.workspace.PageHost.personalRoot(props.display.cwd));
 		documentsPart.localHistory.changed = () -> documentsPart.historyRevision.set(documentsPart.historyRevision.get() + 1);
 		documentsPart.localHistory.failed = message -> ashui.animation.AnimationScheduler.main.after(.01, () -> { if (!gone) say(message); });
 		explorerShown = Computed.make(() -> treeWidth.get() > ACTIVITY + 8);
@@ -331,7 +331,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (sessionReady) return;
 		// What the project's own tool says is wrong with its file is a problem of the workspace.
 		showProjectProblems();
-		workspaceSession = new WorkspaceSession(props.display.cwd, explorerPart.projectEntry() ?? (extension != null ? extension.file : themePart.themeStudio != null ? themePart.themeStudio.file : props.display.cwd));
+		workspaceSession = new WorkspaceSession(props.display.cwd, explorerPart.projectEntry() ?? (extension != null ? extension.file : themePart.themeStudio != null ? themePart.themeStudio.file : props.display.cwd), rayde.workspace.PageHost.personalRoot(props.display.cwd));
 		var saved = workspaceSession.read();
 		if (saved != null) {
 			var files = [for (entry in saved.files) sessionPath(entry)];
@@ -901,7 +901,6 @@ class Workbench extends Component<WorkbenchProps> {
 			if (gone) return;
 			languagesPart.languageRevision.set(languagesPart.languageRevision.get() + 1);
 			for (file in open.get()) if (!isVirtual(file) && (file == active.get() || documentsPart.buffers.exists(file))) languagesPart.check(file);
-			explorerPart.refreshExplorer();
 			languagesPart.wakeLanguages();
 		};
 		terminalPart.terminalSettings = Settings.read(props.display.cwd);
@@ -911,6 +910,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (props.theme != null)
 			themePart.themeStudio = themePart.makeThemeStudio(props.theme.file);
 		windowStyle.set(WindowControls.styleFor(appearance.windowControls));
+		documentsPart.setupSession();
 		shellPart.registerShell();
 		keymapPart.bindings = KeyBindings.read(props.display.cwd, rayde.Platform.shortcutsMac());
 		libraries = new LibraryManager(props.display.cwd);

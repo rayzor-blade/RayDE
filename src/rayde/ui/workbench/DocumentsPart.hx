@@ -104,6 +104,31 @@ class DocumentsPart {
 	final buffers = new Map<String, Signal<String>>();
 
 	final documents = new Map<String, DocumentState>();
+	final initialDisk = new Map<String, String>();
+	var sessionDocs:Null<rayde.workspace.session.EditorDocuments>;
+
+	function setupSession():Void {
+		var client = rayde.workspace.PageHost.session;
+		if (client == null || !client.documentBridge) return;
+		sessionDocs = new rayde.workspace.session.EditorDocuments(client, (file, local) -> {
+			if (wb.gone) return;
+			if (local) edited(file);
+			else { checkpointHistory(file, true); wb.languagesPart.check(file); }
+		}, wb.say, file -> {
+			var editor = wb.editorOf(file), state = documents.get(file);
+			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
+		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; });
+		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
+		wb.contributions.onFrame(sessionDocs.frame);
+		wb.contributions.onClose(sessionDocs.close);
+		wb.contributions.onEdited(sessionDocs.acceptBuffer);
+		wb.contributions.refuses((path, doing) -> {
+			for (file in documents.keys()) if (sessionDocs.owns(file) && FileOps.inside(path,file)) return "Close shared documents before " + doing + " this path.";
+			return null;
+		});
+		wb.contributions.status({id:"workspace.document", place:"right", order:1, build:() ->
+			<if {sessionDocs.message(wb.active.get()) != ""}><text class="text-xs text-text-secondary px-2">${sessionDocs.message(wb.active.get())}</text></if>});
+	}
 
 	/** The editor's text for `file`, read from disk when first opened. */
 	public function buffer(file:String):Signal<String> {
@@ -111,6 +136,7 @@ class DocumentsPart {
 		var b = buffers.get(file);
 		if (b == null) {
 			var disk = Fs.getContent(file), recovered = localHistory.recover(file, disk);
+			initialDisk.set(file, disk);
 			b = Signal.make(recovered);
 			buffers.set(file, b);
 			if (recovered != disk && wb.dirty.get().indexOf(file) < 0) {
@@ -130,6 +156,9 @@ class DocumentsPart {
 			state = new DocumentState(buffer(file));
 			DocumentHistory.restore(state, localHistory.undo(file, state.value.get()));
 			documents.set(file, state);
+			if (sessionDocs != null && FileOps.inside(rayde.workspace.PageHost.session.root,file) && state.value.get().indexOf("\x00") < 0)
+				sessionDocs.attach(file,state,initialDisk.get(file) ?? state.value.get());
+			initialDisk.remove(file);
 		}
 		return state;
 	}
@@ -149,15 +178,17 @@ class DocumentsPart {
 				wb.editorPart.nativeSyntax.remove(file);
 			}
 		for (file in documents.keys())
-			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0)
+			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0) {
+				if (sessionDocs != null) sessionDocs.release(file);
 				documents.remove(file);
+			}
 		for (file in wb.editorPart.editorRefs.keys())
 			if (opened.indexOf(file) < 0)
 				wb.editorPart.editorRefs.remove(file);
 		for (file in buffers.keys())
 			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0 && !wb.extensionsPart.studios.exists(file)
 				&& (wb.themePart.themeStudio == null || wb.themePart.themeStudio.file != file))
-				buffers.remove(file);
+				{ buffers.remove(file); initialDisk.remove(file); }
 	}
 
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
@@ -178,10 +209,10 @@ class DocumentsPart {
 		wb.debugPart.followBreakpoints(file);
 	}
 
-	function checkpointHistory(file:String):Void {
+	function checkpointHistory(file:String, remote = false):Void {
 		var state = documents.get(file), text = buffer(file).get();
 		var before = localHistory.current(file, text);
-		localHistory.record(file, before, text, state == null ? null : DocumentHistory.snapshot(state), "Edit", wb.contributions.authorOf(file) ?? "Local edit");
+		localHistory.record(file, before, text, state == null ? null : DocumentHistory.snapshot(state), remote ? "Sync" : "Edit", remote ? "Workspace sync" : wb.contributions.authorOf(file) ?? "Local edit");
 		if (historyPending.exists(file)) return;
 		historyPending.set(file, true);
 		ashui.animation.AnimationScheduler.main.after(.35, () -> { historyPending.remove(file); if (!wb.gone) localHistory.flush(file); });

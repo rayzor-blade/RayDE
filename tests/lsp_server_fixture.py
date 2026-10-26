@@ -70,7 +70,14 @@ while True:
     elif method == "$/cancelRequest":
         cancelled.append(params["id"])
     elif method == "test/state":
-        send({"id": identifier, "result": {"pid": os.getpid(), "documents": documents, "cancelled": cancelled}})
+        send({"id": identifier, "result": {"pid": os.getpid(), "cwd": os.getcwd(), "marker": os.environ.get("RAYDE_LSP_FIXTURE_MARKER"), "documents": documents, "cancelled": cancelled}})
+    elif method == "test/echo":
+        send({"id": identifier, "result": params})
+    elif method == "test/stderr":
+        for part in [b"\x1b[", b"31m", "λ😀".encode(), b"\x1b[0m\n"]:
+            sys.stderr.buffer.write(part)
+            sys.stderr.buffer.flush()
+        send({"id": identifier, "result": True})
     elif method == "test/notify":
         for notification in params.get("notifications", []):
             send(notification)

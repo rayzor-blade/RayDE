@@ -6,7 +6,7 @@ import haxe.io.Eof;
 
 /** Programs that run in the session, beside the workspace's files. */
 class SessionLauncher implements Launcher {
-	final client:SessionClient;
+	public final client:SessionClient;
 	final running = new Map<Int, SessionProgram>();
 	final early = new Map<Int, Array<Dynamic>>();
 	final mutex = new sys.thread.Mutex();
@@ -21,6 +21,7 @@ class SessionLauncher implements Launcher {
 			if (event.ev == "session.disconnected") {
 				for (program in running) program.receive({ev:"proc.exit",code:255});
 				running.clear();
+				early.clear(); earlyBytes = 0; earlyOverflow = false;
 			} else {
 				var program = event.pid == null ? null : running.get(event.pid);
 				if (program != null) program.receive(event);
@@ -42,14 +43,29 @@ class SessionLauncher implements Launcher {
 	}
 
 	public function startAsync(command:String, args:Array<String>):ash.Future<SessionProgram> {
+		return startConfigured(command,args);
+	}
+
+	/** Program paths and environment belong to the session host, never the browser machine. */
+	public function startConfigured(command:String, args:Array<String>, ?cwd:String, ?env:Dynamic):ash.Future<SessionProgram> {
 		var future = new ash.Future<SessionProgram>();
 		if (!client.exec) { future.reject("This session does not run programs."); return future; }
+		var directory = "";
+		if (cwd != null && cwd != "") {
+			var root = haxe.io.Path.normalize(client.root), path = haxe.io.Path.normalize(cwd);
+			if (!rayde.files.FileOps.inside(root,path)) { future.reject("The program directory is outside this workspace session."); return future; }
+			directory = path == root ? "" : rayde.files.FileOps.relative(root,path);
+		}
 		mutex.acquire(); starting++; mutex.release();
-		client.requestAsync("proc.spawn", {command:command, args:args}).then(reply -> {
+		var generation = client.connectionEpoch();
+		client.requestAsync("proc.spawn", {command:command, args:args, cwd:directory, env:env, sessionGeneration:generation}).then(reply -> {
 			var pid:Int = reply.pid;
 			var program:SessionProgram = null;
-			program = new SessionProgram(client, pid, () -> { mutex.acquire(); if (running.get(pid) == program) running.remove(pid); mutex.release(); });
+			program = new SessionProgram(client, pid, () -> { mutex.acquire(); if (running.get(pid) == program) running.remove(pid); mutex.release(); },generation);
 			mutex.acquire();
+			if (generation != client.connectionEpoch() || !client.isOnline()) {
+				finishStart(); mutex.release(); program.close(); future.reject("The session changed while starting the program."); return;
+			}
 			running.set(pid, program);
 			if (client.isClosed()) program.receive({ev:"proc.exit",code:255});
 			var waiting = early.get(pid); early.remove(pid);
@@ -85,14 +101,16 @@ class SessionProgram implements Program {
 	final mutex = new sys.thread.Mutex();
 	var changed = new ash.Future<Bool>();
 	final release:Void->Void;
+	final generation:Int;
 
-	public function new(client:SessionClient, pid:Int, release:Void->Void) {
+	public function new(client:SessionClient, pid:Int, release:Void->Void, generation:Int) {
 		this.client = client;
 		this.pid = pid;
 		this.release = release;
+		this.generation = generation;
 		stdout = new PipeInput(out, () -> wait(out), mutex);
 		stderr = new PipeInput(err, () -> wait(err), mutex);
-		stdin = new SessionInput(client, pid);
+		stdin = new SessionInput(client, pid,generation);
 	}
 
 	public function receive(event:Dynamic):Void {
@@ -120,7 +138,6 @@ class SessionProgram implements Program {
 	}
 
 	public function exitCode(block:Bool = true):Null<Int> {
-		client.drain();
 		while (true) {
 			mutex.acquire(); var value = code; mutex.release();
 			if (value != null || !block) return value;
@@ -129,12 +146,12 @@ class SessionProgram implements Program {
 	}
 
 	public function killAsync():ash.Future<Dynamic>
-		return client.requestAsync("proc.kill", {pid:pid, signal:"KILL"});
+		return client.requestAsync("proc.kill", {pid:pid, signal:"KILL", sessionGeneration:generation});
 
 	public function kill():Void { try killAsync().await() catch (_:Dynamic) {} }
 
 	public function writeAsync(text:String):ash.Future<Dynamic>
-		return client.requestAsync("proc.write", {pid:pid, data:Base64.encode(Bytes.ofString(text))});
+		return client.requestAsync("proc.write", {pid:pid, data:Base64.encode(Bytes.ofString(text)), sessionGeneration:generation});
 
 	public function close():Void {
 		mutex.acquire();
@@ -146,7 +163,7 @@ class SessionProgram implements Program {
 		mutex.acquire(); var found = out.chunks.length > 0 || err.chunks.length > 0; mutex.release(); return found;
 	}
 	public function takeOutput(error = false):Bytes {
-		client.drain(); mutex.acquire();
+		mutex.acquire();
 		var pipe = error ? err : out, bytes = new haxe.io.BytesBuffer();
 		for (i => chunk in pipe.chunks) bytes.addBytes(chunk, i == 0 ? pipe.position : 0, chunk.length - (i == 0 ? pipe.position : 0));
 		pipe.clear(); mutex.release();
@@ -211,14 +228,16 @@ private class PipeInput extends haxe.io.Input {
 private class SessionInput extends haxe.io.Output {
 	final client:SessionClient;
 	final pid:Int;
+	final generation:Int;
 
-	public function new(client:SessionClient, pid:Int) {
+	public function new(client:SessionClient, pid:Int, generation:Int) {
 		this.client = client;
 		this.pid = pid;
+		this.generation = generation;
 	}
 
 	override public function writeBytes(from:Bytes, pos:Int, len:Int):Int {
-		client.request("proc.write", {pid: pid, data: Base64.encode(from.sub(pos, len))});
+		client.request("proc.write", {pid: pid, data: Base64.encode(from.sub(pos, len)), sessionGeneration:generation});
 		return len;
 	}
 
@@ -228,5 +247,5 @@ private class SessionInput extends haxe.io.Output {
 		writeBytes(one, 0, 1);
 	}
 
-	override public function close():Void client.request("proc.close-input", {pid: pid});
+	override public function close():Void client.request("proc.close-input", {pid: pid, sessionGeneration:generation});
 }
