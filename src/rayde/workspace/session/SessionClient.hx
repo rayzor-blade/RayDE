@@ -16,6 +16,7 @@ class SessionClient {
 	public var root(default, null) = "";
 	public var name(default, null) = "";
 	public var exec(default, null) = false;
+	public var syntax(default, null) = false;
 	public var remote(default, null) = true;
 	public var demo(default, null) = false;
 	public var repositories(default, null) = false;
@@ -59,6 +60,7 @@ class SessionClient {
 		try {
 			var hello = client.request("hello", {token:token});
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
+			client.syntax = hello.syntax == true;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;

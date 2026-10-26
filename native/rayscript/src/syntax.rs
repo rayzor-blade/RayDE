@@ -1,5 +1,5 @@
 //! Editor sessions retain lexical state, never editor views.
-use irosashi::{CodeToTokensOptions, Highlighter, Session, StateStack, TokenizeOptions};
+use irosashi::{Highlighter, Session, StateStack, TokenizeOptions};
 use serde_json::{Value, json};
 use std::{cell::RefCell, sync::Arc};
 
@@ -136,60 +136,4 @@ mod tests {
     }
 }
 
-pub fn highlight(source: &str, language: &str) -> Value {
-    let Ok(highlighter) = super::grammars::highlighter() else {
-        return json!({"kind":"code","text":source,"language":language,"tokens":[]});
-    };
-    let mut options = CodeToTokensOptions::new(&language, "rayde");
-    options.include_scopes = true;
-    options.max_line_length = Some(16_384);
-    let mut lines = Vec::new();
-    if let Ok(result) = highlighter.code_to_tokens(source.trim_end_matches('\n'), &options) {
-        for line in &result.lines {
-            let text = &result.source[line.range.clone()];
-            let tokens: Vec<Value> = line
-                .tokens
-                .iter()
-                .map(|token| {
-                    let scopes = result.scopes_of(token).unwrap_or(&[]);
-                    let kind = token_kind(scopes.iter().map(|s| s.as_ref()));
-                    json!({"from":text[..token.start].encode_utf16().count(),
-                        "to":text[..token.end].encode_utf16().count(), "kind":kind})
-                })
-                .collect();
-            lines.push(json!(tokens));
-        }
-    }
-    json!({"kind":"code", "text":source.trim_end_matches('\n'), "language":language, "tokens":lines})
-}
-
-pub(crate) fn token_kind<'a>(scopes: impl IntoIterator<Item = &'a str>) -> &'static str {
-    let mut kind = "plain";
-    for s in scopes {
-        if s.starts_with("comment") {
-            kind = "comment";
-            break;
-        }
-        if s.starts_with("string") {
-            kind = "string";
-        } else if s.starts_with("keyword.operator") {
-            kind = "operator";
-        } else if s.starts_with("keyword") || s.starts_with("storage") {
-            kind = "keyword";
-        } else if s.starts_with("constant.numeric") {
-            kind = "number";
-        } else if s.starts_with("entity.name.function") || s.starts_with("support.function") {
-            kind = "function";
-        } else if s.starts_with("entity.name.type")
-            || s.starts_with("support.type")
-            || s.starts_with("support.class")
-        {
-            kind = "type";
-        } else if s.starts_with("entity.name.tag") {
-            kind = "tag";
-        } else if s.starts_with("entity.other.attribute") {
-            kind = "attribute";
-        }
-    }
-    kind
-}
+pub use rayde_syntax::{highlight,token_kind};

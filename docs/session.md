@@ -17,6 +17,7 @@ Requests are JSON over `ws://host/session`; the first must be `hello` with the t
 | --- | --- |
 | Files | `fs.list`, `fs.stat`, `fs.read`, `fs.write`, `fs.mkdir`, `fs.remove`, `fs.rename`. Paths are relative to the workspace; `..` and symlinks that leave it are refused. |
 | Documents | `doc.open`, `doc.update`, `doc.save`, `doc.close`. A text file is a Yrs document; clients exchange state vectors and updates, so edits made offline merge after a reconnect. The session writes the file once edits settle, and takes an edit made to the file outside the session as an edit of the document. |
+| Syntax | When `hello.syntax` is true, `syntax.highlight` accepts a request id, editor `key`, filename and source snapshot; `syntax.cancel` cancels that key. Results contain line token ranges in UTF-16 units. Queries run independently of ordered workspace operations. |
 | Programs | `proc.spawn`, `proc.write`, `proc.close-input`, `proc.kill`; output arrives as `proc.out` and `proc.exit` events. Only with `--exec`, only in workspace directories, and stopped when their connection closes. |
 
 The browser client (`web/session/src/client.js`) is local-first: edits go to a Yjs document in the page and IndexedDB first, and travel when the session is reachable.

@@ -4,6 +4,19 @@ use std::fs;
 use support::{Client, Peer, server, until};
 
 #[tokio::test]
+async fn syntax_is_available_without_execution_permission() {
+    let dir=tempfile::tempdir().unwrap();let running=server(dir.path(),false).await;
+    let mut client=Client::connect(&running).await;
+    let hello=client.request(json!({"op":"hello","token":"secret"})).await;
+    assert_eq!(hello["exec"],false);assert_eq!(hello["syntax"],true);
+    let response=client.request(json!({"op":"syntax.highlight","key":"editor","file":"rayzor.toml","source":"[package]\nname = \"RayDE\""})).await;
+    assert_eq!(response["ok"],true,"{response}");
+    assert!(response["tokens"].as_array().unwrap().iter().flat_map(|line|line.as_array().unwrap()).any(|token|token["kind"]=="string"));
+    assert_eq!(client.request(json!({"op":"syntax.cancel","key":"editor"})).await["ok"],true);
+    running.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_wrong_token_is_refused_and_nothing_works_before_hello() {
     let dir = tempfile::tempdir().unwrap();
     let running = server(dir.path(), false).await;

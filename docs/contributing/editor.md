@@ -8,6 +8,16 @@ Only the active code tab in each editor group mounts an editor. Inactive tabs ke
 
 Hover documentation is requested from the language server; revisiting an unchanged open tab keeps its existing LSP document version.
 
+## Syntax highlighting
+
+`EditorSyntax` selects immediate built-in grammars. Native editors use incremental `TextMateSyntax` sessions for other languages. Browser editors use `SessionSyntax` for the shared TextMate registry, retaining built-in colors while a result is pending. Haxe/RayScript keep their HXX-aware grammar, and JSON stays local.
+
+`SessionSyntax` debounces source changes through an ash-future worker, cancels superseded work, and applies only a matching snapshot at a frame boundary. Its reactive highlighter updates the mounted editor without changing selection, scroll or undo history. The response table is consumed into `CodeDocument`'s packed tokens and released; hiding the editor cancels the query and removes its hook.
+
+The Rust `native/syntax` crate shares grammar data and scope mapping with native previews. Session syntax queries run on at most two blocking workers independently of ordered file/document RPCs. Queries require an authenticated session, but do not require program execution permission. Limits are 2 MiB of source, 32,768 lines, 100,000 tokens and 16,384 bytes per tokenized line. Unknown extensions stay plain; sources exceeding the limits retain their built-in fallback.
+
+Run `cargo test --manifest-path native/syntax/Cargo.toml`, `SessionSyntaxChecks`, ashui's `CodeReactiveSyntax`, and `node tests/web/syntax.mjs bin/web/rayde` for grammar, ownership and browser checks.
+
 ## Editor groups
 
 `EditorGroups` owns a binary layout of groups and resizable splits. Each tab belongs to one group: document state, history and extension-mounted roots remain singular. `Workbench.open` is the union used by workspace services; `Workbench.active` follows the focused group's active tab. Group-local signals control page visibility so focusing another pane does not remount a visible editor. Group shortcuts are intercepted before caret navigation, and completion/code-action ownership follows focus. Sessions retain the layout, proportions and group selections alongside the existing flat tab catalog; older sessions still open as one group.

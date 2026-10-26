@@ -1208,18 +1208,28 @@ dependencies = [
  "avif-decode",
  "hl_abi",
  "image",
- "include_dir",
  "irosashi",
  "latex-rust",
  "mermaid-rs-renderer",
  "pulldown-cmark",
  "rayde-jam",
+ "rayde-syntax",
  "rayscript-host",
  "rayscript-vm",
  "scraper",
  "serde_json",
  "toml",
  "toml_edit",
+]
+
+[[package]]
+name = "rayde-syntax"
+version = "0.1.0"
+dependencies = [
+ "include_dir",
+ "irosashi",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

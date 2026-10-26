@@ -2,6 +2,8 @@
 
 Rayzor is enabled by default for Haxe files. It supplies completion, hover documentation, signature help, definitions, diagnostics and Outline. If Rayzor is disabled or cannot start, RayDE falls back to the Haxe compiler's display service. Build and Run use the project's chosen runtime separately.
 
+Syntax highlighting also covers other languages and configuration files. Browser workspaces use the session's TextMate grammars, with built-in colors available immediately for common languages. Highlighting does not require a language server.
+
 ## Completion and documentation
 
 Completion opens after `.` or the first character of a word, or with **Ctrl+Space**. Typing narrows the results. Arrow keys, Page Up/Down, Home and End move through them; Enter or Tab inserts the selection; Escape closes the list. Suggestions reflect unsaved text.

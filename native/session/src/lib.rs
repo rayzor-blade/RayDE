@@ -4,6 +4,7 @@ pub mod docs;
 pub mod error;
 pub mod session;
 pub mod store;
+pub mod syntax;
 
 #[cfg(feature = "server")]
 pub mod dir_store;

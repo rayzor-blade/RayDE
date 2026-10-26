@@ -345,7 +345,7 @@ class EditorPart {
 
 	/** The grammar the editor highlights `file` by. */
 	static function languageOf(file:String):String
-		return StringTools.endsWith(file, ".hx") || StringTools.endsWith(file, ".rays") ? "haxe" : StringTools.endsWith(file, ".json") || StringTools.endsWith(file, ".rayext") || StringTools.endsWith(file, ".raytheme") ? "json" : "plain";
+		return EditorSyntax.languageOf(file);
 
 	function pageOfFile(file:String, selected:Signal<String>):Element {
 		if (ImagePreview.supports(file)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${imagePage(file)}</if></tabs-content>;
@@ -383,10 +383,18 @@ class EditorPart {
 
 	function codeEditor(file:String):Element {
 		if (wb.restoredTabs.remove(file)) wb.languagesPart.check(file);
-		if (languageOf(file) == "plain" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
+		var language = languageOf(file);
+		#if !(wasm || rayde_page)
+		if (language != "haxe" && language != "json" && !nativeSyntax.exists(file)) nativeSyntax.set(file, TextMateSyntax.forFile(file));
+		#end
+		var highlighterSource:ashui.layout.IntoReactive<Null<ashui.components.code.CodeHighlighter>> = (null:Null<ashui.components.code.CodeHighlighter>);
+		#if (wasm || rayde_page)
+		var session = rayde.workspace.PageHost.session;
+		if (language != "haxe" && language != "json" && session != null && session.syntax) highlighterSource = new SessionSyntax(session,file,wb.documentsPart.buffer(file)).highlighter;
+		#end
 		var header = codeBreadcrumb(file) ? breadcrumb(file) : null;
 		if (header != null) ashui.input.Interaction.of(header.node).onPointerDown(event -> if (event.button != null && event.button.match(Right)) event.stopPropagation());
-		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={wb.documentsPart.documentState(file)} header={header} readOnly={Computed.make(() -> wb.contributions.readOnly(file))} language={languageOf(file)} highlighter={nativeSyntax.get(file)} findShortcuts={false}
+		var editor = <code-editor ref={editorRef(file)} id={"rayde-editor-" + haxe.io.Path.withoutExtension(haxe.io.Path.withoutDirectory(file))} state={wb.documentsPart.documentState(file)} header={header} readOnly={Computed.make(() -> wb.contributions.readOnly(file))} language={language} highlighter={nativeSyntax.get(file)} highlighterSource={highlighterSource} findShortcuts={false}
 			onKey={wb.keymapPart.editorKey}
 			lineNumbers={true} folding={true} indentGuides={true} highlightBrackets={true} minimap={true} gutterMarkers={true} stableGutter={true} compactGutter={wb.debugPart.debuggerOf(file) == null} onNavigate={offset -> { var group = groups.owner(file); if (group != null) groups.select(group); wb.definitionAt(file, offset); }} hover={offset -> wb.editorMarksPart.hintAt(file, offset)} tabSize={4} insertSpaces={false} onInput={_ -> {
 				wb.documentsPart.edited(file);

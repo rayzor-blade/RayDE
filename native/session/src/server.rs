@@ -165,6 +165,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
+    workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));
     let _ = link.set(Arc::downgrade(&workspace));
 
     // Outside changes arrive in bursts; each path is read once after they settle.

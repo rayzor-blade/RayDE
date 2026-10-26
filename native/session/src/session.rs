@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}},
+    sync::{Arc, Mutex, OnceLock, atomic::{AtomicU64, Ordering}},
 };
 use subtle::ConstantTimeEq;
 
@@ -36,6 +36,7 @@ pub struct Workspace<S: FileStore> {
     pub store: Arc<S>,
     pub docs: DocHub<S>,
     pub programs: Option<Arc<dyn Programs>>,
+    syntax:OnceLock<Arc<dyn crate::syntax::Syntax>>,
     /// When set, a connection may look at the workspace but changes nothing until it has signed in.
     authority: Option<Arc<dyn Authority>>,
     /// Seconds since the epoch; the runner supplies it, because a Durable Object has no `SystemTime`.
@@ -51,8 +52,10 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, syntax:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
     }
+
+    pub fn set_syntax(&self,syntax:Arc<dyn crate::syntax::Syntax>)->bool {self.syntax.set(syntax).is_ok()}
 
     /// A session with no token is open to whoever reaches it.
     fn accepts(&self, token: Option<&str>) -> bool {
@@ -66,7 +69,8 @@ impl<S: FileStore> Workspace<S> {
     pub fn connect(self: &Arc<Self>, out: Out) -> Connection<S> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         self.connections.lock().unwrap().insert(id, out.clone());
-        Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new() }
+        let syntax=crate::syntax::SyntaxJobs::new(self.syntax.get().cloned(),out.clone());
+        Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new(),syntax }
     }
 
     /// A path changed in the workspace: open documents take it as an edit, and every connection hears of it.
@@ -88,7 +92,7 @@ impl<S: FileStore> Workspace<S> {
     }
 }
 
-/// One client's connection. Requests are handled one at a time, in the order they arrive.
+/// One client's connection. Mutations stay ordered; snapshot syntax queries complete independently.
 pub struct Connection<S: FileStore> {
     workspace: Arc<Workspace<S>>,
     id: u64,
@@ -98,6 +102,7 @@ pub struct Connection<S: FileStore> {
     identity: Option<Identity>,
     docs: Vec<String>,
     programs: Vec<u64>,
+    syntax:crate::syntax::SyntaxJobs,
 }
 
 fn text<'a>(request: &'a Value, key: &str) -> Result<&'a str> {
@@ -118,6 +123,12 @@ impl<S: FileStore> Connection<S> {
             }
         };
         let id = request.get("id").cloned().unwrap_or(Value::Null);
+        if self.ready&&request["op"]=="syntax.highlight" {
+            match self.syntax.start(&request) {
+                Ok(())=>return,
+                Err(error)=>{(self.out)(json!({"id":id,"ok":false,"code":error.code,"message":error.message}).to_string());return;}
+            }
+        }
         let response = match self.dispatch(&request).await {
             Ok(Value::Object(mut fields)) => {
                 fields.insert("id".into(), id);
@@ -156,7 +167,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
+                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -167,6 +178,7 @@ impl<S: FileStore> Connection<S> {
             }
             "fs.list" => Ok(json!({"entries": store.list(request.get("path").and_then(Value::as_str).unwrap_or("")).await?})),
             "fs.stat" => Ok(json!({"entry": store.stat(request.get("path").and_then(Value::as_str).unwrap_or("")).await?})),
+            "syntax.cancel"=>{self.syntax.cancel(text(request,"key")?);Ok(json!({}))},
             "fs.read" => {
                 let path = text(request, "path")?;
                 if store.stat(path).await?.is_some_and(|entry| entry.size > MAX_READ) {
@@ -250,6 +262,7 @@ impl<S: FileStore> Connection<S> {
 
     /// The connection is gone: its documents lose their subscriber, and the programs it started are stopped.
     pub fn close(&mut self) {
+        self.syntax.close();
         self.workspace.connections.lock().unwrap().remove(&self.id);
         for path in self.docs.drain(..) {
             self.workspace.docs.detach(&path, &self.name);
