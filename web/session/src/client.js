@@ -4,6 +4,13 @@
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 
+export function cacheNamespace(address, identity) {
+  if (identity?.version !== 1 || ![identity.authority,identity.workspace,identity.principal].every(value =>
+      typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\u0000-\u001f]/.test(value))) return null;
+  const endpoint = new URL(address);
+  return JSON.stringify([2,endpoint.origin,endpoint.pathname,identity.authority,identity.workspace,identity.principal]);
+}
+
 const b64 = {
   encode(bytes) {
     let text = "";
@@ -31,6 +38,7 @@ export class Doc {
   constructor(client, path) {
     this.client = client;
     this.path = path;
+    this.workspace = client.workspace;
     this.ydoc = new Y.Doc();
     this.text = this.ydoc.getText("text");
     this.closed = false;
@@ -53,11 +61,21 @@ export class Doc {
 
   /** Waits for what the page kept of this document, then catches up with the session. */
   async start() {
-    if (this.client.options.persist !== false && typeof indexedDB !== "undefined") {
-      this.persistence = new IndexeddbPersistence(`rayde:${this.client.workspace ?? "workspace"}:${this.path}`, this.ydoc);
+    await this.recover();
+    await this.sync();
+  }
+
+  async recover() {
+    if (this.client.options.persist !== false && this.client.cacheable && typeof indexedDB !== "undefined") {
+      this.persistence = new IndexeddbPersistence(`rayde:v2:${JSON.stringify([this.workspace,this.path])}`, this.ydoc);
       await this.persistence.whenSynced;
     }
-    await this.sync();
+  }
+
+  async moveRecovery() {
+    await this.persistence?.destroy(); this.persistence = null;
+    this.workspace = this.client.workspace;
+    if (!this.closed) await this.recover();
   }
 
   onChange(listener) {
@@ -89,7 +107,7 @@ export class Doc {
   }
 
   send(update) {
-    if (!this.client.ready || this.closed) return Promise.resolve();
+    if (!this.client.ready || this.client.authenticating || this.closed) return Promise.resolve();
     const work = this.transmit(update, this.localVersion);
     this.pending.add(work);
     work.finally(() => this.pending.delete(work));
@@ -145,6 +163,11 @@ export class SessionClient {
     this.socket = null;
     this.ready = false;
     this.workspace = null;
+    this.cacheable = false;
+    this.cacheIdentity = null;
+    this.volatile = crypto.randomUUID();
+    this.invalidated = null;
+    this.authenticating = false;
     this.hello = null;
     this.next = 1;
     this.waiting = new Map();
@@ -168,6 +191,22 @@ export class SessionClient {
     this.handlers.get(event)?.forEach((handler) => handler(detail));
   }
 
+  invalidate() {
+    if (this.invalidated) return this.invalidated;
+    const error = this.invalidated = new SessionError({code:"workspace-changed",message:"The workspace or account changed. Reopen it to continue; your previous recovery data is kept in this browser."});
+    this.stopped = true; this.ready = false; this.generation++;
+    for (const reply of this.waiting.values()) reply.reject(error);
+    this.waiting.clear();
+    this.emit("context-changed", {message:error.message});
+    this.socket?.close();
+    return error;
+  }
+
+  context(identity) {
+    const stable = cacheNamespace(this.options.url,identity);
+    return {key:stable ?? JSON.stringify(["volatile",this.volatile]),cacheable:stable !== null};
+  }
+
   /** Connects, and keeps reconnecting until `close()`. Resolves when the first connection is ready. */
   connect() {
     return new Promise((resolve, reject) => {
@@ -179,24 +218,36 @@ export class SessionClient {
         if (this.stopped) return;
         const socket = new WebSocket(this.options.url);
         this.socket = socket;
-        socket.onmessage = (message) => this.receive(JSON.parse(message.data));
+        socket.onmessage = (message) => { if (this.socket === socket && !this.invalidated) this.receive(JSON.parse(message.data)); };
         socket.onopen = async () => {
           try {
+            if (this.socket !== socket || this.stopped) return;
             this.hello = await this.rawRequest("hello", { token: this.options.token });
-            const endpoint = new URL(this.options.url);
-            this.workspace = endpoint.origin + endpoint.pathname + ":" + this.hello.name;
+            this.identity = null;
+            if (this.credential) {
+              try {
+                const reply = await this.rawRequest("auth.login", {credential:this.credential});
+                this.identity = {login:reply.login,id:reply.id};
+                this.hello.cacheIdentity = reply.cacheIdentity;
+              } catch { this.pendingAuth = true; }
+            }
+            if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || this.stopped) throw new Error("The connection closed during sign-in.");
+            const context = this.context(this.hello.cacheIdentity);
+            if (this.workspace !== null && (context.key !== this.workspace || !context.cacheable && this.docs.size > 0)) throw this.invalidate();
+            this.workspace = context.key; this.cacheable = context.cacheable; this.cacheIdentity = this.hello.cacheIdentity;
             this.ready = true;
             this.attempt = 0;
-            if (this.credential) await this.login(this.credential).catch(() => {});
             this.pendingAuth = !!this.hello.signin && !this.identity;
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc) => doc.sync().catch(() => {})));
             if (first) { first = false; clearTimeout(initial); resolve(this.hello); }
           } catch (error) {
             if (first) { first = false; clearTimeout(initial); this.close(); reject(error); }
+            else if (this.socket === socket) socket.close();
           }
         };
         socket.onclose = () => {
+          if (this.socket !== socket) return;
           const wasReady = this.ready;
           this.ready = false;
           if (wasReady) { this.generation++; this.emit("disconnected"); }
@@ -244,6 +295,7 @@ export class SessionClient {
   }
 
   request(op, params) {
+    if (this.invalidated) return Promise.reject(this.invalidated);
     if (!this.ready) return Promise.reject(new Error("Not connected."));
     return this.rawRequest(op, params);
   }
@@ -263,18 +315,42 @@ export class SessionClient {
     this.emit("auth-required", { login: url });
   }
 
-  async login(credential) {
-    const reply = await this.request("auth.login", { credential });
-    this.credential = credential;
-    this.identity = { login: reply.login, id: reply.id };
-    this.pendingAuth = false;
-    this.emit("signed-in", this.identity);
-    // Whatever was edited before signing in goes now.
+  login(credential) {
+    if (this.authenticating) return Promise.reject(new Error("Sign-in is already in progress."));
+    const work = this.authenticate(credential);
+    this.authentication = work;
+    const clear = () => { if (this.authentication === work) this.authentication = null; };
+    work.then(clear,clear);
+    return work;
+  }
+
+  async authenticate(credential) {
+    if (!this.ready || this.invalidated) throw this.invalidated ?? new Error("Not connected.");
+    const socket = this.socket;
+    this.authenticating = true;
+    try {
+      const reply = await this.rawRequest("auth.login", { credential });
+      const context = this.context(reply.cacheIdentity), previous = this.cacheIdentity;
+      if (this.identity && this.identity.id !== reply.id || this.workspace !== context.key &&
+          !(previous?.principal === "viewer" && previous.authority === reply.cacheIdentity?.authority && previous.workspace === reply.cacheIdentity?.workspace)) throw this.invalidate();
+      const documents = [...this.docs.values()];
+      await Promise.all(documents.map(doc => doc.started?.catch(() => {})));
+      if (this.socket !== socket || !this.ready || this.invalidated) throw this.invalidated ?? new Error("The connection closed during sign-in.");
+      this.credential = credential;
+      this.identity = { login: reply.login, id: reply.id };
+      this.workspace = context.key; this.cacheable = context.cacheable; this.cacheIdentity = reply.cacheIdentity;
+      this.hello.cacheIdentity = reply.cacheIdentity;
+      await Promise.all(documents.filter(doc => doc.workspace !== this.workspace).map(doc => doc.moveRecovery()));
+      this.pendingAuth = false;
+      this.emit("signed-in", this.identity);
+    } finally { this.authenticating = false; }
     await Promise.all([...this.docs.values()].map((doc) => doc.sync().catch(() => {})));
     return this.identity;
   }
 
   async openDoc(path) {
+    if (this.authentication) await this.authentication;
+    if (this.invalidated) throw this.invalidated;
     let doc = this.docs.get(path);
     if (doc?.closed) { await doc.close(); return this.openDoc(path); }
     if (!doc) {

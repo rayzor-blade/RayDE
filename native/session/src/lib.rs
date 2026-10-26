@@ -10,6 +10,8 @@ pub mod terminal;
 #[cfg(feature = "server")]
 pub mod dir_store;
 #[cfg(feature = "server")]
+mod cache_identity;
+#[cfg(feature = "server")]
 pub mod environment;
 #[cfg(feature = "server")]
 pub mod processes;

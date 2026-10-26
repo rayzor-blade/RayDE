@@ -301,6 +301,8 @@ async fn nobody_edits_before_signing_in_with_a_credential_the_edge_signed() {
     let running = start(options).await.unwrap();
     let mut c = Client::hello(&running).await;
     let me = Identity { login: "darmie".into(), id: 42 };
+    let viewer = c.request(json!({"op":"hello"})).await["cacheIdentity"].clone();
+    assert_eq!(viewer["principal"], "viewer");
 
     // Looking is open.
     assert_eq!(c.request(json!({"op": "fs.read", "path": "a.txt"})).await["data"], "look");
@@ -328,6 +330,9 @@ async fn nobody_edits_before_signing_in_with_a_credential_the_edge_signed() {
     // A genuine one does.
     let ok = c.request(json!({"op": "auth.login", "credential": edge.issue(&me, now + 600)})).await;
     assert_eq!((ok["ok"].as_bool(), ok["login"].as_str()), (Some(true), Some("darmie")));
+    assert_eq!(ok["cacheIdentity"]["principal"], "account:42");
+    assert_eq!(ok["cacheIdentity"]["authority"], viewer["authority"]);
+    assert_eq!(ok["cacheIdentity"]["workspace"], viewer["workspace"]);
     assert_eq!(c.request(json!({"op": "fs.write", "path": "b.txt", "data": "yes"})).await["ok"], true);
     assert_eq!(fs::read_to_string(dir.path().join("b.txt")).unwrap(), "yes");
     // Signing in is per connection.

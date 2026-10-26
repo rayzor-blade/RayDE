@@ -2,16 +2,19 @@ use super::*;
 use futures_util::StreamExt;
 use std::{
     cell::{Cell, RefCell},
+    collections::BTreeSet,
     rc::Rc,
     time::Duration,
 };
+
+type Backend = (WebSocket, WebSocket, Rc<RefCell<BTreeSet<String>>>);
 
 #[durable_object]
 pub struct WorkspaceSession {
     state: State,
     env: Env,
     starting: Rc<Cell<bool>>,
-    backends: Rc<RefCell<Vec<(WebSocket, WebSocket)>>>,
+    backends: Rc<RefCell<Vec<Backend>>>,
 }
 impl DurableObject for WorkspaceSession {
     fn new(state: State, env: Env) -> Self {
@@ -35,9 +38,9 @@ impl DurableObject for WorkspaceSession {
             .backends
             .borrow()
             .iter()
-            .find(|(client, _)| *client == ws)
-            .map(|(_, server)| server.clone());
-        let Some(backend) = backend else {
+            .find(|(client, _, _)| *client == ws)
+            .map(|(_, server, handshakes)| (server.clone(), handshakes.clone()));
+        let Some((backend, handshakes)) = backend else {
             return ws.close(Some(1011), Some("Reconnect to the workspace"));
         };
         if attachment["expires"].as_u64().unwrap_or(0) < now() {
@@ -53,6 +56,17 @@ impl DurableObject for WorkspaceSession {
             return ws.close(Some(1008), Some("Invalid session message"));
         };
         if data["op"] == "hello" {
+            {
+                let mut pending = handshakes.borrow_mut();
+                if pending.len() >= 64 {
+                    return ws.close(Some(1008), Some("Too many session handshakes"));
+                }
+                let id = data["id"].to_string();
+                if id.len() > 128 {
+                    return ws.close(Some(1008), Some("Invalid session request ID"));
+                }
+                pending.insert(id);
+            }
             let value = self
                 .state
                 .storage()
@@ -100,7 +114,7 @@ impl DurableObject for WorkspaceSession {
 }
 impl WorkspaceSession {
     fn disconnect(&self, ws: &WebSocket) {
-        self.backends.borrow_mut().retain(|(client, backend)| {
+        self.backends.borrow_mut().retain(|(client, backend, _)| {
             if client == ws {
                 let _ = backend.close(Some(1000), Some("Closed"));
                 false
@@ -162,11 +176,17 @@ impl WorkspaceSession {
                 .ok_or_else(|| bad(502, "The workspace could not be reached."))?;
             backend.accept()?;
             let pair = WebSocketPair::new()?;
+            let handshakes = Rc::new(RefCell::new(BTreeSet::<String>::new()));
+            let authority = format!("cloud:{}", self.state.id());
+            let workspace = record["id"].clone();
+            let principal = format!("account:{}", data["owner"]);
             self.state.accept_web_socket(&pair.server);
             pair.server.serialize_attachment(&data)?;
-            self.backends
-                .borrow_mut()
-                .push((pair.server.clone(), backend.clone()));
+            self.backends.borrow_mut().push((
+                pair.server.clone(),
+                backend.clone(),
+                handshakes.clone(),
+            ));
             let client = pair.server.clone();
             let backends = self.backends.clone();
             self.state.wait_until(async move {
@@ -175,7 +195,30 @@ impl WorkspaceSession {
                         match event {
                             Ok(WebsocketEvent::Message(message)) => {
                                 if let Some(text) = message.text() {
-                                    if client.send_with_str(text).is_err() {
+                                    let mut text = text;
+                                    if let Ok(mut reply) = serde_json::from_str::<Value>(&text) {
+                                        if reply.get("id").is_some()
+                                            && handshakes.borrow_mut().remove(&reply["id"].to_string())
+                                            && reply["ok"] == true
+                                        {
+                                            // Compute still owns CRDT state: a fresh disk must not replay an older replica's baseline.
+                                            let backend = &reply["cacheIdentity"];
+                                            let valid = backend["version"] == 1
+                                                && ["authority", "workspace"].iter().all(|field|
+                                                    backend[field].as_str().is_some_and(|value|
+                                                        !value.is_empty() && value.len() <= 128));
+                                            reply["cacheIdentity"] = if valid {
+                                                json!({
+                                                    "version": 1,
+                                                    "authority": json!([authority, backend["authority"], backend["workspace"]]).to_string(),
+                                                    "workspace": workspace,
+                                                    "principal": principal
+                                                })
+                                            } else { Value::Null };
+                                            text = reply.to_string();
+                                        }
+                                    }
+                                    if client.send_with_str(&text).is_err() {
                                         break;
                                     }
                                 } else if let Some(bytes) = message.bytes() {
@@ -188,7 +231,7 @@ impl WorkspaceSession {
                         }
                     }
                 }
-                backends.borrow_mut().retain(|(ws, _)| *ws != client);
+                backends.borrow_mut().retain(|(ws, _, _)| *ws != client);
                 let _ = client.close(Some(1011), Some("Workspace disconnected"));
                 let _ = backend.close(Some(1000), Some("Closed"));
             });

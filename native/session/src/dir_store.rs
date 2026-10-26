@@ -1,7 +1,7 @@
 //! A workspace in a directory. Paths that resolve outside it, through `..` or a symlink, are refused.
 use crate::{
     error::{Result, SessionError},
-    store::{Change, Entry, FileStore, INTERNAL, clean},
+    store::{Change, Entry, FileStore, StoreIdentity, INTERNAL, clean},
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,6 +15,7 @@ pub struct DirStore {
     root: PathBuf,
     state: PathBuf,
     counter: AtomicU64,
+    identity: StoreIdentity,
 }
 
 fn io_error(error: io::Error) -> SessionError {
@@ -45,9 +46,14 @@ impl DirStore {
         let root = std::fs::canonicalize(root)?;
         let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
         let key = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
-        let state = state_root.as_ref().join(key).join("state");
+        let namespace = state_root.as_ref().join(key);
+        let state = namespace.join("state");
         migrate_state(&root.join(INTERNAL).join("state"), &state)?;
-        Ok(Self { state, root, counter: AtomicU64::new(0) })
+        let identity = StoreIdentity {
+            authority: crate::cache_identity::persistent_id(&state_root.as_ref().join("authority.id"))?,
+            workspace: crate::cache_identity::persistent_id(&state.join("workspace.id"))?,
+        };
+        Ok(Self { state, root, identity, counter: AtomicU64::new(0) })
     }
 
     pub fn root(&self) -> &Path {
@@ -142,6 +148,7 @@ fn private_directories(path: &Path) -> io::Result<()> {
 }
 
 impl FileStore for DirStore {
+    fn cache_identity(&self) -> Option<StoreIdentity> { Some(self.identity.clone()) }
     fn name(&self) -> String {
         self.root.file_name().map_or_else(|| "workspace".into(), |n| n.to_string_lossy().into_owned())
     }

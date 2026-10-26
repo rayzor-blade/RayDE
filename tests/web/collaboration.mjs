@@ -39,7 +39,8 @@ const server = createServer((request,response) => {
     response.end(body);
   } catch { response.writeHead(404).end(); }
 }).listen(webPort,"127.0.0.1");
-const run = () => spawn(join(root,"native/session/target/debug/rayde-session"),["--root",workspace,"--port",String(sessionPort),"--token","collaboration-test","--origin",`http://127.0.0.1:${webPort}`],{stdio:"ignore"});
+let state = mkdtempSync(join(tmpdir(),"rayde-crdt-state-"));
+const run = () => spawn(join(root,"native/session/target/debug/rayde-session"),["--root",workspace,"--state-root",state,"--port",String(sessionPort),"--token","collaboration-test","--origin",`http://127.0.0.1:${webPort}`],{stdio:"ignore"});
 let session = run(), browser;
 const logs = {a:[],b:[]};
 const report = {ok:false,workspace};
@@ -122,8 +123,19 @@ try {
   await until(() => projection("a").some(p => p.result?.text === before && p.id === requests("a").findLast(r => r.op === "view.open").id),"reopened document retains its text");
   assert.equal(projection("a").filter(p => p.ev === "view.error").length,0);
   assert.equal(projection("b").filter(p => p.ev === "view.error").length,0);
+  report.reload = report.tabLifecycle = true;
+  await new Promise(r => { session.once("exit",r); session.kill("SIGTERM"); });
+  await sleep(800);
+  state = mkdtempSync(join(tmpdir(),"rayde-crdt-new-state-"));
+  session = run();
+  for (const who of ["a","b"]) await until(() => projection(who).some(p => p.ev === "view.error" && p.message.includes("workspace or account changed")),who + " fences replacement document state");
+  await append(a,"// must not reach replacement A\n");
+  await append(b,"// must not reach replacement B\n");
+  await sleep(500);
+  assert.equal(file(),before,"frozen editor bindings cannot write to a new recovery context");
+  await a.screenshot({path:join(shots,"a-replacement-blocked.png")});
   assert.equal(logs.a.concat(logs.b).some(line => /PAGE ERROR|uncaught exception|RayDE stopped:/.test(line)),false);
-  report.reload = report.tabLifecycle = report.ok = true;
+  report.replacementFence = report.ok = true;
 } finally {
   writeFileSync(join(shots,"result.json"),JSON.stringify(report,null,2));
   for (const who of ["a","b"]) writeFileSync(join(shots,who + ".log"),logs[who].join("\n"));

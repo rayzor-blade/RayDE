@@ -119,20 +119,30 @@ export class EditorDocument {
 
 /** Channel requests are serialized per document, including acknowledgements and save barriers. */
 export class EditorDocuments {
-  constructor(client, emit) { this.client = client; this.emit = emit; this.documents = new Map(); this.queues = new Map(); this.opening = new Set(); this.closed = false; }
+  constructor(client, emit) {
+    this.client = client; this.emit = emit; this.documents = new Map(); this.queues = new Map(); this.opening = new Set(); this.closed = false; this.failure = null;
+    this.unsubscribe = client.on?.("context-changed", ({message}) => {
+      this.failure = message;
+      for (const view of this.documents.values()) {
+        view.ready = false;
+        this.emit({ev:"view.error",handle:view.handle,message});
+      }
+    });
+  }
 
   request(op, request) {
     const handle = request.handle;
     if (typeof handle !== "string" || handle.length > 1024) return Promise.reject(new Error("Invalid editor handle."));
     const work = (this.queues.get(handle) ?? Promise.resolve()).catch(() => {}).then(async () => {
       if (this.closed) throw new Error("The editor session is closed.");
+      if (this.failure && op !== "view.close") throw new Error(this.failure);
       if (op === "view.open") {
         if (this.documents.has(handle) || this.documents.size + this.opening.size >= 256) throw new Error("Too many shared documents are open.");
         if (typeof request.path !== "string" || this.opening.has(request.path) || [...this.documents.values()].some(view => view.doc.path === request.path)) throw new Error("This document already has an editor binding.");
         this.opening.add(request.path);
         let doc;
         try { doc = await this.client.openDoc(request.path); } finally { this.opening.delete(request.path); }
-        if (this.closed) { await doc.close(); throw new Error("The editor session is closed."); }
+        if (this.closed || this.failure) { await doc.close(); throw new Error(this.failure ?? "The editor session is closed."); }
         const view = new EditorDocument(doc, handle, this.emit);
         this.documents.set(handle, view);
         return view.snapshot();
@@ -157,6 +167,7 @@ export class EditorDocuments {
 
   close() {
     this.closed = true;
+    this.unsubscribe?.();
     for (const view of this.documents.values()) { view.dispose(); void view.doc.close(); }
     this.documents.clear();
   }

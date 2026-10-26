@@ -44,6 +44,7 @@ export const start = ask => serve(ask, {
     const documents = client ? new EditorDocuments(client, answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => answer({ ev: "session.disconnected", generation:client.generation }));
+    client?.on("context-changed", ({message}) => answer({ev:"session.disconnected",generation:client.generation,message}));
     client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation }));
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {

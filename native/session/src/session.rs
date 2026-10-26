@@ -118,6 +118,13 @@ fn bytes(request: &Value, key: &str) -> Result<Vec<u8>> {
 }
 
 impl<S: FileStore> Connection<S> {
+    fn cache_identity(&self) -> Option<Value> {
+        self.workspace.store.cache_identity().map(|identity| json!({
+            "version":1,"authority":identity.authority,"workspace":identity.workspace,
+            "principal":self.identity.as_ref().map(|identity| format!("account:{}",identity.id))
+                .unwrap_or_else(|| if self.workspace.authority.is_some() {"viewer".into()} else {"workspace".into()})
+        }))
+    }
     pub async fn handle(&mut self, raw: &str) {
         let request: Value = match serde_json::from_str(raw) {
             Ok(value @ Value::Object(_)) => value,
@@ -171,14 +178,14 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone())}))
+                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
                 let identity = authority.verify(text(request, "credential")?, (workspace.clock)()).ok_or_else(|| SessionError::new("unauthorised", "The credential is not genuine or has expired."))?;
-                let reply = json!({"login": identity.login, "id": identity.id});
                 self.identity = Some(identity);
-                Ok(reply)
+                let identity = self.identity.as_ref().unwrap();
+                Ok(json!({"login":identity.login,"id":identity.id,"cacheIdentity":self.cache_identity()}))
             }
             "fs.list" => Ok(json!({"entries": store.list(request.get("path").and_then(Value::as_str).unwrap_or("")).await?})),
             "fs.stat" => Ok(json!({"entry": store.stat(request.get("path").and_then(Value::as_str).unwrap_or("")).await?})),
