@@ -125,7 +125,7 @@ export class EditorDocuments {
       this.failure = message;
       for (const view of this.documents.values()) {
         view.ready = false;
-        this.emit({ev:"view.error",handle:view.handle,message});
+        this.emit({ev:"view.error",handle:view.handle,code:"workspace-changed",message});
       }
     });
   }

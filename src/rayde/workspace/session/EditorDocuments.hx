@@ -14,21 +14,30 @@ class EditorDocuments {
 	final unsubscribe:Void->Void;
 	final changed:(String, Bool)->Void;
 	final failed:String->Void;
+	final warning:String->Void;
 	final selection:String->CodeSelection;
 	final composing:String->Bool;
 	final revision = Signal.make(0);
 	final connected = Signal.make(true);
 	var next = 0;
+	var contextChanged = false;
 	final prefix = Std.string(Std.random(0x3fffffff)) + ":";
 
-	public function new(client:SessionClient, changed:(String, Bool)->Void, failed:String->Void, selection:String->CodeSelection, composing:String->Bool) {
+	public function new(client:SessionClient, changed:(String, Bool)->Void, failed:String->Void, selection:String->CodeSelection, composing:String->Bool, ?warning:String->Void) {
 		this.client = client; this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
+		this.warning = warning == null ? failed : warning;
 		unsubscribe = client.subscribe(event -> {
-			if (event.ev == "session.disconnected") connected.set(false);
+			if (event.ev == "session.disconnected") {
+				connected.set(false);
+				if (event.code == "workspace-changed" && !contextChanged) {
+					contextChanged = true;
+					this.warning(event.message);
+				}
+			}
 			if (event.ev == "session.connected") connected.set(true);
 			if (event.ev != "view.remote" && event.ev != "view.error") return;
 			for (binding in bindings) if (binding.handle == event.handle) {
-				if (event.ev == "view.error") binding.fail(event.message); else binding.remote = event;
+				if (event.ev == "view.error") binding.fail(event.message, event.code != "workspace-changed"); else binding.remote = event;
 				break;
 			}
 		});
@@ -117,11 +126,11 @@ private class EditorBinding {
 		acceptBuffer();
 		saving = {future:client.requestAsync("view.save", {handle:handle}), text:known, done:done};
 	}
-	public function fail(message:String):Void {
+	public function fail(message:String, report = true):Void {
 		if (closed || broken) return;
 		broken = true; failure.set(message); blocked.set(true);
 		if (saving != null) { var completed = saving; saving = null; completed.done(message,completed.text); }
-		failed(haxe.io.Path.withoutDirectory(file) + ": " + message);
+		if (report) failed(haxe.io.Path.withoutDirectory(file) + ": " + message);
 	}
 	function apply(message:Dynamic):Void {
 		var position = selection(), parts:Array<CodePatch> = message.parts == null ? [] : cast message.parts;

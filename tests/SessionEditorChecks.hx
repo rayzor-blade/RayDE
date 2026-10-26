@@ -8,7 +8,7 @@ import rayde.workspace.session.EditorDocuments;
 class SessionEditorChecks {
 	static function check(ok:Bool, message:String):Void if (!ok) throw message;
 	static function main():Void {
-		var wire = new EditorChannel(), client = SessionClient.over(wire), changes:Array<Bool> = [], failures:Array<String> = [];
+		var wire = new EditorChannel(), client = SessionClient.over(wire), changes:Array<Bool> = [], failures:Array<String> = [], warnings:Array<String> = [];
 		rayde.workspace.PageHost.session = client;
 		var storage = rayde.workspace.PageHost.personalRoot("/work");
 		check(storage != rayde.workspace.PageHost.personalRoot("/work/other"),"projects within one session keep separate personal metadata");
@@ -17,7 +17,7 @@ class SessionEditorChecks {
 		var state = new CodeEditorState(), cursor:CodeSelection = {caret:3,anchor:3};
 		state.value.set("abc");
 		var docs = new EditorDocuments(client, (_, local) -> changes.push(local), failures.push,
-			_ -> cursor, _ -> false);
+			_ -> cursor, _ -> false, warnings.push);
 		docs.attach("/work/a.txt",state,"abc");
 		check(docs.readOnly("/work/a.txt"),"the editor must wait asynchronously for its CRDT projection");
 		var open = wire.sent.pop(true);
@@ -50,11 +50,21 @@ class SessionEditorChecks {
 		wire.reply({id:save.id,ok:false,code:"offline",message:"Offline"});
 		settle(client,docs,() -> saved);
 		check(refused && state.value.get() == "remote abc!","failed saves preserve edits made while saving");
+		var reason = "The workspace changed. Reopen it to continue.";
+		wire.reply({ev:"view.error",handle:open.handle,code:"workspace-changed",message:reason});
+		settle(client,docs,() -> docs.readOnly("/work/a.txt"));
+		check(failures.length == 0,"context changes do not repeat warnings as per-file status messages");
+		var notices = 0, unsubscribe = client.subscribe(event -> { if (event.ev == "session.disconnected" && event.code == "workspace-changed") notices++; });
+		for (_ in 0...2) wire.reply({ev:"session.disconnected",generation:1,code:"workspace-changed",message:reason});
+		settle(client,docs,() -> notices == 2);
+		check(warnings.length == 1 && warnings[0] == reason,"one session-level warning reaches the toast callback");
+		check(state.value.get() == "remote abc!" && docs.message("/work/a.txt") == "Document sync paused","the warning preserves the read-only recovery fence and text");
+		unsubscribe();
 		docs.release("/work/a.txt");
 		check(wire.sent.pop(true).op == "view.close" && state.onUndo == null && state.onTransaction == null,"closing releases protocol and editor hooks");
 		check(!docs.owns("/work/a.txt") && failures.length == 0,"no document binding remains after release");
 		docs.close(); client.close();
-		Sys.println("session editor: readiness, stale projections, edits, undo, nonblocking save failure and release passed");
+		Sys.println("session editor: readiness, projections, edits, undo, save failure, context warning deduplication and release passed");
 	}
 	static function settle(client:SessionClient, docs:EditorDocuments, ready:Void->Bool):Void {
 		var end = haxe.Timer.stamp() + 3;

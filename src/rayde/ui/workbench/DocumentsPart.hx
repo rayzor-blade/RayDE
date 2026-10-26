@@ -117,7 +117,9 @@ class DocumentsPart {
 		}, wb.say, file -> {
 			var editor = wb.editorOf(file), state = documents.get(file);
 			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
-		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; });
+		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; }, message -> {
+			if (!wb.gone) Toaster.show({title:"Workspace sync paused", description:message, variant:Warning, duration:0});
+		});
 		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
 		wb.contributions.onFrame(sessionDocs.frame);
 		wb.contributions.onClose(sessionDocs.close);

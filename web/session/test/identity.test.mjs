@@ -81,6 +81,7 @@ test('editor projections become read-only on replacement and release their event
  await views.request('view.open',{handle:'a',path:'a'});await views.request('view.ready',{handle:'a'});
  callbacks.get('context-changed')({message:'Reopen this workspace'});
  assert.equal(events.at(-1).ev,'view.error');
+ assert.equal(events.at(-1).code,'workspace-changed');
  await assert.rejects(views.request('view.edit',{handle:'a',epoch:0,serial:1,parts:[{from:0,removed:'',inserted:'wrong'}]}),/Reopen/);
  assert.equal(ydoc.getText('text').toString(),'old workspace');
  await views.request('view.close',{handle:'a'});views.close();assert.equal(callbacks.size,0);ydoc.destroy();
