@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -33,6 +33,8 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     host: "127.0.0.1",
     durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true } },
     durableObjectsPersist: persist,
+    r2Buckets: files ? ["WORKSPACE_FILES"] : [],
+    r2Persist: persist,
     bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: "test-runner-secret", ...(asset ? { ASSETS_ORIGIN: asset } : {}) },
     serviceBindings: {
       GITHUB: async request => {

@@ -23,6 +23,9 @@
       ]
     }
   ],
+  "r2_buckets": [
+    { "binding": "WORKSPACE_FILES", "bucket_name": "rayde-workspace-files" }
+  ],
   "vars": {
     "ASSETS_ORIGIN": "http://127.0.0.1:8731",
     "APP_ORIGIN": "http://127.0.0.1:8787"

@@ -3,6 +3,7 @@ mod workspace;
 mod checkpoints;
 mod journal;
 mod recovery;
+mod file_payloads;
 pub use account::AccountSession;
 pub use workspace::WorkspaceSession;
 

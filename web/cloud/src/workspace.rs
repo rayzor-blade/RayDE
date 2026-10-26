@@ -57,7 +57,7 @@ impl Drop for RecoveryAdmission {
     }
 }
 
-async fn deadline<F: std::future::Future>(
+pub(crate) async fn deadline<F: std::future::Future>(
     future: F,
     seconds: u64,
 ) -> std::result::Result<F::Output, ()> {
@@ -92,6 +92,10 @@ async fn forward_filesystem(
     let source=pending.borrow().source.clone().filter(|_|pending.borrow().file_mutations && !pending.borrow().closed);
     let Some(source)=source else {return filesystem_failure(id,"Update or reconnect the workspace host before changing files.");};
     let mutation=match checkpoints.mutation_begin(&source,&request).await {Ok(mutation)=>mutation,Err(error)=>return filesystem_failure(id,&error.message)};
+    if expires < now() {
+        let _ = checkpoints.mutation_refuse(&mutation).await;
+        return filesystem_failure(id,"Sign in again before changing files.");
+    }
     let result=compute(&backend,&pending,request).await;
     if let Err(error)=checkpoints.mutation_finish(&mutation,result.as_ref().ok()).await {return filesystem_failure(id,&error.message);}
     match result {
@@ -209,7 +213,7 @@ pub struct WorkspaceSession {
 }
 impl DurableObject for WorkspaceSession {
     fn new(state: State, env: Env) -> Self {
-        let checkpoints = Rc::new(crate::checkpoints::Checkpoints::new(state.storage()));
+        let checkpoints = Rc::new(crate::checkpoints::Checkpoints::new(state.storage(), env.bucket("WORKSPACE_FILES").ok(), &state.id().to_string()));
         Self {
             state,
             env,
@@ -427,11 +431,16 @@ impl WorkspaceSession {
             || req.path() == "/journal"
             || req.path() == "/journals"
             || req.path() == "/recovery/plan"
+            || req.path() == "/recovery/file"
         {
             if value.is_none() {
                 return Err(bad(404, "Workspace not found."));
             }
-            let result = if req.path() == "/recovery/plan" {
+            let result = if req.path() == "/recovery/file" {
+                let mutation = data["mutation"].as_u64().ok_or_else(||bad(400,"The file mutation is invalid."))?;
+                let revision = data["revision"].as_u64().ok_or_else(||bad(400,"The recovery revision is invalid."))?;
+                self.checkpoints.file_payload(text(&data,"source")?,mutation,revision).await?
+            } else if req.path() == "/recovery/plan" {
                 let expected=match data.get("revision") {None|Some(Value::Null)=>None,Some(value)=>Some(value.as_u64().ok_or_else(||bad(400,"The recovery revision is invalid."))?)};
                 self.checkpoints.recovery_plan(text(&data,"source")?,expected).await?
             } else if req.path() == "/journals" {

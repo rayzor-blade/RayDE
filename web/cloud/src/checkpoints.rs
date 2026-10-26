@@ -123,12 +123,14 @@ pub(crate) async fn reserve(
 pub struct Checkpoints {
     pub(crate) storage: Storage,
     pub(crate) gate: Mutex<()>,
+    pub(crate) files: crate::file_payloads::FilePayloads,
 }
 impl Checkpoints {
-    pub fn new(storage: Storage) -> Self {
+    pub fn new(storage: Storage, bucket: Option<Bucket>, workspace: &str) -> Self {
         Self {
             storage,
             gate: Mutex::new(()),
+            files: crate::file_payloads::FilePayloads::new(bucket, workspace),
         }
     }
 

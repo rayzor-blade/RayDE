@@ -23,6 +23,8 @@ Build `native/session` before running tests. The gateway test starts an isolated
 
 For a locally configured GitHub App, copy `.dev.vars.example` to `.dev.vars`, fill it outside version control and run `npm run dev`. Configure the App callback to `http://127.0.0.1:8787/auth/github/callback`. Set its post-install setup URL to `http://127.0.0.1:8787/?repositories=1`. Grant repository Contents read access and allow users to choose installations/repositories. An expired user token can be refreshed if expiring tokens are enabled for the App. `APP_ORIGIN` is the editor origin; `ASSETS_ORIGIN` serves the built browser assets behind the same origin. `LOCAL_DEV=1` permits local HTTP/WS; omit it for deployment and use HTTPS/WSS.
 
+`WORKSPACE_FILES` binds private R2 payload storage. Local tests and `wrangler dev` use emulated R2; they need no Cloudflare account. Before deployment, create the bucket named in `wrangler.jsonc` and keep public bucket access disabled. A missing binding refuses hosted file writes before compute executes them.
+
 GitHub authorization tokens are kept in account Durable Object storage. Browser responses contain a safe account view, a CSRF token, repository metadata and workspace status. Account cookies are HttpOnly and SameSite=Lax, with Secure on HTTPS. OAuth state expires after ten minutes; account sessions expire after seven days. Sign-out removes the account and disconnects its workspace sockets. Repository access is checked again on workspace opening and socket connection.
 
 ## Compute provider contract
@@ -66,11 +68,15 @@ This protects acknowledged browser edits and compute dependencies captured at th
 
 ## Filesystem fencing and restore selection
 
-Hosted `fs.write`, `fs.mkdir`, `fs.remove` and `fs.rename` use the same bounded FIFO as document recovery. Compute executes only after a mutation intent is durable. Confirmed outcomes return a `recoveryMutation` receipt; unknown outcomes remain fences. The ledger stores paths and outcomes, with no file body. Its prototype limits are 1,024 mutations, 512 selected document heads and 1 MiB of metadata. File requests may reserve up to 16 MiB of queue space; document updates retain their 8 MiB admission bound.
+Hosted `fs.write`, `fs.mkdir`, `fs.remove` and `fs.rename` use the same bounded FIFO as document recovery. Compute executes only after a mutation intent is durable. Confirmed outcomes return a `recoveryMutation` receipt; unknown outcomes remain fences. The ledger stores paths, outcomes and write-payload references. Its prototype limits are 1,024 mutations, 512 selected document heads and 1 MiB of metadata. File requests may reserve up to 16 MiB of queue space; document updates retain their 8 MiB admission bound.
+
+Direct file writes reserve payload space with the intent, then upload to immutable, SHA-256-addressed R2 objects scoped to the workspace object. Compute receives the request only after upload or verified reuse. Failed/interrupted uploads remain accounted for; upload failures never reach compute. Text, binary and empty files are supported. Retained payloads survive overwrite/delete and deduplicate within a workspace. The prototype allows 12 MiB per file and 64 MiB / 1,024 distinct payloads per workspace, separate from document recovery and paid-tier limits. Retention and reclamation are not yet implemented.
 
 Confirmed Save and journal records update a selected head atomically with their payload and accounting. Direct writes and directory operations invalidate older matching heads. Same-content barriers can reselect a record; recreating a directory cannot revive older child snapshots. Historical imports cannot promote a selection, and Save refuses imported history missing from compute.
 
 The trusted control plane calls `/recovery/plan {owner, source, revision?}` to list records, invalidations and mutation outcomes. The source is mandatory and ownership is checked; the endpoint is not public. A stale revision returns 409. Selected records carry a payload stamp for verification during materialization.
+
+`/recovery/file {owner, source, mutation, revision}` exports a confirmed write's bytes as base64. Source and revision are mandatory; pending, uncertain and refused operations cannot be exported. Length and SHA-256 are checked on export, and the catalog revision is checked again after object I/O. This is an `operation-payload`, not the current file contents: a materializer must apply the complete ordered history and respect later moves/deletions. Neither this route nor R2 object keys are exposed through the public gateway.
 
 The response is a partial `confirmed-document-heads` catalog with `automaticRestore:false`. Full filesystem state, reconciliation of external/program writes and path identities, and fenced compute leases are required before automatic restoration. Uncertain mutations cannot be cleared by a later snapshot alone.
 

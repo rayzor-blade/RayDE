@@ -39,6 +39,8 @@ pub struct Mutation {
     outcome: String,
     code: Option<String>,
     allocated: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    payload: Option<crate::file_payloads::Payload>,
 }
 fn unavailable() -> Failure {
     bad(503, "The workspace recovery catalog is unavailable.")
@@ -256,7 +258,8 @@ impl Checkpoints {
         } else {
             (path(text(request, "path")?)?, None)
         };
-        let _guard = self.gate.lock().await;
+        let bytes = self.files.decode(request)?;
+        let guard = self.gate.lock().await;
         let mut catalog = catalog(&self.storage).await?;
         if catalog.mutations >= MAX_MUTATIONS {
             return Err(bad(
@@ -266,6 +269,13 @@ impl Checkpoints {
         }
         advance(&mut catalog)?;
         catalog.mutations += 1;
+        let (payload, mut values) = if let Some(bytes) = &bytes {
+            let (payload, values) =
+                crate::file_payloads::FilePayloads::reserve(&self.storage, bytes).await?;
+            (Some(payload), values)
+        } else {
+            (None, BTreeMap::new())
+        };
         let mut mutation = Mutation {
             id: catalog.mutations,
             source: source.into(),
@@ -276,6 +286,7 @@ impl Checkpoints {
             outcome: "pending".into(),
             code: None,
             allocated: 0,
+            payload,
         };
         mutation.allocated = serde_json::to_vec(&mutation)
             .map_err(|_| unavailable())?
@@ -285,13 +296,23 @@ impl Checkpoints {
             .bytes
             .checked_add(mutation.allocated)
             .ok_or_else(unavailable)?;
-        let mut values = BTreeMap::new();
         values.insert(
             format!("recovery-mutation:{}", mutation.id),
             json!(&mutation),
         );
         root(&mut values, catalog)?;
         put(&self.storage, values).await?;
+        drop(guard);
+        if let (Some(payload), Some(bytes)) = (&mutation.payload, bytes) {
+            let stored = crate::workspace::deadline(self.files.store(payload, bytes), 15)
+                .await
+                .unwrap_or_else(|_| Err(bad(503, "Workspace file recovery storage timed out.")));
+            if let Err(error) = stored {
+                self.finish_mutation(&mutation, None, Some("payload-unavailable"))
+                    .await?;
+                return Err(error);
+            }
+        }
         Ok(mutation)
     }
 
@@ -299,6 +320,20 @@ impl Checkpoints {
         &self,
         mutation: &Mutation,
         reply: Option<&Value>,
+    ) -> AppResult<()> {
+        self.finish_mutation(mutation, reply, None).await
+    }
+
+    pub(crate) async fn mutation_refuse(&self, mutation: &Mutation) -> AppResult<()> {
+        self.finish_mutation(mutation, None, Some("session-expired"))
+            .await
+    }
+
+    async fn finish_mutation(
+        &self,
+        mutation: &Mutation,
+        reply: Option<&Value>,
+        refused: Option<&str>,
     ) -> AppResult<()> {
         let _guard = self.gate.lock().await;
         let mut catalog = catalog(&self.storage).await?;
@@ -319,7 +354,10 @@ impl Checkpoints {
                 .take(64)
                 .collect::<String>()
         });
-        stored.outcome = if reply.is_some_and(|reply| reply["ok"] == true) {
+        stored.outcome = if let Some(code) = refused {
+            stored.code = Some(code.into());
+            "refused"
+        } else if reply.is_some_and(|reply| reply["ok"] == true) {
             "applied"
         } else if matches!(
             stored.code.as_deref(),
@@ -350,6 +388,35 @@ impl Checkpoints {
         values.insert(format!("recovery-mutation:{}", stored.id), json!(stored));
         root(&mut values, catalog)?;
         put(&self.storage, values).await
+    }
+
+    pub(crate) async fn file_operation(
+        &self,
+        source: &str,
+        mutation: u64,
+        revision: u64,
+    ) -> AppResult<(crate::file_payloads::Payload, Mutation)> {
+        if !workspace_id(source) || mutation == 0 {
+            return Err(bad(400, "The file recovery context is invalid."));
+        }
+        let catalog = catalog(&self.storage).await?;
+        if revision != catalog.revision {
+            return Err(bad(409, "Workspace recovery changed. Request a new plan."));
+        }
+        let operation = self
+            .storage
+            .get::<Mutation>(&format!("recovery-mutation:{mutation}"))
+            .await?
+            .filter(|operation| operation.source == source && operation.id == mutation)
+            .ok_or_else(|| bad(404, "File recovery operation not found."))?;
+        if operation.operation != "fs.write" || operation.outcome != "applied" {
+            return Err(bad(409, "The file operation is not confirmed."));
+        }
+        let payload = operation
+            .payload
+            .clone()
+            .ok_or_else(|| bad(409, "The file operation has no recovery payload."))?;
+        Ok((payload, operation))
     }
 
     pub async fn recovery_plan(&self, source: &str, expected: Option<u64>) -> AppResult<Value> {
@@ -415,8 +482,9 @@ impl Checkpoints {
                 documents.push(head);
             }
         }
+        let payloads = crate::file_payloads::FilePayloads::info(&self.storage).await?;
         Ok(
-            json!({"version":1,"source":source,"revision":catalog.revision,"scope":"confirmed-document-heads","automaticRestore":false,"requires":["complete-filesystem-state","external-change-reconciliation","compute-lease","stable-document-identities"],"documents":documents,"invalidated":invalidated,"mutations":mutations}),
+            json!({"version":1,"source":source,"revision":catalog.revision,"scope":"confirmed-document-heads","automaticRestore":false,"requires":["complete-filesystem-state","external-change-reconciliation","compute-lease","stable-document-identities"],"documents":documents,"invalidated":invalidated,"mutations":mutations,"filesystemPayloads":payloads}),
         )
     }
 }

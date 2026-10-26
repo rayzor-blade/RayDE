@@ -107,6 +107,8 @@ This protects acknowledged browser edits and dependencies captured at their barr
 
 Hosted filesystem writes, directory creation, removal and rename share the document recovery FIFO. A durable intent precedes compute execution; its confirmed result precedes the reply. Interrupted or uncertain operations remain recovery fences. Catalog metadata is bounded separately from document payloads, and file request bodies are not stored in this ledger.
 
+Direct writes reserve private R2 payload space atomically with their intent, then upload or verify a workspace-scoped immutable object before compute execution. Failed uploads cannot change compute files and remain accounted for. Retained versions deduplicate by content within a workspace. The internal `/recovery/file {owner, source, mutation, revision}` exports only confirmed operation payloads with length/digest and revision checks; later moves/deletions still apply. Local tests emulate R2 without a cloud account. See [filesystem recovery](../../web/cloud/README.md#filesystem-fencing-and-restore-selection) for storage setup, quotas and current scope. Initial checkout/Git state, external writes, saved-versus-dirty restoration and payload reclamation remain separate work.
+
 Compute-confirmed Save and journal barriers atomically select a current record with a revision and payload stamp. Even an unchanged payload can supersede an older applied mutation. Historical checkpoint imports cannot select a head; changing a selected imported record invalidates it. Save refuses recovery history that compute does not contain, including deletion-only changes with unchanged vectors.
 
 The internal owner-checked `/recovery/plan {owner, source, revision?}` lists selected records, invalidations and mutations for one compute source. A stale revision returns 409. Directory invalidations respect path boundaries, and recreating a directory does not reselect older child snapshots. Pending and uncertain operations remain blocked until reconciled.
@@ -159,6 +161,8 @@ Hidden terminals continue running with bounded scrollback but stop streaming scr
 | Queued recovery operations / encoded update payload | 256 / 8 MiB |
 | Queued filesystem request bodies (shared recovery queue) | 16 MiB |
 | Recovery catalog mutations / heads / metadata | 1,024 / 512 / 1 MiB |
+| Direct-write payload per file / retained workspace bytes | 12 MiB / 64 MiB |
+| Distinct retained direct-write payloads per workspace | 1,024 |
 | Terminals per connection / workspace | 4 / 8 |
 | Terminal screen | 300 columns × 100 rows |
 | Scrollback per terminal | 1,000 lines |
