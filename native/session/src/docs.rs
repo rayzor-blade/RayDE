@@ -15,6 +15,8 @@ use yrs::{
 
 const DISK: &[u8] = b"disk";
 const LOAD: &[u8] = b"load";
+/// Distinct materialized documents retained by one workspace.
+pub const MAX_DOCUMENTS: usize = 512;
 
 /// Where an update came from, so it is not sent back to its sender and the file is not rewritten for its own text.
 fn origin_of(client: &str) -> yrs::Origin {
@@ -107,11 +109,15 @@ impl<S: FileStore> DocHub<S> {
     }
 
     async fn load(&self, path: &str) -> Result<Arc<OpenDoc>> {
-        let disk = match self.store.stat(path).await? {
+        match self.store.stat(path).await? {
             Some(entry) if entry.kind != "file" => return Err(SessionError::new("wrong-kind", "That is not a file.")),
-            Some(_) => String::from_utf8(self.store.read(path).await?).map_err(|_| SessionError::new("not-text", "The file is not UTF-8 text."))?,
-            None => String::new(),
-        };
+            Some(entry) if entry.size > crate::session::MAX_READ => return Err(SessionError::new("too-large", "The file is too large to open as a shared document.")),
+            Some(_) => {},
+            None => return Err(SessionError::new("not-found", "No such file. Create it before opening a shared document.")),
+        }
+        let bytes = self.store.read(path).await?;
+        if bytes.len() as u64 > crate::session::MAX_READ { return Err(SessionError::new("too-large", "The file is too large to open as a shared document.")); }
+        let disk = String::from_utf8(bytes).map_err(|_| SessionError::new("not-text", "The file is not UTF-8 text."))?;
         let doc = Doc::with_options(Options { offset_kind: OffsetKind::Utf16, ..Options::default() });
         let text = doc.get_or_insert_text("text");
         if let Some(saved) = self.store.read_state(&format!("doc:{path}")).await? {
@@ -159,6 +165,9 @@ impl<S: FileStore> DocHub<S> {
         let open = match self.get(path) {
             Some(open) => open,
             None => {
+                if self.open.lock().unwrap().len() >= MAX_DOCUMENTS {
+                    return Err(SessionError::new("busy", "This workspace has too many shared documents open. Close a document before opening another."));
+                }
                 let open = self.load(path).await?;
                 self.open.lock().unwrap().insert(path.to_string(), open.clone());
                 open

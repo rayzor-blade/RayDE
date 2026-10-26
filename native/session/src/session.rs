@@ -18,6 +18,8 @@ pub const PROTOCOL: u32 = 1;
 pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 /// The largest file `fs.read` returns in one message, in bytes.
 pub const MAX_READ: u64 = 8 * 1024 * 1024;
+/// Unique document subscriptions owned by one connection.
+pub const MAX_CONNECTION_DOCUMENTS: usize = 256;
 
 /// Where a connection's responses and events go: the runner's socket, or a test's queue.
 pub type Out = Arc<dyn Fn(String) + Send + Sync>;
@@ -220,6 +222,9 @@ impl<S: FileStore> Connection<S> {
             "fs.rename" => workspace.docs.rename(&clean(text(request, "from")?)?, &clean(text(request, "to")?)?).await.map(|_| json!({})),
             "doc.open" => {
                 let path = clean(text(request, "path")?)?;
+                if !self.docs.contains(&path) && self.docs.len() >= MAX_CONNECTION_DOCUMENTS {
+                    return Err(SessionError::new("busy", "This connection has too many shared documents open. Close a document before opening another."));
+                }
                 let vector = match request.get("vector").and_then(Value::as_str) {
                     Some(encoded) => Some(B64.decode(encoded).map_err(|_| SessionError::new("bad-request", "`vector` is not base64."))?),
                     None => None,
@@ -233,7 +238,11 @@ impl<S: FileStore> Connection<S> {
                 }
                 Ok(json!({"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text}))
             }
-            "doc.update" => workspace.docs.receive(&clean(text(request, "path")?)?, &self.name, &bytes(request, "update")?).map(|_| json!({})),
+            "doc.update" => {
+                let path = clean(text(request, "path")?)?;
+                if !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before editing it.")); }
+                workspace.docs.receive(&path, &self.name, &bytes(request, "update")?).map(|_| json!({}))
+            }
             "doc.save" => {
                 let (written, mtime) = workspace.docs.flush(&clean(text(request, "path")?)?).await?;
                 Ok(json!({"written": written, "mtime": mtime}))

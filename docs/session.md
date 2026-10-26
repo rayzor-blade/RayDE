@@ -31,6 +31,10 @@ Requests are JSON over `ws://host/session`; the first must be `hello` with the t
 
 The browser client (`web/session/src/client.js`) is local-first: edits go to a Yjs document in the page and IndexedDB first, and travel when the session is reachable.
 
+`doc.open` requires an existing UTF-8 file no larger than 8 MiB. Create new files explicitly with `fs.write`; probing a missing path does not create a file or recovery record. Each connection may subscribe to 256 unique documents, and a workspace may retain 512 distinct open documents across its connections. Reopening the same subscription does not consume another slot; clients can still share an already-open document when the workspace is full. Updates require an open subscription on that connection.
+
+Limit failures return `busy` with a close-document instruction. Closing a tab releases its subscription immediately; disconnected clients' idle documents retain the existing five-second reload grace before eviction. These are document-admission limits, separate from aggregate storage, byte-rate and compute quotas.
+
 Terminal startup emits `term.ready` or `term.failed`. `term.update` contains base64-packed screen info and changed rows, with UTF-16 column boundaries for copying. Clients acknowledge each patch with `term.ack`; further output coalesces until acknowledged. Hidden terminals keep running with bounded scrollback and stop streaming screen updates. The session caps each connection at four terminals, eight per workspace, a 300 × 100 screen, 1,000 scrollback lines and a 256 KiB input queue. Opening and PTY I/O run outside ordered workspace RPC handling. Connection loss closes its terminals; handles cannot be reused after reconnecting.
 
 The host keeps CRDT recovery state under `~/.rayde-session/<path-hash>/state`, outside the repository. The directory hashes its canonical workspace path. Existing workspace-local state is moved there on startup; conflicting copies are preserved for recovery. `--state-root DIR` selects another private storage location for a sandbox or test host.
