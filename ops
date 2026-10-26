@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":5,"timestamp":1793009477,"nonce":"KiuaJ1y8swMZWEeV5t0dYu2QOK8=","added":["debt","area:git","phase:1"],"removed":null}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1793009550,"nonce":"RC88wxx3kHxjEcW7WGGXxsGK3Xc=","message":"Integration dependencies (parallel protocol/fixture work can start before these are complete):\n- 92e2f4ec084fb6cc60b98b95b8c86cc27b63277a3393f241402ecbf676fb4268","files":null}]}
