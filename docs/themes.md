@@ -117,6 +117,8 @@ Derived tokens, used when the file does not name them:
 
 `rayde path/to/name.raytheme` opens the file as a project. The Explorer lists the theme folder; the file opens as the Theme Studio page. **Open as JSON** opens the text.
 
+You can also open a `.raytheme` from the Explorer or Quick Open inside any workspace, including a browser session. It opens a Theme Studio tab for that file. **Open as JSON** and **Theme Studio** switch between the source and form; edits use the same document and save through the workspace session.
+
 ![Theme Studio](images/theme-studio-page.png)
 
 The window wears the theme while it is edited. The theme is read again 250 ms after the last keystroke in the JSON editor, and immediately after a change made in the form.

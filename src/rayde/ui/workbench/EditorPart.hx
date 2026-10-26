@@ -348,6 +348,7 @@ class EditorPart {
 		return EditorSyntax.languageOf(file);
 
 	function pageOfFile(file:String, selected:Signal<String>):Element {
+		if (ThemeFile.isThemeFile(file) && (wb.props.theme == null || wb.props.theme.file != file)) return wb.themePart.filePage(file,selected);
 		if (ImagePreview.supports(file)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${imagePage(file)}</if></tabs-content>;
 		if (ExtensionsPart.isExtension(file) && wb.extension == null)
 			return wb.extensionsPart.studioPage(file,selected);

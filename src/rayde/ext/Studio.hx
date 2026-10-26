@@ -88,6 +88,8 @@ class Studio {
 
 	/** The config of the extension, when it was opened from one. */
 	public var manifest(default, null):Null<Manifest>;
+	public final manifestRevision = Signal.make(0);
+	var preparingManifest = false;
 	final tree:LayoutTree;
 	final surfaces:Array<Surface> = [];
 	final surfaceRevision = Signal.make(0);
@@ -158,6 +160,22 @@ class Studio {
 		file = m.mainPath();
 		connection.useManifest(m);
 		title.set(m.viewTitle);
+		manifestRevision.set(manifestRevision.get() + 1);
+	}
+
+	public function prepareManifest():Void {
+		preparingManifest = true;
+		connection.prepare();
+	}
+
+	public function manifestReady(manifest:Null<Manifest>, error:Null<String>):Void {
+		if (disposed) return;
+		preparingManifest = false;
+		if (error != null) {
+			connection.stop(); failure.set(error); connection.note("console", "error", error); return;
+		}
+		if (manifest != null) useManifest(manifest);
+		reload();
 	}
 
 	public function mocksPath():String
@@ -257,7 +275,7 @@ class Studio {
 	/** Runs the extension afresh: a new VM, the Preview emptied, the mocked modules registered, the source run. */
 	public function reload():Void {
 		changedAt = -1;
-		if (disposed) return;
+		if (disposed || preparingManifest) return;
 		title.set(manifest != null ? manifest.viewTitle : "Preview");
 		problems = [];
 		if (onProblems != null) onProblems(problems);

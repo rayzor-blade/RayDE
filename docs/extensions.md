@@ -449,6 +449,8 @@ The [Git history graph](git.md) combines these controls with a RayScript DAG lay
 
 Opening a `.rayext` runs the extension. Its views are drawn in the Preview at the `location` each declares; an extension with no view shows only the tabs it opens. The Studio's console, activity and elements are in the Extension tab of the bottom panel.
 
+Opening its main `.rays` file inside another workspace also finds the declaring `.rayext` in its parent folders. The Studio uses that manifest's settings, imports, capabilities and styles. A script with no declaring manifest runs as a standalone preview.
+
 ![An extension's view in the sidebar, in the Explorer's place](images/studio-sidebar.png)
 
 - **Reload:** saving or typing reloads the extension after a pause of 0.4 s; *Disable live reload* in the view's `…` menu leaves reloading to Run. A script with an error does not replace what was drawn: the last view that ran stays, marked as such, and the error is in Problems on its line.

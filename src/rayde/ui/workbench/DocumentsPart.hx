@@ -113,7 +113,7 @@ class DocumentsPart {
 		sessionDocs = new rayde.workspace.session.EditorDocuments(client, (file, local) -> {
 			if (wb.gone) return;
 			if (local) edited(file);
-			else { checkpointHistory(file, true); wb.languagesPart.check(file); }
+			else { checkpointHistory(file, true); wb.languagesPart.check(file); wb.themePart.edited(file); }
 		}, wb.say, file -> {
 			var editor = wb.editorOf(file), state = documents.get(file);
 			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
@@ -199,8 +199,7 @@ class DocumentsPart {
 			wb.dirty.set(wb.dirty.get().concat([file]));
 		wb.languagesPart.check(file);
 		var studio = wb.extensionsPart.studios.get(file);
-		if (wb.themePart.themeStudio != null && file == wb.themePart.themeStudio.file)
-			wb.themePart.themeStudio.edited();
+		wb.themePart.edited(file);
 		if (studio != null)
 			studio.edited();
 		else if (wb.extension != null && ExtensionsPart.isExtension(file))

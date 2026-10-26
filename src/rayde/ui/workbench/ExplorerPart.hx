@@ -144,7 +144,7 @@ class ExplorerPart {
 		if (path == wb.props.display.hxml || path == wb.projectManifest()) { wb.openBuild(); return; }
 		if (!Fs.exists(path) || Fs.isDirectory(path)) return;
 		if (Manifest.isManifest(path)) wb.openSettings("extension");
-		else if (ThemeFile.isThemeFile(path)) wb.themePart.openThemeStudio();
+		else if (ThemeFile.isThemeFile(path)) wb.themePart.openThemeStudio(path);
 		else wb.openFile(path);
 	}
 

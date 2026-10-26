@@ -93,22 +93,57 @@ class ThemePart {
 
 	/** The theme being written, when this project is one: reads the editor's text and puts the theme on the window. */
 	var themeStudio:Null<ThemeStudio>;
+	final fileStudios = new Map<String, ThemeStudio>();
+	final textModes = new Map<String, Signal<Bool>>();
 
 	/** The Theme Studio of the theme file `file`: it reads the editor's text, and what it writes goes to the editor and the file. */
-	function makeThemeStudio(file:String):ThemeStudio {
+	function makeThemeStudio(file:String, ?canPreview:Void->Bool):ThemeStudio {
 		var studio = new ThemeStudio(file, () -> wb.documentsPart.buffer(file).get(), text -> {
-			wb.documentsPart.localHistory.record(file, wb.documentsPart.buffer(file).get(), text, null, "Theme edit");
+			if (wb.contributions.readOnly(file)) throw "Wait for the theme document to synchronize before editing.";
 			wb.documentsPart.buffer(file).set(text);
-			Fs.saveContent(file, text);
-			wb.documentsPart.localHistory.saved(file, text, null);
-			wb.dirty.set([for (d in wb.dirty.get()) if (d != file) d]);
-		}, () -> wb.appearance);
+			wb.documentsPart.edited(file);
+			wb.runPart.saveFile(file);
+		}, () -> wb.appearance, canPreview);
 		// What is wrong with the theme is a problem of its file: underlined in the editor and listed with the others.
 		new ashui.reactive.Watch(() -> studio.problems.get(), list -> {
 			var text = wb.documentsPart.buffer(file).get();
 			wb.problems.set([for (p in wb.problems.get()) if (p.file != file) p].concat([for (p in list) themeProblem(file, text, p)]));
 		});
 		return studio;
+	}
+
+	/** A workspace theme keeps its normal file tab, with a form and a JSON editor over the same buffer. */
+	function filePage(file:String, selected:Signal<String>):Element {
+		wb.documentsPart.documentState(file);
+		var studio = makeThemeStudio(file, () -> wb.active.get() == file), text = Signal.make(false);
+		fileStudios.set(file, studio); textModes.set(file, text);
+		Owner.onCleanup(() -> {
+			fileStudios.remove(file); textModes.remove(file); studio.dispose();
+		});
+		function source(at:Null<String>):Void {
+			text.set(true);
+			var span = at == null ? null : JsonLocator.find(wb.documentsPart.buffer(file).get(), at);
+			if (span != null) { var where = JsonLocator.position(wb.documentsPart.buffer(file).get(), span.keyStart); wb.goTo(file, where.line, where.character); }
+		}
+		return <tabs-content value={file} class="flex-1 min-h-0">
+			<if {selected.get() == file}><if {text.get()}>
+				<div class="flex flex-col flex-1 min-h-0">
+					<div class="flex justify-end px-3 py-1 shrink-0"><button id="rayde-theme-return" variant={Ghost} size={Sm} onClick={_ -> text.set(false)}><icon document={Icons.PALETTE_LINE} class="size-4"/>Theme Studio</button></div>
+					${wb.editorPart.activeCodeEditor(file, selected)}
+				</div>
+			<else><theme-studio-view studio={studio} appearance={wb.appearance} revision={wb.terminalPart.settingsRevision} onScheme={pickScheme} onText={source} onOpen={name -> wb.openFile(haxe.io.Path.join([haxe.io.Path.directory(file), name]))}/></if></if>
+		</tabs-content>;
+	}
+
+	function edited(file:String):Void {
+		var studio = fileStudios.get(file);
+		if (studio != null) studio.edited();
+		if (themeStudio != null && file == themeStudio.file) themeStudio.edited();
+	}
+
+	function activated(file:String):Void {
+		var studio = fileStudios.get(file);
+		if (studio != null && (Theming.pinned == null || Theming.pinned.file != file)) studio.refresh();
 	}
 
 	/** A problem of a theme file as a diagnostic: on the entry it names, or, for text that is not JSON, where the parser stopped. */
@@ -131,9 +166,14 @@ class ThemePart {
 		return themeStudio;
 
 	/** Brings the Theme Studio page forward. */
-	public function openThemeStudio():Void
-		if (themeStudio != null)
-			wb.openFile(Workbench.THEME_TAB);
+	public function openThemeStudio(?file:String):Void {
+		if (file == null || themeStudio != null && themeStudio.file == file) {
+			if (themeStudio != null) wb.openFile(Workbench.THEME_TAB);
+		} else {
+			var mode = textModes.get(file); if (mode != null) mode.set(false);
+			wb.openFile(file);
+		}
+	}
 
 	/** Opens the theme file as text, with the cursor on the entry at `at` (`dark.colors.primary`) when the text has it. */
 	function openThemeText(at:Null<String>):Void {

@@ -419,6 +419,24 @@ class Manifest {
 	public static function isManifest(path:String):Bool
 		return StringTools.endsWith(path, EXTENSION);
 
+	/** Finds a declaring manifest without crossing the workspace boundary or borrowing a sibling's grants. */
+	public static function forMain(file:String, root:String, cancelled:Void->Bool):Null<Manifest> {
+		file = Fs.fullPath(file); root = Fs.fullPath(root);
+		var directory = haxe.io.Path.directory(file);
+		while (rayde.files.FileOps.inside(root, directory) && !cancelled()) {
+			var names = Fs.readDirectory(directory); names.sort((a, b) -> a == b ? 0 : a < b ? -1 : 1);
+			for (name in names) if (isManifest(name) && !cancelled()) {
+				var manifest = read(haxe.io.Path.join([directory, name]));
+				if (manifest.mainPath() == file) return manifest;
+			}
+			if (directory == root) break;
+			var parent = haxe.io.Path.directory(directory);
+			if (parent == directory) break;
+			directory = parent;
+		}
+		return null;
+	}
+
 	function text(json:Dynamic, field:String, fallback:String):String {
 		var v:Dynamic = Reflect.field(json, field);
 		if (v == null)

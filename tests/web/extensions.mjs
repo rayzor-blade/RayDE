@@ -11,11 +11,15 @@ const root=resolve(import.meta.dirname,'../..'),dir=resolve(root,process.argv[2]
 mkdirSync(shots,{recursive:true});
 const require=createRequire(join(root,'web/session/package.json')),puppeteer=require('puppeteer-core');
 const workspace=mkdtempSync(join(tmpdir(),'rayde-extensions-'));
-mkdirSync(join(workspace,'src/rayzor/ext'),{recursive:true});mkdirSync(join(workspace,'.rayde'));
+mkdirSync(join(workspace,'src/rayzor/ext'),{recursive:true});mkdirSync(join(workspace,'src/orphan'),{recursive:true});mkdirSync(join(workspace,'.rayde'));
 writeFileSync(join(workspace,'build.hxml'),'-cp src\n--interp\n');
 writeFileSync(join(workspace,'.rayde/settings.json'),JSON.stringify({extensions:{disabled:['rayzor','git','markdown','jam']}}));
 writeFileSync(join(workspace,'src/Main.hx'),'class Main { static function main() {} }\n');
 writeFileSync(join(workspace,'src/rayzor/ext/main.rays'),readFileSync(join(root,'extensions/rayzor/ext/main.rays')));
+writeFileSync(join(workspace,'src/orphan/main.rays'),readFileSync(join(root,'extensions/rayzor/ext/main.rays')));
+writeFileSync(join(workspace,'src/rayzor/rayzor.rayext'),readFileSync(join(root,'extensions/rayzor/rayzor.rayext')));
+writeFileSync(join(workspace,'src/rayzor/logo.svg'),readFileSync(join(root,'extensions/rayzor/logo.svg')));
+writeFileSync(join(workspace,'src/theme.raytheme'),JSON.stringify({id:'browser-fixture',name:'Browser theme',extends:'restrained',colors:{primary:'#8855dd'}}));
 writeFileSync(join(workspace,'src/preview.rays'),`var count = signal(0);
 trace("Preview started");
 mount(() -> <div class="flex flex-col gap-3 p-4">
@@ -40,7 +44,7 @@ const server=createServer((request,response)=>{
   let body=readFileSync(path);
   if(name==='/ashui-host.mjs')body=Buffer.from(body.toString().replace('Math.max(1, (navigator.hardwareConcurrency || 4) - 1)','3'));
   if(name==='/rayde_session.mjs')body=Buffer.from(body.toString()
-   .replace('let reply;',`let reply; if (request.op === "view.open" || request.op === "proc.spawn" || request.op === "proc.kill") console.log("extension-request:"+JSON.stringify(request));`)
+   .replace('let reply;',`let reply; if (request.op === "view.open" || request.op === "proc.spawn" || request.op === "proc.kill" || request.op === "view.save") console.log("extension-request:"+JSON.stringify(request));`)
    .replace('const answer = (message) => {',`const answer = (message) => { if (message.ev?.startsWith("proc.")) console.log("extension-event:"+JSON.stringify(message)); `));
   response.writeHead(200,{'Content-Type':path.endsWith('.wasm')?'application/wasm':/\.m?js$/.test(path)?'text/javascript':'text/html','Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'require-corp'});response.end(body);
  }catch{response.writeHead(404).end();}
@@ -72,10 +76,27 @@ try{
   await until(()=>messages.slice(start).some(m=>m.t==='started'),'reloaded script started');await pause(400);
  }
  await chord('j');await pause(400);await page.mouse.click(600,605);await pause(200);
- await open('main.rays');
+ await open('orphan/main.rays');
  await until(()=>messages.some(m=>m.t==='error'&&m.kind==='runtime'),'source-only Rayzor failure');
  await screenshot('runtime-error');report.runtimeErrorContained=true;
  await reload(true);await screenshot('runtime-error-menu-reload');report.errorReload=true;
+ const contextStart=messages.length;
+ await open('rayzor/ext/main.rays');
+ await until(()=>messages.slice(contextStart).some(m=>m.t==='call'&&m.fn==='rayde.languages.registerServer'),'Rayzor settings and capability from its root manifest');
+ await pause(700);healthy();assert(!messages.slice(contextStart).some(m=>m.t==='error'),JSON.stringify(messages.slice(contextStart)));
+ await screenshot('manifest-context');report.manifestDiscovered=true;
+ await open('theme.raytheme');await screenshot('theme-form');report.themeOpened=true;
+ await until(()=>requests.some(r=>r.op==='view.open'&&r.path.endsWith('theme.raytheme')),'theme shared document');
+ await pause(400);await page.mouse.click(980,343);await chord('a');await page.keyboard.sendCharacter('Edited browser theme');await pause(300);await page.keyboard.press('Enter');
+ await until(()=>JSON.parse(readFileSync(join(workspace,'src/theme.raytheme'),'utf8')).name==='Edited browser theme','theme form saved through session');
+ assert(requests.some(r=>r.op==='view.save'),'theme form bypassed shared document save');report.themeSaved=true;
+ await pause(300);await page.mouse.click(1000,138);await screenshot('theme-json');
+ await page.mouse.click(1190,103);await screenshot('theme-return');
+ await chord('w');await pause(500);
+ const opens=requests.filter(r=>r.op==='view.open'&&r.path.endsWith('theme.raytheme')).length;
+ await page.mouse.click(174,290);
+ await until(()=>requests.filter(r=>r.op==='view.open'&&r.path.endsWith('theme.raytheme')).length>opens,'theme reopened from Explorer');
+ await screenshot('theme-explorer');report.themeExplorer=true;
  await open('preview.rays');
  await until(()=>messages.some(m=>m.t==='ops'&&m.ops.some(op=>op[0]==='createText'&&op[2]==='Browser preview ready')),'preview node model');
  await screenshot('preview');report.previewMounted=true;

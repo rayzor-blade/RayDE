@@ -28,25 +28,29 @@ class ThemeStudio {
 	final text:Void->String;
 	final write:String->Void;
 	final appearance:Void->Appearance;
+	final canPreview:Void->Bool;
 	var lastEdit = 0.;
 	var waiting = false;
 	var gone = false;
+	var writing = false;
 
 	/**
 	 * `text` gives the editor's text of the file, `write` replaces it (and the file), and `appearance` gives the
 	 * settings, whose scheme the theme is shown in.
 	 */
-	public function new(file:String, text:Void->String, write:String->Void, appearance:Void->Appearance) {
+	public function new(file:String, text:Void->String, write:String->Void, appearance:Void->Appearance, ?canPreview:Void->Bool) {
 		this.file = file;
 		this.text = text;
 		this.write = write;
 		this.appearance = appearance;
+		this.canPreview = canPreview == null ? () -> true : canPreview;
 		theme = Signal.make(ThemeFile.parse(file, text()));
 		refresh();
 	}
 
 	/** The text changed: the theme is read again once typing pauses. */
 	public function edited():Void {
+		if (writing) return;
 		lastEdit = haxe.Timer.stamp();
 		if (waiting || gone)
 			return;
@@ -77,11 +81,11 @@ class ThemeStudio {
 		}
 		stale.set(false);
 		theme.set(t);
-		var applied = Theming.pin(t, appearance());
-		for (f in applied.fonts)
-			found.push({message: f, at: null});
-		for (c in applied.css)
-			found.push({message: c, at: "css"});
+		if (canPreview()) {
+			var applied = Theming.pin(t, appearance());
+			for (f in applied.fonts) found.push({message: f, at: null});
+			for (c in applied.css) found.push({message: c, at: "css"});
+		}
 		problems.set(found);
 	}
 
@@ -92,9 +96,13 @@ class ThemeStudio {
 	public function edit(change:String->String):Null<String> {
 		try {
 			var next = change(text());
+			writing = true;
 			write(next);
-		} catch (e:Dynamic)
+			writing = false;
+		} catch (e:Dynamic) {
+			writing = false;
 			return Std.string(e);
+		}
 		refresh();
 		return null;
 	}
@@ -108,6 +116,6 @@ class ThemeStudio {
 	/** Stops reading and puts the chosen theme back. */
 	public function dispose():Void {
 		gone = true;
-		Theming.unpin(appearance());
+		if (Theming.pinned != null && Theming.pinned.file == file) Theming.unpin(appearance());
 	}
 }

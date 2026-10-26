@@ -538,6 +538,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (!isVirtual(file)) documentsPart.localHistory.flush(file);
 		var studio = extensionsPart.studios.get(file);
 		if (studio != null && !studio.managed) {
+			extensionsPart.manifestJobs.cancel(file);
 			studio.dispose();
 			extensionsPart.studios.remove(file);
 			extensionsPart.activeStudio.set(null);
@@ -963,6 +964,7 @@ class Workbench extends Component<WorkbenchProps> {
 			if (previousActive != "" && previousActive != file) assist.stop(previousActive,editorOf(previousActive));
 			previousActive = file;
 			contributions.activeChanged(file);
+			themePart.activated(file);
 			extensionsPart.activeStudio.set(extension != null ? extensionsPart.extensionStudio() : extensionsPart.studios.get(file));
 			emit("active.changed", {path: realFile(file)});
 		});

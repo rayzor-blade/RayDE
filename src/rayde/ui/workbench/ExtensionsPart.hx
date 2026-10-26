@@ -131,6 +131,8 @@ class ExtensionsPart {
 
 	/** The extensions open in the Studio, by their main file, and the one of the file in front, if it is one. */
 	final studios = new Map<String, Studio>();
+	final manifestJobs = new rayde.run.Worker<{file:String, root:String}, Null<Manifest>>((request, cancelled) ->
+		Manifest.forMain(request.file, request.root, cancelled), () -> ashui.core.Work.notify());
 
 	final activeStudio = Signal.make((null : Null<Studio>));
 
@@ -190,12 +192,22 @@ class ExtensionsPart {
 				return;
 			wb.panelsPart.showPanel(kind == "syntax" || kind == "compile" ? "problems" : "extension");
 		};
-		studio.reload();
+		if (own != null) studio.reload(); else {
+			studio.prepareManifest();
+			manifestJobs.submit(file, {file:file, root:wb.props.display.cwd});
+		}
 		if (wb.active.get() == file) activeStudio.set(studio);
 		return studio;
 	}
 
 	function startExtensions():Void {
+		wb.contributions.onFrame(() -> {
+			for (result in manifestJobs.poll()) {
+				var studio = studios.get(result.key);
+				if (studio != null) studio.manifestReady(result.value, result.error);
+			}
+		});
+		wb.contributions.onClose(manifestJobs.dispose);
 		extensionManager = new Manager(wb.props.display.cwd, {builtins: Extensions.builtins(), user: haxe.io.Path.join([Extensions.home(), ".rayde", "extensions"]),
 			defaultEvents: ["onStartup"], restartLimit: 3, restartWindow: 60});
 		wb.contributions.status({id:"extensions-loading",place:"right",order:350,build:loadingStatus});

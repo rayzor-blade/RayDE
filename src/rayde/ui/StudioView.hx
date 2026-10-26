@@ -35,6 +35,10 @@ typedef StudioViewProps = {
  */
 class StudioView extends Component<StudioViewProps> {
 	function render():Element {
+		return <for {revision in [props.studio.manifestRevision.get()]}>${content()}</for>;
+	}
+
+	function content():Element {
 		var studio = props.studio, surface = new Ref<Div>();
 		var body = <div class="flex flex-col flex-1 min-h-0 min-w-0">
 			<if {props.header != false}><div id="rayde-studio-bar" class="rayde-studio-bar flex items-center gap-1 pl-3 pr-2 shrink-0" height={36}>
@@ -76,7 +80,7 @@ class StudioView extends Component<StudioViewProps> {
 
 	function waiting(state:String,progress:String,failure:String):Element {
 		var expected=props.view != null || props.studio.manifest == null || props.studio.manifest.views.length > 0;
-		var loading=state == "running" && failure == "" && (expected || progress != "");
+		var loading=(state == "starting" || state == "running") && failure == "" && (expected || progress != "");
 		return <div id="rayde-studio-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 bg-surface">
 			<if {loading}><spinner size={Sm}/></if>
 			<text widthPercent={1} class="text-center text-sm text-text-secondary">${failure != "" ? "The extension could not load this view." : loading ? (progress == "" ? "Opening extension view…" : progress) : state == "running" ? "This extension has not opened a view." : "The extension is stopped."}</text>

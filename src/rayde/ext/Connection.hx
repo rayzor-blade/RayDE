@@ -193,6 +193,11 @@ class Connection {
 		}
 	}
 
+	/** No VM starts until its declaring manifest and grants have been resolved. */
+	public function prepare():Void {
+		stop(); starting = true; setState("starting"); progressChanged();
+	}
+
 	public function stop():Void {
 		if (host != null)
 			host.stop();
