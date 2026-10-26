@@ -244,9 +244,14 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde input.ui-input { box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px; corner-shape: squircle; }
 #rayde .rayde-add { --ui-button-height: 32px; border-radius: var(--radius-md); corner-shape: squircle; }
 
-/* Notification actions stay on one line while their message takes the wrapping space. */
-#rayde .ui-toast-body { min-width: 0; }
-#rayde .ui-toast > .ui-button { flex-shrink: 0; align-self: center; }
+/* Notification text spans the card; actions sit below it, clear of the status bar. */
+#rayde .ui-toaster[data-position="bottom-right"] { bottom: 40px; }
+#rayde .ui-toast { position: relative; flex-direction: column; align-items: stretch; max-width: calc(100vw - 32px); }
+#rayde .ui-toast-icon { position: absolute; left: 16px; top: 16px; }
+#rayde .ui-toast-body { min-width: 0; flex-grow: 0; flex-shrink: 0; padding-left: 32px; padding-right: 24px; gap: 6px; }
+#rayde .ui-toast[data-variant="default"] > .ui-toast-body { padding-left: 0; }
+#rayde .ui-toast > .ui-toast-close { position: absolute; right: 12px; top: 12px; }
+#rayde .ui-toast > .ui-button { flex-shrink: 0; align-self: flex-end; }
 #rayde .ui-toast > .ui-button > text { white-space: nowrap; }
 
 #rayde .rayde-image-tools { border-bottom: 1px solid var(--border); }

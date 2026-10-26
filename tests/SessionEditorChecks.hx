@@ -60,6 +60,12 @@ class SessionEditorChecks {
 		check(warnings.length == 1 && warnings[0] == reason,"one session-level warning reaches the toast callback");
 		check(state.value.get() == "remote abc!" && docs.message("/work/a.txt") == "Document sync paused","the warning preserves the read-only recovery fence and text");
 		unsubscribe();
+		rayde.workspace.PageHost.bridge = client;
+		var reopening = rayde.workspace.PageHost.reopen(), reopen = wire.sent.pop(true);
+		check(reopen.op == "page.reopen" && !reopening.isReady(),"reopen travels asynchronously through the page bridge while the remote session is disconnected");
+		wire.reply({id:reopen.id,ok:true});
+		settle(client,docs,() -> reopening.isReady()); reopening.await();
+		rayde.workspace.PageHost.bridge = null;
 		docs.release("/work/a.txt");
 		check(wire.sent.pop(true).op == "view.close" && state.onUndo == null && state.onTransaction == null,"closing releases protocol and editor hooks");
 		check(!docs.owns("/work/a.txt") && failures.length == 0,"no document binding remains after release");

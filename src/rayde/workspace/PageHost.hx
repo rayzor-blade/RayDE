@@ -78,6 +78,14 @@ class PageHost {
 		#end
 	}
 
+	/** Re-enters the same browser URL after its old recovery state has committed. */
+	public static function reopen():ash.Future<Dynamic> {
+		if (bridge != null) return bridge.requestAsync("page.reopen");
+		var future = new ash.Future<Dynamic>();
+		future.reject("Reopen this workspace in its browser tab.");
+		return future;
+	}
+
 	/** The saved root is committed atomically with the initial sample files. Implicit parent directories do not count. */
 	static function hasSample(saved:Null<Array<{path:String, directory:Bool, bytes:Null<Bytes>}>>):Bool
 		return saved != null && Lambda.exists(saved, entry -> entry.path == SAMPLE && entry.directory);

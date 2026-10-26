@@ -3,6 +3,7 @@ import { Accounts } from "./accounts.js";
 import { SessionClient } from "./client.js";
 import { EditorDocuments } from "./editor.js";
 import { documentation } from "./documentation.js";
+import { reopenWorkspace } from "./reopen.js";
 import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
 
@@ -30,6 +31,7 @@ export const start = ask => serve(ask, {
       project ??= workspace.project;
     }
     const database = await storage();
+    let storageFailure = null;
     let client = null;
     if (endpoint) {
       const url = new URL(endpoint, location.href);
@@ -66,6 +68,10 @@ export const start = ask => serve(ask, {
           }
           else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
           else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
+          else if (request.op === "page.reopen") reply = await reopenWorkspace(client, async () => {
+            await files("readonly", store => store.count());
+            if (storageFailure) throw storageFailure;
+          });
           else if (request.op === "page.external") {
             if (typeof request.url !== "string" || !/^(https?:\/\/|mailto:)/i.test(request.url)) throw new Error("Unsupported link.");
             globalThis.open(request.url,"_blank","noopener,noreferrer"); return;
@@ -103,6 +109,7 @@ export const start = ask => serve(ask, {
           } else throw new Error("No workspace session is connected.");
           answer({ ...reply, id: request.id, ok: true });
         } catch (error) {
+          if (request.op === "page.store") storageFailure = error;
           if (request.op.startsWith("view.") && request.id === undefined) {
             answer({ev:"view.error", handle:request.handle, message:error.message}); return;
           }

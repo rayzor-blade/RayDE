@@ -29,11 +29,11 @@ const server = createServer((request,response) => {
     const name = new URL(request.url,"http://local").pathname;
     const path = resolve(dir,"." + (name === "/" ? "/index.html" : name));
     if (!path.startsWith(dir + "/")) throw new Error("outside");
-    let body = readFileSync(path);
+    let body = readFileSync(name === "/test-session-client.js" ? join(root,"web/session/dist/session-client.js") : path);
     if (name === "/ashui-host.mjs") body = Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)","3"));
     if (name === "/rayde_session.mjs") body = Buffer.from(body.toString()
       .replace("const answer = (message) => {", 'const answer = (message) => { if (message.ok === false || message.ev?.startsWith("view.") || typeof message.result?.text === "string") console.log("projection:" + JSON.stringify(message));')
-      .replace("const request = JSON.parse(text2);", 'const request = JSON.parse(text2); if (request.op?.startsWith("view.")) console.log("editor-request:" + JSON.stringify(request));')
+      .replace("const request = JSON.parse(text2);", 'const request = JSON.parse(text2); if (request.op?.startsWith("view.") || request.op === "page.reopen") console.log("editor-request:" + JSON.stringify(request));')
       .replace("reply = { result: await documents.request(request.op, request) };", 'if (request.op === "view.save") await new Promise(resolve => setTimeout(resolve,1000)); reply = { result: await documents.request(request.op, request) }; if (request.op === "view.save") console.log("saved:" + request.handle);'));
     response.writeHead(200,{"Content-Type":path.endsWith(".wasm") ? "application/wasm" : /\.m?js$/.test(path) ? "text/javascript" : "text/html", "Cross-Origin-Opener-Policy":"same-origin", "Cross-Origin-Embedder-Policy":"require-corp"});
     response.end(body);
@@ -126,6 +126,9 @@ try {
   report.reload = report.tabLifecycle = true;
   await new Promise(r => { session.once("exit",r); session.kill("SIGTERM"); });
   await sleep(800);
+  await append(a,"// old workspace draft\n");
+  await sleep(300);
+  assert.equal(file(),before,"offline text stays in the old recovery context");
   state = mkdtempSync(join(tmpdir(),"rayde-crdt-new-state-"));
   session = run();
   for (const who of ["a","b"]) await until(() => projection(who).some(p => p.ev === "view.error" && p.message.includes("workspace or account changed")),who + " fences replacement document state");
@@ -134,8 +137,31 @@ try {
   await sleep(500);
   assert.equal(file(),before,"frozen editor bindings cannot write to a new recovery context");
   await a.screenshot({path:join(shots,"a-replacement-blocked.png")});
+  const oldCaches = await a.evaluate(async () => (await indexedDB.databases()).map(db => db.name).filter(name => name.startsWith("rayde:v2:")));
+  const beforeReopen = logs.a.length, workspaceUrl = a.url();
+  await a.bringToFront(); await a.mouse.click(1180,730);
+  await until(() => requests("a").some(r => r.op === "page.reopen"),"toast action requests reopening");
+  await until(() => logs.a.slice(beforeReopen).includes("ashui: ready"),"toast action reloads the editor");
+  assert.equal(a.url(),workspaceUrl,"reopening keeps the workspace URL, project and fragment");
+  const recovered = await a.evaluate(async names => {
+    const {Y} = await import("/test-session-client.js"), texts = [];
+    for (const name of names) {
+      const db = await new Promise((resolve,reject) => {const request=indexedDB.open(name);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      const updates = await new Promise((resolve,reject) => {const request=db.transaction("updates").objectStore("updates").getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      db.close(); const doc = new Y.Doc();for (const update of updates) Y.applyUpdate(doc,update);
+      texts.push(doc.getText("text").toString());doc.destroy();
+    }
+    return texts;
+  },oldCaches);
+  assert.ok(recovered.some(text => text.includes("// old workspace draft")),"reopen preserves the old draft in its original recovery cache");
+  await quickOpen(a,"Main.hx");
+  await until(() => logs.a.slice(beforeReopen).some(line => line.startsWith("editor-request:") && JSON.parse(line.slice(15)).op === "view.ready"),"reopened editor binds the new session");
+  await append(a,"// reopened session\n");
+  await until(() => file().includes("// reopened session"),"reopened editor can edit the replacement session");
+  assert.ok(!file().includes("// old workspace draft"),"the old draft is not replayed into replacement state");
+  await a.screenshot({path:join(shots,"a-reopened.png")});
   assert.equal(logs.a.concat(logs.b).some(line => /PAGE ERROR|uncaught exception|RayDE stopped:/.test(line)),false);
-  report.replacementFence = report.ok = true;
+  report.replacementFence = report.reopenAction = report.recoveryPreserved = report.ok = true;
 } finally {
   writeFileSync(join(shots,"result.json"),JSON.stringify(report,null,2));
   for (const who of ["a","b"]) writeFileSync(join(shots,who + ".log"),logs[who].join("\n"));

@@ -37,7 +37,11 @@ The host keeps CRDT recovery state under `~/.rayde-session/<path-hash>/state`, o
 
 `hello.cacheIdentity` identifies the recovery context with a version, opaque host and workspace IDs, and a verified account ID when signed in. These IDs are stored with the private session state and survive ordinary restarts. Resetting the document-state directory creates a new recovery identity. They are cache namespaces, not access credentials.
 
-Browser document recovery, personal history and tab layout use that identity with the socket origin/path. Reusing an endpoint or display name cannot select another workspace's recovery. A reconnect that changes workspace, account or document-state generation blocks the old editor bindings and shows one warning toast asking the user to reopen; the previous recovery data stays in IndexedDB. The card uses the theme's warning color and stays until dismissed. Legacy caches without a verified identity are preserved but never imported automatically. A legacy server can still serve a page, with durable recovery disabled.
+Browser document recovery, personal history and tab layout use that identity with the socket origin/path. Reusing an endpoint or display name cannot select another workspace's recovery. A reconnect that changes workspace, account or document-state generation blocks the old editor bindings and shows one warning toast; the previous recovery data stays in IndexedDB.
+
+The toast's **Reopen Workspace** footer button checkpoints the old recovery data and personal history, then reloads the current workspace URL for a fresh authenticated connection. A storage failure or timeout keeps the page open and reports the error. The card uses the theme's warning color, clears the status bar and stays until dismissed.
+
+Legacy caches without a verified identity are preserved but never imported automatically. A legacy server can still serve a page, with durable recovery disabled.
 
 ## Signing in before the first edit
 

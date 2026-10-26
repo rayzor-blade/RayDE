@@ -106,6 +106,7 @@ class DocumentsPart {
 	final documents = new Map<String, DocumentState>();
 	final initialDisk = new Map<String, String>();
 	var sessionDocs:Null<rayde.workspace.session.EditorDocuments>;
+	var reopening:Null<ash.Future<Dynamic>>;
 
 	function setupSession():Void {
 		var client = rayde.workspace.PageHost.session;
@@ -118,10 +119,11 @@ class DocumentsPart {
 			var editor = wb.editorOf(file), state = documents.get(file);
 			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
 		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; }, message -> {
-			if (!wb.gone) Toaster.show({title:"Workspace sync paused", description:message, variant:Warning, duration:0});
+			if (!wb.gone) sessionWarning(message);
 		});
 		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
 		wb.contributions.onFrame(sessionDocs.frame);
+		wb.contributions.onFrame(receiveReopen);
 		wb.contributions.onClose(sessionDocs.close);
 		wb.contributions.onEdited(sessionDocs.acceptBuffer);
 		wb.contributions.refuses((path, doing) -> {
@@ -130,6 +132,25 @@ class DocumentsPart {
 		});
 		wb.contributions.status({id:"workspace.document", place:"right", order:1, build:() ->
 			<if {sessionDocs.message(wb.active.get()) != ""}><text class="text-xs text-text-secondary px-2">${sessionDocs.message(wb.active.get())}</text></if>});
+	}
+
+	function sessionWarning(message:String):Void
+		Toaster.show({title:"Workspace sync paused", description:message, variant:Warning, duration:0,
+			action:{label:"Reopen Workspace", run:reopenSession}});
+
+	function reopenSession():Void {
+		if (wb.gone || reopening != null) return;
+		try {
+			for (file in wb.dirty.get()) if (sessionDocs.owns(file)) checkpointHistory(file);
+			for (file in localHistory.files()) localHistory.flush(file);
+			reopening = rayde.workspace.PageHost.reopen();
+		} catch (error:Dynamic) sessionWarning(Std.string(error));
+	}
+
+	function receiveReopen():Void {
+		if (reopening == null || !reopening.isReady() && !reopening.isRejected()) return;
+		var future = reopening; reopening = null;
+		try future.await() catch (error:Dynamic) if (!wb.gone) sessionWarning("Could not reopen: " + Std.string(error));
 	}
 
 	/** The editor's text for `file`, read from disk when first opened. */

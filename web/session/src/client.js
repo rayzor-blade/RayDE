@@ -78,6 +78,19 @@ export class Doc {
     if (!this.closed) await this.recover();
   }
 
+  async checkpoint() {
+    await this.started?.catch(() => {});
+    const persistence = this.persistence;
+    if (!persistence || this.closed) return;
+    await persistence.whenSynced;
+    await new Promise((resolve, reject) => {
+      const transaction = persistence.db.transaction("updates", "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error("Could not preserve document recovery."));
+      transaction.objectStore("updates").add(Y.encodeStateAsUpdate(this.ydoc));
+    });
+  }
+
   onChange(listener) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
