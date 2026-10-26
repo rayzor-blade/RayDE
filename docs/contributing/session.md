@@ -1,0 +1,165 @@
+# Session implementation
+
+The Rust crate `native/session` serves one workspace directory over a WebSocket. The [user guide](../session.md) covers opening workspaces, saving and reconnecting.
+
+## Starting a session
+
+```sh
+cargo build --manifest-path native/session/Cargo.toml
+native/session/target/debug/rayde-session --root path/to/workspace --exec
+```
+
+The server prints an address and token. To serve the small browser client, build it with `(cd web/session && npm install && npm run build)` and pass `--web web/session/dist`. Node packages build and test artifacts; the session service runs in Rust.
+
+Private CRDT state lives in `~/.rayde-session/<path-hash>/state`, keyed by the canonical workspace path. Startup migrates legacy workspace-local state there and preserves conflicting copies. `--state-root DIR` selects private storage for sandbox or test hosts.
+
+## Serving the full editor
+
+Build with `scripts/build-web.sh`; see [browser build requirements](building.md#browser-build). It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm` and `channel-agent.mjs`. `ASH_CHANNEL_ROOT` selects the checkout, `ASH_CHANNEL_WEB` its side module, and `WEB_LIBS` the window/GPU libraries. Use matching Ash and window libraries with future-aware browser idle waits. Run `npm ci` in `web/session` before bundling the page agent.
+
+```sh
+native/session/target/debug/rayde-session --root path/to/workspace --exec \
+  --web bin/web/rayde --extension-host "$PWD/bin/rayde-extension-host" \
+  --extensions "$PWD/extensions"
+```
+
+Open the printed HTTP address with:
+
+```text
+?session=ws://127.0.0.1:7070/session&project=build.hxml#token=TOKEN
+```
+
+Substitute the actual host, port and token. HTTPS pages need `wss://`; pages served elsewhere need their exact origin allowed with `--origin`. Keep the token in the fragment, which is not sent as an HTTP request parameter.
+
+`?demo=1` enables the local example entry during development; `?demo=0` disables it. `rayde.org` opens the example by default. The app host opens Welcome with Explorer collapsed unless a workspace is selected. Repository URLs use `app.rayde.org/{session_id}` and require authentication. Browser Open Project and Open Folder use the account service's GitHub repository chooser; native builds use their system picker. Browser platform detection determines UI and shortcut conventions independently of the compute host.
+
+## Host environment
+
+Process defaults load from `~/.rayde-session/environment.json`, or the JSON file selected by `--env-file PATH`:
+
+```json
+{"RAYZOR_STD_PATH":"/path/to/rayzor/compiler/haxe-std"}
+```
+
+Values reach language servers, extension hosts, programs and terminal shells. Explicit per-process settings take precedence. Values stay on the host and are omitted from the browser handshake. Restart the session after changing the file.
+
+`RAYZOR_STD_PATH` must contain `StdTypes.hx`. Rayzor's project-specific standard-library selection still applies.
+
+## Authentication
+
+Requests are JSON over `ws://host/session`. The first request must be `hello` with the session token.
+
+Optional `--auth-secret S --login-url URL` permits viewing before sign-in but returns `auth-required` for mutations. The connection authenticates with `auth.login` and a signed credential:
+
+```text
+base64url(payload).base64url(HMAC-SHA256)
+payload: {login, id, exp}
+```
+
+`rayde-session issue --auth-secret S --login NAME --id N` mints a development credential. This mode is separate from the Cloudflare gateway, which authenticates the connection and supplies the private compute token.
+
+## Files and documents
+
+| Area | Requests | Contract |
+| --- | --- | --- |
+| Files | `fs.list`, `fs.stat`, `fs.read`, `fs.write`, `fs.mkdir`, `fs.remove`, `fs.rename` | Workspace-relative paths; traversal and symlinks leaving the root are refused. |
+| Documents | `doc.open`, `doc.update`, `doc.save`, `doc.close` | Yjs/Yrs state vectors and updates synchronize shared text. Updates require an open subscription. |
+
+`doc.open` requires an existing UTF-8 file. Create files explicitly with `fs.write`; missing-path probes create neither files nor recovery records. Reopening a subscription consumes no additional slot. Clients may share an existing document even when the workspace has reached its distinct-document limit.
+
+The host writes settled edits to disk and incorporates outside file edits into the shared document. Moving a file or folder containing an open CRDT document, including an open destination, is refused. Supporting shared renames requires stable document identities and coordinated path changes.
+
+### Browser bindings and Save
+
+`web/session/src/client.js` writes edits to Yjs and IndexedDB before sending them. Offline edits merge after reconnect; remote edits also update inactive buffers. Undo tracks the local editor's transactions. Personal history, settings and tab layout use browser storage.
+
+The bridge maintains a CRDT projection of text acknowledged by the editor, preventing late typing from applying stale offsets to newer remote text. Bindings follow persistent buffers rather than mounted views. Closing a saved tab releases its projection, undo manager and subscription; dirty buffers remain retained.
+
+Save waits for earlier updates to reach the host before flushing the file. Failure leaves the tab dirty and reports the error. Builds and workspace changes wait for successful saves.
+
+### Recovery identity
+
+`hello.cacheIdentity` supplies a version, opaque host/workspace IDs and a verified account ID when signed in. IDs persist with private state across ordinary restarts; resetting document state rotates the identity. They identify cache namespaces and confer no access.
+
+Browser recovery, history and layout combine this identity with the socket origin/path. A changed workspace, account or state generation blocks old bindings and shows a warning toast. Previous data stays in IndexedDB. Legacy unverified caches remain preserved without automatic import; legacy servers disable durable browser recovery.
+
+**Reopen Workspace** checkpoints local recovery and history, waits for storage, then reloads the same workspace URL. Storage errors or timeouts keep the page open. The warning card sits above the status bar, uses the warning theme color and remains until dismissed.
+
+### Saved checkpoints
+
+With `hello.checkpoints = 1`, `doc.save` accepts `checkpoint:true` and returns versioned, checksummed complete Yrs state captured with the saved text. Native `doc.restore {path, checkpoint}` restores a released document's graph and text, including a file absent from replacement compute. It requires write authorization and rejects active documents, invalid paths, corrupt state and incomplete graphs.
+
+The hosted gateway reserves restoration for its trusted control plane and stores checkpoints before acknowledging Save. See [saved document recovery](../../web/cloud/README.md#saved-document-recovery) for gateway storage and restore behavior.
+
+## Syntax and process services
+
+| Capability | Requests and events | Behavior |
+| --- | --- | --- |
+| `hello.syntax` | `syntax.highlight`, `syntax.cancel` | Highlight accepts a request ID, editor key, filename and source snapshot; returns line token ranges in UTF-16 units. Cancel addresses the editor key. Queries run independently of ordered workspace operations. |
+| Execution (`--exec`) | `proc.spawn`, `proc.write`, `proc.close-input`, `proc.kill`; `proc.out`, `proc.exit` | Processes run in workspace directories and terminate when their connection closes. |
+
+Requests, process startup, output and shutdown use `ash.Future`. Readers park until replies or stream events arrive. One sleeping deadline worker handles timeouts; the UI drains available messages.
+
+### Extensions and language servers
+
+Each extension runs in a separate host process. Its views render in the browser, and service calls retain capability checks. The operator selects the extension-host binary and built-in directory. Execution requires `--exec` and sign-in when configured.
+
+Stdio language servers use host executable paths, environment and workspace directories. Install Rayzor on the host's PATH and configure its standard library there. The built-in extension starts on the first Haxe document; Welcome alone leaves it asleep. Browser hover docs render Markdown.
+
+Network loss pauses extension and LSP supervision. Reconnecting to the same recovery context restarts active hosts and replays unsaved text. Explicit LSP Stop stays stopped. Remote inspection never probes the browser machine's localhost compiler ports. Build, Run and terminals also execute on the session host.
+
+## Terminals
+
+When `hello.terminal` is true, `term.open` starts a connection-owned PTY. It accepts a client key, workspace-relative `cwd`, optional `program`/`args`, `cols` and `rows`. Host profiles arrive in `hello.terminalProfiles`.
+
+| Message | Purpose |
+| --- | --- |
+| `term.ready`, `term.failed` | Startup result. |
+| `term.write`, `term.resize`, `term.scroll`, `term.visible`, `term.close` | Operate on the terminal's `tid`. |
+| `term.update` | Base64-packed screen information and changed rows, with UTF-16 column boundaries for copying. |
+| `term.ack` | Acknowledge a patch; further output coalesces until acknowledged. |
+
+Hidden terminals continue running with bounded scrollback but stop streaming screen updates. Startup and PTY I/O run outside ordered workspace RPC handling. Connection loss closes terminals; handles cannot be reused after reconnect.
+
+## Resource limits
+
+| Resource | Limit |
+| --- | --- |
+| Shared UTF-8 file | 8 MiB |
+| Unique document subscriptions per connection | 256 |
+| Distinct retained documents per workspace | 512 |
+| Encoded Save checkpoint | 4 MiB |
+| Terminals per connection / workspace | 4 / 8 |
+| Terminal screen | 300 columns × 100 rows |
+| Scrollback per terminal | 1,000 lines |
+| Terminal input queue | 256 KiB |
+
+Document-admission failures return `busy` with an instruction to close documents. Closing a subscription releases it immediately. Idle documents from disconnected clients retain a five-second reload grace before eviction. Admission limits are separate from aggregate storage, byte-rate and compute quotas.
+
+## Cloudflare gateway
+
+`web/cloud` implements GitHub App sign-in, account sessions, repository authorization and the workspace gateway in Rust compiled to Workers WASM. SQLite-backed Durable Objects keep account/workspace metadata. Browsers use an HttpOnly cookie; GitHub tokens and private compute credentials stay server-side.
+
+See [gateway setup and tests](../../web/cloud/README.md). Local tests mock GitHub and compute provisioning while connecting to a real Rust session server. They do not deploy a service or provision a production sandbox. Live document authority remains in the session process; Durable Object CRDT authority and the MSB compute provider are separate integrations.
+
+## Checks
+
+Build the session and extension-host binaries before full-editor checks. Browser checks also need the built WASM editor and test dependencies in `web/session`.
+
+| Command | Coverage |
+| --- | --- |
+| `cargo test --manifest-path native/session/Cargo.toml` | Native protocol over real sockets. |
+| `(cd web/session && npm test)` | Browser client, equal-name workspace replacement, account-scoped drafts and legacy cache isolation. |
+| `node tests/web/session.mjs --dir bin/web/rayde` | Open/edit/Save, large replies and extension service calls; uses `tests/fixtures/browser-session`. |
+| `node tests/web/collaboration.mjs bin/web/rayde` | Two full editors with separate storage: edits, undo, Save, restart, reload and replacement-state fencing. |
+| `node tests/web/extensions.mjs bin/web/rayde` | First previews, interactive updates, menu/command reload, error containment and refresh. |
+| `node tests/web/lsp.mjs bin/web/rayde` | Real hosted Rayzor: semantic hover, Markdown, live diagnostics and sustained connection-loss recovery. |
+
+The LSP browser check needs Rayzor; `RAYDE_RAYZOR_LSP` and `RAYZOR_STD_PATH` select its executable and standard library.
+
+Haxe checks cover the bridge and workbench behavior:
+
+- `SessionAsyncChecks`: concurrent replies, deadlines, early process output and disconnect under Ash.
+- `SessionEditorChecks`: asynchronous readiness, stale projections, undo, Save failures and binding cleanup.
+- `ExtensionOutputChecks`: stack locations and malformed isolated output.
+- `SessionLspChecks`, `SessionLspQueueChecks`, `SessionLspReconnectChecks`: framed LSP, bounded queues, cancellation, idle wakeups, offline recovery and stale handles.

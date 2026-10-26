@@ -14,6 +14,7 @@
 | Preview documents and images | [Markdown](markdown.md), [images and SVG](images.md) |
 | Browse commits and changes | [Git](git.md) |
 | Collaborate in a local session | [Jam](jam.md) |
+| Edit a remote workspace in the browser | [Workspace sessions](session.md) |
 | Manage windows and restore tabs | [Windows and sessions](window.md) |
 | Configure RayDE | [Settings](settings.md) |
 

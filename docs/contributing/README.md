@@ -10,6 +10,7 @@ This directory contains implementation and maintenance details. Everyday workflo
 | [Editor implementation](editor.md) | Document lifetime, command center, panels, preview resources and window startup. |
 | [Explorer implementation](explorer.md) | Tree virtualization, ignore rules, Outline, local history and dependencies. |
 | [Language-server implementation](languages.md) | Transport, synchronization, cancellation and process recovery. |
+| [Session implementation](session.md) | Browser setup, host environment, protocol, recovery, resource limits and checks. |
 | [Jam implementation](jam.md) | CRDT protocol, recovery storage and peer checks. |
 | [Git implementation](git.md) | Graph lifecycle, libgit2 build, native bindings and checks. |
 | [Markdown implementation](markdown.md) | Native renderers, preview lifetime, image residency and fixtures. |
