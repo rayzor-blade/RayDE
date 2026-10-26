@@ -18,6 +18,7 @@ https://github.com/rayzor-blade/ash/blob/1e95e1978118d73bd083d04556441070f669c7f
 
 Ashui: rayzor-blade/ashui, df13b67594818efa4af258ad2748f62517980786, docs/images/ashui-logo.png
 https://github.com/rayzor-blade/ashui/blob/df13b67594818efa4af258ad2748f62517980786/docs/images/ashui-logo.png
+Ashui starter icons supplied by the project maintainer: ashui-icon-light.svg and ashui-icon-dark.svg; selected for the active colour scheme.
 
 Rayzor: the already-bundled extensions/rayzor/logo.svg from the Rayzor repository.
 
@@ -67,3 +68,5 @@ heaps.png cf58250408b3578111716005bbd9a5e689ed1f3da907e101c2e7becbadc00703
 javascript.svg a70a3d8d36ea6b0e614a04ec30d5a4fb2bf36d515492cb84050ded2b84d14393
 lime.svg 803c0241115df61cf48b3a76e14a3fe617ab55cb7d68fe72bbb7bb0098ca43d8
 openfl.svg f5375031758f6b15ea09972f410afd9dca17d8e304f9f599f09073ba105cb907
+ashui-icon-light.svg e709997b99879b7d1f46fda6e339f7fe5de67345d606b5a7f83cd2ded874eca0
+ashui-icon-dark.svg 04483ad166992a4df2a50a6c1d55539c00522bf60357dd0ebcaf2ea54049137a

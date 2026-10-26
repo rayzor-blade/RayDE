@@ -17,6 +17,8 @@ class ProjectLogo extends Component<{template:ProjectTemplate}> {
 	static final openfl = SvgDocument.embed("assets/project-logos/openfl.svg");
 	static final flixel = SvgDocument.embed("assets/project-logos/flixel.svg");
 	static final lime = SvgDocument.embed("assets/project-logos/lime.svg");
+	static final ashuiLight = SvgDocument.embed("assets/project-logos/ashui-icon-light.svg");
+	static final ashuiDark = SvgDocument.embed("assets/project-logos/ashui-icon-dark.svg");
 
 	function render():Element {
 		var template = props.template;
@@ -26,7 +28,7 @@ class ProjectLogo extends Component<{template:ProjectTemplate}> {
 		}
 		return switch template.id {
 			case "ash": raster(ProjectLogoAssets.bytes("assets/project-logos/ash.png"));
-			case "ashui": raster(ProjectLogoAssets.bytes("assets/project-logos/ashui.png"), true);
+			case "ashui": <for {dark in [darkScheme()]}>${vector(dark ? ashuiDark : ashuiLight)}</for>;
 			case "heaps": raster(ProjectLogoAssets.bytes("assets/project-logos/heaps.png"));
 			case "ceramic": <div class="rayde-project-ceramic-logo">${raster(ProjectLogoAssets.bytes("assets/project-logos/ceramic.png"))}</div>;
 			case "hxml" | "haxelib": vector(haxeLogo);
@@ -40,12 +42,18 @@ class ProjectLogo extends Component<{template:ProjectTemplate}> {
 		};
 	}
 
+	function darkScheme():Bool {
+		var state = ashui.theme.ThemeState.get();
+		state.revision.get();
+		return state.scheme() == ashui.theme.ColorScheme.Dark;
+	}
+
 	function vector(document:SvgDocument):Element return <icon document={document} class="rayde-project-template-icon"/>;
-	function raster(bytes:haxe.io.Bytes, wide = false):Element {
+	function raster(bytes:haxe.io.Bytes):Element {
 		var bitmap = ashui.types.Bitmap.fromBytes(bytes);
 		Owner.onCleanup(bitmap.dispose);
 		bitmap.shrink(144);
-		var image = new ashui.ui.Image(bitmap, {width:wide ? 60 : 26, height:26, fit:Contain});
+		var image = new ashui.ui.Image(bitmap, {width:26, height:26, fit:Contain});
 		ashui.css.Identity.of(image.tree, image.node.id).addClasses(["rayde-project-template-image"]);
 		return image;
 	}
