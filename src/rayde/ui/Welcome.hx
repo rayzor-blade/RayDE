@@ -145,7 +145,7 @@ class Welcome extends Component<WelcomeProps> {
 	function projectCard():Element
 		return <div class="rayde-summary flex flex-col gap-4 p-4">
 			<div class="flex items-center gap-3">
-				<div class="rayde-tile flex items-center justify-center shrink-0" width={36} height={36}><icon document={Icons.FOLDER_3_LINE} class="size-4"/></div>
+				<div class="rayde-tile flex items-center justify-center shrink-0" width={36} height={36}><icon document={Icons.workspaceFolder()} class="size-4"/></div>
 				<div class="flex flex-col min-w-0">
 					<text class="text-sm font-medium">${props.name}</text>
 					<text class="text-xs text-text-tertiary">${shortPath(props.root)}</text>

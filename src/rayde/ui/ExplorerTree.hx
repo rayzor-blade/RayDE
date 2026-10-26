@@ -101,7 +101,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 				}
 			var top = props.state(props.root, true);
 			signals.push(top);
-			out.push(rowOf(props.root, props.name, 0, true, Icons.FOLDER_OPEN_LINE, top, fresh));
+			out.push(rowOf(props.root, props.name, 0, true, Icons.workspaceFolder(true), top, fresh));
 			if (top.get()) {
 				var head = props.head();
 				if (head != null) out.push(rowOf(head.path, haxe.io.Path.withoutDirectory(head.path), 1, false, head.icon, null, fresh));

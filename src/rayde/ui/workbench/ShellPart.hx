@@ -254,7 +254,7 @@ class ShellPart {
 	function titleBar():Element {
 		var hint = rayde.Platform.shortcutsMac() ? "⌘P" : "Ctrl+P";
 		wb.pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onPointerDown={e -> e.stopPropagation()} onClick={_ -> if (wb.quickOpen.get()) wb.quickOpen.set(false) else wb.openCenter()}>
-			<icon document={Icons.FOLDER_3_LINE} class="rayde-pill-icon size-3.5"/>
+			<icon document={Icons.workspaceFolder()} class="rayde-pill-icon size-3.5"/>
 			<text class="text-xs flex-1">${wb.props.name}</text>
 			<text class="rayde-pill-hint text-xs">${hint}</text>
 		</div>;
