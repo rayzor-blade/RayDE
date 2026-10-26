@@ -1,5 +1,6 @@
 mod account;
 mod workspace;
+mod checkpoints;
 pub use account::AccountSession;
 pub use workspace::WorkspaceSession;
 

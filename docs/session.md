@@ -51,6 +51,8 @@ Legacy caches without a verified identity are preserved but never imported autom
 
 With `--auth-secret S --login-url URL`, anyone may look, but every change answers `auth-required` (with the login URL) until the connection sends `auth.login` with a credential signed with `S`: `base64url(payload).base64url(HMAC-SHA256)`, the payload being `{login, id, exp}`. This signed-credential mode is separate from the Cloudflare account gateway below; that gateway authenticates the connection and supplies the private compute token. `rayde-session issue --auth-secret S --login NAME --id N` mints one for development.
 
+When `hello.checkpoints` is `1`, `doc.save` can include `checkpoint:true` to return a versioned, checksummed complete Yrs state captured with the saved text. Encoded checkpoints are bounded to 4 MiB. Native `doc.restore {path, checkpoint}` restores that graph and its text for a released document, including a file absent from replacement compute. It requires write authorization and refuses active documents, invalid paths and corrupt or incomplete state. The hosted gateway reserves restoration for the trusted control plane and stores Save checkpoints before acknowledging them; see [saved document recovery](../web/cloud/README.md#saved-document-recovery).
+
 ## Tests
 
 `cargo test --manifest-path native/session/Cargo.toml` runs the protocol against a real socket. `cd web/session && npm test` drives the demo page in headless Chromium.

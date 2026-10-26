@@ -168,7 +168,7 @@ impl<S: FileStore> Connection<S> {
         let workspace = self.workspace.clone();
         let store = &workspace.store;
         // Looking is open; changing, saving and running are for someone who has signed in.
-        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.");
+        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "doc.restore" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.");
         if changes && workspace.authority.is_some() && self.identity.is_none() {
             return Err(SessionError::new("auth-required", "Sign in with GitHub to make changes."));
         }
@@ -180,7 +180,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -244,8 +244,19 @@ impl<S: FileStore> Connection<S> {
                 workspace.docs.receive(&path, &self.name, &bytes(request, "update")?).map(|_| json!({}))
             }
             "doc.save" => {
-                let (written, mtime) = workspace.docs.flush(&clean(text(request, "path")?)?).await?;
-                Ok(json!({"written": written, "mtime": mtime}))
+                let path = clean(text(request, "path")?)?;
+                let checkpoint = request["checkpoint"] == true;
+                if checkpoint && !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before saving its checkpoint.")); }
+                let saved = workspace.docs.save(&path,checkpoint).await?;
+                let mut reply = json!({"written":saved.written,"mtime":saved.mtime});
+                if let Some(state) = saved.state { reply["checkpoint"] = json!(crate::checkpoint::pack(&state)?); }
+                Ok(reply)
+            }
+            "doc.restore" => {
+                let path = clean(text(request,"path")?)?;
+                let checkpoint = serde_json::from_value(request["checkpoint"].clone()).map_err(|_| SessionError::new("bad-checkpoint","The document checkpoint is invalid."))?;
+                let mtime = workspace.docs.restore(&path,&checkpoint).await?;
+                Ok(json!({"mtime":mtime}))
             }
             "doc.close" => {
                 let path = clean(text(request, "path")?)?;

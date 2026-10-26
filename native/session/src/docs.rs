@@ -81,6 +81,12 @@ pub struct Opened {
     pub text: String,
 }
 
+pub struct Saved {
+    pub written: bool,
+    pub mtime: u64,
+    pub state: Option<Vec<u8>>,
+}
+
 pub struct DocHub<S: FileStore> {
     store: Arc<S>,
     open: Mutex<HashMap<String, Arc<OpenDoc>>>,
@@ -199,19 +205,39 @@ impl<S: FileStore> DocHub<S> {
 
     /// Writes the document's text to its file, and its state to the session's, if they changed.
     pub async fn flush(&self, path: &str) -> Result<(bool, u64)> {
+        let saved = self.save(path, false).await?;
+        Ok((saved.written,saved.mtime))
+    }
+
+    pub async fn save(&self, path: &str, checkpoint: bool) -> Result<Saved> {
         let Some(open) = self.get(path) else {
-            return Ok((false, self.store.stat(path).await?.map_or(0, |e| e.mtime)));
+            return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
         };
         let _saving = open.saving.lock().await;
-        let text = open.text.get_string(&open.doc.transact());
+        let (text,state) = {
+            let txn = open.doc.transact();
+            (open.text.get_string(&txn),txn.encode_state_as_update_v1(&StateVector::default()))
+        };
+        if checkpoint && state.len() > crate::checkpoint::MAX_BYTES { return Err(SessionError::new("too-large", "The document checkpoint exceeds the recovery size limit.")); }
         let changed = *open.last_disk.lock().unwrap() != text;
         if changed {
             self.store.write(path, text.as_bytes()).await?;
             *open.last_disk.lock().unwrap() = text;
         }
-        let state = state_of(&open.doc);
         self.store.write_state(&format!("doc:{path}"), &state).await?;
-        Ok((changed, self.store.stat(path).await?.map_or(0, |e| e.mtime)))
+        Ok(Saved {written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
+    }
+
+    /// Restore only a released document; its next open must load exactly this graph and text.
+    pub async fn restore(&self, path: &str, checkpoint: &crate::checkpoint::Checkpoint) -> Result<u64> {
+        let _opening = self.opening.lock().await;
+        if self.get(path).is_some() { return Err(SessionError::new("document-open", "Close this shared document before restoring it.")); }
+        if self.store.stat(path).await?.is_some_and(|entry|entry.kind!="file") { return Err(SessionError::new("wrong-kind","Restore requires a file path.")); }
+        let state = crate::checkpoint::unpack(checkpoint)?;
+        let text = crate::checkpoint::text(&state)?;
+        self.store.write_state(&format!("doc:{path}"), &state).await?;
+        self.store.write(path,text.as_bytes()).await?;
+        Ok(self.store.stat(path).await?.map_or(0, |entry| entry.mtime))
     }
 
     /// Flushes and releases a document nobody has open.

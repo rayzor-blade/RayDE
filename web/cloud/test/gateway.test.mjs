@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fixture, signin, origin } from "./fixture.mjs";
+import { fixture, signin, origin, listening } from "./fixture.mjs";
 import { once } from "node:events";
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -17,7 +17,7 @@ test("authenticated Rust gateway reaches a real Rust workspace, hides its token,
   const port = await freePort();
   const server = spawn(resolve("../../native/session/target/debug/rayde-session"), ["--root", root, "--port", String(port), "--token", "compute-secret", "--origin", origin], { stdio: "ignore" });
   t.after(async () => { server.kill(); await rm(root, { recursive: true, force: true }); });
-  await sleep(300);
+  await listening(port,server);
   const { mf, fetch } = await fixture({ endpoint: `ws://127.0.0.1:${port}/session` }); t.after(() => mf.dispose());
   const alice = await signin(fetch), bob = await signin(fetch, "bob");
   const opening = await (await fetch("/api/workspaces/open", { method: "POST", headers: alice.headers, body: '{"repository":111}' })).json();
@@ -58,7 +58,7 @@ test("hosted recovery follows the verified owner, logical workspace, and compute
   async function stop() { if (server?.exitCode === null && server.signalCode === null) { const exited = once(server, "exit"); server.kill(); await exited; } }
   async function start(state) {
     server = spawn(resolve("../../native/session/target/debug/rayde-session"), ["--root", root, "--state-root", join(root, state), "--port", String(port), "--token", "compute-secret", "--origin", origin], { stdio: "ignore" });
-    await sleep(300); assert.equal(server.exitCode, null);
+    await listening(port,server);
   }
   t.after(async () => { await stop(); await rm(root, { recursive: true, force: true }); });
   await start("state");

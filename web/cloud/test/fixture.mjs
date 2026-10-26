@@ -3,11 +3,25 @@ import { Miniflare, Response } from "miniflare";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {createConnection} from "node:net";
 
 export const directory = fileURLToPath(new URL("../", import.meta.url));
 export const origin = "http://127.0.0.1:8787";
 export const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 export const repo = { id: 111, name: "demo", full_name: "alice/demo", private: true, default_branch: "main", clone_url: "https://github.com/alice/demo.git", permissions: { pull: true } };
+export async function listening(port,child) {
+  const deadline=Date.now()+10000;
+  while(Date.now()<deadline) {
+    if(child.exitCode!==null || child.signalCode!==null)throw Error("Workspace test server exited before listening");
+    const ready=await new Promise(resolve=>{
+      const socket=createConnection({host:"127.0.0.1",port});
+      socket.once("connect",()=>{socket.destroy();resolve(true);});
+      socket.once("error",()=>resolve(false));socket.setTimeout(200,()=>{socket.destroy();resolve(false);});
+    });
+    if(ready)return;await new Promise(resolve=>setTimeout(resolve,20));
+  }
+  throw Error("Workspace test server did not start listening");
+}
 export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
