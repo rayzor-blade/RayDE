@@ -2,7 +2,7 @@
 use crate::{
     dir_store::DirStore,
     processes::ChildPrograms,
-    session::{MAX_MESSAGE, Out, Programs, Workspace},
+    session::{Connection, MAX_MESSAGE, Out, Programs, Workspace},
     store::FileStore,
 };
 use axum::{
@@ -30,6 +30,8 @@ struct OutputState {
     closed: std::sync::atomic::AtomicBool,
     wake: Notify,
 }
+
+const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl OutputState {
     fn stop(&self) {
@@ -232,13 +234,17 @@ async fn upgrade(State(shared): State<Shared>, headers: HeaderMap, socket: WebSo
     if !origin_allowed(&headers, &shared.origins) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    socket.max_message_size(MAX_MESSAGE).max_frame_size(MAX_MESSAGE).on_upgrade(move |socket| connection(shared.workspace, socket))
+    let (out, outgoing, output) = outbox(512, 32 * 1024 * 1024);
+    let connection = match shared.workspace.connect(out) {
+        Ok(connection) => connection,
+        Err(error) => return (StatusCode::TOO_MANY_REQUESTS, error.message).into_response(),
+    };
+    socket.max_message_size(MAX_MESSAGE).max_frame_size(MAX_MESSAGE).on_upgrade(move |socket| connection_socket(shared.workspace, connection, socket, outgoing, output))
 }
 
-async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
+async fn connection_socket(workspace: Arc<Workspace<DirStore>>, mut connection: Connection<DirStore>, socket: WebSocket, mut outgoing: mpsc::Receiver<(String, OutputPermit)>, output: Arc<OutputState>) {
     use futures_util::{SinkExt, StreamExt};
     let (mut sink, mut stream) = socket.split();
-    let (out, mut outgoing, output) = outbox(512, 32 * 1024 * 1024);
     // A client that sends binary messages (a program with only a byte stream to the session) is answered in the same form.
     let binary = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let answers = binary.clone();
@@ -252,11 +258,12 @@ async fn connection(workspace: Arc<Workspace<DirStore>>, socket: WebSocket) {
         }
         written.stop();
     });
-    let mut connection = workspace.connect(out);
+    let hello_deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
     let mut frames = Frames::default();
     'read: loop {
         let message = tokio::select! {
             _ = output.wake.notified() => break,
+            _ = tokio::time::sleep_until(hello_deadline), if !connection.ready() => break,
             message = stream.next() => message,
         };
         let Some(Ok(message)) = message else { break };
@@ -355,10 +362,18 @@ impl Frames {
 }
 
 /// One TCP connection speaking frames.
-async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStream) {
+async fn framed(workspace: Arc<Workspace<DirStore>>, mut stream: tokio::net::TcpStream) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let (mut reader, mut writer) = stream.into_split();
     let (out, mut outgoing, output) = outbox(512, 32 * 1024 * 1024);
+    let mut connection = match workspace.connect(out) {
+        Ok(connection) => connection,
+        Err(error) => {
+            let message = serde_json::json!({"ok":false,"code":error.code,"message":error.message}).to_string();
+            let _ = tokio::time::timeout(Duration::from_secs(1), stream.write_all(&frame(&message))).await;
+            return;
+        }
+    };
+    let (mut reader, mut writer) = stream.into_split();
     let written = output.clone();
     let sender = tokio::spawn(async move {
         while let Some((text, _permit)) = outgoing.recv().await {
@@ -368,11 +383,12 @@ async fn framed(workspace: Arc<Workspace<DirStore>>, stream: tokio::net::TcpStre
         }
         written.stop();
     });
-    let mut connection = workspace.connect(out);
+    let hello_deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
     let (mut frames, mut buffer) = (Frames::default(), vec![0u8; 64 * 1024]);
     'read: loop {
         let count = tokio::select! {
             _ = output.wake.notified() => break,
+            _ = tokio::time::sleep_until(hello_deadline), if !connection.ready() => break,
             count = reader.read(&mut buffer) => count,
         };
         let Ok(count) = count else { break };

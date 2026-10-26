@@ -7,6 +7,30 @@ use std::{
     time::Duration,
 };
 
+const MAX_CONNECTIONS: usize = 8;
+
+struct PendingOpen {
+    sid: Value,
+    ticket: Rc<()>,
+    abort: futures_util::future::AbortHandle,
+}
+type Openings = Rc<RefCell<Vec<PendingOpen>>>;
+struct Opening {
+    pending: Openings,
+    ticket: Rc<()>,
+    controller: Option<AbortController>,
+}
+impl Drop for Opening {
+    fn drop(&mut self) {
+        if let Some(controller) = self.controller.take() {
+            controller.abort();
+        }
+        self.pending
+            .borrow_mut()
+            .retain(|opening| !Rc::ptr_eq(&opening.ticket, &self.ticket));
+    }
+}
+
 #[derive(Default)]
 struct Pending {
     closed: bool,
@@ -147,6 +171,7 @@ pub struct WorkspaceSession {
     checkpoints: Rc<crate::checkpoints::Checkpoints>,
     saving: Rc<futures_util::lock::Mutex<()>>,
     save_waiting: Rc<Cell<usize>>,
+    connecting: Openings,
 }
 impl DurableObject for WorkspaceSession {
     fn new(state: State, env: Env) -> Self {
@@ -159,6 +184,7 @@ impl DurableObject for WorkspaceSession {
             checkpoints,
             saving: Rc::new(futures_util::lock::Mutex::new(())),
             save_waiting: Rc::new(Cell::new(0)),
+            connecting: Rc::new(RefCell::new(Vec::new())),
         }
     }
     async fn fetch(&self, req: Request) -> Result<Response> {
@@ -180,15 +206,19 @@ impl DurableObject for WorkspaceSession {
             return ws.close(Some(1011), Some("Reconnect to the workspace"));
         };
         if attachment["expires"].as_u64().unwrap_or(0) < now() {
+            self.disconnect(&ws);
             return ws.close(Some(1008), Some("Sign in again"));
         }
         let WebSocketIncomingMessage::String(message) = message else {
+            self.disconnect(&ws);
             return ws.close(Some(1008), Some("Invalid session message"));
         };
         if message.len() > 16 * 1024 * 1024 {
+            self.disconnect(&ws);
             return ws.close(Some(1009), Some("Message too large"));
         }
         let Ok(mut data) = serde_json::from_str::<Value>(&message) else {
+            self.disconnect(&ws);
             return ws.close(Some(1008), Some("Invalid session message"));
         };
         if data["op"] == "doc.restore" {
@@ -227,10 +257,14 @@ impl DurableObject for WorkspaceSession {
             {
                 let mut pending = handshakes.borrow_mut();
                 if pending.hello.len() >= 64 {
+                    drop(pending);
+                    self.disconnect(&ws);
                     return ws.close(Some(1008), Some("Too many session handshakes"));
                 }
                 let id = data["id"].to_string();
                 if id.len() > 128 {
+                    drop(pending);
+                    self.disconnect(&ws);
                     return ws.close(Some(1008), Some("Invalid session request ID"));
                 }
                 pending.hello.insert(id);
@@ -305,6 +339,14 @@ impl WorkspaceSession {
         let storage = self.state.storage();
         let mut value = storage.get::<Value>("workspace").await?;
         if req.path() == "/disconnect" {
+            for opening in self
+                .connecting
+                .borrow()
+                .iter()
+                .filter(|opening| opening.sid == data["sid"])
+            {
+                opening.abort.abort();
+            }
             for ws in self.state.get_websockets() {
                 if ws
                     .deserialize_attachment::<Value>()?
@@ -346,6 +388,26 @@ impl WorkspaceSession {
             if record["status"] != "ready" {
                 return Err(bad(409, "The workspace is still starting."));
             }
+            if self.backends.borrow().len() + self.connecting.borrow().len() >= MAX_CONNECTIONS {
+                return Err(bad(
+                    429,
+                    "This workspace has too many connections. Close another editor and reconnect.",
+                ));
+            }
+            let (abort, registration) = futures_util::future::AbortHandle::new_pair();
+            let ticket = Rc::new(());
+            self.connecting.borrow_mut().push(PendingOpen {
+                sid: data["sid"].clone(),
+                ticket: ticket.clone(),
+                abort,
+            });
+            let controller = AbortController::default();
+            let signal = controller.signal();
+            let mut admission = Opening {
+                pending: self.connecting.clone(),
+                ticket,
+                controller: Some(controller),
+            };
             let mut endpoint = Url::parse(text(&record["connection"], "url")?)
                 .map_err(|_| bad(502, "Invalid workspace endpoint."))?;
             let scheme = if endpoint.scheme() == "wss" {
@@ -359,12 +421,17 @@ impl WorkspaceSession {
             let headers = Headers::new();
             headers.set("Upgrade", "websocket")?;
             headers.set("Origin", text(&data, "origin")?)?;
-            let response = Fetch::Request(Request::new_with_init(
+            let fetch = Fetch::Request(Request::new_with_init(
                 endpoint.as_str(),
                 RequestInit::new().with_headers(headers),
-            )?)
-            .send()
-            .await?;
+            )?);
+            let response = futures_util::future::Abortable::new(
+                deadline(fetch.send_with_signal(&signal), 10),
+                registration,
+            )
+            .await
+            .map_err(|_| bad(403, "The account signed out before connecting."))?
+            .map_err(|_| bad(504, "The workspace did not respond. Reconnect and try again."))??;
             let backend = response
                 .websocket()
                 .ok_or_else(|| bad(502, "The workspace could not be reached."))?;
@@ -381,6 +448,8 @@ impl WorkspaceSession {
                 backend.clone(),
                 handshakes.clone(),
             ));
+            admission.controller = None;
+            drop(admission);
             let client = pair.server.clone();
             let backends = self.backends.clone();
             let checkpoints = self.checkpoints.clone();

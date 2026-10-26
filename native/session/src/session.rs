@@ -20,9 +20,18 @@ pub const MAX_MESSAGE: usize = 16 * 1024 * 1024;
 pub const MAX_READ: u64 = 8 * 1024 * 1024;
 /// Unique document subscriptions owned by one connection.
 pub const MAX_CONNECTION_DOCUMENTS: usize = 256;
+/// Live connections, including clients that have not authenticated yet.
+pub const MAX_CONNECTIONS: usize = 32;
+/// Connections using the same verified account in this workspace.
+pub const MAX_IDENTITY_CONNECTIONS: usize = 8;
 
 /// Where a connection's responses and events go: the runner's socket, or a test's queue.
 pub type Out = Arc<dyn Fn(String) + Send + Sync>;
+
+struct Subscriber {
+    out: Out,
+    identity: Option<u64>,
+}
 
 /// Programs a session runs, in directories of its workspace. A session that must not run programs has none.
 pub trait Programs: Send + Sync + 'static {
@@ -45,7 +54,7 @@ pub struct Workspace<S: FileStore> {
     /// Seconds since the epoch; the runner supplies it, because a Durable Object has no `SystemTime`.
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
     token: Option<String>,
-    connections: Mutex<HashMap<u64, Out>>,
+    connections: Mutex<HashMap<u64, Subscriber>>,
     next: AtomicU64,
 }
 
@@ -71,19 +80,23 @@ impl<S: FileStore> Workspace<S> {
         }
     }
 
-    pub fn connect(self: &Arc<Self>, out: Out) -> Connection<S> {
+    pub fn connect(self: &Arc<Self>, out: Out) -> Result<Connection<S>> {
+        let mut connections = self.connections.lock().unwrap();
+        if connections.len() >= MAX_CONNECTIONS {
+            return Err(SessionError::new("busy", "This workspace has too many connections. Close another editor and reconnect."));
+        }
         let id = self.next.fetch_add(1, Ordering::Relaxed);
-        self.connections.lock().unwrap().insert(id, out.clone());
+        connections.insert(id, Subscriber { out: out.clone(), identity: None });
         let syntax=crate::syntax::SyntaxJobs::new(self.syntax.get().cloned(),out.clone());
-        Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new(),terminals:Vec::new(),syntax }
+        Ok(Connection { workspace: self.clone(), id, name: format!("c{id}"), out, ready: false, identity: None, docs: Vec::new(), programs: Vec::new(),terminals:Vec::new(),syntax })
     }
 
     /// A path changed in the workspace: open documents take it as an edit, and every connection hears of it.
     pub async fn changed(&self, path: &str, kind: &str) {
         self.docs.changed(path).await;
         let message = json!({"ev": "fs.changed", "path": path, "kind": kind}).to_string();
-        for out in self.connections.lock().unwrap().values() {
-            out(message.clone());
+        for subscriber in self.connections.lock().unwrap().values() {
+            (subscriber.out)(message.clone());
         }
     }
 
@@ -120,6 +133,18 @@ fn bytes(request: &Value, key: &str) -> Result<Vec<u8>> {
 }
 
 impl<S: FileStore> Connection<S> {
+    pub fn ready(&self) -> bool { self.ready }
+
+    fn identify(&mut self, identity: Identity) -> Result<()> {
+        let mut connections = self.workspace.connections.lock().unwrap();
+        if connections.iter().filter(|(id, entry)| **id != self.id && entry.identity == Some(identity.id)).count() >= MAX_IDENTITY_CONNECTIONS {
+            return Err(SessionError::new("busy", "This account has too many connections to this workspace. Close another editor before signing in."));
+        }
+        let entry = connections.get_mut(&self.id).ok_or_else(|| SessionError::new("closed", "The connection is closed."))?;
+        entry.identity = Some(identity.id);
+        self.identity = Some(identity);
+        Ok(())
+    }
     fn cache_identity(&self) -> Option<Value> {
         self.workspace.store.cache_identity().map(|identity| json!({
             "version":1,"authority":identity.authority,"workspace":identity.workspace,
@@ -185,7 +210,7 @@ impl<S: FileStore> Connection<S> {
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
                 let identity = authority.verify(text(request, "credential")?, (workspace.clock)()).ok_or_else(|| SessionError::new("unauthorised", "The credential is not genuine or has expired."))?;
-                self.identity = Some(identity);
+                self.identify(identity)?;
                 let identity = self.identity.as_ref().unwrap();
                 Ok(json!({"login":identity.login,"id":identity.id,"cacheIdentity":self.cache_identity()}))
             }

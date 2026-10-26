@@ -125,6 +125,9 @@ Hidden terminals continue running with bounded scrollback but stop streaming scr
 
 | Resource | Limit |
 | --- | --- |
+| Native connections per workspace (WebSocket and framed TCP combined) | 32 |
+| Native connections per verified account in a workspace | 8 |
+| Hosted connections per workspace, including upstream opens in progress | 8 |
 | Shared UTF-8 file | 8 MiB |
 | Unique document subscriptions per connection | 256 |
 | Distinct retained documents per workspace | 512 |
@@ -135,6 +138,8 @@ Hidden terminals continue running with bounded scrollback but stop streaming scr
 | Terminal input queue | 256 KiB |
 
 Document-admission failures return `busy` with an instruction to close documents. Closing a subscription releases it immediately. Idle documents from disconnected clients retain a five-second reload grace before eviction. Admission limits are separate from aggregate storage, byte-rate and compute quotas.
+
+Connection admission is atomic. Native WebSocket upgrades return HTTP 429 at capacity; framed TCP returns `busy` and closes. Account sign-in returns `busy` without replacing the current identity when its limit is reached. Native clients have ten seconds to complete `hello`; ready clients have no idle deadline. Hosted upstream opens also time out after ten seconds. Failed opens, disconnects, backend loss and sign-out release their reservations. These workspace limits do not enforce an account-wide quota across multiple workspaces.
 
 ## Cloudflare gateway
 

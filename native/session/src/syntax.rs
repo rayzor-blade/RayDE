@@ -305,7 +305,7 @@ mod tests {
         let held = Arc::new(Held::default());
         assert!(workspace.set_syntax(held.clone()));
         let (out, values) = output();
-        let mut connection = workspace.connect(out);
+        let mut connection = workspace.connect(out).unwrap();
         connection.handle(&query(1, "job").to_string()).await;
         assert_eq!(values.lock().unwrap()[0]["code"], "unauthorised");
         assert!(held.pending.lock().unwrap().is_empty());

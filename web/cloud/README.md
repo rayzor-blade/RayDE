@@ -44,6 +44,8 @@ The provider must reuse the workspace ID on retry, authorize the owner/repositor
 
 The gateway supplies the compute token in the session handshake and relays the existing protocol. Its account/workspace metadata persists in Durable Objects; document authority currently remains in the Rust session process. It closes upstream connections when clients disconnect. An interrupted upstream requires reconnecting. A running upstream socket keeps its actor active; this is not a fully hibernating document runner.
 
+Each workspace admits eight connections, counting upstream handshakes in progress. Overflow returns HTTP 429 before dialing compute. Upstream opens have a ten-second deadline; failure, timeout and sign-out cancel the attempt and release its reservation. Established slots release on client close, invalid input, backend loss or sign-out. This is a workspace admission bound, separate from account-wide usage policy.
+
 ## Saved document recovery
 
 Hosted Save requests a complete, checksummed CRDT snapshot from compute and commits it to the workspace Durable Object before returning success to the editor. The browser receives a small checkpoint receipt; the snapshot stays on the service side. A failed durable write returns a Save failure even if compute already wrote the file, so the editor retains its dirty state. Hosts advertise `hello.checkpoints = 1`; older hosts must be updated before hosted Save can confirm recovery.
