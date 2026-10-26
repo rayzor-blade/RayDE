@@ -43,6 +43,7 @@ const server=createServer((request,response)=>{
   let body=readFileSync(path);
   if(name==="/ashui-host.mjs")body=Buffer.from(body.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)","3"));
   if(name==="/rayde_session.mjs")body=Buffer.from(body.toString()
+   .replace('let reply;', 'let reply; if (globalThis.__holdBuild && request.op.startsWith("fs.") && request.path === "build.hxml") { console.log("build-file-held"); await new Promise(resolve => (globalThis.__buildReaders ??= []).push(resolve)); }')
    .replace('if (request.op === "hello")','if (globalThis.__delayBuild && request.op === "fs.list") { console.log("build-scan-held"); await new Promise(resolve => setTimeout(resolve,3000)); } if (request.op === "hello")')
    .replace("const answer = (message) => {",'const answer = (message) => { if (message.ev === "proc.out") console.log("stream:"+JSON.stringify(message));'));
   response.writeHead(200,{"Content-Type":path.endsWith(".wasm")?"application/wasm":/\.m?js$/.test(path)?"text/javascript":"text/html","Cross-Origin-Opener-Policy":"same-origin","Cross-Origin-Embedder-Policy":"require-corp"});response.end(body);
@@ -55,10 +56,17 @@ try{
  page=await browser.newPage();await page.evaluateOnNewDocument(visitor=>Object.defineProperty(navigator,"userAgentData",{value:{platform:visitor==="Mac"?"macOS":visitor}}),visitor);
  page.on("console",m=>{const s=m.text();logs.push(s);if(s.startsWith("stream:")){const r=JSON.parse(s.slice(7));if(r.stream==="stdout")output(r.pid,r.data);}writeFileSync(join(shots,"console.log"),logs.join("\n"));});
  page.on("pageerror",e=>logs.push("PAGE ERROR "+e.stack));
- await page.goto(`http://127.0.0.1:${webPort}/?session=${encodeURIComponent(`ws://127.0.0.1:${sessionPort}/session`)}&project=build.hxml#token=navigation-test`,{waitUntil:"domcontentloaded"});
+ await page.goto(`http://127.0.0.1:${webPort}/?session=${encodeURIComponent(`ws://127.0.0.1:${sessionPort}/session`)}&project=build.hxml&env=RAYDE_SETTINGS_TIMING=1#token=navigation-test`,{waitUntil:"domcontentloaded"});
  await until(()=>logs.includes("ashui: ready"),"ready");
- await page.evaluate(()=>globalThis.__delayBuild=true);
+ await page.evaluate(()=>{globalThis.__holdBuild=true;globalThis.__delayBuild=true;});
+ const settingsStart=Date.now();
  await page.mouse.click(155,115);
+ await until(()=>logs.includes("build-file-held"),"build file read");
+ await until(()=>logs.some(s=>s.startsWith("settings-ready:")),"Settings while build file is held",2);
+ report.loadingMs=Date.now()-settingsStart;
+ await page.screenshot({path:join(shots,"build-file-loading.png")});
+ await page.evaluate(()=>{globalThis.__holdBuild=false;for(const ready of globalThis.__buildReaders??[])ready();globalThis.__buildReaders=[];});
+ report.settingsBeforeFile=true;
  await until(()=>logs.includes("build-scan-held"),"background build scan");
  await pause(200);await page.screenshot({path:join(shots,"build-form-during-scan.png")});
  await page.evaluate(()=>globalThis.__delayBuild=false);

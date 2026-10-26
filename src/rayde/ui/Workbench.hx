@@ -240,8 +240,9 @@ class Workbench extends Component<WorkbenchProps> {
 	/** What the parts of the IDE register: commands, bar items, side views and the moments they follow. */
 	public final contributions = new Contributions();
 
-	/** The build file as the form edits it, read when the Settings page opens. */
-	var buildModel:Null<HxmlFile>;
+	final buildLoad = new BuildFileLoad();
+	var buildModel(get,never):Null<HxmlFile>;
+	function get_buildModel():Null<HxmlFile> return buildLoad.state.get().file;
 
 	/** The section of the Settings page in view. */
 	final settingsCategory = Signal.make("build");
@@ -336,7 +337,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (saved != null) {
 			var files = [for (entry in saved.files) sessionPath(entry)];
 			files = [for (file in files) if (restorableTab(file)) file];
-			if (files.indexOf(SETTINGS) >= 0) buildModel = props.display.hxml == null ? null : HxmlFile.read(props.display.hxml);
+			if (files.indexOf(SETTINGS) >= 0) buildLoad.load(props.display.hxml);
 			for (file in files) if (!isVirtual(file)) restoredTabs.set(file, true);
 			open.set(files);
 			var selected = sessionPath(saved.active);
@@ -439,10 +440,11 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Opens the Settings page in a tab, or brings it forward, on the section `category` when one is named; the build file is read as it is now. */
 	public function openSettings(?category:String):Void {
+		SettingsTiming.request();
 		if (category != null)
 			settingsCategory.set(SettingsPage.category(category).id);
 		if (open.get().indexOf(SETTINGS) < 0)
-			buildModel = props.display.hxml == null ? null : HxmlFile.read(props.display.hxml);
+			buildLoad.load(props.display.hxml);
 		openFile(SETTINGS);
 	}
 
@@ -935,7 +937,7 @@ class Workbench extends Component<WorkbenchProps> {
 			if (current == tree && !gone && languagesPart.languageServers.hasEvents()) languagesPart.pollLanguages();
 		};
 		ashui.layout.LayoutTree.flushHooks.push(receiveLanguages);
-		var receiveFrame:ashui.layout.LayoutTree->Void = current -> { if (current == tree && !gone) contributions.frame(); };
+		var receiveFrame:ashui.layout.LayoutTree->Void = current -> { if (current == tree && !gone) { buildLoad.poll(); contributions.frame(); } };
 		ashui.layout.LayoutTree.flushHooks.push(receiveFrame);
 		Owner.onCleanup(() -> {
 			for (i in 0...ashui.layout.LayoutTree.flushHooks.length) if (Reflect.compareMethods(ashui.layout.LayoutTree.flushHooks[i],receiveFrame)) {
@@ -951,6 +953,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (props.empty != true) loadRecent();
 		new ashui.reactive.Watch(() -> { open.get(); active.get(); 0; }, _ -> editorPart.groups.sync(open.get(),active.get()), (_, _) -> false);
 		new ashui.reactive.Watch(() -> { open.get(); dirty.get(); 0; }, _ -> documentsPart.releaseClosedDocuments(), (_, _) -> false);
+		new ashui.reactive.Watch(() -> open.get().indexOf(SETTINGS) >= 0, shown -> { if (!shown) buildLoad.cancel(); });
 		new ashui.reactive.Watch(() -> panelsPart.problemsHeight.get(), h -> if (h > 40) panelsPart.panelHeight = h);
 		new ashui.reactive.Watch(() -> { open.get(); active.get(); editorPart.groups.revision.get(); 0; }, _ -> {
 			if (sessionReady) workspaceSession.save(sessionSnapshot());
@@ -979,6 +982,7 @@ class Workbench extends Component<WorkbenchProps> {
 			terminalPart.ensureTerminal(), (_, _) -> false);
 		Owner.onCleanup(() -> {
 			gone = true;
+			buildLoad.dispose();
 			contributions.closing();
 			if (codeActionsPart.codeActionTimer != null) codeActionsPart.codeActionTimer.cancel();
 			if (codeActionsPart.codeActionPoll != null) codeActionsPart.codeActionPoll.cancel();

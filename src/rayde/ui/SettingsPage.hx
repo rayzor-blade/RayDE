@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Icon;
+import ashui.components.Button;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
@@ -14,6 +15,7 @@ import rayde.settings.Appearance;
 import rayde.term.Settings;
 import rayde.ui.AppearanceSettings;
 import rayde.ui.BuildSettings;
+import rayde.ui.BuildFileLoad.BuildFileState;
 import rayde.ui.RayzorSettings;
 import rayde.ui.CommandCenter.CenterAction;
 import rayde.ui.ExtensionConfig;
@@ -34,6 +36,8 @@ typedef SettingsPageProps = {
 	onExtensionToggle:(String, Bool)->Void,
 	/** The build file the Build section edits; null when the project has none. */
 	build:Null<HxmlFile>,
+	?buildLoad:Signal<BuildFileState>,
+	?onReloadBuild:Void->Void,
 	rayzor:Null<String>,
 	/** The project's `.cbproj`, when it is a Caribou project, and what Caribou says is wrong with it. */
 	caribou:Null<String>,
@@ -88,19 +92,22 @@ class SettingsPage extends Component<SettingsPageProps> {
 		return c.id == "extension" && extension != null ? extension.name : c.label;
 
 	/** Whether a project has the section: the config of an extension only for an extension, the build and libraries for the rest. */
-	function has(c:SettingsCategory):Bool
-		return c.id == "run" ? props.build != null : props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
+	function has(c:SettingsCategory, hasBuild:Bool):Bool
+		return c.id == "run" ? hasBuild : props.extension != null ? c.id != "build" && c.id != "libraries" : c.id != "extension";
+
+	function buildState():BuildFileState
+		return props.buildLoad == null ? {path:props.build == null ? null : props.build.path,file:props.build,loading:false,error:null} : props.buildLoad.get();
 
 	function render():Element
 		return <div id="rayde-settings" class="flex flex-1 min-h-0">
 			<div id="rayde-settings-nav" class="rayde-settings-nav flex flex-col shrink-0 gap-1 px-3 py-4" width={216}>
-				${nav()}
+				<for {hasBuild in [buildState().path != null]}>${nav(hasBuild)}</for>
 			</div>
 			<for {id in [props.category.get()]}>${section(id)}</for>
 		</div>;
 
-	function nav():Element
-		return <div class="flex flex-col gap-1">{[for (c in categories) if (has(c)) navItem(c)]}</div>;
+	function nav(hasBuild:Bool):Element
+		return <div class="flex flex-col gap-1">{[for (c in categories) if (has(c,hasBuild)) navItem(c)]}</div>;
 
 	function navItem(c:SettingsCategory):Element {
 		var item = <div id={"rayde-settings-nav-" + c.id} class="rayde-nav-item flex items-center gap-3 px-3 cursor-pointer" height={34} onClick={_ -> { SettingsTiming.request(); props.category.set(c.id); }}>
@@ -113,10 +120,13 @@ class SettingsPage extends Component<SettingsPageProps> {
 	}
 
 	/** The chosen section, which fills what the list leaves. */
-	function section(id:String):Element
+	function section(id:String):Element {
+		if (id == "libraries") return <for {build in [buildState()]}>
+			${SettingsTiming.build(id,() -> build.loading || build.error != null ? buildStatus(build,id) : <library-settings file={build.file} root={props.root} manager={props.libraries} onChanged={props.onBuildChanged}/>)}
+		</for>;
+		if (id == "build" && props.caribou == null && props.rayzor == null) return hxmlSection();
 		return SettingsTiming.build(id, () -> switch id {
 			case "run": <runner-settings root={props.root} onChanged={props.onRunnerChanged}/>;
-			case "libraries": <library-settings file={props.build} root={props.root} manager={props.libraries} onChanged={props.onBuildChanged}/>;
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
@@ -124,8 +134,25 @@ class SettingsPage extends Component<SettingsPageProps> {
 			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
 			case _ if (props.caribou != null): <caribou-settings path={props.caribou} languages={props.caribouLanguages} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
 			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
-			case _: props.build == null ? noBuild() : <build-settings file={props.build} root={props.root} onChanged={props.onBuildChanged}/>;
+			case _: hxmlSection();
 		});
+	}
+
+	function hxmlSection():Element
+		return <for {build in [buildState()]}>
+			${SettingsTiming.build("build",() -> build.loading || build.error != null ? buildStatus(build,"build") : build.file == null ? noBuild() : <build-settings file={build.file} root={props.root} onChanged={props.onBuildChanged}/>)}
+		</for>;
+
+	function buildStatus(build:BuildFileState, section:String):Element {
+		var name = build.path == null ? "build file" : haxe.io.Path.withoutDirectory(build.path);
+		return SettingsParts.page("rayde-" + section, <div class="flex flex-col gap-6">
+			${SettingsParts.header(section == "libraries" ? Icons.BOOK_2_LINE : Icons.HAMMER_LINE,section == "libraries" ? "Libraries" : "Build",name)}
+			<if {build.loading}><div id="rayde-build-loading" class="flex items-center gap-3"><icon document={Icons.LOADER_4_LINE} class="size-4 animate-spin text-text-secondary"/><text class="text-sm text-text-secondary">${"Loading " + name + "…"}</text></div>
+			<else><div id="rayde-build-load-error" class="flex flex-col gap-3"><text class="text-sm text-error">${"Could not load " + name + "."}</text>
+				<if {props.onReloadBuild != null}><div><button id="rayde-build-retry" variant={Secondary} size={Sm} onClick={_ -> props.onReloadBuild()}>Retry</button></div></if>
+			</div></if>
+		</div>);
+	}
 
 	/** The Build section of a project opened without a build file. */
 	function noBuild():Element

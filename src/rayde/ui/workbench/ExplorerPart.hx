@@ -141,10 +141,10 @@ class ExplorerPart {
 
 	/** Folder selections only expand the tree; every file can be opened. */
 	function openExplorerFile(path:String):Void {
+		if (path == wb.props.display.hxml || path == wb.projectManifest()) { wb.openBuild(); return; }
 		if (!Fs.exists(path) || Fs.isDirectory(path)) return;
 		if (Manifest.isManifest(path)) wb.openSettings("extension");
 		else if (ThemeFile.isThemeFile(path)) wb.themePart.openThemeStudio();
-		else if (path == wb.props.display.hxml || path == wb.projectManifest()) wb.openBuild();
 		else wb.openFile(path);
 	}
 
