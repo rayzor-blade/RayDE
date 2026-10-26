@@ -3,15 +3,15 @@
 #
 #   scripts/build-web.sh [output directory]      default: bin/web/rayde
 #
-# Needs Ash, and the web builds of blinc_abi, hlwindow and hlwgpu (ashui's tests/wasm/run.sh makes them in ashui/tests/bin/web;
-# WEB_LIBS names another directory holding blinc_abi.wasm, hlwindow-web/ and hlwgpu-web/). Serve the result with `ash serve`.
+# Needs Ash, Rust nightly with rust-src, and hlwindow/hlwgpu's web builds (WEB_LIBS selects their directory).
+# The pinned renderer is built and cached by its Rust inputs. Serve the result with `ash serve`.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 source "$here/scripts/deps.sh"
 ash=${ASH:-$(command -v ash || true)}
 [ -x "$ash" ] || { echo "build-web.sh: put ash on PATH or set ASH" >&2; exit 1; }
 libs=${WEB_LIBS:-$siblings/ashui/tests/bin/web}
-for need in blinc_abi.wasm hlwindow-web hlwgpu-web; do
+for need in hlwindow-web hlwgpu-web; do
   [ -e "$libs/$need" ] || { echo "build-web.sh: $libs/$need is missing; run ashui's tests/wasm/run.sh --no-open once, or set WEB_LIBS" >&2; exit 1; }
 done
 out=${1:-$here/bin/web/rayde}
@@ -20,7 +20,8 @@ channel_libs=${ASH_CHANNEL_WEB:-$channel/target/wasm-channel}
 [ -f "$channel_libs/ash_channel.wasm" ] || fail "build Ash's ash-channel wasm side module first, or set ASH_CHANNEL_WEB"
 [ -x "$here/web/session/node_modules/.bin/esbuild" ] || fail "run npm ci in web/session to build the page agent"
 mkdir -p "$out"
-cp "$libs/blinc_abi.wasm" "$out/"
+abi=$(bash "$here/scripts/build-web-abi.sh")
+cp "$abi" "$out/blinc_abi.wasm"
 cp "$channel_libs/ash_channel.wasm" "$channel_libs/channel-agent.mjs" "$out/"
 (cd "$here/web/session" && npm run build >/dev/null)
 cp "$here/web/session/dist/rayde_session.js" "$out/rayde_session.mjs"

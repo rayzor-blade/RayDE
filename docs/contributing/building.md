@@ -41,7 +41,9 @@ One editor window at a time while testing: check `pgrep -fl rayde.hl` before lau
 
 ## Browser build
 
-`scripts/build-web.sh` stages the page in `bin/web/rayde` using Ash and Ashui's built web libraries (see the script's header for `WEB_LIBS`). Serve it with `ash serve bin/web/rayde`. The page carries Arimo for UI text, JetBrains Mono for code, and a small Noto symbol subset for missing shortcut glyphs. Fonts register before layout; a browser has no system fonts for the renderer to fall back to.
+`scripts/build-web.sh` stages the page in `bin/web/rayde`. `WEB_LIBS` selects the built window and GPU web libraries. The renderer is built from pinned ashui Rust inputs and reused only when their fingerprint matches, so an older copied WASM library cannot hide dependency fixes. Install `rust-src` and the `wasm32-wasip1-threads` target for `nightly-2026-08-25`; `RUST_NIGHTLY` selects another compatible nightly. Serve the result with `ash serve bin/web/rayde`.
+
+The page carries Arimo for UI text, JetBrains Mono for code, and a small Noto symbol subset for missing shortcut glyphs. Fonts register before layout; a browser has no system fonts for the renderer to fall back to.
 
 `node tests/web/page.mjs --visitor Mac --probe --shots bin/web/probe` opens the page in Chrome, opens and edits `Main.hx`, and writes screenshots and `probe.json`. Install the test dependencies in `web/session` first. `--dir` selects another build; `--env ASH_GC_STATS=1 --env ASHUI_FRAME_STATS=1 --all` includes runtime and frame logs. The probe records WASM memory, process RSS by browser role, logical GPU texture/buffer bytes, shader pipeline creation times and completed submissions. Logical resource sizes exclude driver overhead; WASM capacity is not live heap usage. Instrumentation is served only by this test, leaving the built page unchanged.
 

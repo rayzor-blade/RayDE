@@ -33,7 +33,7 @@ With `--auth-secret S --login-url URL`, anyone may look, but every change answer
 
 ## RayDE in the browser
 
-Build the page with `scripts/build-web.sh`. It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm`, and `channel-agent.mjs`; `ASH_CHANNEL_ROOT` selects that checkout and `ASH_CHANNEL_WEB` its built side module. `WEB_LIBS` selects the ashui, window and GPU web libraries. Use matching Ash and window libraries with future-aware browser idle waits. The page agent is bundled with `web/session`'s development dependencies (`npm ci` there first).
+Build the page with `scripts/build-web.sh`. It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm`, and `channel-agent.mjs`; `ASH_CHANNEL_ROOT` selects that checkout and `ASH_CHANNEL_WEB` its built side module. `WEB_LIBS` selects the window and GPU web libraries; the renderer is built from pinned sources ([build requirements](contributing/building.md)). Use matching Ash and window libraries with future-aware browser idle waits. The page agent is bundled with `web/session`'s development dependencies (`npm ci` there first).
 
 To use an existing workspace and installed extensions:
 
