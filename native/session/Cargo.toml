@@ -27,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["std", "async-await"] }
-tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "process", "io-util", "signal"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "process", "io-util", "io-std", "signal"], optional = true }
 axum = { version = "0.7.9", features = ["ws"], optional = true }
 notify = { version = "7.0.0", default-features = false, features = ["macos_fsevent"], optional = true }
 rand = { version = "0.8", optional = true }

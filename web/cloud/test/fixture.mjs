@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret" } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -35,7 +35,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     durableObjectsPersist: persist,
     r2Buckets: files ? ["WORKSPACE_FILES"] : [],
     r2Persist: persist,
-    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: "test-runner-secret", ...(asset ? { ASSETS_ORIGIN: asset } : {}) },
+    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(asset ? { ASSETS_ORIGIN: asset } : {}) },
     serviceBindings: {
       GITHUB: async request => {
         const url = new URL(request.url);
@@ -57,8 +57,12 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
         return json({ message: "No access" }, 404);
       },
       RUNNER: async request => {
-        if (request.headers.get("Authorization") !== "Bearer test-runner-secret") return json({}, 403);
+        if (request.headers.get("Authorization") !== "Bearer "+runnerSecret) return json({}, 403);
         const data = await request.json(); calls.runner.push(data);
+        if(runnerUrl){
+          const response=await fetch(runnerUrl.replace(/\/$/,"")+"/workspaces/open",{method:"POST",headers:{Authorization:"Bearer "+runnerSecret,"Content-Type":"application/json"},body:JSON.stringify(data)});
+          return json(await response.json(),response.status);
+        }
         if (failProvisionOnce && calls.runner.length === 1) return json({}, 503);
         return json({ url: endpoint, token: "compute-secret", project: "build.hxml" });
       },

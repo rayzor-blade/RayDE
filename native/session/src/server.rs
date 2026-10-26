@@ -324,41 +324,17 @@ async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
 }
 
 /// A message as a frame: its length in four bytes, big-endian, then its UTF-8 text.
-pub fn frame(text: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(text.len() + 4);
-    out.extend_from_slice(&(text.len() as u32).to_be_bytes());
-    out.extend_from_slice(text.as_bytes());
-    out
-}
+pub use crate::framing::{frame, Frames};
 
-/// Frames arriving in pieces of any size, put back together.
-#[derive(Default)]
-pub struct Frames {
-    pending: Vec<u8>,
-}
-
-impl Frames {
-    /// Adds `bytes` and returns the messages now complete. An error means the stream is not frames, and the connection should end.
-    pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<String>, ()> {
-        self.pending.extend_from_slice(bytes);
-        let mut out = Vec::new();
-        loop {
-            if self.pending.len() < 4 {
-                break;
-            }
-            let length = u32::from_be_bytes([self.pending[0], self.pending[1], self.pending[2], self.pending[3]]) as usize;
-            if length > MAX_MESSAGE {
-                return Err(());
-            }
-            if self.pending.len() < 4 + length {
-                break;
-            }
-            let text = String::from_utf8(self.pending[4..4 + length].to_vec()).map_err(|_| ())?;
-            self.pending.drain(..4 + length);
-            out.push(text);
-        }
-        Ok(out)
-    }
+/// A private command channel: closing stdin half-closes TCP and lets the session release its resources.
+pub async fn bridge(address: SocketAddr) -> std::io::Result<()> {
+    use tokio::io::{copy,AsyncWriteExt};
+    if !address.ip().is_loopback() {return Err(std::io::Error::other("Bridge requires loopback."));}
+    let stream=tokio::net::TcpStream::connect(address).await?;
+    let (mut reader,mut writer)=stream.into_split();
+    let (mut input,mut output)=(tokio::io::stdin(),tokio::io::stdout());
+    tokio::try_join!(async {copy(&mut input,&mut writer).await?;writer.shutdown().await},async {copy(&mut reader,&mut output).await?;output.flush().await})?;
+    Ok(())
 }
 
 /// One TCP connection speaking frames.

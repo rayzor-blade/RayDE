@@ -1,0 +1,30 @@
+[package]
+name = "rayde-runner"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+
+[dependencies]
+axum = { version = "0.7.9", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "process", "io-util", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+subtle = "2"
+libc = "0.2"
+futures-util = "0.3"
+reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+tar = "0.4"
+rayde-session = { path = "../session", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+tokio-tungstenite = "=0.28.0"
+
+[profile.release]
+opt-level = "s"
+lto = true

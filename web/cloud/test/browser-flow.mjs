@@ -13,6 +13,8 @@ const puppeteer = createRequire(new URL("../../session/package.json", import.met
 const Y = createRequire(new URL("../../session/package.json", import.meta.url))("yjs");
 const {WebSocket}=createRequire(new URL("../../session/package.json",import.meta.url))("ws");
 const buffered=process.argv.includes("--buffered-restore"),file=buffered?"src/Recovered.hx":"src/Main.hx";
+const runnerConfig=process.env.RAYDE_MSB_RUNNER_CONFIG?JSON.parse(await readFile(process.env.RAYDE_MSB_RUNNER_CONFIG,"utf8")):null;
+if(buffered&&runnerConfig)throw Error("Run buffered restore and the MSB provider flow separately");
 const root = resolve("../.."), artifact = resolve(process.argv.slice(2).find(arg=>!arg.startsWith("--")) ?? "../../bin/web/repositories"), shots = join(root,"bin/web/github-flow");
 await mkdir(shots,{recursive:true});
 const sleep = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -23,8 +25,8 @@ const state=await mkdtemp(join(tmpdir(),"rayde-cloud-browser-state-"));
 await mkdir(join(directory,"src")); await mkdir(join(directory,".rayde"));
 await writeFile(join(directory,"build.hxml"),"-cp src\n-main Main\n--interp\n");
 await writeFile(join(directory,"src/Main.hx"),'class Main {\n  static function main() { trace("remote GitHub workspace"); }\n}\n');
-const native=spawn(join(root,"native/session/target/debug/rayde-session"),["--root",directory,"--state-root",state,"--port",String(compute),"--token","compute-secret","--origin",appOrigin],{stdio:"ignore"});
-await listening(compute,native);
+const native=runnerConfig?null:spawn(join(root,"native/session/target/debug/rayde-session"),["--root",directory,"--state-root",state,"--port",String(compute),"--token","compute-secret","--origin",appOrigin],{stdio:"ignore"});
+if(native)await listening(compute,native);
 let savedBaseline='class Recovered {}\n';
 async function prepareBuffered(){
   if(!buffered)return;
@@ -49,9 +51,10 @@ const assets=createServer(async(req,res)=>{try{
   res.writeHead(200,{"Content-Type":/\.wasm$/.test(name)?"application/wasm":/\.(m?js)$/.test(name)?"text/javascript":"text/html"});res.end(bytes);
 }catch{res.writeHead(404).end();}}).listen(0,"127.0.0.1");
 await new Promise(resolve=>assets.once("listening",resolve));
-const local=await fixture({port,appOrigin,asset:`http://127.0.0.1:${assets.address().port}`,endpoint:`ws://127.0.0.1:${compute}/session`});
+const runnerSettings=runnerConfig?{runnerUrl:runnerConfig.url,runnerSecret:(await readFile(runnerConfig.secretFile,"utf8")).trim()}:{};
+const local=await fixture({port,appOrigin,asset:`http://127.0.0.1:${assets.address().port}`,endpoint:`ws://127.0.0.1:${compute}/session`,...runnerSettings});
 const browser=await puppeteer.launch({executablePath:"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:"new",args:["--no-sandbox","--enable-unsafe-webgpu"],defaultViewport:{width:1280,height:800}});
-const lines=[];let page;
+const lines=[];let page,remoteFiles,account;
 await writeFile(join(shots,"live.log"),"");
 try {
   await prepareBuffered();
@@ -83,17 +86,25 @@ try {
     assert.equal(local.calls.runner.length,1);assert.ok(!page.url().includes("compute-secret"));
     assert.equal(await page.evaluate(()=>document.querySelectorAll("canvas").length),1);
     const session=await page.evaluate(async()=>{const r=await fetch("/api/session");return r.json();});assert.equal(session.user.login,"alice");
+    const cookie=(await page.cookies(appOrigin)).map(value=>value.name+"="+value.value).join("; ");
+    account={cookie,csrf:session.csrf};
+    const upgraded=await local.fetch("/api/workspaces/"+new URL(page.url()).pathname.slice(1)+"/socket",{headers:{Cookie:cookie,Origin:appOrigin,Upgrade:"websocket"}});assert.equal(upgraded.status,101);
+    remoteFiles=upgraded.webSocket;remoteFiles.accept();let serial=0;const pending=new Map();
+    remoteFiles.addEventListener("message",event=>{const reply=JSON.parse(event.data);pending.get(reply.id)?.(reply);pending.delete(reply.id);});
+    const rpc=(op,params={})=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>{pending.delete(id);reject(Error("Remote file check timed out"));},10000);pending.set(id,reply=>{clearTimeout(timer);resolve(reply);});remoteFiles.send(JSON.stringify({id,op,...params}));});
+    assert.equal((await rpc("hello")).ok,true);
+    const savedText=async()=>{const reply=await rpc("fs.read",{path:file});assert.equal(reply.ok,true);return reply.data;};
     const modifier=await page.evaluate(()=>/mac/i.test(navigator.userAgentData?.platform??navigator.platform)?"Meta":"Control");
     await page.keyboard.down(modifier);await page.keyboard.press("p");await page.keyboard.up(modifier);
     await sleep(500);await page.keyboard.type(buffered?"Recovered.hx":"Main.hx",{delay:20});await sleep(250);await page.keyboard.press("Enter");
     for(let i=0;i<300 && !lines.includes("shared-view-ready");i++)await sleep(50);
     assert.ok(lines.includes("shared-view-ready"),"hosted editor did not open its shared document");
     if(buffered){
-      assert.ok(lines.includes("restored-buffer-dirty"));assert.equal(await readFile(join(directory,file),"utf8"),savedBaseline);
+      assert.ok(lines.includes("restored-buffer-dirty"));assert.equal(await savedText(),savedBaseline);
       await page.keyboard.down(modifier);await page.keyboard.press("s");await page.keyboard.up(modifier);
       for(let i=0;i<300&&!lines.some(line=>line.startsWith("durable-save:"));i++)await sleep(50);
       assert.ok(lines.some(line=>line.startsWith("durable-save:")),"initial recovered tab must be dirty and saveable before further typing");
-      savedBaseline=await readFile(join(directory,file),"utf8");assert.match(savedBaseline,/recovered unsaved buffer/);
+      savedBaseline=await savedText();assert.match(savedBaseline,/recovered unsaved buffer/);
     }
     const savesFrom=lines.length;
     const content='class Main { static function main() { trace("durable browser save"); } }';
@@ -112,19 +123,24 @@ try {
       if(recovered!==content)await sleep(50);
     }
     assert.equal(recovered,content,"full-editor changes must be durably recoverable before Save");
-    if(buffered)assert.equal(await readFile(join(directory,file),"utf8"),savedBaseline,"recovered buffer edits must leave the saved file unchanged");
+    if(buffered)assert.equal(await savedText(),savedBaseline,"recovered buffer edits must leave the saved file unchanged");
     await page.keyboard.down(modifier);await page.keyboard.press("s");await page.keyboard.up(modifier);
     for(let i=0;i<300 && !lines.slice(savesFrom).some(line=>line.startsWith("durable-save:"));i++)await sleep(50);
     const receipt=JSON.parse(lines.slice(savesFrom).find(line=>line.startsWith("durable-save:"))?.slice(13)??"null");
     assert.ok(receipt?.id,"browser Save returned no durable checkpoint receipt");
-    assert.equal(await readFile(join(directory,file),"utf8"),content);
+    assert.equal(await savedText(),content);
     const stored=await namespace.get(namespace.idFromName(id)).fetch("https://internal/checkpoint",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner:1,id:receipt.id})});
     assert.equal(stored.status,200);assert.equal((await stored.json()).manifest.sha256,receipt.sha256);
     const start=lines.length;await page.reload();await ready(start);await page.screenshot({path:join(shots,"restored-workspace.png")});
     assert.equal(local.calls.runner.length,1,"reload reprovisioned the workspace");
-    assert.equal(await readFile(join(directory,file),"utf8"),content);
+    assert.equal(await savedText(),content);
     assert.equal(lines.some(line=>/RayDE stopped:|uncaught exception|thread rejected:/.test(line)),false);
-    console.log("GitHub sign-in, repository chooser, "+(buffered?"buffered recovery, dirty-tab Save, ":"")+"unsaved edit recovery, durable Save and reload passed");
+    console.log("GitHub sign-in, repository chooser, "+(runnerConfig?"real MSB compute, ":"")+(buffered?"buffered recovery, dirty-tab Save, ":"")+"unsaved edit recovery, durable Save and reload passed");
   }
 } catch(error){if(page)await page.screenshot({path:join(shots,"failure.png")});throw error;}
-finally{await writeFile(join(shots,"browser.log"),lines.join("\n"));await browser.close();await local.mf.dispose();await new Promise(resolve=>assets.close(resolve));native.kill();await rm(directory,{recursive:true,force:true});await rm(state,{recursive:true,force:true});}
+finally{
+  // Sign out while the edge is still alive, so outgoing compute sockets finish
+  // before disposing the local Worker (the real MSB service stays running).
+  if(account)await local.fetch("/api/logout",{method:"POST",headers:{Cookie:account.cookie,Origin:appOrigin,"X-RayDE-CSRF":account.csrf,"Content-Type":"application/json"},body:"{}"});
+  remoteFiles?.close();await writeFile(join(shots,"browser.log"),lines.join("\n"));await browser.close();await local.mf.dispose();await new Promise(resolve=>assets.close(resolve));native?.kill();await rm(directory,{recursive:true,force:true});await rm(state,{recursive:true,force:true});
+}

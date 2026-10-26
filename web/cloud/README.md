@@ -42,7 +42,9 @@ response: { url: "wss://private-compute/session", token: "private token",
             project: "build.hxml" }
 ```
 
-The provider must reuse the workspace ID on retry, authorize the owner/repository pairing, and perform checkout in its trusted control plane. Never expose the GitHub token to guest programs, arguments, logs, disk configuration or a public preview. Return a private connection credential, accessible only to the gateway. This repository does not yet supply a production provisioning provider. The MSB host runtime can be used to implement one; a Durable Object coordinates it rather than hosting the VMM.
+The provider must reuse the workspace ID on retry, authorize the owner/repository pairing, and perform checkout in its trusted control plane. Never expose the GitHub token to guest programs, arguments, logs, disk configuration or a public preview. Return a private connection credential, accessible only to the gateway.
+
+The Rust [MSB runner](../../native/runner/README.md) supplies this contract for local Linux/KVM testing, including the NUC. It uses labelled, bounded guests and private command-stream transport without publishing guest ports. Its `409` recovery-required response preserves used workspace state rather than recloning it. Local GitHub/DO/R2 emulation can exercise the real runner without a Cloudflare account; this is not yet a production provisioning deployment.
 
 The gateway supplies the compute token in the session handshake and relays the existing protocol. Its account/workspace metadata persists in Durable Objects; document authority currently remains in the Rust session process. It closes upstream connections when clients disconnect. An interrupted upstream requires reconnecting. A running upstream socket keeps its actor active; this is not a fully hibernating document runner.
 
