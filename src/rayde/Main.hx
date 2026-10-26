@@ -9,6 +9,7 @@ class Main {
 			return;
 		}
 		#if (wasm || rayde_page)
+		ashui.input.Keyboard.platform = rayde.Platform.keyboardPlatform();
 		// In a page there is no disk and no argument: host storage and the session, or a sample, stand in.
 		try rayde.ui.ProjectWindows.run(rayde.workspace.PageHost.open())
 		catch (e:haxe.Exception) {

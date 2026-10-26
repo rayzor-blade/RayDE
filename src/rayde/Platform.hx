@@ -3,7 +3,7 @@ package rayde;
 /**
  * What RayDE presents itself as, and what its keys are.
  * The window and the workspace (window controls, menus, wording, runtime) present as a Mac in a page, whatever the visitor runs.
- * Shortcuts follow the visitor's own keyboard: the page tells the program its platform in RAYDE_VISITOR, and Mac is assumed when it does not.
+ * Shortcuts follow the visitor's own keyboard: the page detects its OS before startup and passes it in RAYDE_VISITOR.
  */
 class Platform {
 	public static inline function isMac():Bool {
@@ -32,13 +32,15 @@ class Platform {
 		#end
 	}
 
-	/** Whether shortcuts are written and bound with ⌘, as a Mac's are. */
-	public static function shortcutsMac():Bool {
+	/** The keyboard's OS, independent of the workspace host and window decoration. */
+	public static function keyboardPlatform():String {
 		#if (wasm || rayde_page)
 		var visitor = Sys.getEnv("RAYDE_VISITOR");
-		return visitor == null || visitor == "" || visitor == "Mac";
-		#else
-		return Sys.systemName() == "Mac";
+		if (visitor == "Mac" || visitor == "Windows" || visitor == "Linux") return visitor;
 		#end
+		return Sys.systemName();
 	}
+
+	/** Whether shortcuts are written and bound with ⌘, as a Mac's are. */
+	public static function shortcutsMac():Bool return keyboardPlatform() == "Mac";
 }

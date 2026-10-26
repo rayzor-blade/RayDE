@@ -18,6 +18,7 @@ writeFileSync(join(workspace,"build.hxml"),"-cp src\n-main Main\n--interp\n");
 writeFileSync(join(workspace,".rayde/settings.json"),JSON.stringify({"extension.rayzor":{stdlib},extensions:{disabled:["git","markdown"]}}));
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),logs=[],messages=[],streams=new Map();
 const report={ok:false};
+const visitor=process.env.RAYDE_VISITOR_TEST??"Linux",modifier=visitor==="Mac"?"Meta":"Control";
 const freePort=()=>new Promise(r=>{const s=tcpServer().listen(0,"127.0.0.1",()=>{const p=s.address().port;s.close(()=>r(p));});});
 const webPort=await freePort(),sessionPort=await freePort();
 async function until(check,label,seconds=30){
@@ -51,7 +52,7 @@ const session=spawn(join(root,"native/session/target/debug/rayde-session"),["--r
 let browser,page;
 try{
  browser=await puppeteer.launch({executablePath:process.env.CHROME??"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true,args:["--no-sandbox","--enable-unsafe-webgpu"],defaultViewport:{width:1280,height:800}});
- page=await browser.newPage();await page.evaluateOnNewDocument(()=>Object.defineProperty(navigator,"userAgentData",{value:{platform:"Linux"}}));
+ page=await browser.newPage();await page.evaluateOnNewDocument(visitor=>Object.defineProperty(navigator,"userAgentData",{value:{platform:visitor==="Mac"?"macOS":visitor}}),visitor);
  page.on("console",m=>{const s=m.text();logs.push(s);if(s.startsWith("stream:")){const r=JSON.parse(s.slice(7));if(r.stream==="stdout")output(r.pid,r.data);}writeFileSync(join(shots,"console.log"),logs.join("\n"));});
  page.on("pageerror",e=>logs.push("PAGE ERROR "+e.stack));
  await page.goto(`http://127.0.0.1:${webPort}/?session=${encodeURIComponent(`ws://127.0.0.1:${sessionPort}/session`)}&project=build.hxml#token=navigation-test`,{waitUntil:"domcontentloaded"});
@@ -62,18 +63,20 @@ try{
  await pause(200);await page.screenshot({path:join(shots,"build-form-during-scan.png")});
  await page.evaluate(()=>globalThis.__delayBuild=false);
  report.buildFormWhileScanning=true;
- async function chord(key){await page.keyboard.down("Control");await page.keyboard.press(key);await page.keyboard.up("Control");}
+ async function chord(key){await page.keyboard.down(modifier);await page.keyboard.press(key);await page.keyboard.up(modifier);}
  async function open(name){await chord("p");await pause(250);await page.keyboard.type(name,{delay:10});await pause(200);await page.keyboard.press("Enter");await pause(500);}
  async function definition(word){
   const before=messages.length;
-  await chord("f");await pause(150);await page.keyboard.type(word,{delay:10});await pause(200);await page.keyboard.press("Escape");await page.keyboard.press("ArrowLeft");await page.keyboard.press("ArrowRight");await page.keyboard.press("F12");
+  await chord("f");await pause(150);await page.keyboard.type(word,{delay:10});await pause(200);await page.keyboard.press("Escape");await page.keyboard.press("ArrowLeft");await page.keyboard.press("ArrowRight");
+  if(word==="Helper") { await page.keyboard.down(modifier);await page.mouse.click(462,174);await page.keyboard.up(modifier); }
+  else await page.keyboard.press("F12");
   await until(()=>messages.slice(before).some(m=>m.result?.uri||Array.isArray(m.result)&&m.result.some(r=>r.uri||r.targetUri)),"definition response");
   await pause(700);
   assert.equal(logs.some(s=>/RayDE stopped:|uncaught exception|PAGE ERROR/.test(s)),false,logs.slice(-15).join("\n"));
  }
  await open("Main.hx");await until(()=>messages.some(m=>m.method==="textDocument/publishDiagnostics"),"Rayzor diagnostics");
  await page.mouse.click(650,155);
- await definition("Helper");await page.screenshot({path:join(shots,"workspace-definition.png")});report.workspaceDefinition=true;
+ await definition("Helper");await page.screenshot({path:join(shots,"workspace-definition.png")});report.workspaceDefinition=report.modifierClick=true;
  await open("Main.hx");await page.mouse.click(650,155);
  await definition("StringTools");await page.screenshot({path:join(shots,"dependency-definition.png")});report.dependencyHandled=true;
  await open("Helper.hx");await page.screenshot({path:join(shots,"still-responsive.png")});report.ok=true;
