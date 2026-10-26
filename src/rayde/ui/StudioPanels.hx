@@ -90,7 +90,7 @@ class StudioPanels extends Component<StudioPanelsProps> {
 			<else><if {e.kind == "info"}><icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0 text-text-tertiary"/>
 			<else><div class="size-4 shrink-0"/></if></if>
 			${message(e)}
-			<if {place}><text class="text-xs text-text-tertiary shrink-0">${haxe.io.Path.withoutDirectory(e.file) + ":" + e.line}</text></if>
+			<if {place}><text class="text-xs text-text-tertiary shrink-0">${haxe.io.Path.withoutDirectory(e.file) + ":" + Std.string(e.line)}</text></if>
 		</div>;
 		if (place)
 			ashui.css.Identity.of(row.tree, row.node.id).setAttribute("data-jump", "");

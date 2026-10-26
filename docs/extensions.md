@@ -8,6 +8,8 @@ RayDE extensions are written in RayScript and describe what they add in a `.raye
 
 RayDE runs installed extensions in Haxe, extension and theme projects. Each extension has its own VM. Script-only extensions run on a runtime thread inside RayDE. Extensions declaring native libraries run their VM and libraries in a dedicated headless `rayde-extension-host` process, including built-in native extensions; opening the Extension Studio is not required.
 
+In a browser workspace, every extension runs in its own process on the session host. Its preview renders in the browser, including interactive controls and live reload. The session needs execution enabled and an extension host installed; see [browser sessions](session.md#rayde-in-the-browser).
+
 Uncaught RayScript exceptions fail the affected fiber and are reported in the extension's Output channel; other fibers and subsequent events continue in the same host. The VM uses Krio script fibers; a script exception does not panic RayDE. A fault in an extension-declared native library can terminate its host without terminating RayDE. Host exit clears the extension's views, tabs and command registrations. A supervised restart starts a fresh VM and does not replay the failed command.
 
 | Scope | Folder |

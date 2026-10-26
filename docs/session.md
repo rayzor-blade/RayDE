@@ -73,6 +73,8 @@ The server currently refuses moving a file or folder while it contains an open C
 
 `node tests/web/session.mjs --dir bin/web/rayde` checks opening, editing and saving a real session file, large replies and an extension service round trip. It creates a temporary workspace from `tests/fixtures/browser-session`. `tests/SessionAsyncChecks.hx` checks concurrent replies, deadlines, early process output and disconnection under Ash. `SessionEditorChecks` covers asynchronous readiness, stale projections, undo, save failure and binding cleanup. `node tests/web/collaboration.mjs bin/web/rayde` drives two full WASM editors with separate browser storage through edits, undo, Save, session restart and reload.
 
+`node tests/web/extensions.mjs bin/web/rayde` checks first-open previews, interactive updates, menu and command reload, runtime error containment and browser refresh against a real extension host. `ExtensionOutputChecks` covers stack locations and malformed isolated output.
+
 `SessionLspChecks`, `SessionLspQueueChecks` and `SessionLspReconnectChecks` cover framed remote LSP, bounded queues, cancellation, idle wakeups, offline recovery and stale process handles. `node tests/web/lsp.mjs bin/web/rayde` opens the full browser editor with the built-in extension and a real session-hosted Rayzor, then checks semantic hover, Markdown, live diagnostics and recovery after a sustained connection loss. It needs built session and extension-host binaries plus Rayzor; `RAYDE_RAYZOR_LSP` and `RAYZOR_STD_PATH` select its executable and standard library.
 
 ## Cloudflare account gateway

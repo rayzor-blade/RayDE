@@ -2,7 +2,7 @@ package rayde.ext;
 
 import rayde.workspace.Fs;
 
-/** Script-only VMs stay embedded; native extensions use an individually supervised process. */
+/** Desktop script-only VMs stay embedded; browser and native extension VMs use supervised processes. */
 class ExtensionHost {
 	public var state(default, null) = "idle";
 	public var exitCode(default, null):Null<Int>;
@@ -20,7 +20,7 @@ class ExtensionHost {
 
 	public function new(?root:String, isolated = false, extension = "") {
 		this.root = root;
-		this.isolated = isolated;
+		this.isolated = #if wasm true #else isolated #end;
 		this.extension = extension;
 	}
 

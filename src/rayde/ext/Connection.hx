@@ -224,7 +224,7 @@ class Connection {
 		var current = host;
 		try advanceHost() catch (error:Dynamic) {
 			if (current == null || !current.isolated) throw error;
-			note("console","error","Cannot process native extension output: " + Std.string(error));
+			note("console","error","Cannot process extension output: " + Std.string(error));
 			stop(); setState("exited");
 		}
 	}
@@ -361,12 +361,12 @@ class Connection {
 				if (item.line != null)
 					note("console", "info",
 						"  at "
-						+ (functionName == null ? "" : functionName + " ")
-						+ haxe.io.Path.withoutDirectory(item.file)
+						+ (functionName == null ? "" : Std.string(functionName) + " ")
+						+ haxe.io.Path.withoutDirectory(Std.string(item.file))
 						+ ":"
-						+ item.line
+						+ Std.string(item.line)
 						+ ":"
-						+ item.col,
+						+ Std.string(item.col),
 						place(item));
 			}
 	}

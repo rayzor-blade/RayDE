@@ -191,6 +191,7 @@ class ExtensionsPart {
 			wb.panelsPart.showPanel(kind == "syntax" || kind == "compile" ? "problems" : "extension");
 		};
 		studio.reload();
+		if (wb.active.get() == file) activeStudio.set(studio);
 		return studio;
 	}
 

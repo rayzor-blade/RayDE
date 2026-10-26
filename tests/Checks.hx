@@ -895,6 +895,7 @@ class Checks {
 		topLayerStyleChecks();
 		extensionHostChecks();
 		ActivityLogChecks.run();
+		ExtensionOutputChecks.run();
 		ExtensionManagerChecks.run();
 		DiagnosticJobsChecks.run();
 		PanelWorkerChecks.run();
