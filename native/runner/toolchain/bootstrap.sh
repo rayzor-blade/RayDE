@@ -9,8 +9,8 @@ tar -xzf /opt/rayde/haxe.tar.gz --strip-components=1 -C /opt/rayde/haxe
 cp /opt/rayde/haxe/haxe /opt/rayde/bin/haxe
 cp /opt/rayde/haxe/haxelib /opt/rayde/bin/haxelib
 rm /opt/rayde/haxe.tar.gz
-haxelib install ashui-components 0.1.5 --always --quiet
-haxelib install ashui-icons 0.1.5 --always --quiet
+haxelib install ashui-components 0.2.0 --always --quiet
+haxelib install ashui-icons 0.2.0 --always --quiet
 mkdir -p /opt/rayde/extensions/git/natives
 cp -L /usr/lib/x86_64-linux-gnu/libgit2.so.1.9 /opt/rayde/extensions/git/natives/libgit2.so
 python3 - <<'PY'

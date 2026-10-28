@@ -3,7 +3,12 @@
 .board-column { background: var(--surface); border: 1px solid var(--border); }
 .task-card { background: var(--surface-elevated); border: 1px solid var(--border); }
 .task-card:hover { border-color: var(--primary); }
+.task-card { cursor: grab; }
+.task-card[data-dragging] { opacity: 0.35; }
+.board-column[data-drop-target] { border-color: var(--primary); }
+.board-drag-preview { width: 220px; background: var(--surface-elevated); border: 1px solid var(--primary); z-index: 100; }
 .task-inspector { background: var(--surface-elevated); border: 1px solid var(--border); }
+.task-inspector input.ui-input, .task-inspector textarea.ui-textarea { width: 100%; min-width: 0; }
 
 .task-inspector { width: 224px; }
 .task-search { min-width: 80px; }

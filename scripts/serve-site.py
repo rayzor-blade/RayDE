@@ -25,6 +25,16 @@ def process_environment():
             environment.setdefault('RAYZOR_STD_PATH', str(stdlib))
     return environment
 
+def workspace_environment(directory):
+    config = pathlib.Path.home() / '.rayde-session/environment.json'
+    values = json.loads(config.read_text()) if config.is_file() else {}
+    if not isinstance(values, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in values.items()):
+        raise ValueError('Session environment must be a JSON string map')
+    local = directory / '.haxelib'
+    if local.is_dir():
+        values['HAXELIB_PATH'] = str(local)
+    return values
+
 def main():
     def stop(_signal, _frame):
         raise KeyboardInterrupt
@@ -63,21 +73,19 @@ def main():
         if not (demo / '.haxelib').exists():
             subprocess.run(['haxelib','newrepo'],cwd=demo,check=True)
         for name in ['ashui-components','ashui-icons']:
-            ready = subprocess.run(['haxelib','path',name+':0.1.5'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            ready = subprocess.run(['haxelib','path',name+':0.2.0'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             if ready.returncode:
-                subprocess.run(['haxelib','install',name,'0.1.5','--always','--quiet'],cwd=demo,check=True)
+                subprocess.run(['haxelib','install',name,'0.2.0','--always','--quiet'],cwd=demo,check=True)
         args.workspace = demo / 'build.hxml'
     workspace = args.workspace.resolve() if args.workspace else None
     if workspace and not workspace.exists():
         parser.error('The workspace does not exist')
     environment = process_environment()
     if args.prepare_only:
-        config = pathlib.Path.home() / '.rayde-session/environment.json'
-        if config.is_file():
-            values = json.loads(config.read_text())
-            if not isinstance(values, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in values.items()):
-                parser.error('Session environment must be a JSON string map')
-            environment.update(values)
+        try:
+            environment.update(workspace_environment(workspace.parent))
+        except ValueError as error:
+            parser.error(str(error))
         return subprocess.run(['python3', str(ROOT / 'scripts/warm-rayzor.py'), '--root', str(workspace.parent),
                                '--file', 'src/Main.hx', '--file', 'src/ui/BoardApp.hx'], env=environment).returncode
     with tempfile.TemporaryDirectory(prefix='rayde-site-') as temporary:
@@ -102,6 +110,16 @@ def main():
                 except FileExistsError:
                     pass
             command += ['--token-file', str(token_file)]
+            try:
+                values = workspace_environment(directory)
+            except ValueError as error:
+                parser.error(str(error))
+            with tempfile.NamedTemporaryFile(mode='w', dir=profile, prefix='environment-', delete=False) as config:
+                json.dump(values, config)
+                config.write('\n')
+            env_file = profile / 'launcher-environment.json'
+            pathlib.Path(config.name).replace(env_file)
+            command += ['--env-file', str(env_file)]
             if not project:
                 project = next((name for name in ['build.hxml', 'rayzor.toml', 'haxelib.json'] if (workspace / name).is_file()), None)
             command += ['--preview-project', project or '']

@@ -26,11 +26,18 @@ class BoardStore {
     }
 
     public function advance(id:Int):Void {
+        for(task in tasks.get())if(task.id==id){move(id,Lane.next(task.lane));return;}
+    }
+
+    public function move(id:Int,lane:String):Void {
+        if(["To do","In progress","Done"].indexOf(lane)<0)return;
+        var current=tasks.get().filter(task -> task.id==id)[0];
+        if(current==null||current.lane==lane)return;
         tasks.set([for (task in tasks.get()) task.id != id ? task : {
             id:task.id, title:task.title, description:task.description,
-            lane:Lane.next(task.lane), tag:task.tag, owner:task.owner
+            lane:lane, tag:task.tag, owner:task.owner
         }]);
-        message.set("Moved task " + id + " to its next stage.");
+        selected.set(id);message.set("Moved task to " + lane + ". Save the board to keep your changes.");
     }
 
     public function add():Void {

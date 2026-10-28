@@ -7,8 +7,8 @@ A Kanban board with To do, In progress and Done columns, built with Haxe and Ash
 Install Haxe and Ash, then the published libraries:
 
 ```sh
-haxelib install ashui-components 0.1.5
-haxelib install ashui-icons 0.1.5
+haxelib install ashui-components 0.2.0
+haxelib install ashui-icons 0.2.0
 haxe build.hxml
 ash bin/pocket-studio.hl
 ```
@@ -18,7 +18,7 @@ All library dependencies come from Haxelib. `src` is this project's own source f
 ## Explore
 
 - `src/Main.hx` opens the app. `ui/BoardApp.hx` composes the board.
-- Add tasks, edit their title and description, move them between columns, filter the board and save your changes.
+- Add tasks, edit their title and description, drag cards between columns, filter the board and save your changes. **Next stage** also moves a task; Escape cancels a drag.
 - `state/BoardStore.hx` owns reactive state, filtering and task transitions.
 - `ui/` contains reusable header, stats, column, card and inspector views.
 - `data/tasks.json` is the saved board. **Save board** writes a new snapshot.
@@ -26,7 +26,7 @@ All library dependencies come from Haxelib. `src` is this project's own source f
 
 ## Develop the extension
 
-Open any `.rays` file under `extensions/pocket-tools/ext` in RayDE. Each source tab previews the extension through `main.rays`. Its parent manifest supplies imports, workspace-read permission, commands, views and a stylesheet. The Preview displays the reactive Pocket Tools panel. Click **Refresh summary**, or run **Pocket Studio: Refresh Summary**. Use **Reload Extension** after changing a script or stylesheet.
+Open any `.rays` file under `extensions/pocket-tools/ext` in RayDE and choose **Preview Extension** from Code Actions or the eye button. Its preview opens in a side sheet and runs `main.rays`. The parent manifest supplies imports, workspace-read permission, commands, views and a stylesheet. Click **Refresh summary**, or run **Pocket Studio: Refresh Summary**. Use **Reload Extension** after changing a script or stylesheet.
 
 `summary.rays` transforms saved task data. `panel.rays` renders the UI. Try adding a count, changing a label or registering another command.
 
