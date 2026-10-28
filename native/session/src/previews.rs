@@ -32,12 +32,17 @@ struct Entry {
     owner: u64,
     root: PathBuf,
 }
+struct Build {
+    owner: u64,
+    plan: Option<crate::preview_cache::Plan>,
+}
 pub(crate) struct Previews {
     root: PathBuf,
     base: String,
     tools: Option<PathBuf>,
     entries: Mutex<HashMap<String, Entry>>,
-    builds: Mutex<HashMap<String, u64>>,
+    builds: Mutex<HashMap<String, Build>>,
+    cache: Option<crate::preview_cache::Cache>,
 }
 pub(crate) struct Running {
     pub registry: Arc<Previews>,
@@ -57,7 +62,11 @@ fn io_error(error: std::io::Error) -> SessionError {
     failure(&error.to_string())
 }
 impl Previews {
-    pub async fn start(root: &Path, tools: Option<PathBuf>) -> std::io::Result<Running> {
+    pub async fn start(
+        root: &Path,
+        tools: Option<PathBuf>,
+        environment: &HashMap<String, String>,
+    ) -> std::io::Result<Running> {
         let tools = tools.map(std::fs::canonicalize).transpose()?;
         if let Some(tools) = &tools {
             for name in [
@@ -78,6 +87,9 @@ impl Previews {
         let registry = Arc::new(Self {
             root: root.into(),
             base: format!("http://{}", listener.local_addr()?),
+            cache: tools
+                .as_ref()
+                .map(|tools| crate::preview_cache::Cache::new(root, tools, environment)),
             tools,
             entries: Mutex::new(HashMap::new()),
             builds: Mutex::new(HashMap::new()),
@@ -109,7 +121,7 @@ impl Previews {
         let mut builds = self.builds.lock().unwrap();
         let paths = builds
             .iter()
-            .filter(|(_, id)| **id == owner)
+            .filter(|(_, build)| build.owner == owner)
             .map(|(path, _)| path.clone())
             .collect::<Vec<_>>();
         for path in paths {
@@ -135,10 +147,12 @@ impl Previews {
             let path = format!(".rayde/previews/{name}");
             {
                 let mut builds = self.builds.lock().unwrap();
-                if builds.len() >= 8 || builds.values().filter(|id| **id == owner).count() >= 4 {
+                if builds.len() >= 8
+                    || builds.values().filter(|build| build.owner == owner).count() >= 4
+                {
                     return Err(failure("Close another app preview before building one."));
                 }
-                builds.insert(path.clone(), owner);
+                builds.insert(path.clone(), Build { owner, plan: None });
             }
             let directory = self.root.join(&path);
             let result=async {
@@ -148,18 +162,58 @@ impl Previews {
                 for name in ["ash_channel.wasm","channel-agent.mjs","rayde_preview_files.mjs","preview-frames.mjs"] {
                     tokio::fs::copy(tools.join(name),directory.join(name)).await.map_err(io_error)?;
                 }
-                Ok(json!({"path":path,"directory":directory,"support":tools.join("haxe"),"runtime":tools.join("ash_runtime.o").is_file().then(||tools.join("ash_runtime.o"))}))
+                let mut cached="miss";let mut note=String::new();
+                if let (Some(cache),Some(recipe))=(&self.cache,request.get("recipe")) {
+                    let recipe=serde_json::from_value::<crate::preview_cache::Recipe>(recipe.clone()).map_err(|_|failure("Invalid preview compiler configuration."))?;
+                    if request["force"]==true {if let Err(error)=cache.clear().await{note=error}}
+                    match cache.plan(recipe).await {
+                        Ok(plan)=>{
+                            if request["force"]!=true {match cache.restore(&plan,&directory).await{Ok(stage)=>cached=stage,Err(error)=>note=error}}
+                            if let Some(build)=self.builds.lock().unwrap().get_mut(&path).filter(|build|build.owner==owner){build.plan=Some(plan);}
+                            else {let _=tokio::fs::remove_dir_all(&directory).await;return Err(failure("The preview build was closed."));}
+                        }
+                        Err(error)=>note=error,
+                    }
+                }
+                Ok(json!({"path":path,"directory":directory,"support":tools.join("haxe"),"runtime":tools.join("ash_runtime.o").is_file().then(||tools.join("ash_runtime.o")),"cached":cached,"cacheNote":note}))
             }.await;
             if result.is_err() {
                 self.builds.lock().unwrap().remove(&path);
             }
             return result;
         }
+        if op == "preview.cache" {
+            let path = clean(request["path"].as_str().unwrap_or(""))?;
+            let plan = {
+                let builds = self.builds.lock().unwrap();
+                builds
+                    .get(&path)
+                    .filter(|build| build.owner == owner)
+                    .ok_or_else(|| failure("This preview build is closed."))?
+                    .plan
+                    .clone()
+            };
+            let stage = request["stage"]
+                .as_str()
+                .filter(|stage| ["bytecode", "wasm"].contains(stage))
+                .ok_or_else(|| failure("Unknown compiler cache stage."))?;
+            if let (Some(cache), Some(plan)) = (&self.cache, plan) {
+                return Ok(
+                    match cache.publish(&plan, &self.root.join(path), stage).await {
+                        Ok(saved) => {
+                            json!({"cached":saved,"cacheNote":if saved{""}else{"Build inputs changed during compilation; cache not published."}})
+                        }
+                        Err(note) => json!({"cached":false,"cacheNote":note}),
+                    },
+                );
+            }
+            return Ok(json!({"cached":false}));
+        }
         if op == "preview.discard" {
             let path = clean(request["path"].as_str().unwrap_or(""))?;
             {
                 let mut builds = self.builds.lock().unwrap();
-                if builds.get(&path) != Some(&owner) {
+                if !builds.get(&path).is_some_and(|build| build.owner == owner) {
                     return Err(failure("This preview build is closed."));
                 }
                 builds.remove(&path);

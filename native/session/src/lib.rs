@@ -17,6 +17,8 @@ mod read_roots;
 #[cfg(feature = "server")]
 mod previews;
 #[cfg(feature = "server")]
+mod preview_cache;
+#[cfg(feature = "server")]
 mod cache_identity;
 #[cfg(feature = "server")]
 pub mod environment;

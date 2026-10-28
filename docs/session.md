@@ -22,6 +22,8 @@ Build, Run, terminals and language servers use the session host's tools and envi
 
 For a browser-compatible Ashui project, choose **Preview App** from **Code Actions** or the eye button beside the tabs. RayDE saves your edits, builds the app and opens it in a preview tab. **Rebuild** applies later source changes. This requires [app preview tooling on the host](contributing/session.md#app-previews).
 
+Unchanged previews reuse their compiled output. The status bar shows compiler activity and opens live Build output when clicked. Use **Rebuild App Preview from Scratch** in the command center to bypass the cache.
+
 Hiding Terminal leaves commands running. Losing the session connection closes its terminals; start a new terminal after reconnecting. See [Problems, Output and Terminal](panels.md) for panel controls.
 
 ## Reconnecting and recovery

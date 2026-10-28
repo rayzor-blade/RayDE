@@ -18,6 +18,11 @@ ash=${ASH:-$siblings/ash/target/release/ash}
 
 fail() { echo "$(basename "$0"): $*" >&2; exit 1; }
 [ -x "$ash" ] || fail "put ash on PATH or set ASH"
+# Browser entrypoints need compiler classpaths and WASM libraries, not the desktop renderer.
+case "${RAYDE_BUILD_TARGET:-${BASH_SOURCE[1]##*/}}" in
+  web|build-web.sh|build-web-abi.sh) build_desktop_renderer=false ;;
+  *) build_desktop_renderer=true ;;
+esac
 case "$(uname -s)" in
   Darwin) ext=dylib; prefix=lib ;;
   Linux) ext=so; prefix=lib ;;
@@ -34,7 +39,7 @@ if [ -z "${ASHUI:-}" ]; then
     git -C "$ashui.partial" checkout --quiet --detach "$ashui_rev" || fail "ashui has no commit $ashui_rev"
     mv "$ashui.partial" "$ashui"
   fi
-  if [ ! -f "$ashui/target/release/${prefix}blinc_abi.$ext" ]; then
+  if $build_desktop_renderer && [ ! -f "$ashui/target/release/${prefix}blinc_abi.$ext" ]; then
     echo "building ashui ${ashui_rev:0:7}'s native library, once for this pin" >&2
     (cd "$ashui" && nice -n 10 cargo build --release --quiet) || fail "could not build ashui's native library"
   fi

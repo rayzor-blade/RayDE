@@ -131,11 +131,17 @@ class RunPart {
 	}
 
 	public function previewApp():Void {
+		previewAppBuild(false);
+	}
+	public function forcePreviewApp():Void {
+		previewAppBuild(true);
+	}
+	function previewAppBuild(force:Bool):Void {
 		if(!canPreviewApp()){wb.say("App Preview needs a runnable HashLink project and browser build tooling on its session host.");return;}
 		if(runner!=null && runner.active())return;
 		saveBefore(() -> {
 			if(appPreview==null){appPreview=new rayde.run.AppPreviewBuild(rayde.workspace.PageHost.session,publishBuildOutput);previewRevision.set(previewRevision.get()+1);}
-			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd);
+			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd,force);
 			wb.openFile(Workbench.APP_PREVIEW);
 		});
 	}

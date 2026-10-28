@@ -12,7 +12,7 @@ const shots=join(root,'bin/web/pocket-demo-browser-shots');await mkdir(shots,{re
 const fixture=await mkdtemp(join(root,'bin/published-demo/landing-'));
 const privateRoot=await mkdtemp(join(tmpdir(),'rayde-builtins-'));
 const web=join(privateRoot,'web');await mkdir(join(web,'dist'),{recursive:true});
-await writeFile(join(privateRoot,'environment.json'),JSON.stringify({HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib')}));
+await writeFile(join(privateRoot,'environment.json'),JSON.stringify({HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib'),ASH_PROFILE:'phases'}));
 await cp(join(root,'site/demo'),fixture,{recursive:true,filter:path=>!/(?:^|\/)bin(?:\/|$)/.test(path)});
 const installed=join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib');
 await mkdir(join(fixture,'.haxelib'),{recursive:true});
@@ -23,7 +23,7 @@ for(const name of await readdir(join(root,'site')))if(name!=='dist')await symlin
 for(const name of await readdir(join(root,'site/dist')))if(name!=='rayde_session.mjs')await symlink(join(root,'site/dist',name),join(web,'dist',name));
 const agent=(await readFile(join(root,'site/dist/rayde_session.mjs'),'utf8'))
  .replace('const request = JSON.parse(text2);','const request = JSON.parse(text2); if (["proc.spawn","proc.write","proc.kill","view.open","page.markdown"].includes(request.op) || request.op.startsWith("preview.")) console.log("builtin-request:"+JSON.stringify(request));')
- .replace('const answer = (message) => {','const answer = (message) => { if (message.ev === "proc.out" || message.result?.kind === "document" || message.preview != null || message.directory != null || message.ok === false) console.log("builtin-event:"+JSON.stringify(message));');
+ .replace('const answer = (message) => {','const answer = (message) => { if (message.pid != null || message.cached != null || message.result?.kind === "document" || message.preview != null || message.directory != null || message.ok === false) console.log("builtin-event:"+JSON.stringify(message));');
 await writeFile(join(web,'dist/rayde_session.mjs'),agent);
 const git=args=>execFileSync('git',['-C',fixture,...args],{stdio:'ignore'});
 git(['init','-b','main']);git(['add','.']);git(['-c','user.name=Demo Developer','-c','user.email=demo@example.invalid','commit','-m','Start Pocket Studio']);
@@ -59,8 +59,9 @@ try{
   if(!localStorage.getItem('fixture-stale')){localStorage.setItem('rayde.workspaceConnection.v1',JSON.stringify({version:1,endpoint:'ws://127.0.0.1:1/session',token:'stale',project:'wrong.hxml',environment:[]}));localStorage.setItem('fixture-stale','1');}
  });
  page.on('console',message=>{const line=message.text();logs.push(line);
-  if(line.startsWith('builtin-request:'))requests.push(JSON.parse(line.slice(16)));
-  if(line.startsWith('builtin-event:')){const event=JSON.parse(line.slice(14));events.push(event);output(event);
+  if(line.startsWith('builtin-request:')){const request={...JSON.parse(line.slice(16)),at:Date.now()};requests.push(request);if(request.op.startsWith('preview.'))console.log(request.op,request.stage??'');}
+  if(line.startsWith('builtin-event:')){const event={...JSON.parse(line.slice(14)),at:Date.now()};events.push(event);output(event);
+   if(event.cached!=null)console.log('preview cache:',event.cached,event.cacheNote??'');
    if(event.ev==='proc.out'){const text=Buffer.from(event.data,'base64').toString();if(/(^|\n)Error:|: (tw:|hxx:)|Uncaught exception/.test(text))logs.push('PAGE ERROR '+text);}
   }
  });
@@ -108,8 +109,18 @@ try{
   await (await page.$('#editor')).screenshot({path:join(shots,'app-building.png')});
   await until(()=>requests.some(r=>r.op==='proc.spawn'&&r.args?.includes('wasm32-wasip1-threads')),'app compiler',180000);
   await frame.waitForSelector('iframe[data-rayde-app-preview]',{timeout:180000});
-  const appElement=await frame.$('iframe[data-rayde-app-preview]'),app=await appElement.contentFrame();
   await until(()=>logs.filter(line=>line==='ashui: ready').length>=2,'app renderer',120000);
+  const compileRequests=()=>requests.filter(r=>r.op==='proc.spawn'&&(r.args?.includes('wasm32-wasip1-threads')||r.args?.some(a=>String(a).endsWith('/app.hl'))));
+  report.compileTimes=compileRequests().map(request=>{const pid=events.find(event=>event.id===request.id)?.pid;return {command:request.command,milliseconds:events.find(event=>event.ev==='proc.exit'&&event.pid===pid)?.at-request.at};});
+  const compiles=compileRequests().length,opened=requests.filter(r=>r.op==='preview.open').length,started=Date.now();
+  await frame.evaluate(()=>document.querySelector('#screen').focus());
+  await choose('>Preview App');
+  await until(()=>requests.filter(r=>r.op==='preview.open').length>opened,'cached preview',30000);
+  assert.ok(events.some(event=>event.cached==='wasm'),'unchanged rebuild missed the WASM cache');
+  assert.equal(compileRequests().length,compiles,'unchanged preview spawned a compiler');
+  report.cachedRebuildMilliseconds=Date.now()-started;
+  await until(()=>logs.filter(line=>line==='ashui: ready').length>=3,'cached app renderer',120000);
+  const appElement=await frame.$('iframe[data-rayde-app-preview]'),app=await appElement.contentFrame();
   assert.equal(await app.evaluate(()=>crossOriginIsolated),true);
   assert.equal(await app.evaluate(()=>{try{parent.localStorage;return false;}catch{return true;}}),true);
   const before=JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length;

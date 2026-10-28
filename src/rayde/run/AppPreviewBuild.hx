@@ -5,7 +5,7 @@ import rayde.workspace.session.SessionClient;
 import rayde.workspace.session.SessionLauncher;
 import ashui.reactive.Signal;
 
-private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress};
+private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress, force:Bool};
 typedef AppArtifact = {preview:String, url:String, path:String};
 
 /** One supervised browser build per window. Compiler work and output readers stay off the UI thread. */
@@ -34,12 +34,12 @@ class AppPreviewBuild {
 			if(progress!=null)progress.append(error.get()+"\n");
 		});
 	}
-	public function start(compiler:String,args:Array<String>,cwd:String):Void {
+	public function start(compiler:String,args:Array<String>,cwd:String,force=false):Void {
 		if (state.get() == "building") return;
 		if(timer!=null)timer.cancel();
 		state.set("building");error.set("");output.set("");phase.set("Preparing preview");elapsed.set(0);
 		started=haxe.Timer.stamp();seen=-1;progress=new BuildProgress();
-		worker.submit("app",{client:client,compiler:compiler,args:args.copy(),cwd:cwd,progress:progress});poll();
+		worker.submit("app",{client:client,compiler:compiler,args:args.copy(),cwd:cwd,progress:progress,force:force});poll();
 	}
 	public function stop():Void {
 		if(state.get()!="building")return;
@@ -113,16 +113,37 @@ class AppPreviewBuild {
 			} catch(error:Dynamic){try process.kill() catch(_:Dynamic){};process.close();throw error;}
 			process.close();
 		}
+		function cache(stage:String):Void {
+			if(isCancelled())throw "Preview build cancelled.";
+			progress.stage(stage=="bytecode" ? "Caching bytecode" : "Caching preview");
+			try {
+				var result=value.client.request("preview.cache",{path:prepared.path,stage:stage});
+				if(result.cacheNote!=null && result.cacheNote!="")progress.append("Cache: "+result.cacheNote+"\n");
+			} catch(error:Dynamic){progress.append("Cache unavailable: "+Std.string(error)+"\n");}
+		}
 		try {
 			if(isCancelled())throw "Preview build cancelled.";
-			prepared=value.client.request("preview.prepare");
+			var root=haxe.io.Path.normalize(value.client.root),cwd=haxe.io.Path.normalize(value.cwd);
+			progress.stage("Checking build inputs");
+			prepared=value.client.request("preview.prepare",{recipe:{compiler:value.compiler,args:value.args,cwd:cwd==root ? "" : rayde.files.FileOps.relative(root,cwd)},force:value.force});
+			if(prepared.cacheNote!=null && prepared.cacheNote!="")progress.append("Cache: "+prepared.cacheNote+"\n");
 			var program:String=prepared.directory+"/app.hl",wasm:String=prepared.directory+"/app.wasm";
-			progress.stage("Compiling Haxe");
-			run(value.compiler,compilerArgs(value.args,prepared.support,program));
-			var environment:Dynamic={ASH_WASM_FIBERS:"1"};
-			if(prepared.runtime!=null)Reflect.setField(environment,"ASH_RUNTIME",prepared.runtime);
-			progress.stage("Compiling WASM");
-			run("ash",["--build",wasm,"--target","wasm32-wasip1-threads",program],environment);
+			if(prepared.cached=="wasm")progress.append("Reusing unchanged WASM preview.\n");
+			else {
+				if(prepared.cached=="bytecode")progress.append("Reusing unchanged HashLink bytecode.\n");
+				else {
+					progress.stage("Compiling Haxe");var before=haxe.Timer.stamp();
+					run(value.compiler,compilerArgs(value.args,prepared.support,program));
+					progress.append("Haxe compile: "+Math.round((haxe.Timer.stamp()-before)*100)/100+"s\n");
+					cache("bytecode");
+				}
+				var environment:Dynamic={ASH_WASM_FIBERS:"1"};
+				if(prepared.runtime!=null)Reflect.setField(environment,"ASH_RUNTIME",prepared.runtime);
+				progress.stage("Compiling WASM");var before=haxe.Timer.stamp();
+				run("ash",["--build",wasm,"--target","wasm32-wasip1-threads",program],environment);
+				progress.append("WASM compile: "+Math.round((haxe.Timer.stamp()-before)*100)/100+"s\n");
+				cache("wasm");
+			}
 			if(isCancelled())throw "Preview build cancelled.";
 			progress.stage("Opening preview");
 			opened=value.client.request("preview.open",{path:prepared.path});

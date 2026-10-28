@@ -127,6 +127,12 @@ async fn prepared_builds_install_the_bridge_and_are_released_with_their_owner() 
     other.request(json!({"op":"hello"})).await;
     assert_eq!(
         other
+            .request(json!({"op":"preview.cache","path":prepared["path"],"stage":"wasm"}))
+            .await["ok"],
+        false
+    );
+    assert_eq!(
+        other
             .request(json!({"op":"preview.discard","path":prepared["path"]}))
             .await["ok"],
         false

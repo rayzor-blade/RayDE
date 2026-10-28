@@ -7,6 +7,7 @@
 # The pinned renderer is built and cached by its Rust inputs. Serve the result with `ash serve`.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
+export RAYDE_BUILD_TARGET=web
 source "$here/scripts/deps.sh"
 ash=${ASH:-$(command -v ash || true)}
 [ -x "$ash" ] || { echo "build-web.sh: put ash on PATH or set ASH" >&2; exit 1; }

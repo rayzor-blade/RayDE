@@ -188,7 +188,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
-    let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools).await?)} else {None};
+    let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools,&options.environment).await?)} else {None};
     if let Some(previews)=&previews {workspace.set_previews(previews.registry.clone());}
     workspace.set_sources(sources);
     workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));

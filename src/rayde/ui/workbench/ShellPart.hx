@@ -109,6 +109,7 @@ class ShellPart {
 			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: wb.runPart.run},
 			#if wasm
 			{id:"previewapp",label:"Preview App",icon:Icons.EYE_LINE,run:wb.runPart.previewApp},
+			{id:"rebuildapppreview",label:"Rebuild App Preview from Scratch",icon:Icons.RESTART_LINE,run:wb.runPart.forcePreviewApp},
 			#end
 			{id:"previewextension",label:"Preview Extension",icon:Icons.EYE_LINE,run:() -> {if(ExtensionsPart.isExtension(wb.active.get()))wb.extensionsPart.openPreview(wb.active.get());}},
 			{id: "buildproject", label: "Build Project", icon: Icons.HAMMER_LINE, run: wb.runPart.buildProject},

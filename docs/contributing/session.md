@@ -214,6 +214,12 @@ Haxe checks cover the bridge and workbench behavior:
 
 `Preview App` builds a single Haxe/HashLink target with `-D wasm`, keeping its libraries, defines and macros. Builds run on a worker and have a timeout. The host needs Ash with WASM compilation, a compatible WASM runtime, and browser versions of the project's native libraries. Rayzor and other compilation targets are not converted implicitly.
 
+The session keeps separate successful bytecode and WASM snapshots under `.rayde/preview-cache/`, bounded to 128 MiB per stage. Content fingerprints cover Git-visible workspace files, explicit classpaths/resources, resolved Haxelib package roots, the Haxe standard library, compiler arguments/environment and host tooling. Ash/runtime changes invalidate the WASM stage separately. Rechecks before publication prevent caching outputs under an obsolete input fingerprint. Missing, corrupt or oversized caches fall back to compilation; the cache never grants artifact access, which still requires a connection-owned preview capability.
+
+An unavailable inventory or unsupported compiler configuration disables reuse. Macros that read external files outside these inputs or depend on time/network state need **Rebuild App Preview from Scratch**. It clears both stages. Stage durations and cache decisions appear in Build output.
+
+Compiler executables use canonical paths and file identity stamps; source and resource files use content digests. On Unix, bounded digest memoization also checks change time so a restored modification time cannot hide an edit. Browser build scripts skip desktop renderer preparation; their renderer WASM is rebuilt only when its Rust inputs or toolchain change.
+
 `bash scripts/build-site.sh` stages `bin/preview-tools`. Set `ASH_RUNTIME` to the WASM `ash_runtime.o` when building, or stage it explicitly:
 
 ```sh

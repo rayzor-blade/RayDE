@@ -35,6 +35,15 @@ class AppPreviewBuildChecks {
 			wire.exit(0);
 			until(() -> build.state.get()=="ready");
 			check(published.indexOf("Compiling WASM")>=0 && build.artifact.get()!=null,"Successful preview lost compiler progress");
+			var spawns=wire.spawns;wire.cached="wasm";
+			build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
+			check(wire.spawns==spawns && published.indexOf("Reusing unchanged WASM")>=0,"Cached preview spawned a compiler");
+			wire.cached="bytecode";
+			build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
+			check(wire.spawns==spawns+1 && wire.command=="ash","Cached bytecode did not skip Haxe");
+			wire.cached="wasm";
+			build.start("haxe",[],"/work",true);until(() -> build.state.get()=="ready");
+			check(wire.spawns==spawns+3,"Forced rebuild reused cached compiler output");wire.cached="miss";
 			wire.fail=true;
 			build.start("haxe",[],"/work");
 			until(() -> build.state.get()=="failed");
@@ -47,13 +56,16 @@ class AppPreviewBuildChecks {
 			check(build.state.get()=="cancelled" && wire.killed,"Stop did not cancel the compiler");
 		} catch(error:Dynamic){build.dispose();client.close();rayde.workspace.Procs.current=previous;throw error;}
 		build.dispose();client.close();rayde.workspace.Procs.current=previous;
-		Sys.println("App preview builds: bounded live output, phases, success, failure and Stop passed");
+		Sys.println("App preview builds: live output, phases, bytecode/WASM reuse, forced build, failure and Stop passed");
 	}
 }
 
 private class PreviewChannel implements Channel {
 	final incoming=new sys.thread.Deque<String>();
 	var pid=0;
+	public var spawns=0;
+	public var command="";
+	public var cached="miss";
 	public var hold=true;
 	public var fail=false;
 	public var killed=false;
@@ -64,9 +76,10 @@ private class PreviewChannel implements Channel {
 		var request:Dynamic=haxe.Json.parse(text),answer:Dynamic={id:request.id,ok:true};
 		switch(request.op:String){
 			case "hello":answer.root="/work";answer.exec=true;
-			case "preview.prepare":answer.directory="/work/.rayde/previews/test";answer.support="/support";answer.path=".rayde/previews/test";
+			case "preview.prepare":answer.directory="/work/.rayde/previews/test";answer.support="/support";answer.path=".rayde/previews/test";answer.cached=request.force==true ? "miss" : cached;
 			case "preview.open":answer.preview="capability";answer.url="http://localhost:1/preview";
 			case "proc.spawn":
+				spawns++;command=request.command;
 				answer.pid=++pid;
 				reply({ev:"proc.out",pid:pid,stream:"stdout",data:Base64.encode(Bytes.ofString(fail ? "compiler error\n" : "compiler output\n"))});
 				if(!hold || fail)reply({ev:"proc.exit",pid:pid,code:fail ? 1 : 0});
