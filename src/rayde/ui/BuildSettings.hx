@@ -20,7 +20,8 @@ typedef BuildSettingsProps = {
 	/** The project's folder, which the build's paths are relative to. */
 	root:String,
 	/** Called after each change has been written to the build file. */
-	onChanged:Void->Void
+	onChanged:Void->Void,
+    ?onRunChanged:Void->Void
 };
 
 /**
@@ -32,6 +33,7 @@ typedef BuildSettingsProps = {
  */
 class BuildSettings extends Component<BuildSettingsProps> {
 	static final targetLabels = [
+		"cppia"=>"C++ script (--cppia)","java"=>"Java (--java)","cs"=>"C# (--cs)",
 		"hl" => "HashLink (--hl)", "js" => "JavaScript (--js)", "cpp" => "C++ (--cpp)", "neko" => "Neko (--neko)", "lua" => "Lua (--lua)", "php" => "PHP (--php)",
 		"python" => "Python (--python)", "jvm" => "JVM (--jvm)", "swf" => "Flash (--swf)", "interp" => "Interpreter (--interp), no output"
 	];
@@ -83,6 +85,7 @@ class BuildSettings extends Component<BuildSettingsProps> {
 	function sections(_:Int):Element
 		return <div class="flex flex-col gap-6">
 			${section("rayde-build-target-section", "Target", "The compiler backend. With none set, RayDE compiles to HashLink and runs it on ash.", targetFields())}
+            <run-configuration-settings root={props.root} target={props.file.target()==null ? "hl" : props.file.target().kind} onChanged={props.onRunChanged}/>
 			${section("rayde-build-entry-section", "Main", "The class whose static main() runs first (--main).", entryFields())}
 			${section("rayde-build-folders-section", "Class path", "Directories searched, in order, when resolving imports (-cp).", folderFields())}
 			${section("rayde-build-defines-section", "Define", "Compile-time flags for #if conditionals (-D name or name=value).", defineFields())}

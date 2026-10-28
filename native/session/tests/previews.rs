@@ -44,7 +44,8 @@ async fn app_artifacts_use_a_separate_origin_and_connection_owned_capabilities()
         response.headers()["cross-origin-embedder-policy"],
         "require-corp"
     );
-    assert_eq!(response.text().await.unwrap(), "<html>preview</html>");
+    let html=response.text().await.unwrap();
+    assert!(html.contains("<html>preview</html>") && html.contains("data-rayde-preview-metadata"));
     let read = owner
         .request(json!({"op":"preview.read","preview":id,"path":"app.wasm","offset":4,"length":4}))
         .await;
@@ -145,6 +146,83 @@ async fn prepared_builds_install_the_bridge_and_are_released_with_their_owner() 
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     assert!(!directory.exists());
+    other.close().await;
+    running.shutdown().await;
+}
+
+#[tokio::test]
+async fn javascript_preview_uses_framework_assets_without_hashlink_tooling() {
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("bin")).unwrap();
+    std::fs::write(
+        root.path().join("index.html"),
+        "<script src='./bin/app.js'></script>",
+    )
+    .unwrap();
+    std::fs::write(root.path().join("style.css"), "body{color:red}").unwrap();
+    std::fs::write(root.path().join("bin/app.js"), "stale source output").unwrap();
+    std::fs::write(root.path().join(".env"), "private").unwrap();
+    let mut options = Options::new(root.path());
+    options.exec = true;
+    options.state_root = Some(state.path().into());
+    let running = start(options).await.unwrap();
+    let mut owner = Client::connect(&running).await;
+    let hello = owner.request(json!({"op":"hello"})).await;
+    assert_eq!(hello["appPreviews"], false);
+    assert_eq!(hello["webPreviews"], true);
+    let prepared=owner.request(json!({"op":"preview.prepare","recipe":{"compiler":"haxe","args":[],"cwd":"","family":"haxe","primary":"bin/app.js"}})).await;
+    assert_eq!(prepared["ok"], true, "{prepared}");
+    let directory = std::path::PathBuf::from(prepared["directory"].as_str().unwrap());
+    std::fs::create_dir_all(directory.join("bin")).unwrap();
+    std::fs::write(directory.join("bin/app.js"), "fresh compiler output").unwrap();
+    let collected=owner.request(json!({"op":"preview.collect","path":prepared["path"],"source":".","entry":"index.html","script":"bin/app.js"})).await;
+    assert_eq!(collected["ok"], true, "{collected}");
+    assert_eq!(
+        std::fs::read_to_string(directory.join("bin/app.js")).unwrap(),
+        "fresh compiler output"
+    );
+    assert!(!directory.join(".env").exists());
+    assert!(directory.join("style.css").exists());
+    let mut other = Client::connect(&running).await;
+    other.request(json!({"op":"hello"})).await;
+    assert_eq!(
+        other
+            .request(json!({"op":"preview.collect","path":prepared["path"]}))
+            .await["ok"],
+        false
+    );
+    assert_eq!(
+        owner
+            .request(json!({"op":"preview.collect","path":prepared["path"],"source":".."}))
+            .await["ok"],
+        false
+    );
+    let opened = owner
+        .request(json!({"op":"preview.open","path":prepared["path"]}))
+        .await;
+    let http = reqwest_client();
+    let url = opened["url"].as_str().unwrap();
+    assert_eq!(http.get(url).send().await.unwrap().status(), 200);
+    assert_eq!(
+        http.get(url.replace("index.html", "bin/app.js"))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "fresh compiler output"
+    );
+    assert_eq!(
+        http.get(url.replace("index.html", ".env"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    owner.close().await;
     other.close().await;
     running.shutdown().await;
 }

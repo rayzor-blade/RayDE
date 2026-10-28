@@ -53,6 +53,7 @@ typedef SettingsPageProps = {
 	libraries:LibraryManager,
 	onBuildChanged:Void->Void,
 	?onRunnerChanged:Void->Void,
+	?runTarget:String,
 	onTerminalChanged:Void->Void,
 	onAppearanceChanged:Void->Void,
 	onBindingsChanged:Void->Void,
@@ -126,21 +127,21 @@ class SettingsPage extends Component<SettingsPageProps> {
 		</for>;
 		if (id == "build" && props.caribou == null && props.rayzor == null) return hxmlSection();
 		return SettingsTiming.build(id, () -> switch id {
-			case "run": <runner-settings root={props.root} onChanged={props.onRunnerChanged}/>;
+			case "run": <runner-settings root={props.root} target={props.rayzor!=null ? null : props.runTarget} family={props.rayzor!=null ? "rayzor" : "haxe"} onChanged={props.onRunnerChanged}/>;
 			case "terminal": <terminal-settings settings={props.terminal} root={props.root} onChanged={props.onTerminalChanged}/>;
 			case "appearance": <appearance-settings appearance={props.appearance} root={props.root} onChanged={props.onAppearanceChanged}/>;
 			case "keys": <key-binding-settings bindings={props.bindings} commands={props.commands} root={props.root} onChanged={props.onBindingsChanged} changes={props.bindingChanges}/>;
 			case "extensions": <extension-settings root={props.root} manager={props.manager} changes={props.extensionChanges} onToggle={props.onExtensionToggle}/>;
 			case "extension" if (props.extension != null): <extension-config manifest={props.extension} onChanged={props.onExtensionChanged} onEditText={props.onEditExtensionText} listening={props.listening}/>;
 			case _ if (props.caribou != null): <caribou-settings path={props.caribou} languages={props.caribouLanguages} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
-			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange}/>;
+			case _ if (props.rayzor != null): <rayzor-settings path={props.rayzor} onChanged={props.onBuildChanged} onEditText={props.onEditBuildText} beforeChange={props.beforeBuildChange} onRunChanged={props.onRunnerChanged}/>;
 			case _: hxmlSection();
 		});
 	}
 
 	function hxmlSection():Element
 		return <for {build in [buildState()]}>
-			${SettingsTiming.build("build",() -> build.loading || build.error != null ? buildStatus(build,"build") : build.file == null ? noBuild() : <build-settings file={build.file} root={props.root} onChanged={props.onBuildChanged}/>)}
+			${SettingsTiming.build("build",() -> build.loading || build.error != null ? buildStatus(build,"build") : build.file == null ? noBuild() : <build-settings file={build.file} root={props.root} onChanged={props.onBuildChanged} onRunChanged={props.onRunnerChanged}/>)}
 		</for>;
 
 	function buildStatus(build:BuildFileState, section:String):Element {
@@ -159,5 +160,6 @@ class SettingsPage extends Component<SettingsPageProps> {
 		return SettingsParts.page("rayde-build", <div class="flex flex-col gap-6">
 			${SettingsParts.header(Icons.HAMMER_LINE, "Build", "This project has no build file.")}
 			<div class="rayde-note flex items-center gap-3 px-4 py-3"><icon document={Icons.INFORMATION_LINE} class="size-4 shrink-0"/><text class="text-xs">Open a .hxml, .cbproj or rayzor.toml project to edit how it builds.</text></div>
+            <run-configuration-settings root={props.root} onChanged={props.onRunnerChanged}/>
 		</div>);
 }

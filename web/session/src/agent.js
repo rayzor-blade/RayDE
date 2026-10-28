@@ -60,7 +60,7 @@ export const start = ask => serve(ask, {
       for (let at = 0; at < bytes.length; at += 16384) deliver(bytes.subarray(at, at + 16384));
     };
     const documents = client ? new EditorDocuments(client, answer) : null;
-    const previews = client ? new AppPreviews(client) : null;
+    const previews = client ? new AppPreviews(client,undefined,answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => {previews?.reset();answer({ ev: "session.disconnected", generation:client.generation });});
     client?.on("context-changed", ({message}) => {previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});

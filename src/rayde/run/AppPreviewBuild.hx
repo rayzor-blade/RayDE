@@ -5,13 +5,14 @@ import rayde.workspace.session.SessionClient;
 import rayde.workspace.session.SessionLauncher;
 import ashui.reactive.Signal;
 
-private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress, force:Bool};
-typedef AppArtifact = {preview:String, url:String, path:String};
+private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress, force:Bool, family:String, manifest:Null<String>};
+typedef AppArtifact = {preview:String, url:String, path:String, ?arguments:Array<String>};
 
 /** One supervised browser build per window. Compiler work and output readers stay off the UI thread. */
 class AppPreviewBuild {
 	public final artifact = Signal.make((null:Null<AppArtifact>));
 	public final state = Signal.make("idle");
+	public final title = Signal.make("");
 	public final error = Signal.make("");
 	public final output = Signal.make("");
 	public final phase = Signal.make("");
@@ -29,17 +30,22 @@ class AppPreviewBuild {
 		this.client=client;
 		this.publish=publish;
 		unsubscribe=client.subscribe(event -> {
+            if(event.ev=="preview.title" && !gone && state.get()=="ready"){
+                var current=artifact.get();
+                if(current!=null && event.preview==current.preview && Std.isOfType(event.title,String))title.set((event.title:String).substr(0,256));
+                return;
+            }
 			if(event.ev!="session.disconnected" || gone)return;
 			worker.cancel("app");artifact.set(null);state.set("failed");error.set("The session disconnected. Rebuild the preview after reconnecting.");
 			if(progress!=null)progress.append(error.get()+"\n");
 		});
 	}
-	public function start(compiler:String,args:Array<String>,cwd:String,force=false):Void {
+	public function start(compiler:String,args:Array<String>,cwd:String,force=false,family="haxe",?manifest:String):Void {
 		if (state.get() == "building") return;
 		if(timer!=null)timer.cancel();
-		state.set("building");error.set("");output.set("");phase.set("Preparing preview");elapsed.set(0);
+		state.set("building");title.set("");error.set("");output.set("");phase.set("Preparing preview");elapsed.set(0);
 		started=haxe.Timer.stamp();seen=-1;progress=new BuildProgress();
-		worker.submit("app",{client:client,compiler:compiler,args:args.copy(),cwd:cwd,progress:progress,force:force});poll();
+		worker.submit("app",{client:client,compiler:compiler,args:args.copy(),cwd:cwd,progress:progress,force:force,family:family,manifest:manifest});poll();
 	}
 	public function stop():Void {
 		if(state.get()!="building")return;
@@ -74,17 +80,8 @@ class AppPreviewBuild {
 		gone=true;unsubscribe();if(timer!=null)timer.cancel();worker.dispose();
 		var previous=artifact.get();if(previous!=null)release(previous);artifact.set(null);
 	}
-	public static function compilerArgs(args:Array<String>,support:String,output:String):Array<String> {
-		var result:Array<String>=[],at=0;
-		while(at<args.length){
-			var flag=args[at++];
-			if (["--next","--each","--interp","--run","-x","-js","--js","-cpp","--cpp","-neko","-python","-java","-cs","-php","-lua","--no-output","--cmd","-cmd"].indexOf(flag)>=0)
-				throw "App Preview needs a single HashLink build with browser-compatible libraries.";
-			if(flag=="-hl"||flag=="--hl"){at++;continue;}
-			result.push(flag);
-		}
-		return result.concat(["-cp",support,"-D","wasm","-hl",output]);
-	}
+	public static function compilerArgs(args:Array<String>,support:String,output:String):Array<String>
+        return RunPlan.compilerArgs(args,"hl",output,true,support);
 	static function build(value:Build,cancelled:Void->Bool):{artifact:AppArtifact,output:String} {
 		var progress=value.progress;
 		progress.stage("Preparing preview");
@@ -123,33 +120,47 @@ class AppPreviewBuild {
 		}
 		try {
 			if(isCancelled())throw "Preview build cancelled.";
-			var root=haxe.io.Path.normalize(value.client.root),cwd=haxe.io.Path.normalize(value.cwd);
-			progress.stage("Checking build inputs");
-			prepared=value.client.request("preview.prepare",{recipe:{compiler:value.compiler,args:value.args,cwd:cwd==root ? "" : rayde.files.FileOps.relative(root,cwd)},force:value.force});
-			if(prepared.cacheNote!=null && prepared.cacheNote!="")progress.append("Cache: "+prepared.cacheNote+"\n");
-			var program:String=prepared.directory+"/app.hl",wasm:String=prepared.directory+"/app.wasm";
-			if(prepared.cached=="wasm")progress.append("Reusing unchanged WASM preview.\n");
-			else {
-				if(prepared.cached=="bytecode")progress.append("Reusing unchanged HashLink bytecode.\n");
-				else {
-					progress.stage("Compiling Haxe");var before=haxe.Timer.stamp();
-					run(value.compiler,compilerArgs(value.args,prepared.support,program));
-					progress.append("Haxe compile: "+Math.round((haxe.Timer.stamp()-before)*100)/100+"s\n");
-					cache("bytecode");
-				}
-				var environment:Dynamic={ASH_WASM_FIBERS:"1"};
-				if(prepared.runtime!=null)Reflect.setField(environment,"ASH_RUNTIME",prepared.runtime);
-				progress.stage("Compiling WASM");var before=haxe.Timer.stamp();
-				run("ash",["--build",wasm,"--target","wasm32-wasip1-threads",program],environment);
-				progress.append("WASM compile: "+Math.round((haxe.Timer.stamp()-before)*100)/100+"s\n");
-				cache("wasm");
-			}
+            var inputs=value.args;
+            if(value.family=="haxe" && value.manifest!=null && StringTools.endsWith(value.manifest,".hxml"))inputs=rayde.lang.Hxml.read(value.manifest);
+            var target=RunPlan.selected(value.cwd,inputs,value.family,true);
+            var configuration=RunConfigurations.load(value.cwd,target,true,value.family);
+            if(configuration.mode!="browser")throw "Choose a browser-compatible Run Configuration for this target in Build Settings.";
+            var marker="{preview}",model=RunPlan.make(value.compiler,inputs,value.cwd,marker,configuration,true,"{support}",true);
+            var primary=model.program.indexOf(marker+"/")==0 ? model.program.substr(marker.length+1) : "app.js";
+            var output=model.output.indexOf(marker+"/")==0 ? model.output.substr(marker.length+1) : primary;
+            var root=haxe.io.Path.normalize(value.client.root),cwd=haxe.io.Path.normalize(value.cwd);
+            var assets=configuration.previewDirectory=="" ? "" : rayde.files.FileOps.relative(root,haxe.io.Path.normalize(haxe.io.Path.isAbsolute(configuration.previewDirectory) ? configuration.previewDirectory : haxe.io.Path.join([cwd,configuration.previewDirectory])));
+            var runner=model.postBuild==null ? {command:"",args:[]} : {command:model.postBuild.command,args:model.postBuild.args};
+            progress.stage("Checking build inputs");
+            prepared=value.client.request("preview.prepare",{recipe:{compiler:value.compiler,args:inputs.concat(configuration.compilerFlags),cwd:cwd==root ? "" : rayde.files.FileOps.relative(root,cwd),family:configuration.compiler,primary:primary,output:output,runner:runner,assets:assets,entry:configuration.previewEntry},force:value.force});
+            if(prepared.cacheNote!=null && prepared.cacheNote!="")progress.append("Cache: "+prepared.cacheNote+"\n");
+            var plan=RunPlan.make(value.compiler,inputs,value.cwd,prepared.directory,configuration,true,prepared.support,true);
+            function execute(step:RunPlan.RunCommand,?environment:Dynamic):Void {
+                if(step==null)return;
+                progress.stage(step.phase);var before=haxe.Timer.stamp();
+                run(step.command,step.args,environment);
+                progress.append(step.phase+": "+Math.round((haxe.Timer.stamp()-before)*100)/100+"s\n");
+            }
+            function collect():Void {
+                value.client.request("preview.collect",{path:prepared.path,source:assets,entry:configuration.previewEntry,script:primary});
+            }
+            if(prepared.cached=="wasm")progress.append("Reusing unchanged preview bundle.\n");
+            else {
+                if(prepared.cached=="bytecode")progress.append("Reusing unchanged compiler output.\n");
+                else {execute(plan.compile);if(plan.postBuild==null)collect();cache("bytecode");}
+                if(plan.postBuild!=null){
+                    var environment:Dynamic={ASH_WASM_FIBERS:"1"};
+                    if(prepared.runtime!=null)Reflect.setField(environment,"ASH_RUNTIME",prepared.runtime);
+                    execute(plan.postBuild,environment);collect();
+                }
+                cache("wasm");
+            }
 			if(isCancelled())throw "Preview build cancelled.";
 			progress.stage("Opening preview");
 			opened=value.client.request("preview.open",{path:prepared.path});
 			if(isCancelled())throw "Preview build cancelled.";
 			progress.stage("Preview ready");
-			return {artifact:{preview:opened.preview,url:opened.url,path:prepared.path},output:progress.snapshot().output};
+			return {artifact:{preview:opened.preview,url:opened.url,path:prepared.path,arguments:configuration.arguments.copy()},output:progress.snapshot().output};
 		}catch(error:Dynamic){
 			progress.append(Std.string(error)+"\n");
 			if(value.client.isOnline() && value.client.connectionEpoch()==epoch) {

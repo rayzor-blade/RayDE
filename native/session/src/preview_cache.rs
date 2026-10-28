@@ -11,11 +11,22 @@ type Result<T> = std::result::Result<T, String>;
 const MAX_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_FILES: usize = 40_000;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 pub(crate) struct Recipe {
     pub compiler: String,
     pub args: Vec<String>,
     pub cwd: String,
+    pub family: Option<String>,
+    pub primary: Option<String>,
+    pub output: Option<String>,
+    pub runner: Option<CompilerRunner>,
+    pub assets: Option<String>,
+    pub entry: Option<String>,
+}
+#[derive(Clone, Deserialize, Serialize)]
+pub(crate) struct CompilerRunner {
+    pub command: String,
+    pub args: Vec<String>,
 }
 #[derive(Clone)]
 pub(crate) struct Plan {
@@ -25,7 +36,7 @@ pub(crate) struct Plan {
 }
 pub(crate) struct Cache {
     root: PathBuf,
-    tools: PathBuf,
+    tools: Option<PathBuf>,
     environment: BTreeMap<String, String>,
     lock: tokio::sync::Mutex<()>,
     hashes: std::sync::Arc<std::sync::Mutex<HashMap<PathBuf, (Stamp, String)>>>,
@@ -79,18 +90,28 @@ impl Cache {
         .await
         .map_err(err)?
     }
-    pub fn new(root: &Path, tools: &Path, environment: &HashMap<String, String>) -> Self {
+    pub fn new(root: &Path, tools: Option<&Path>, environment: &HashMap<String, String>) -> Self {
         let mut values: BTreeMap<_, _> = std::env::vars().collect();
         values.extend(environment.iter().map(|(k, v)| (k.clone(), v.clone())));
         Self {
             root: std::fs::canonicalize(root).unwrap_or_else(|_| root.into()),
-            tools: std::fs::canonicalize(tools).unwrap_or_else(|_| tools.into()),
+            tools: tools.map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.into())),
             environment: values,
             lock: tokio::sync::Mutex::new(()),
             hashes: Default::default(),
         }
     }
     pub async fn plan(&self, recipe: Recipe) -> Result<Plan> {
+        if recipe
+            .family
+            .as_deref()
+            .is_some_and(|family| family != "haxe")
+        {
+            return Err("This compiler manages its incremental build cache.".into());
+        }
+        for path in [&recipe.primary, &recipe.output].into_iter().flatten() {
+            crate::store::clean(path).map_err(err)?;
+        }
         if recipe.args.len() > 4096
             || recipe.compiler.len() > 4096
             || recipe.args.iter().any(|a| a.len() > 32768)
@@ -101,7 +122,14 @@ impl Cache {
         if !cwd.starts_with(&self.root) {
             return Err("Compiler directory leaves the workspace".into());
         }
-        let mut paths = vec![self.tools.join("haxe")];
+        let mut paths = self
+            .tools
+            .as_ref()
+            .map(|tools| vec![tools.join("haxe")])
+            .unwrap_or_default();
+        if let Some(assets) = recipe.assets.as_deref().filter(|path| !path.is_empty()) {
+            paths.push(self.root.join(crate::store::clean(assets).map_err(err)?));
+        }
         let compiler = executable(&recipe.compiler, &cwd, &self.environment)?;
         let standard = self
             .environment
@@ -195,9 +223,9 @@ impl Cache {
         let hashes = self.hashes.clone();
         tokio::task::spawn_blocking(move || {
             let mut haxe = Sha256::new();
-            haxe.update(b"rayde-preview-bytecode-v2\0");
+            haxe.update(b"rayde-preview-bytecode-v3\0");
             hash_tool(&mut haxe, &compiler)?;
-            haxe.update(serde_json::to_vec(&recipe).map_err(err)?);
+            haxe.update(serde_json::to_vec(&serde_json::json!({"compiler":recipe.compiler,"args":recipe.args,"cwd":recipe.cwd,"primary":recipe.primary,"assets":recipe.assets,"entry":recipe.entry})).map_err(err)?);
             haxe.update(serde_json::to_vec(&env).map_err(err)?);
             let mut files = BTreeSet::new();
             let mut visited = BTreeSet::new();
@@ -217,8 +245,11 @@ impl Cache {
             wasm.update(&bytecode);
             let mut files = BTreeSet::new();
             let mut visited = BTreeSet::new();
-            collect(&tools, &mut files, &mut visited)?;
-            hash_tool(&mut wasm, &executable("ash", &cwd, &env)?)?;
+            if let Some(tools)=tools {collect(&tools, &mut files, &mut visited)?;}
+            if let Some(runner)=&recipe.runner {
+                wasm.update(serde_json::to_vec(runner).map_err(err)?);
+                if !runner.command.is_empty(){hash_tool(&mut wasm,&executable(&runner.command,&cwd,&env)?)?;}
+            }else{hash_tool(&mut wasm, &executable("ash", &cwd, &env)?)?;}
             hash_files(&mut wasm, files, &hashes)?;
             Ok(Plan {
                 recipe,
@@ -275,10 +306,20 @@ impl Cache {
         } else {
             plan.bytecode.clone()
         };
+        let primary = plan
+            .recipe
+            .primary
+            .clone()
+            .unwrap_or_else(|| "app.hl".into());
+        let output = plan
+            .recipe
+            .output
+            .clone()
+            .unwrap_or_else(|| "app.wasm".into());
         tokio::task::spawn_blocking(move || {
-            if !directory.join("app.hl").is_file()
+            if !directory.join(primary).is_file()
                 || stage == "wasm"
-                    && (!directory.join("app.wasm").is_file()
+                    && (!directory.join(output).is_file()
                         || !directory.join("index.html").is_file())
             {
                 return Err("Compiler output is incomplete".into());
@@ -361,8 +402,15 @@ fn collect(
         }
         for entry in std::fs::read_dir(path).map_err(err)? {
             let entry = entry.map_err(err)?;
-            if [".git", ".rayde", ".rayzor", "target", "node_modules"]
-                .contains(&entry.file_name().to_string_lossy().as_ref())
+            if [
+                ".git",
+                ".rayde",
+                ".rayzor",
+                ".haxelib",
+                "target",
+                "node_modules",
+            ]
+            .contains(&entry.file_name().to_string_lossy().as_ref())
             {
                 continue;
             }
@@ -542,7 +590,7 @@ mod tests {
                 std::env::var("PATH").unwrap_or_default()
             ),
         )]);
-        let make = || Cache::new(&root, &tools, &environment);
+        let make = || Cache::new(&root, Some(&tools), &environment);
         let cache = make();
         let recipe = Recipe {
             compiler: host.join("haxe").to_string_lossy().into(),
@@ -555,8 +603,38 @@ mod tests {
                 "Main".into(),
             ],
             cwd: "".into(),
+            ..Recipe::default()
         };
         let plan = cache.plan(recipe.clone()).await.unwrap();
+        let mut configured = recipe.clone();
+        configured.runner = Some(CompilerRunner {
+            command: host.join("ash").to_string_lossy().into(),
+            args: vec!["--target".into(), "wasm32-wasip1-threads".into()],
+        });
+        let first = cache.plan(configured.clone()).await.unwrap();
+        configured
+            .runner
+            .as_mut()
+            .unwrap()
+            .args
+            .push("--no-fma".into());
+        let changed_flags = cache.plan(configured).await.unwrap();
+        assert_eq!(first.bytecode, changed_flags.bytecode);
+        assert_ne!(first.wasm, changed_flags.wasm);
+        let mut javascript = recipe.clone();
+        javascript.primary = Some("app.js".into());
+        javascript.output = Some("app.js".into());
+        javascript.runner = Some(CompilerRunner {
+            command: String::new(),
+            args: vec![],
+        });
+        let no_ash = Cache::new(
+            &root,
+            None,
+            &HashMap::from([("PATH".into(), String::new())]),
+        );
+        let js = no_ash.plan(javascript).await.unwrap();
+        assert!(!js.wasm.is_empty());
         let build = root.join(".rayde/previews/test");
         std::fs::create_dir_all(&build).unwrap();
         assert_eq!(cache.restore(&plan, &build).await.unwrap(), "miss");

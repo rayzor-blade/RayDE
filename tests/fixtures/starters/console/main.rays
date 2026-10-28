@@ -12,6 +12,7 @@ var starter = await registerStarter({
   command: 'haxe -cp src --run Main',
   runner: 'ash',
   entry: 'build.hxml',
+  run: {framework: 'ash', targets: {hl: {runner: 'ash', flags: ['--preset', 'application'], arguments: ['starter argument']}}},
   files: [
     {path: 'build.hxml', text: '-cp src\n-main Main\n'},
     {path: 'src/Main.hx', text: 'class Main { static function main() { trace("Hello, {{name}}!"); } }\n'},

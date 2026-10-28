@@ -73,10 +73,17 @@ def main():
         if not (demo / '.haxelib').exists():
             subprocess.run(['haxelib','newrepo'],cwd=demo,check=True)
         for name in ['ashui-components','ashui-icons']:
-            ready = subprocess.run(['haxelib','path',name+':0.2.0'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            ready = subprocess.run(['haxelib','path',name+':0.2.2'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             if ready.returncode:
-                subprocess.run(['haxelib','install',name,'0.2.0','--always','--quiet'],cwd=demo,check=True)
-        args.workspace = demo / 'build.hxml'
+                subprocess.run(['haxelib','install',name,'0.2.2','--always','--quiet'],cwd=demo,check=True)
+        build = demo / 'build.hxml'
+        contents = build.read_text()
+        for name in ['ashui','ashui-components','ashui-icons']:
+            for version in ['0.2.0','0.2.1']:
+                contents = contents.replace('-L '+name+':'+version+'\n','-L '+name+':0.2.2\n')
+        if contents != build.read_text():
+            build.write_text(contents)
+        args.workspace = build
     workspace = args.workspace.resolve() if args.workspace else None
     if workspace and not workspace.exists():
         parser.error('The workspace does not exist')

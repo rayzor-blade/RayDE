@@ -6,8 +6,7 @@ class ProjectRunner {
 	static var apple:Null<Bool>;
 	public static function defaultHashlink(?system:String, ?appleSilicon:Bool):String {
 		#if (wasm || rayde_page)
-		// A page presents as a Mac with Apple silicon; its programs run on Ash.
-		if (system == null) return "ash";
+		if(system==null){var client=rayde.workspace.PageHost.session;if(client!=null && client.hostSystem!=""){system=client.hostSystem;appleSilicon=client.hostArchitecture=="aarch64"||client.hostArchitecture=="arm64";}else return "ash";}
 		#end
 		if ((system ?? Sys.systemName()) != "Mac") return "hashlink";
 		if (appleSilicon == null) { if (apple == null) apple = nativeAppleSilicon(); appleSilicon = apple; }

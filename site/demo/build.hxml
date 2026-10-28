@@ -1,7 +1,7 @@
 -cp src
--L ashui:0.2.0
--L ashui-components:0.2.0
--L ashui-icons:0.2.0
+-L ashui:0.2.2
+-L ashui-components:0.2.2
+-L ashui-icons:0.2.2
 -D ashui_css=styles/app.css
 -main Main
 -hl bin/pocket-studio.hl

@@ -11317,9 +11317,11 @@ import { serve } from "./channel-agent.mjs";
 
 // src/previews.js
 var AppPreviews = class {
-  constructor(client, screen = document.querySelector("#screen")) {
+  constructor(client, screen = document.querySelector("#screen"), emit = () => {
+  }) {
     this.client = client;
     this.screen = screen;
+    this.emit = emit;
     this.descriptors = /* @__PURE__ */ new Map();
     this.surfaces = /* @__PURE__ */ new Map();
     this.pending = /* @__PURE__ */ new Set();
@@ -11345,6 +11347,8 @@ var AppPreviews = class {
     }
     const descriptor = this.descriptors.get(request.preview);
     if (!descriptor) throw Error("This app preview is unavailable.");
+    const args2 = request.arguments ?? [];
+    if (!Array.isArray(args2) || args2.length > 256 || args2.some((arg) => typeof arg !== "string") || args2.join("").length > 4096) throw Error("The preview program arguments are too large.");
     for (const field of ["x", "y", "width", "height", "viewportWidth", "viewportHeight"]) if (!Number.isFinite(request[field]) || Math.abs(request[field]) > 1e5) throw Error("Invalid preview bounds.");
     let surface = this.surfaces.get(request.surface);
     if (surface && surface.preview !== request.preview) {
@@ -11359,8 +11363,10 @@ var AppPreviews = class {
       iframe.sandbox = "allow-scripts allow-same-origin";
       iframe.allow = "cross-origin-isolated";
       iframe.referrerPolicy = "strict-origin";
+      const url = new URL(descriptor.url);
+      for (const arg of args2) url.searchParams.append("arg", arg);
       iframe.style.cssText = "position:fixed;border:0;z-index:20;background:transparent;";
-      iframe.src = descriptor.url;
+      iframe.src = url.href;
       surface = { iframe, preview: request.preview, origin: descriptor.origin, bounds: request };
       this.surfaces.set(request.surface, surface);
       document.body.append(iframe);
@@ -11396,9 +11402,19 @@ var AppPreviews = class {
     this.descriptors.clear();
   }
   async files(event) {
-    if (event.data?.type !== "rayde-preview-files") return;
+    if (!["rayde-preview-files", "rayde-preview-title"].includes(event.data?.type)) return;
     const surface = [...this.surfaces.values()].find((value) => event.source === value.iframe.contentWindow && event.origin === value.origin);
     if (!surface) return;
+    if (event.data.type === "rayde-preview-title") {
+      if (typeof event.data.title !== "string" || event.data.title.length > 512) return;
+      const title = event.data.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 256);
+      if (title && title !== surface.title) {
+        surface.title = title;
+        surface.iframe.title = title;
+        this.emit({ ev: "preview.title", preview: surface.preview, title });
+      }
+      return;
+    }
     const request = event.data.request;
     if (!request || !Number.isSafeInteger(request.id) || typeof request.op !== "string") return;
     let reply;
@@ -11500,7 +11516,7 @@ var start = (ask) => serve(ask, {
       for (let at2 = 0; at2 < bytes.length; at2 += 16384) deliver(bytes.subarray(at2, at2 + 16384));
     };
     const documents = client ? new EditorDocuments(client, answer) : null;
-    const previews = client ? new AppPreviews(client) : null;
+    const previews = client ? new AppPreviews(client, void 0, answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => {
       previews?.reset();

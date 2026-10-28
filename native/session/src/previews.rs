@@ -87,9 +87,11 @@ impl Previews {
         let registry = Arc::new(Self {
             root: root.into(),
             base: format!("http://{}", listener.local_addr()?),
-            cache: tools
-                .as_ref()
-                .map(|tools| crate::preview_cache::Cache::new(root, tools, environment)),
+            cache: Some(crate::preview_cache::Cache::new(
+                root,
+                tools.as_deref(),
+                environment,
+            )),
             tools,
             entries: Mutex::new(HashMap::new()),
             builds: Mutex::new(HashMap::new()),
@@ -134,10 +136,17 @@ impl Previews {
     }
     pub async fn request(&self, owner: u64, op: &str, request: &Value) -> Result<Value> {
         if op == "preview.prepare" {
-            let tools = self
-                .tools
-                .as_ref()
-                .ok_or_else(|| failure("Install app preview tooling on this session host."))?;
+            let tools = self.tools.as_ref();
+            let needs_tools = request["recipe"]["family"].as_str().unwrap_or("haxe") == "haxe"
+                && request["recipe"]["primary"]
+                    .as_str()
+                    .unwrap_or("app.hl")
+                    .ends_with(".hl");
+            if needs_tools && tools.is_none() {
+                return Err(failure(
+                    "Install HashLink browser preview tooling on this session host.",
+                ));
+            }
             let mut random = [0u8; 16];
             rand::rngs::OsRng.fill_bytes(&mut random);
             let name = random
@@ -159,9 +168,9 @@ impl Previews {
                 tokio::fs::create_dir_all(&directory).await.map_err(io_error)?;
                 let resolved=tokio::fs::canonicalize(&directory).await.map_err(io_error)?;
                 if !resolved.starts_with(&self.root){return Err(failure("The preview build leaves the workspace."));}
-                for name in ["ash_channel.wasm","channel-agent.mjs","rayde_preview_files.mjs","preview-frames.mjs"] {
+                if let Some(tools)=tools {for name in ["ash_channel.wasm","channel-agent.mjs","rayde_preview_files.mjs","preview-frames.mjs"] {
                     tokio::fs::copy(tools.join(name),directory.join(name)).await.map_err(io_error)?;
-                }
+                }}
                 let mut cached="miss";let mut note=String::new();
                 if let (Some(cache),Some(recipe))=(&self.cache,request.get("recipe")) {
                     let recipe=serde_json::from_value::<crate::preview_cache::Recipe>(recipe.clone()).map_err(|_|failure("Invalid preview compiler configuration."))?;
@@ -175,12 +184,15 @@ impl Previews {
                         Err(error)=>note=error,
                     }
                 }
-                Ok(json!({"path":path,"directory":directory,"support":tools.join("haxe"),"runtime":tools.join("ash_runtime.o").is_file().then(||tools.join("ash_runtime.o")),"cached":cached,"cacheNote":note}))
+                Ok(json!({"path":path,"directory":directory,"support":tools.map(|tools|tools.join("haxe")),"runtime":tools.and_then(|tools|tools.join("ash_runtime.o").is_file().then(||tools.join("ash_runtime.o"))),"cached":cached,"cacheNote":note}))
             }.await;
             if result.is_err() {
                 self.builds.lock().unwrap().remove(&path);
             }
             return result;
+        }
+        if op == "preview.collect" {
+            return self.collect(owner, request).await;
         }
         if op == "preview.cache" {
             let path = clean(request["path"].as_str().unwrap_or(""))?;
@@ -275,6 +287,13 @@ impl Previews {
             if !root.join("index.html").is_file() {
                 return Err(failure("The build did not produce index.html."));
             }
+            let index = root.join("index.html");
+            let mut page = tokio::fs::read_to_string(&index).await.map_err(io_error)?;
+            tokio::fs::write(root.join("rayde-preview-metadata.mjs"), include_str!("../../../preview/app-metadata.mjs")).await.map_err(io_error)?;
+            if !page.contains("data-rayde-preview-metadata") {
+                page.push_str("\n<script type=\"module\" data-rayde-preview-metadata src=\"./rayde-preview-metadata.mjs\"></script>\n");
+                tokio::fs::write(index, page).await.map_err(io_error)?;
+            }
             let mut entries = self.entries.lock().unwrap();
             if entries.len() >= 8
                 || entries
@@ -360,6 +379,104 @@ impl Previews {
             return Err(failure("The preview artifact is unavailable."));
         }
         Ok((path, metadata.len()))
+    }
+    async fn collect(&self, owner: u64, request: &Value) -> Result<Value> {
+        let path = clean(request["path"].as_str().unwrap_or(""))?;
+        if !self
+            .builds
+            .lock()
+            .unwrap()
+            .get(&path)
+            .is_some_and(|build| build.owner == owner)
+        {
+            return Err(failure("This preview build is closed."));
+        }
+        let directory = tokio::fs::canonicalize(self.root.join(path))
+            .await
+            .map_err(io_error)?;
+        if !directory.starts_with(&self.root) {
+            return Err(failure("The preview build leaves the workspace."));
+        }
+        let entry = clean(request["entry"].as_str().unwrap_or("index.html"))?;
+        if let Some(source) = request["source"]
+            .as_str()
+            .filter(|source| !source.is_empty())
+        {
+            let source = tokio::fs::canonicalize(self.root.join(clean(source)?))
+                .await
+                .map_err(io_error)?;
+            if !source.starts_with(&self.root) {
+                return Err(failure("The preview directory leaves the workspace."));
+            }
+            let mut pending = vec![(source, PathBuf::new())];
+            let mut count = 0;
+            let mut bytes = 0u64;
+            while let Some((source, relative)) = pending.pop() {
+                let mut children = tokio::fs::read_dir(source).await.map_err(io_error)?;
+                while let Some(child) = children.next_entry().await.map_err(io_error)? {
+                    let name = child.file_name();
+                    let text = name.to_string_lossy();
+                    if text.starts_with('.') || ["target", "node_modules"].contains(&text.as_ref())
+                    {
+                        continue;
+                    }
+                    count += 1;
+                    if count > 2048 {
+                        return Err(failure("Choose a smaller preview output directory."));
+                    }
+                    let kind = child.file_type().await.map_err(io_error)?;
+                    if kind.is_symlink() {
+                        return Err(failure("Preview output must not contain symlinks."));
+                    }
+                    let relative = relative.join(name);
+                    if kind.is_dir() {
+                        pending.push((child.path(), relative));
+                        continue;
+                    }
+                    let size = child.metadata().await.map_err(io_error)?.len();
+                    bytes += size;
+                    if !kind.is_file() || size > MAX_FILE || bytes > MAX_TOTAL {
+                        return Err(failure("The preview output is too large or unsupported."));
+                    }
+                    let destination = directory.join(&relative);
+                    if !destination.exists() || relative == PathBuf::from(&entry) {
+                        tokio::fs::create_dir_all(destination.parent().unwrap())
+                            .await
+                            .map_err(io_error)?;
+                        tokio::fs::copy(child.path(), destination)
+                            .await
+                            .map_err(io_error)?;
+                    }
+                }
+            }
+        }
+        if directory.join(&entry).is_file() {
+            if entry != "index.html" {
+                tokio::fs::copy(directory.join(&entry), directory.join("index.html"))
+                    .await
+                    .map_err(io_error)?;
+            }
+        } else if !directory.join("index.html").is_file() {
+            let script = clean(request["script"].as_str().unwrap_or(""))?;
+            if !(script.ends_with(".js") || script.ends_with(".mjs"))
+                || !directory.join(&script).is_file()
+            {
+                return Err(failure(
+                    "The build did not produce the configured preview entry.",
+                ));
+            }
+            let script = script
+                .replace('&', "&amp;")
+                .replace('"', "&quot;")
+                .replace('<', "&lt;");
+            let module = if script.ends_with(".mjs") {
+                r#" type="module""#
+            } else {
+                ""
+            };
+            tokio::fs::write(directory.join("index.html"),format!(r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="app"></main><script{module} src="./{script}"></script></body></html>"#)).await.map_err(io_error)?;
+        }
+        Ok(json!({"entry":"index.html"}))
     }
 }
 fn mime(path: &str) -> &'static str {

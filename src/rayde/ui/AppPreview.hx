@@ -20,7 +20,7 @@ class AppPreview extends Component<AppPreviewProps> {
 		var target:Element=<div id="rayde-app-surface" class="flex-1 min-h-0 min-w-0"/>;
 		var root=<div id="rayde-app-preview" class="flex flex-col flex-1 min-h-0 min-w-0">
 			<div class="flex items-center justify-between gap-3 p-2 border-b border-border shrink-0">
-				<div class="flex items-center gap-2 min-w-0"><if {props.build.state.get()=="building"}><spinner size={Sm}/></if><text class="text-sm text-text-secondary">${props.build.state.get()=="building" ? props.build.phase.get()+" · "+props.build.elapsed.get()+"s" : "App Preview"}</text></div>
+				<div class="flex items-center gap-2 min-w-0"><if {props.build.state.get()=="building"}><spinner size={Sm}/></if><text class="text-sm text-text-secondary">${props.build.state.get()=="building" ? props.build.phase.get()+" · "+props.build.elapsed.get()+"s" : props.build.title.get()=="" ? "App Preview" : props.build.title.get()}</text></div>
 				<button id="rayde-app-rebuild" variant={Ghost} size={Sm} disabled={props.build.state.get()=="building"} onClick={_ -> props.rebuild()}><icon document={Icons.RESTART_LINE} class="size-4"/>Rebuild</button>
 			</div>
 			<if {props.build.error.get()!=""}><div class="p-3 overflow-y-auto"><text class="text-error text-sm">${props.build.error.get()}</text></div></if>
@@ -32,7 +32,7 @@ class AppPreview extends Component<AppPreviewProps> {
 			if(artifact==null||bounds==null||viewport==null)return;
 			var covered=Lambda.exists(ashui.ui.TopLayer.openEntries(),entry -> entry.content.tree==tree && entry.isOpen);
 			var visible=props.shown()&&!covered&&bounds.width>0&&bounds.height>0;
-			var request:Dynamic={surface:surface,preview:artifact.preview,x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height,viewportWidth:viewport.width,viewportHeight:viewport.height,visible:visible};
+			var request:Dynamic={surface:surface,preview:artifact.preview,arguments:artifact.arguments ?? [],x:bounds.x,y:bounds.y,width:bounds.width,height:bounds.height,viewportWidth:viewport.width,viewportHeight:viewport.height,visible:visible};
 			var key=haxe.Json.stringify(request);
 			if(key==last)return;last=key;
 			PageHost.bridge.notify("page.preview",request);

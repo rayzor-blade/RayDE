@@ -30,13 +30,28 @@ class Runner {
 	var runtime = "ash";
 	var diagnostics:Null<String>;
 	var diagnosticsSize = -1;
+    public var configuration(default,null):RunConfigurations.RunConfiguration;
+    var configurationError:Null<String>;
+    var plan:Null<RunPlan.PlannedRun>;
+    var steps:Array<RunPlan.RunCommand>=[];
 
 	public function new(display:Display, ?ash:String) {
 		this.display = display;
 		this.ash = ash != null ? ash : Sys.getEnv("ASH") != null ? Sys.getEnv("ASH") : "ash";
 		hashlink = Sys.getEnv("HL") ?? "hl";
 		out = haxe.io.Path.join([display.cwd, ".rayde", "run"]);
+        configure();
 	}
+
+    public function configure():Void {
+        try {
+            var family=display.project!=null && display.project.runtime=="rayzor" ? "rayzor" : "haxe";
+            configuration=RunConfigurations.load(display.cwd,RunPlan.selected(display.cwd,display.args,family),false,family);
+            configurationError=null;
+        } catch(error:Dynamic){configuration=RunConfigurations.defaults("hl");configurationError=Std.string(error);}
+        revision++;
+    }
+    public function canRun():Bool return display.project==null || display.project.runnable || configuration.buildCommand!="";
 
 	public function program():String
 		return haxe.io.Path.join([out, "program.hl"]);
@@ -45,16 +60,21 @@ class Runner {
 		return state == "building" || state == "running";
 
 	public function canBuild():Bool
-		return display.hxml != null || display.project != null && (display.project.runtime == "rayzor" || display.project.runtime == "caribou");
+		return display.hxml != null || configuration.buildCommand!="" || display.project != null && (display.project.runtime == "rayzor" || display.project.runtime == "caribou");
 
 	/** Compiles without launching; targetless HXML uses Run's bytecode default. */
 	public function build():Void {
 		stop();
 		console = ""; problems = []; exitCode = null;
+        configure();
 		building = true; buildOnly = true;
 		if (!canBuild()) {
 			state = "failed"; append("Open an HXML or Rayzor project to build.\n"); return;
 		}
+        if(configurationError!=null){state="failed";append(configurationError+"\n");return;}
+        if(configuration.mode!="process" || configuration.buildCommand!="" || configuration.compiler=="rayzor"){
+            beginPlan(true);return;
+        }
 		if (display.project != null && display.project.runtime == "caribou") {
 			if (!display.project.runnable) { building = false; state = "failed"; exitCode = 1; append("A workspace has no project to build. Open one of its members.\n"); return; }
 			Fs.createDirectory(out);
@@ -68,7 +88,7 @@ class Runner {
 		var args = ["build"];
 		if (!rayzor) try {
 			var plan = HaxeBuild.plan(display.hxml, haxe.io.Path.join([out, "build.hl"]));
-			args = plan.args;
+			args = plan.args.concat(configuration.compilerFlags);
 			if (plan.implicit) append("No target declared; using HashLink bytecode, as Run does.\n");
 		} catch (error:Dynamic) {
 			building = false; state = "failed"; exitCode = 1;
@@ -86,8 +106,10 @@ class Runner {
 		console = "";
 		problems = [];
 		exitCode = null;
+        configure();
+        if(configurationError!=null){state="failed";append(configurationError+"\n");return;}
 		runtime = display.project == null ? rayde.project.ProjectRunner.resolve(display.cwd) : display.project.runtime;
-		if (display.project != null && !display.project.runnable) {
+		if (!canRun()) {
 			state = "failed"; append("This project has no application entry point. Open a runnable build to use Run.\n"); return;
 		}
 		if (display.project != null && display.project.runtime == "caribou") {
@@ -96,28 +118,52 @@ class Runner {
 			launchCaribou("run", "run.log");
 			return;
 		}
-		if (display.project != null && display.project.runtime == "rayzor") {
-			Fs.createDirectory(out);
-			building = false; state = "running"; append("Running with Rayzor…\n");
-			job = new Job(rayde.lang.RayzorBinary.find() ?? "rayzor", ["run"], haxe.io.Path.join([out, "run.log"]), null, display.cwd, true);
-			job.start(); return;
-		}
-		var compilerArgs:Array<String> = [];
-		if (display.server.canConnect()) { display.server.ensure(); compilerArgs = ["--connect", Std.string(display.server.port)]; }
-		if (Fs.exists(program()))
-			Fs.deleteFile(program());
-		Fs.createDirectory(out);
-		building = true;
-		state = "building";
-		append("Building…\n");
-		job = new Job(display.server.haxe, compilerArgs.concat(["--cwd", display.cwd]).concat(bytecodeArgs(display.args)).concat(["-hl", program()]), haxe.io.Path.join([out, "build.log"]), null, null, true);
-		job.start();
+        beginPlan(false);
 	}
+
+    function beginPlan(onlyBuild:Bool):Void {
+        try {
+            Fs.createDirectory(out);
+            var execution:RunConfigurations.RunConfiguration=haxe.Json.parse(haxe.Json.stringify(configuration));
+            if(execution.executable=="")switch RunConfigurations.runner(execution){case "ash":execution.executable=ash;case "hashlink":execution.executable=hashlink;case _:}
+            plan=RunPlan.make(display.server.haxe,display.args,display.cwd,out,execution,false,null,onlyBuild);
+            if(plan.compile!=null && configuration.compiler=="haxe" && configuration.buildCommand=="" && display.server.canConnect()){
+                display.server.ensure();plan.compile.args=["--connect",Std.string(display.server.port)].concat(plan.compile.args);
+            }
+            steps=[];
+            if(plan.compile!=null)steps.push(plan.compile);
+            if(plan.postBuild!=null)steps.push(plan.postBuild);
+            if(plan.launch!=null)steps.push(plan.launch);
+            if(!onlyBuild && configuration.mode=="browser"){
+                var entry=configuration.previewDirectory=="" ? haxe.io.Path.directory(plan.output)+"/"+configuration.previewEntry : haxe.io.Path.join([display.cwd,configuration.previewDirectory,configuration.previewEntry]);
+                var opener=Sys.systemName()=="Mac" ? "open" : Sys.systemName()=="Windows" ? "rundll32" : "xdg-open";
+                steps.push({command:opener,args:Sys.systemName()=="Windows" ? ["url.dll,FileProtocolHandler",entry] : [entry],phase:"Opening browser"});
+            }
+            nextStep();
+        }catch(error:Dynamic){plan=null;steps=[];state="failed";exitCode=1;append(Std.string(error)+"\n");}
+    }
+    function nextStep():Void {
+        var step=steps.shift();
+        if(step==null){state=buildOnly ? "built" : "finished";exitCode=0;plan=null;append(buildOnly ? "Build succeeded.\n" : "Exited with 0.\n");return;}
+        building=step.phase.indexOf("Running")!=0 && step.phase!="Opening browser";
+        if(!building && step.phase!="Opening browser" && plan!=null && configuration.compiler=="haxe" && configuration.buildCommand=="" && plan.program!="" && configuration.target!="interp" && configuration.target!="none"){
+            var expected=plan.postBuild==null ? plan.program : plan.output;
+            if(!Fs.exists(expected) && Fs.exists(expected+".exe")){
+                if(step.command==expected)step.command=expected+".exe";
+                step.args=step.args.map(value -> value==expected ? expected+".exe" : value);
+            }else if(!Fs.exists(expected)){state="failed";exitCode=1;steps=[];plan=null;append("The build did not produce "+haxe.io.Path.withoutDirectory(expected)+". Check the program path in Run Configuration.\n");return;}
+        }
+        state=building ? "building" : "running";
+        append(step.phase+"…\n");
+        job=new Job(step.command,step.args,haxe.io.Path.join([out,building ? "build.log" : "run.log"]),null,display.cwd,true);
+        job.start();
+    }
 
 	public function stop():Void {
 		if (job != null)
 			job.stop();
 		job = null;
+        plan=null;steps=[];
 		if (active()) {
 			state = "idle";
 			append("Stopped.\n");
@@ -137,6 +183,11 @@ class Runner {
 		append(job.read());
 		var code = job.exit;
 		job = null;
+        if(plan!=null){
+            if(building){problems=CompilerOutput.parse(console,display.cwd);revision++;}
+            if(code!=0){plan=null;steps=[];exitCode=code;state="failed";append("Command failed with "+code+".\n");return;}
+            nextStep();return;
+        }
 		if (diagnostics != null) {
 			readDiagnostics();
 			diagnostics = null;

@@ -24,7 +24,7 @@ class AppPreviewBuildChecks {
 			var end=haxe.Timer.stamp()+5;
 			while(!done() && haxe.Timer.stamp()<end){
 				if(build.timer!=null)build.timer.cancel();
-				build.poll();Sys.sleep(.005);
+				client.pump(0);build.poll();Sys.sleep(.005);
 			}
 			check(done(),"Build did not settle: "+build.state.get()+" "+build.error.get()+"\n"+published);
 		}
@@ -35,12 +35,15 @@ class AppPreviewBuildChecks {
 			wire.exit(0);
 			until(() -> build.state.get()=="ready");
 			check(published.indexOf("Compiling WASM")>=0 && build.artifact.get()!=null,"Successful preview lost compiler progress");
-			var spawns=wire.spawns;wire.cached="wasm";
+			wire.title("capability","Pocket Studio");until(() -> build.title.get()=="Pocket Studio");
+            wire.title("another-preview","Wrong title");client.pump(.1);
+            check(build.title.get()=="Pocket Studio","An old preview renamed the current tab");
+            var spawns=wire.spawns;wire.cached="wasm";
 			build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
-			check(wire.spawns==spawns && published.indexOf("Reusing unchanged WASM")>=0,"Cached preview spawned a compiler");
+			check(wire.spawns==spawns && published.indexOf("Reusing unchanged preview bundle")>=0,"Cached preview spawned a compiler");
 			wire.cached="bytecode";
 			build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
-			check(wire.spawns==spawns+1 && wire.command=="ash","Cached bytecode did not skip Haxe");
+			check(wire.spawns==spawns+1 && wire.command!="haxe","Cached bytecode did not skip Haxe");
 			wire.cached="wasm";
 			build.start("haxe",[],"/work",true);until(() -> build.state.get()=="ready");
 			check(wire.spawns==spawns+3,"Forced rebuild reused cached compiler output");wire.cached="miss";
@@ -71,6 +74,7 @@ private class PreviewChannel implements Channel {
 	public var killed=false;
 	public function new() {}
 	function reply(value:Dynamic):Void incoming.add(haxe.Json.stringify(value));
+	public function title(preview:String,title:String):Void reply({ev:"preview.title",preview:preview,title:title});
 	public function exit(code:Int):Void {hold=false;reply({ev:"proc.exit",pid:pid,code:code});}
 	public function sendText(text:String):Void {
 		var request:Dynamic=haxe.Json.parse(text),answer:Dynamic={id:request.id,ok:true};

@@ -18,6 +18,9 @@ class SessionClient {
 	public var exec(default, null) = false;
 	public var syntax(default, null) = false;
 	public var appPreviews(default, null) = false;
+    public var webPreviews(default,null) = false;
+    public var hostSystem(default,null) = "";
+    public var hostArchitecture(default,null) = "";
 	public var terminal(default,null) = false;
 	public var terminalProfiles(default,null):Array<rayde.term.Profiles.Profile> = [];
 	public var remote(default, null) = true;
@@ -67,6 +70,8 @@ class SessionClient {
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
 			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
 			client.appPreviews = hello.appPreviews == true;
+            client.webPreviews=hello.webPreviews==true || client.appPreviews;
+            if(hello.host!=null){client.hostSystem=switch(hello.host.os:String){case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};client.hostArchitecture=hello.host.arch;}
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;

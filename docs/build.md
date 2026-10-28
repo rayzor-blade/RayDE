@@ -18,13 +18,17 @@ Open the build file from Explorer to edit it under **Settings > Build**. Library
 
 ## Runners
 
-**Settings > Run** selects Automatic, Ash or HashLink for the workspace. Ash and Ashui starters choose Ash. HashLink starters use Ash on Apple Silicon and `hl` elsewhere. Changes apply to the next run and are stored as `run.runner` in `.rayde/settings.json`.
+**Settings > Build > Run Configuration** selects the target, framework, runner and arguments. Framework presets fill the form with editable defaults. Each Haxe backend keeps its own configuration; JavaScript can use Node or a browser, Python uses Python, and native backends can launch their generated executable. Override the executable or program path for your toolchain.
 
-A folder workspace without a Haxe project descriptor has no Haxe build or runner. Follow its project's own tooling instructions.
+For HashLink, Automatic uses Ash on Apple Silicon and `hl` elsewhere. Ash and Ashui starters select Ash. **Native AOT** compiles bytecode with Ash and runs the resulting executable; **Build / AOT arguments** accepts target triples and compiler options.
+
+**Browser Preview** uses the same planner and target settings, with browser build flags and an HTML entry. After the first frame, the preview tab uses the app's window title and follows later title changes. An unchanged preview reuses successful compiler output and the finished bundle. Framework web builds can specify their output directory. Browser previews require an execution-enabled workspace session and the relevant compiler tooling.
+
+Text fields save on Enter. Settings live in `.rayde/settings.json`; starter templates can configure them automatically. Folder workspaces can use a custom framework build command.
 
 ## Rayzor projects
 
-Rayzor projects use `rayzor build` and `rayzor run` from their manifest folder. Run requires a source `project.entry`; libraries without an application entry point have no Run action. `project.hxml` delegates the build to HXML and supplies RayDE's Haxe editor fallback.
+Rayzor projects use their own compiler from the manifest folder. Run Configuration accepts native LLVM target triples for AOT and Rayzor's WASM selectors for browser builds; it does not translate them into Haxe backends. The default native profile uses `rayzor build` and `rayzor run`. Run requires a source `project.entry`; libraries without an application entry point have no Run action. `project.hxml` delegates the build to HXML and supplies RayDE's Haxe editor fallback.
 
 Open `rayzor.toml` from Explorer for **Settings > Build**. The form covers project metadata, entry point, HXML delegation, targets, class paths, defines, cache, native libraries, resources and bundle options. Workspace manifests show member directories and their shared cache directory.
 

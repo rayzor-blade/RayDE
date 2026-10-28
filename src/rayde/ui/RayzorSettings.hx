@@ -16,7 +16,8 @@ typedef RayzorSettingsProps = {
 	path:String,
 	onChanged:Void->Void,
 	onEditText:Void->Void,
-	beforeChange:Void->Void
+	beforeChange:Void->Void,
+    ?onRunChanged:Void->Void
 };
 
 /** The active Rayzor manifest as a form; each control edits only its own field. */
@@ -35,6 +36,7 @@ class RayzorSettings extends Component<RayzorSettingsProps> {
 			</div>
 			<if {error.get() != ""}><text id="rayde-rayzor-error" class="text-sm text-error">${error.get()}</text></if>
 			<for {r in [revision.get()]}>${sections(r)}</for>
+            <run-configuration-settings root={haxe.io.Path.directory(props.path)} family="rayzor" onChanged={props.onRunChanged}/>
 		</div>);
 	}
 

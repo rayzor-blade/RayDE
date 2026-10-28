@@ -34,6 +34,7 @@ class ProjectStarters {
 		}
 		var scaffold = {entry:text(data, "entry", "", 240, true), files:files};
 		if (data.runner != null) ProjectRunner.configure(files, text(data, "runner", null, 20));
+        if(data.run!=null)rayde.run.RunConfigurations.install(files,data.run);
 		ProjectTemplates.validate(scaffold);
 		var icon = text(data, "icon", "code", 240), iconPath:Null<String> = null;
 		if (StringTools.endsWith(icon.toLowerCase(), ".svg")) {
@@ -47,7 +48,7 @@ class ProjectStarters {
 			id:id, owner:owner, name:text(data, "name", null, 80), category:category,
 			description:text(data, "description", "", 200, true), target:text(data, "target", "Cross-platform", 40),
 			requirements:text(data, "requirements", "See the project's README", 300), command:text(data, "command", "See the project's README", 300),
-			docs:text(data, "docs", "", 500, true), icon:icon, iconPath:iconPath, scaffold:scaffold
+			docs:text(data, "docs", "", 500, true), icon:icon, iconPath:iconPath, scaffold:scaffold,run:data.run
 		};
 		var own = 1, count = 1, size = weight(item);
 		for (other in entries) if (other.id != id) {

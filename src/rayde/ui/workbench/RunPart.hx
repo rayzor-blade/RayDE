@@ -124,10 +124,12 @@ class RunPart {
 	}
 
 	public function canPreviewApp():Bool {
+		wb.buildRevision.get();runnerRevision.get();
 		var session=rayde.workspace.PageHost.session;
-		return session!=null && session.appPreviews && wb.props.display.hxml!=null && wb.extension==null &&
-			(wb.props.display.project==null || ["ash","hashlink"].indexOf(wb.props.display.project.runtime)>=0) &&
-			(wb.props.display.args.indexOf("-main")>=0 || wb.props.display.args.indexOf("--main")>=0);
+        var kind=rayde.run.RunPlan.target(wb.props.display.args).kind;
+        var rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
+        return session!=null && (kind=="hl"&&!rayzor ? session.appPreviews : session.webPreviews) && wb.extension==null &&
+            (rayzor&&wb.props.display.project.runnable || kind=="js" || runner!=null&&runner.configuration.mode=="browser" || kind=="hl"&&(wb.props.display.args.indexOf("-main")>=0||wb.props.display.args.indexOf("--main")>=0));
 	}
 
 	public function previewApp():Void {
@@ -137,11 +139,11 @@ class RunPart {
 		previewAppBuild(true);
 	}
 	function previewAppBuild(force:Bool):Void {
-		if(!canPreviewApp()){wb.say("App Preview needs a runnable HashLink project and browser build tooling on its session host.");return;}
+		if(!canPreviewApp()){wb.say("Choose a browser-compatible Run Configuration and enable preview tooling on the workspace session.");return;}
 		if(runner!=null && runner.active())return;
 		saveBefore(() -> {
 			if(appPreview==null){appPreview=new rayde.run.AppPreviewBuild(rayde.workspace.PageHost.session,publishBuildOutput);previewRevision.set(previewRevision.get()+1);}
-			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd,force);
+			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd,force,wb.props.display.project!=null&&wb.props.display.project.runtime=="rayzor" ? "rayzor" : "haxe",wb.props.display.project==null ? wb.props.display.hxml : wb.props.display.project.file);
 			wb.openFile(Workbench.APP_PREVIEW);
 		});
 	}
@@ -241,7 +243,7 @@ class RunPart {
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
 		if(previewBuilding())return;
-		if (wb.props.empty == true || wb.props.display.project != null && !wb.props.display.project.runnable && !ExtensionsPart.isExtension(wb.active.get())) return;
+		if (wb.props.empty == true || !runner.canRun() && !ExtensionsPart.isExtension(wb.active.get())) return;
 		// Run is Continue while the extension is stopped.
 		var d = wb.debugPart.debugger();
 		if (d != null && d.stopped.get() != null) {
@@ -257,6 +259,9 @@ class RunPart {
 			wb.panelsPart.showPanel("extension");
 			return;
 		}
+        #if (wasm || rayde_page)
+        if(canPreviewApp() && runner.configuration.mode=="browser"){previewApp();return;}
+        #end
 		runner.start();
 		wb.panelsPart.showPanel("console");
 		poll();
@@ -323,7 +328,7 @@ class RunPart {
 
 	/** Build and Run share progress and Stop, with separate actions while idle. */
 	function runStatus(state:String):Element {
-		var runnable = wb.props.display.project == null || wb.props.display.project.runnable;
+		var runnable = runner!=null && runner.canRun();
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
 		var preview = state == "preview-building";
 		var active = preview || state == "building" || state == "running";

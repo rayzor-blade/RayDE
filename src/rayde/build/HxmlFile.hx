@@ -19,7 +19,7 @@ private typedef Line = {text:String, flag:Null<String>, value:Null<String>};
  */
 class HxmlFile {
 	/** The compilers' targets a build can name, with the one that takes no output last. */
-	public static final targets = ["hl", "js", "cpp", "neko", "lua", "php", "python", "jvm", "swf", "interp"];
+	public static final targets = ["hl", "js", "cpp", "cppia", "neko", "lua", "php", "python", "java", "jvm", "cs", "swf", "interp"];
 
 	/** The flags the form manages; every other argument is listed apart and kept as written. */
 	public static final managed = ["-cp", "-lib", "-D", "--main", "--debug", "--dce", "--no-traces", "--no-inline"].concat([for (t in targets) "--" + t]);

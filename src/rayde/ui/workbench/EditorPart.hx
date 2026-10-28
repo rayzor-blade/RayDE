@@ -211,7 +211,7 @@ class EditorPart {
 	}
 
 	function tabLabel(file:String):String
-		return file == Workbench.APP_PREVIEW ? "App Preview" : fileLabel(file);
+		return file == Workbench.APP_PREVIEW ? (wb.runPart.appPreview==null || wb.runPart.appPreview.title.get()=="" ? "App Preview" : wb.runPart.appPreview.title.get()) : fileLabel(file);
 
 	function fileLabel(file:String):String
 		return file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
@@ -342,7 +342,7 @@ class EditorPart {
 		if (file == Workbench.SETTINGS)
 			return <tabs-content value={file} class="flex-1 min-h-0">
 				<settings-page category={wb.settingsCategory} root={wb.props.display.cwd} build={null} buildLoad={wb.buildLoad.state} onReloadBuild={() -> wb.buildLoad.load(wb.props.display.hxml)} rayzor={wb.rayzorManifest()} caribou={wb.caribouManifest()} caribouLanguages={() -> wb.props.display.project == null ? [] : wb.props.display.project.languages} onEditBuildText={() -> wb.openFile(wb.projectManifest() ?? wb.props.display.hxml)} beforeBuildChange={wb.beforeBuildChange} terminal={wb.terminalPart.terminalSettings} appearance={wb.appearance} bindings={wb.keymapPart.bindings}
-					commands={wb.commandList} libraries={wb.libraries} onBuildChanged={wb.buildChanged} onRunnerChanged={() -> { wb.props.display.reload(); wb.runPart.runnerRevision.set(wb.runPart.runnerRevision.get() + 1); }} onTerminalChanged={() -> wb.terminalPart.settingsRevision.set(wb.terminalPart.settingsRevision.get() + 1)}
+					commands={wb.commandList} libraries={wb.libraries} runTarget={wb.runPart.runner.configuration.target} onBuildChanged={wb.buildChanged} onRunnerChanged={() -> { wb.runPart.runner.configure(); wb.runPart.runnerRevision.set(wb.runPart.runnerRevision.get() + 1); }} onTerminalChanged={() -> wb.terminalPart.settingsRevision.set(wb.terminalPart.settingsRevision.get() + 1)}
 					onAppearanceChanged={() -> {
 						wb.windowStyle.set(WindowControls.styleFor(wb.appearance.windowControls));
 						wb.terminalPart.settingsRevision.set(wb.terminalPart.settingsRevision.get() + 1);

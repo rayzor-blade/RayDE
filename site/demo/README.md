@@ -7,8 +7,8 @@ A Kanban board with To do, In progress and Done columns, built with Haxe and Ash
 Install Haxe and Ash, then the published libraries:
 
 ```sh
-haxelib install ashui-components 0.2.0
-haxelib install ashui-icons 0.2.0
+haxelib install ashui-components 0.2.2
+haxelib install ashui-icons 0.2.2
 haxe build.hxml
 ash bin/pocket-studio.hl
 ```

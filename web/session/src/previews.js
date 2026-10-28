@@ -1,7 +1,7 @@
 // App frames have their own origin; only scoped workspace file calls cross back to the editor.
 export class AppPreviews {
-  constructor(client,screen=document.querySelector('#screen')) {
-    this.client=client;this.screen=screen;this.descriptors=new Map();this.surfaces=new Map();this.pending=new Set();this.pendingBytes=0;
+  constructor(client,screen=document.querySelector('#screen'),emit=()=>{}) {
+    this.client=client;this.screen=screen;this.emit=emit;this.descriptors=new Map();this.surfaces=new Map();this.pending=new Set();this.pendingBytes=0;
     this.receive=event=>void this.files(event);addEventListener('message',this.receive);
     this.resize=()=>this.layout();addEventListener('resize',this.resize);addEventListener('scroll',this.resize,true);
   }
@@ -16,6 +16,8 @@ export class AppPreviews {
     if(typeof request.surface!=='string'||request.surface.length>128)throw Error('Invalid preview surface.');
     if(request.remove){this.remove(request.surface);return {};}
     const descriptor=this.descriptors.get(request.preview);if(!descriptor)throw Error('This app preview is unavailable.');
+    const args=request.arguments??[];
+    if(!Array.isArray(args)||args.length>256||args.some(arg=>typeof arg!=='string')||args.join('').length>4096)throw Error('The preview program arguments are too large.');
     for(const field of ['x','y','width','height','viewportWidth','viewportHeight'])if(!Number.isFinite(request[field])||Math.abs(request[field])>100000)throw Error('Invalid preview bounds.');
     let surface=this.surfaces.get(request.surface);
     if(surface&&surface.preview!==request.preview){this.remove(request.surface);surface=null;}
@@ -23,7 +25,8 @@ export class AppPreviews {
       if(this.surfaces.size>=4)throw Error('Too many preview surfaces.');
       const iframe=document.createElement('iframe');iframe.title='Application preview';iframe.dataset.raydeAppPreview=request.surface;
       iframe.sandbox='allow-scripts allow-same-origin';iframe.allow='cross-origin-isolated';iframe.referrerPolicy='strict-origin';
-      iframe.style.cssText='position:fixed;border:0;z-index:20;background:transparent;';iframe.src=descriptor.url;
+      const url=new URL(descriptor.url);for(const arg of args)url.searchParams.append('arg',arg);
+      iframe.style.cssText='position:fixed;border:0;z-index:20;background:transparent;';iframe.src=url.href;
       surface={iframe,preview:request.preview,origin:descriptor.origin,bounds:request};this.surfaces.set(request.surface,surface);document.body.append(iframe);
     }
     surface.bounds=request;this.layout();return {};
@@ -40,8 +43,14 @@ export class AppPreviews {
   unregister(preview){for(const [id,surface] of this.surfaces)if(surface.preview===preview)this.remove(id);this.descriptors.delete(preview);}
   reset(){for(const id of [...this.surfaces.keys()])this.remove(id);this.descriptors.clear();}
   async files(event) {
-    if(event.data?.type!=='rayde-preview-files')return;
+    if(!['rayde-preview-files','rayde-preview-title'].includes(event.data?.type))return;
     const surface=[...this.surfaces.values()].find(value=>event.source===value.iframe.contentWindow&&event.origin===value.origin);if(!surface)return;
+    if(event.data.type==='rayde-preview-title'){
+      if(typeof event.data.title!=='string'||event.data.title.length>512)return;
+      const title=event.data.title.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,256);
+      if(title&&title!==surface.title){surface.title=title;surface.iframe.title=title;this.emit({ev:'preview.title',preview:surface.preview,title});}
+      return;
+    }
     const request=event.data.request;if(!request||!Number.isSafeInteger(request.id)||typeof request.op!=='string')return;
     let reply;
     const ticket={bytes:typeof request.data==='string'?request.data.length:0};

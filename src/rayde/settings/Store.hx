@@ -31,11 +31,15 @@ class Store {
 	/** Replaces the section `name`, reading the file again first so a change made elsewhere is kept. */
 	public static function save(root:String, name:String, value:Dynamic):Void
 		try {
+			saveChecked(root,name,value);
+		} catch (_:Dynamic) {}
+
+    public static function saveChecked(root:String,name:String,value:Dynamic):Void {
 			var all = read(root);
 			Reflect.setField(all, name, value);
 			var dir = haxe.io.Path.join([root, ".rayde"]);
 			if (!Fs.exists(dir))
 				Fs.createDirectory(dir);
 			Fs.saveContent(file(root), haxe.Json.stringify(all, null, "\t") + "\n");
-		} catch (_:Dynamic) {}
+		}
 }

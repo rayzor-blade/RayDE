@@ -514,6 +514,8 @@ class Workbench extends Component<WorkbenchProps> {
 
 	public function buildChanged():Void {
 		props.display.reload();
+		if (runPart.runner != null) runPart.runner.configure();
+		runPart.runnerRevision.set(runPart.runnerRevision.get() + 1);
 		showProjectProblems();
 		explorerPart.dependencyReadRoots = [];
 		explorerPart.dependenciesRevision.set(explorerPart.dependenciesRevision.get() + 1);
@@ -904,6 +906,8 @@ class Workbench extends Component<WorkbenchProps> {
 	function runtime():String {
 		buildRevision.get();
 		runPart.runnerRevision.get();
+		if (props.display.project != null && props.display.project.runtime == "caribou") return "caribou";
+		if (runPart.runner != null) return rayde.run.RunConfigurations.runner(runPart.runner.configuration);
 		return props.display.project != null && props.display.project.kind == "hxml" ? props.display.project.runtime : props.runtime == null ? "ash" : props.runtime;
 	}
 

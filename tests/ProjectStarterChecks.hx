@@ -33,7 +33,9 @@ class ProjectStarterChecks {
 			check(entry.activation == "onNewProject" && manifest.problems.length == 0 && starter.id == "ext:console-starter:console", "Starter activation or id namespace was lost");
 			var file = ProjectFile.create(root, "my-console", starter.id, starter.scaffold);
 			check(ProjectFile.read(file).args.indexOf("Main") >= 0 && sys.io.File.getContent(root + "/my-console/src/Main.hx").indexOf("Hello, my-console!") >= 0, "Registered scaffold lost its files, entry or name placeholder");
-			registry.unregister("another-owner", manifest, starter.id); check(registry.list().length == 1, "An extension unregistered another extension's starter");
+			var run = rayde.run.RunConfigurations.load(root + "/my-console", "hl");
+            check(run.framework == "ash" && run.flags.join(" ") == "--preset application" && run.arguments[0] == "starter argument", "RayScript starter lost its run configuration metadata");
+            registry.unregister("another-owner", manifest, starter.id); check(registry.list().length == 1, "An extension unregistered another extension's starter");
 			rejects(() -> registry.register("another-owner", manifest, {id:"console",name:"Impostor",files:[{path:"README.md",text:"unrelated"}]}), "Another host replaced an extension's starter");
 			manager.command(entry.installed.id, "remove", {}); wait(() -> registry.list().length == 0);
 			entry.connection.stop(); entry.connection.start(); wait(() -> registry.list().length == 1);

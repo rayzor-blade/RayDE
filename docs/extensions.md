@@ -141,6 +141,7 @@ var starter = await registerStarter({
   requirements: 'Haxe and Ash',
   command: 'haxe build.hxml',
   runner: 'ash',
+  run: {framework: 'ash', targets: {hl: {runner: 'ash', flags: ['--preset', 'application']}}},
   entry: 'build.hxml',
   files: [
     {path: 'build.hxml', text: '-cp src\n-main Main\n-hl bin/app.hl\n'},
@@ -154,7 +155,7 @@ registerCommand('removeStarter', _ -> await unregisterStarter(starter));
 
 `id` is local to the extension; the returned id is namespaced, so extensions cannot replace one another's starters or the built-ins. Registering the same id replaces its definition. Stopping, disabling, restarting or revoking `projects.register` removes that extension's registrations. The open gallery follows these changes and selects another visible starter if its selection disappears.
 
-`name`, `id` and `files` are required. `category` is `Applications`, `Games` or `Libraries` and defaults to `Applications`; `target` defaults to `Cross-platform`. `icon` is a named RayDE icon or an SVG path inside the extension (at most 64 KiB). `entry` names an included `.hxml`, `haxelib.json` or `rayzor.toml`; omit it or use an empty string to open the generated directory as a folder workspace. Optional `runner` is `auto`, `ash` or `hashlink`, stored in the new workspace's Run settings. `command` describes the first terminal command; scaffolding does not execute it. `docs` can name the starter's documentation URL.
+`name`, `id` and `files` are required. `category` is `Applications`, `Games` or `Libraries` and defaults to `Applications`; `target` defaults to `Cross-platform`. `icon` is a named RayDE icon or an SVG path inside the extension (at most 64 KiB). `entry` names an included `.hxml`, `haxelib.json` or `rayzor.toml`; omit it or use an empty string to open the generated directory as a folder workspace. Optional `runner` is `auto`, `ash` or `hashlink`, stored in the new workspace's Run settings. `run` supplies editable Run Configuration defaults: `framework`, `target`, and target-keyed `targets` / `previews` objects. A profile can set `compiler`, `runner`, `mode` (`process`, `aot`, `browser`), `executable`, `flags`, `arguments`, `compilerFlags`, `buildCommand`, `buildFlags`, `program`, `previewDirectory` and `previewEntry`. Argument fields are arrays of strings. Metadata merges into `.rayde/settings.json` without replacing unrelated settings. `command` describes the first terminal command; scaffolding does not execute it. `docs` can name the starter's documentation URL.
 
 Files contain UTF-8 text. RayDE substitutes `{{name}}` in their contents after the user enters a project name; file paths are literal, relative paths. Absolute paths, traversal, duplicate names and file/folder collisions are refused before creation. Creation runs on a worker in a new directory and never overwrites an existing folder. A starter is limited to 256 files, 1 MiB per file and 4 MiB total. The live catalog retains at most 16 starters per extension, 64 total and 8 MiB of text.
 

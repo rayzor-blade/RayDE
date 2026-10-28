@@ -12,6 +12,7 @@ typedef ProjectTemplate = {
 	?icon:String,
 	?iconPath:String,
 	?owner:String,
+    ?run:Dynamic,
 	?scaffold:ProjectScaffold
 };
 
@@ -32,7 +33,7 @@ class ProjectTemplates {
 		{id:"flixel", name:"HaxeFlixel", category:"Games", description:"Create cross-platform games easier and free.", target:"Cross-platform", requirements:"Haxe · flixel (haxelib install flixel)", command:"haxelib run lime test html5", docs:"https://haxeflixel.com/documentation/hello-world/"},
 		{id:"lime", name:"Lime", category:"Applications", description:"Mobile, Desktop, Web and More.", target:"Cross-platform", requirements:"Haxe · lime (haxelib install lime)", command:"haxelib run lime test html5", docs:"https://lime.openfl.org/docs/command-line-tools/create-new-project/"},
 		{id:"ceramic", name:"Ceramic", category:"Games", description:"A cross-platform & open-source 2D framework", target:"Cross-platform", requirements:"Haxe · Ceramic (ceramic-engine.com)", command:"ceramic clay run web --setup --assets", docs:"https://ceramic-engine.com/guides/your-first-project/"}
-	];
+	].map(function(template:ProjectTemplate) {template.run=rayde.run.RunPresets.starter(template.id);return template;});
 
 	public static function get(id:String):ProjectTemplate {
 		for (template in all) if (template.id == id) return template;
@@ -94,6 +95,7 @@ class ProjectTemplates {
 			ProjectRunner.configure(files, "auto");
 			files.set("README.md", files.get("README.md") + "\nRayDE uses Ash for HashLink bytecode on Apple Silicon, and `hl` on other platforms. Change the project's default in Settings > Run.\n");
 		}
+        if(template.run!=null)rayde.run.RunConfigurations.install(files,template.run);
 		return {entry:entry, files:files};
 	}
 
