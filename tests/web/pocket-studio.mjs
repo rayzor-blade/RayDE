@@ -137,6 +137,11 @@ try{
    assert.equal(requests.some(r=>r.op==='proc.spawn'&&r.args?.includes('wasm32-wasip1-threads')),false,'JS preview invoked Ash');
    await appElement.screenshot({path:join(shots,'javascript-preview.png')});report.javascript=true;
   }else{
+  const previewBox=await appElement.boundingBox();
+  await page.mouse.move(previewBox.x+278,previewBox.y-60);await pause(900);
+  assert.equal(await appElement.evaluate(frame=>getComputedStyle(frame).visibility),'visible','Close tooltip hid the app preview');
+  await page.screenshot({path:join(shots,'editor-preview-tooltip.png')});report.previewTooltip=true;
+  await page.mouse.move(previewBox.x+previewBox.width/2,previewBox.y+100);await pause(200);
   const before=JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length;
   const box=await appElement.boundingBox();
   await appElement.screenshot({path:join(shots,'app-preview-before.png')});

@@ -76,6 +76,10 @@ def main():
             ready = subprocess.run(['haxelib','path',name+':0.2.2'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             if ready.returncode:
                 subprocess.run(['haxelib','install',name,'0.2.2','--always','--quiet'],cwd=demo,check=True)
+        for name in ['ashui','ashui-components','ashui-icons']:
+            current = demo / '.haxelib' / name / '.current'
+            if current.is_file() and current.read_text().strip() in ['0.1.5','0.2.0','0.2.1']:
+                subprocess.run(['haxelib','set',name,'0.2.2'],cwd=demo,check=True,stdout=subprocess.DEVNULL)
         build = demo / 'build.hxml'
         contents = build.read_text()
         for name in ['ashui','ashui-components','ashui-icons']:
@@ -83,6 +87,16 @@ def main():
                 contents = contents.replace('-L '+name+':'+version+'\n','-L '+name+':0.2.2\n')
         if contents != build.read_text():
             build.write_text(contents)
+        manifest = demo / 'haxelib.json'
+        if manifest.is_file():
+            definition = json.loads(manifest.read_text())
+            changed = False
+            for name in ['ashui','ashui-components','ashui-icons']:
+                if definition.get('dependencies', {}).get(name) in ['0.1.5','0.2.0','0.2.1']:
+                    definition['dependencies'][name] = '0.2.2'
+                    changed = True
+            if changed:
+                manifest.write_text(json.dumps(definition, indent=2) + '\n')
         args.workspace = build
     workspace = args.workspace.resolve() if args.workspace else None
     if workspace and not workspace.exists():

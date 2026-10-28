@@ -5,8 +5,8 @@
   "description": "A small project board built with Haxe and Ashui, with a companion RayScript extension.",
   "classPath": "src",
   "dependencies": {
-    "ashui": "0.1.5",
-    "ashui-components": "0.1.5",
-    "ashui-icons": "0.1.5"
+    "ashui": "0.2.2",
+    "ashui-components": "0.2.2",
+    "ashui-icons": "0.2.2"
   }
 }

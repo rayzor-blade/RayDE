@@ -42,6 +42,16 @@ test('app preview bridges reject unscoped calls and bound queued writes; removin
  assert.equal(await page.$eval('iframe',iframe=>iframe.title),'Pocket Studio — changed');
  await page.evaluate(()=>postMessage({type:'rayde-preview-title',title:'Untrusted'},'*'));
  await new Promise(resolve=>setTimeout(resolve,50));assert.equal(await page.evaluate(()=>titles.length),2,'unrelated window renamed a preview');
+ await page.evaluate(()=>{
+  const surface=previews.surfaces.get('app');globalThis.originalFrame=surface.iframe.contentWindow;
+  previews.update({...surface.bounds,exclusions:[{x:30,y:50,width:80,height:40},{x:50,y:70,width:80,height:40}]});
+ });
+ assert.deepEqual(await page.evaluate(()=>{
+  const iframe=document.querySelector('iframe'),box=iframe.getBoundingClientRect();
+  return {visible:getComputedStyle(iframe).visibility,overlap:document.elementFromPoint(box.left+50,box.top+60)?.id,outside:document.elementFromPoint(box.left+250,box.top+150)===iframe,same:iframe.contentWindow===originalFrame};
+ }),{visible:'visible',overlap:'screen',outside:true,same:true});
+ await page.evaluate(()=>{const surface=previews.surfaces.get('app');previews.update({...surface.bounds,exclusions:[]});});
+ assert.equal(await page.$eval('iframe',iframe=>iframe.style.clipPath),'');
  assert.equal((await ask({id:1,op:'fs.read',path:'data/tasks.json'})).ok,true);
  for(const [index,request]of[{op:'fs.read',path:'/etc/passwd'},{op:'fs.read',path:'../private'},{op:'fs.read',path:'.rayde/settings.json'},{op:'proc.spawn',command:'sh'}].entries())assert.equal((await ask({id:index+2,...request})).ok,false);
  assert.deepEqual(await page.evaluate(()=>calls),[{op:'fs.read',params:{path:'data/tasks.json',encoding:'utf8'}}]);

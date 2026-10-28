@@ -19,6 +19,8 @@ export class AppPreviews {
     const args=request.arguments??[];
     if(!Array.isArray(args)||args.length>256||args.some(arg=>typeof arg!=='string')||args.join('').length>4096)throw Error('The preview program arguments are too large.');
     for(const field of ['x','y','width','height','viewportWidth','viewportHeight'])if(!Number.isFinite(request[field])||Math.abs(request[field])>100000)throw Error('Invalid preview bounds.');
+    const exclusions=request.exclusions??[];
+    if(!Array.isArray(exclusions)||exclusions.length>32||exclusions.some(rect=>!rect||['x','y','width','height'].some(field=>!Number.isFinite(rect[field])||Math.abs(rect[field])>100000)||rect.width<0||rect.height<0))throw Error('Invalid preview overlays.');
     let surface=this.surfaces.get(request.surface);
     if(surface&&surface.preview!==request.preview){this.remove(request.surface);surface=null;}
     if(!surface){
@@ -37,7 +39,27 @@ export class AppPreviews {
       const b=surface.bounds,sx=box.width/Math.max(1,b.viewportWidth),sy=box.height/Math.max(1,b.viewportHeight);
       const style=surface.iframe.style;style.visibility=b.visible===false?'hidden':'visible';
       style.left=(box.left+b.x*sx)+'px';style.top=(box.top+b.y*sy)+'px';style.width=Math.max(0,b.width*sx)+'px';style.height=Math.max(0,b.height*sy)+'px';
+      style.clipPath=this.clip(b,sx,sy);
     }
+  }
+  clip(bounds,sx,sy) {
+    if(!bounds.exclusions?.length)return '';
+    let regions=[{left:0,top:0,right:Math.max(0,bounds.width*sx),bottom:Math.max(0,bounds.height*sy)}],changed=false;
+    // Disjoint rectangles preserve overlapping tooltip cutouts and their pointer hit regions.
+    for(const exclusion of bounds.exclusions){
+      const hole={left:(exclusion.x-bounds.x)*sx,top:(exclusion.y-bounds.y)*sy,right:(exclusion.x+exclusion.width-bounds.x)*sx,bottom:(exclusion.y+exclusion.height-bounds.y)*sy},next=[];
+      for(const region of regions){
+        const left=Math.max(region.left,hole.left),top=Math.max(region.top,hole.top),right=Math.min(region.right,hole.right),bottom=Math.min(region.bottom,hole.bottom);
+        if(left>=right||top>=bottom){next.push(region);continue;}
+        changed=true;
+        if(region.top<top)next.push({...region,bottom:top});
+        if(bottom<region.bottom)next.push({...region,top:bottom});
+        if(region.left<left)next.push({left:region.left,top,right:left,bottom});
+        if(right<region.right)next.push({left:right,top,right:region.right,bottom});
+      }
+      regions=next;
+    }
+    return changed ? `path("${regions.map(r=>`M${r.left} ${r.top}H${r.right}V${r.bottom}H${r.left}Z`).join(' ')||'M0 0Z'}")` : '';
   }
   remove(id){const surface=this.surfaces.get(id);surface?.iframe.remove();this.surfaces.delete(id);}
   unregister(preview){for(const [id,surface] of this.surfaces)if(surface.preview===preview)this.remove(id);this.descriptors.delete(preview);}
