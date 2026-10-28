@@ -116,6 +116,13 @@ try{
   await until(()=>requests.some(r=>r.op==='preview.prepare'),'preview preparation',30000);
   await (await page.$('#editor')).screenshot({path:join(shots,'app-building.png')});
   await until(()=>requests.some(r=>r.op==='proc.spawn'&&r.args?.includes(javascript?'--js':'wasm32-wasip1-threads')),'app compiler',180000);
+  if(!javascript){
+   const build=requests.find(r=>r.op==='proc.spawn'&&r.args?.includes('wasm32-wasip1-threads'));
+   assert.ok(build.args.includes('-O3'));
+   const level=build.args.indexOf('--codegen-opt-level');
+   assert.ok(level>=0&&build.args[level+1]==='0'&&level<build.args.length-1,'Ash preview optimization options were not passed before the bytecode input');
+   assert.ok(build.args.at(-1).endsWith('/app.hl'));
+  }
   await frame.waitForSelector('iframe[data-rayde-app-preview]',{timeout:180000});
   if(!javascript){await until(()=>logs.filter(line=>line==='ashui: ready').length>=2,'app renderer',120000);await until(()=>events.some(event=>event.ev==='preview.title'&&event.title==='Pocket Studio'),'app window title',30000);assert.equal(await frame.$eval('iframe[data-rayde-app-preview]',iframe=>iframe.title),'Pocket Studio');report.windowTitle=true;await pause(300);await page.screenshot({path:join(shots,'editor-window-title.png')});}
   const compileRequests=()=>requests.filter(r=>r.op==='proc.spawn'&&(r.args?.includes('--js')||r.args?.includes('wasm32-wasip1-threads')||r.args?.some(a=>String(a).endsWith('/app.hl'))));

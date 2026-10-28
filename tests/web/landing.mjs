@@ -67,7 +67,8 @@ try{
  assert.ok(seeded.some(entry=>entry.path.endsWith('/extensions/pocket-tools/ext/main.rays')));
  assert.ok(seeded.filter(entry=>!entry.directory).length>=20);
  const hxml=atob(seeded.find(entry=>entry.path.endsWith('/build.hxml')).data);
- assert.ok(hxml.includes('-L ashui:0.1.5'));assert.ok(!hxml.includes('../'));
+ const demo=JSON.parse(await readFile(join(root,'site/demo/haxelib.json'),'utf8'));
+ assert.ok(hxml.includes('-L ashui:'+demo.dependencies.ashui));assert.ok(!hxml.includes('../'));
  await page.reload();await page.waitForFunction(()=>document.querySelector('#demo-state').hasAttribute('data-live'),{timeout:120000});
  const reloaded=await (await page.$('#editor')).contentFrame();
  const kept=await reloaded.evaluate(()=>new Promise(resolve=>{const request=indexedDB.open('rayde-page',1);request.onsuccess=()=>{const db=request.result,read=db.transaction('files').objectStore('files').get('/work/pocket-studio/src/Main.hx');read.onsuccess=()=>{resolve(atob(read.result.data));db.close();};};}));
@@ -75,6 +76,7 @@ try{
  await page.setViewport({width:390,height:844,isMobile:true});
  await page.waitForFunction(()=>!document.querySelector('#editor').hasAttribute('src'));
  assert.equal(await page.$eval('#editor',frame=>frame.hidden),true);
+ assert.equal(await page.$eval('.editor-poster',image=>!image.hidden),true);
  report.resizeStopsRuntime=true;
  await page.goto(new URL('/docs/',url),{waitUntil:'networkidle0'});
  assert.match(await page.title(),/Getting started/);report.docs=true;

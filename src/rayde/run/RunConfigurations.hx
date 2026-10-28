@@ -110,7 +110,7 @@ class RunConfigurations {
 		};
 		if (target == "hl") {
 			if (preview)
-				value.buildFlags = ["--target", "wasm32-wasip1-threads"];
+				value.buildFlags = ["-O3", "--codegen-opt-level", "0", "--target", "wasm32-wasip1-threads"];
 			else if (runner == "ash" || runner == "auto" && ProjectRunner.defaultHashlink() == "ash")
 				value.flags = ["--preset", "application"];
 		}

@@ -36,6 +36,7 @@ haxe "${ui_args[@]}" -cp "$channel/haxelib/ash-channel" -D wasm -D ashui_no_hdll
   -main rayde.Main -hl "$out/rayde.hl"
 # The window presents as a Mac, but shortcuts follow the visitor's keyboard: the page tells the program its platform before the host starts it.
 cp "$here/web/platform.js" "$out/rayde-platform.js"
+cp "$here/web/page.css" "$out/rayde-page.css"
 python3 - "$out/index.html" <<'PY'
 import sys
 path = sys.argv[1]
@@ -44,6 +45,9 @@ marker = "rayde-platform.js"
 if marker not in page:
     script = '<script src="./rayde-platform.js"></script>\n'
     page = page.replace('<script type="module"', script + '<script type="module"', 1)
+    open(path, "w").write(page)
+if 'rayde-page.css' not in page:
+    page = page.replace('<style>', '<link rel="stylesheet" href="./rayde-page.css">\n<style>', 1)
     open(path, "w").write(page)
 PY
 ASH_WASM_FIBERS=1 "$ash" --build "$out/rayde.wasm" --target wasm32-wasip1-threads "$out/rayde.hl" 2>&1 | tail -8

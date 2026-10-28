@@ -47,6 +47,15 @@ class RunConfigurationChecks {
 					"Runner flags or program arguments were dropped: "
 					+ target);
 		}
+		var preview = RunPresets.make("ashui", "hl", true);
+		var browserPlan = RunPlan.make("haxe", ["-main", "Main", "-hl", "old.hl"], "/workspace", "/workspace/.rayde/preview", preview, true, "/support", true);
+		check(browserPlan.postBuild.args.indexOf("-O3") >= 0
+			&& browserPlan.postBuild.args[browserPlan.postBuild.args.indexOf("--codegen-opt-level") + 1] == "0",
+			"Ash preview did not keep LLVM optimization with faster codegen");
+		check(browserPlan.compile.args.indexOf("--codegen-opt-level") < 0, "Ash optimization flags reached the Haxe compiler");
+		var explicitProfile = RunConfigurations.from({previews: {hl: {buildFlags: ["-Oz", "--target", "wasm32-wasip1-threads"]}}}, "hl", true);
+		check(explicitProfile.buildFlags.indexOf("-Oz") >= 0 && explicitProfile.buildFlags.indexOf("--codegen-opt-level") < 0,
+			"Preview defaults replaced an explicit optimization choice");
 		var aot = RunPresets.make("ashui", "hl");
 		aot.mode = "aot";
 		aot.buildFlags = ["--target", "aarch64-apple-darwin", "--no-fma"];

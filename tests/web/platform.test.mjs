@@ -5,10 +5,10 @@ import test from 'node:test';
 const source=readFileSync(new URL('../../web/platform.js',import.meta.url),'utf8');
 function boot({platform='MacIntel',data,search='',standalone=false,embedded=false,environment=[]}={}){
  const window={matchMedia:()=>({matches:standalone})};window.top=embedded?{}:window;
- let rewrites=0;
- const context={URLSearchParams,navigator:{platform,userAgentData:data},window,localStorage:{getItem:()=>JSON.stringify({version:1,environment})},location:{search,pathname:'/playground/',hash:'#editor'},history:{replaceState:()=>rewrites++}};
+ let rewrites=0;const attributes={};
+ const context={URLSearchParams,document:{documentElement:{setAttribute:(name,value)=>attributes[name]=value}},navigator:{platform,userAgentData:data},window,localStorage:{getItem:()=>JSON.stringify({version:1,environment})},location:{search,pathname:'/playground/',hash:'#editor'},history:{replaceState:()=>rewrites++}};
  runInNewContext(source,context);
- return {environment:Array.from(context.ashuiEnvironment),rewrites,url:new URL('https://example.test/playground/'+search+'#editor')};
+ return {environment:Array.from(context.ashuiEnvironment),attributes,rewrites,url:new URL('https://example.test/playground/'+search+'#editor')};
 }
 for(const [platform,expected] of [['MacIntel','Mac'],['iPad','Mac'],['Win32','Windows'],['Linux x86_64','Linux']]){
  test(`fallback platform ${platform}`,()=>assert.deepEqual(boot({platform}).environment,['RAYDE_VISITOR='+expected]));
@@ -21,6 +21,10 @@ test('a shared URL cannot pin another visitor’s keyboard',()=>{
 test('standalone mode and keyboard are both detected',()=>{
  assert.deepEqual(boot({standalone:true}).environment,['RAYDE_VISITOR=Mac','RAYDE_STANDALONE=1']);
  assert.deepEqual(boot({standalone:true,embedded:true}).environment,['RAYDE_VISITOR=Mac']);
+});
+test('only embedded windows use the transparent page background',()=>{
+ assert.equal(boot({embedded:true}).attributes['data-embedded'],'');
+ assert.equal(boot().attributes['data-embedded'],undefined);
 });
 test('remembered runtime variables do not dirty the browser URL or override its platform',()=>{
  const result=boot({platform:'Win32',environment:['CUSTOM=value','RAYDE_VISITOR=Mac']});

@@ -1,0 +1,2 @@
+/* Embedded windows draw their own border and corners over the containing page. */
+html[data-embedded], html[data-embedded] body { background: transparent; }

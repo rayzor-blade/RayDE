@@ -1,5 +1,6 @@
 // Shortcuts follow this browser's keyboard, independently of the workspace and window style.
 (function () {
+  if (window.top !== window) document.documentElement.setAttribute("data-embedded", "");
   var query = new URLSearchParams(location.search);
   var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
   var visitor = /mac|iphone|ipad/i.test(platform) ? "Mac" : /win/i.test(platform) ? "Windows" : "Linux";

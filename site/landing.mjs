@@ -1,6 +1,7 @@
 import { saveConnection, previewConnection } from './dist/rayde_connection.mjs';
 
 const frame = document.querySelector('#editor');
+const poster = document.querySelector('.editor-poster');
 const state = document.querySelector('#demo-state');
 const detail = document.querySelector('#demo-detail');
 const desktop = matchMedia('(min-width: 900px)');
@@ -43,6 +44,7 @@ function start() {
     if (!status) return;
     const update = () => {
       if (status.hidden) {
+        poster.hidden = true;
         state.textContent = connected ? 'Live editor' : 'Browser sample'; state.dataset.live = '';
         observer.disconnect();
       } else if (status.classList.contains('failed')) {
@@ -59,6 +61,7 @@ function start() {
 function deviceChanged() {
   if (!desktop.matches) {
     if (loading) { frame.hidden = true; frame.removeAttribute('src'); loading = false; delete state.dataset.live; }
+    poster.hidden = false;
     state.textContent = 'Desktop editor preview';
     detail.textContent = 'Visit on a larger screen to try the interactive editor.';
   } else if (!loading) start();

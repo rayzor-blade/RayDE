@@ -131,6 +131,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .rayde-pill-hint { color: var(--text-tertiary); font-family: var(--font-mono); }
 
 /* Activity bar */
+#rayde #rayde-activity .ui-tooltip-trigger { align-self: center; flex-shrink: 0; }
 #rayde .rayde-activity-item { position: relative; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-default); color: var(--text-tertiary); cursor: pointer; }
 #rayde .rayde-activity-item:hover { color: var(--text-primary); background: var(--accent-subtle); }
 #rayde .rayde-activity-item[data-on] { color: var(--text-primary); background: color-mix(in srgb, var(--primary) 24%, transparent); }
