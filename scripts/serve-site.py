@@ -2,6 +2,7 @@
 """Serve the landing page and an optional local workspace through the Rust session."""
 import argparse
 import hashlib
+import json
 import os
 import pathlib
 import secrets
@@ -13,6 +14,15 @@ import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+def process_environment():
+    environment = dict(os.environ)
+    if (ROOT.parent / 'rayzor/target/release/rayzor').is_file():
+        environment['PATH'] = str(ROOT.parent / 'rayzor/target/release') + os.pathsep + environment.get('PATH','')
+        stdlib = ROOT.parent / 'rayzor/compiler/haxe-std'
+        if stdlib.is_dir():
+            environment.setdefault('RAYZOR_STD_PATH', str(stdlib))
+    return environment
+
 def main():
     def stop(_signal, _frame):
         raise KeyboardInterrupt
@@ -23,7 +33,10 @@ def main():
     mode.add_argument('--workspace', type=pathlib.Path, help='explicitly connect a local project and enable its tools/extensions')
     mode.add_argument('--demo', action='store_true', help='connect the default editable Pocket Studio preview')
     mode.add_argument('--offline', action='store_true', help='serve the browser-only sample without workspace tools')
+    parser.add_argument('--prepare-only', action='store_true', help='prepare and verify the persistent demo LSP cache, without serving or opening an editor')
     args = parser.parse_args()
+    if args.prepare_only and (args.workspace or args.offline):
+        parser.error('--prepare-only prepares the managed Pocket Studio demo')
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
     if not (ROOT / 'site/dist/rayde.wasm').is_file():
@@ -34,13 +47,17 @@ def main():
     if not args.workspace and not args.offline:
         demo = pathlib.Path.home() / '.rayde-session/demos/pocket-studio'
         if not demo.exists():
-            shutil.copytree(ROOT / 'site/demo', demo, ignore=shutil.ignore_patterns('bin', '.haxelib', '.rayzor'))
+            shutil.copytree(ROOT / 'site/demo', demo, ignore=shutil.ignore_patterns('bin', '.haxelib', '.rayzor', '.rayde'))
             for command in [['init','-b','main'],['add','.'],['-c','user.name=Pocket Studio','-c','user.email=demo@example.invalid','commit','-m','Start Pocket Studio']]:
                 subprocess.run(['git','-C',str(demo),*command], check=True, stdout=subprocess.DEVNULL)
             guide = demo / 'README.md'
             guide.write_text(guide.read_text() + '\nThis editable local preview keeps its own Git history and saved files.\n')
             subprocess.run(['git','-C',str(demo),'add','README.md'],check=True)
             subprocess.run(['git','-C',str(demo),'-c','user.name=Pocket Studio','-c','user.email=demo@example.invalid','commit','-m','Add the local preview guide'],check=True,stdout=subprocess.DEVNULL)
+        ignore = demo / '.gitignore'
+        contents = ignore.read_text() if ignore.exists() else ''
+        if '.rayde/' not in contents.splitlines():
+            ignore.write_text(contents.rstrip('\n') + '\n.rayde/\n')
         if not (demo / '.haxelib').exists():
             subprocess.run(['haxelib','newrepo'],cwd=demo,check=True)
         for name in ['ashui-components','ashui-icons']:
@@ -51,6 +68,16 @@ def main():
     workspace = args.workspace.resolve() if args.workspace else None
     if workspace and not workspace.exists():
         parser.error('The workspace does not exist')
+    environment = process_environment()
+    if args.prepare_only:
+        config = pathlib.Path.home() / '.rayde-session/environment.json'
+        if config.is_file():
+            values = json.loads(config.read_text())
+            if not isinstance(values, dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in values.items()):
+                parser.error('Session environment must be a JSON string map')
+            environment.update(values)
+        return subprocess.run(['python3', str(ROOT / 'scripts/warm-rayzor.py'), '--root', str(workspace.parent),
+                               '--file', 'src/Main.hx', '--file', 'src/ui/BoardApp.hx'], env=environment).returncode
     with tempfile.TemporaryDirectory(prefix='rayde-site-') as temporary:
         project = workspace.name if workspace and workspace.is_file() else None
         directory = workspace.parent if project else workspace
@@ -76,12 +103,6 @@ def main():
             command += ['--preview-project', project or '']
         else:
             command += ['--state-root', str(pathlib.Path(temporary) / 'private-state')]
-        environment = dict(os.environ)
-        if (ROOT.parent / 'rayzor/target/release/rayzor').is_file():
-            environment['PATH'] = str(ROOT.parent / 'rayzor/target/release') + os.pathsep + environment.get('PATH','')
-            stdlib = ROOT.parent / 'rayzor/compiler/haxe-std'
-            if stdlib.is_dir():
-                environment.setdefault('RAYZOR_STD_PATH', str(stdlib))
         child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment)
         endpoint = None
         try:

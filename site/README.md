@@ -26,6 +26,14 @@ Remix SVG icons and the Arimo font include their licenses in `assets/notices`. T
 
 The landing preview gets its workspace configuration automatically from its local session host; it has no connection settings UI. A stale remembered connection cannot override this preset. An existing explicit session URL is imported once and cleaned. The generated bundle contains no credentials. Platform variables travel in the host startup message, not in the query string; authenticated app workspaces still use their account gateway. Server process variables remain in `~/.rayde-session/environment.json`. Standalone workspace settings belong in Cloud Sync, tracked by `4938944c5ed3bbde8fd4b446b5c3638abb1e5b3359a211c27e6b17a013813ac3`.
 
-The sample is packaged with `scripts/package-demo.py`. Its namespaced browser seed adds missing files atomically and preserves existing file contents. Regeneration never overwrites a visitor’s edits.
+Prepare the managed demo's Rayzor cache separately from app startup:
+
+```sh
+python3 scripts/serve-site.py --prepare-only
+```
+
+This prepares the initial Main.hx and BoardApp.hx tabs using the real LSP with the extension's analysis budget and the session host's environment, then starts a fresh LSP process to verify disk-cache reuse. Indexes remain in `~/.rayde-session/demos/pocket-studio/.rayzor/blade/editor`. Keep that workspace and cache volume across session restarts; caches depend on canonical paths, source/configuration, macro inputs and the Rayzor build, so copying them into public static assets is insufficient. Preparation is never invoked by normal serving, page loads or browser refresh. Changed inputs are revalidated by Rayzor. `scripts/warm-rayzor.py` can prepare additional source files explicitly.
+
+The sample is packaged with `scripts/package-demo.py`. Its namespaced browser seed adds missing files atomically and preserves existing file contents. Regeneration never overwrites a visitor’s edits. Editor state (`.rayde/`), dependencies and caches are excluded from the package and ignored by the demo's Git repository.
 
 The loopback bootstrap rejects cross-origin browser requests and non-loopback Host headers, and refuses public listeners. It is disabled on ordinary sessions and account-gateway deployments. A public live demo still needs authenticated compute provisioning; a static site alone has no extension processes. Local Jam remains a desktop feature pending its browser/session transport.

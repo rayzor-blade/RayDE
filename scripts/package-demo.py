@@ -11,7 +11,7 @@ root = '/work/pocket-studio'
 entries = [{'path':'/work','directory':True,'data':None}, {'path':root,'directory':True,'data':None}]
 for path in sorted(source.rglob('*')):
     relative = path.relative_to(source)
-    if any(part in ('bin', '.haxelib', '.rayzor', '.git') for part in relative.parts):
+    if any(part in ('bin', '.haxelib', '.rayzor', '.rayde', '.git') for part in relative.parts):
         continue
     if path.is_symlink():
         raise SystemExit('Sample sources must not contain symlinks')
