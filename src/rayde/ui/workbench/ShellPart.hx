@@ -107,6 +107,10 @@ class ShellPart {
 			{id: "findnext", label: "Find Next", icon: Icons.ARROW_DOWN_LINE, run: () -> wb.editorFindNext()},
 			{id: "findprevious", label: "Find Previous", icon: Icons.ARROW_UP_LINE, run: () -> wb.editorFindNext(true)},
 			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: wb.runPart.run},
+			#if wasm
+			{id:"previewapp",label:"Preview App",icon:Icons.EYE_LINE,run:wb.runPart.previewApp},
+			#end
+			{id:"previewextension",label:"Preview Extension",icon:Icons.EYE_LINE,run:() -> {if(ExtensionsPart.isExtension(wb.active.get()))wb.extensionsPart.openPreview(wb.active.get());}},
 			{id: "buildproject", label: "Build Project", icon: Icons.HAMMER_LINE, run: wb.runPart.buildProject},
 			{id: "stop", label: "Stop", icon: Icons.STOP_FILL, run: wb.runPart.stopRun},
 			{id: "save", label: "Save All", icon: Icons.SAVE_3_LINE, run: wb.runPart.saveAll},

@@ -35,6 +35,9 @@ impl Drop for Opening {
 struct Pending {
     closed: bool,
     hello: BTreeSet<String>,
+    preview_opens:BTreeSet<String>,
+    previews:BTreeSet<String>,
+    preview_reads:usize,
     source: Option<String>,
     checkpoints: bool,
     journals: bool,
@@ -43,6 +46,8 @@ struct Pending {
     requests: BTreeMap<String, futures_channel::oneshot::Sender<Value>>,
 }
 type Backend = (WebSocket, WebSocket, Rc<RefCell<Pending>>);
+struct PreviewRead(Rc<RefCell<Pending>>);
+impl Drop for PreviewRead {fn drop(&mut self){self.0.borrow_mut().preview_reads-=1;}}
 struct RecoveryAdmission {
     count: Rc<Cell<usize>>,
     bytes: Rc<Cell<usize>>,
@@ -270,6 +275,14 @@ impl DurableObject for WorkspaceSession {
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
         }
+        if data["op"]=="preview.open" {
+            let mut pending=handshakes.borrow_mut();
+            if preview_origin(&self.env).is_none() || pending.preview_opens.len()>=8 {
+                return ws.send(&json!({"id":data["id"],"ok":false,"code":"preview-unavailable","message":"App preview hosting is not configured."}));
+            }
+            pending.preview_opens.insert(data["id"].to_string());
+        }
+        if data["op"]=="preview.close" {if let Some(id)=data["preview"].as_str(){handshakes.borrow_mut().previews.remove(id);}}
         let filesystem=matches!(data["op"].as_str(),Some("fs.write"|"fs.mkdir"|"fs.remove"|"fs.rename"));
         if data["op"] == "doc.save" || data["op"] == "doc.update" || filesystem {
             let editing = data["op"] == "doc.update";
@@ -381,6 +394,41 @@ impl DurableObject for WorkspaceSession {
     }
 }
 impl WorkspaceSession {
+    async fn preview_resource(&self,id:&str,path:&str)->AppResult<Response> {
+        use base64::engine::general_purpose::STANDARD;
+        if !opaque(id) || rayde_session::store::clean(path).is_err(){return Err(bad(404,"This app preview is unavailable."));}
+        let connection=self.backends.borrow().iter().find(|(_,_,pending)|!pending.borrow().closed&&pending.borrow().previews.contains(id)).cloned();
+        let (client,backend,pending)=connection.ok_or_else(||bad(404,"This app preview is closed."))?;
+        if pending.borrow().preview_reads>=16{return Err(bad(503,"The preview resource queue is full."));}
+        pending.borrow_mut().preview_reads+=1;
+        let admission=PreviewRead(pending.clone());
+        let expires=client.deserialize_attachment::<Value>()?.and_then(|value|value["expires"].as_u64()).unwrap_or(0);
+        if expires<=now(){return Err(bad(404,"This app preview is closed."));}
+        let first=compute(&backend,&pending,json!({"op":"preview.read","preview":id,"path":path,"offset":0,"length":524288})).await.map_err(|_|bad(502,"The preview host did not respond."))?;
+        if first["ok"]!=true{return Err(bad(404,"This preview file is unavailable."));}
+        let size=first["size"].as_u64().filter(|size|*size<=64*1024*1024).ok_or_else(||bad(502,"The preview file is too large."))?;
+        let mime=first["mime"].as_str().unwrap_or("application/octet-stream").to_owned();
+        let initial=STANDARD.decode(first["data"].as_str().unwrap_or("")).map_err(|_|bad(502,"Invalid preview artifact."))?;
+        let id=id.to_owned();let path=path.to_owned();
+        let stream=futures_util::stream::try_unfold((Some(initial),0u64,backend,pending,admission),move |(initial,offset,backend,pending,admission)| {
+            let id=id.clone();let path=path.clone();
+            async move {
+                if pending.borrow().closed || !pending.borrow().previews.contains(&id) || expires<=now(){return Err(worker::Error::RustError("The app preview closed.".into()));}
+                if offset>=size && initial.is_none(){return Ok(None);}
+                let bytes=if let Some(bytes)=initial {bytes}else{
+                    let reply=compute(&backend,&pending,json!({"op":"preview.read","preview":id,"path":path,"offset":offset,"length":524288})).await.map_err(|message|worker::Error::RustError(message.into()))?;
+                    if reply["ok"]!=true||reply["size"]!=size||reply["offset"]!=offset{return Err(worker::Error::RustError("The preview artifact changed.".into()));}
+                    STANDARD.decode(reply["data"].as_str().unwrap_or("")).map_err(|_|worker::Error::RustError("Invalid preview artifact.".into()))?
+                };
+                let next=offset+bytes.len() as u64;
+                if next>size || next==offset && size!=0{return Err(worker::Error::RustError("Invalid preview artifact length.".into()));}
+                Ok(Some((bytes,(None,next,backend,pending,admission))))
+            }
+        });
+        let headers=Headers::new();
+        for (name,value) in [("Content-Type",mime.as_str()),("Cache-Control","no-store"),("X-Content-Type-Options","nosniff"),("Cross-Origin-Opener-Policy","same-origin"),("Cross-Origin-Embedder-Policy","require-corp"),("Cross-Origin-Resource-Policy","cross-origin")] {headers.set(name,value)?;}
+        Ok(Response::from_stream(stream)?.with_headers(headers))
+    }
     fn disconnect(&self, ws: &WebSocket) {
         self.backends
             .borrow_mut()
@@ -396,6 +444,11 @@ impl WorkspaceSession {
             });
     }
     async fn handle(&self, mut req: Request) -> AppResult<Response> {
+        let request_path=req.path();
+        if let Some(path)=request_path.strip_prefix("/preview/") {
+            let (id,path)=path.split_once('/').ok_or_else(||bad(404,"This app preview is unavailable."))?;
+            return self.preview_resource(id,path).await;
+        }
         let data: Value = if req.path() == "/socket" {
             serde_json::from_str(&req.headers().get("X-RayDE-Identity")?.unwrap_or_default())
                 .map_err(|_| bad(403, "The request could not be verified."))?
@@ -538,6 +591,7 @@ impl WorkspaceSession {
             let authority = format!("cloud:{}", self.state.id());
             let workspace = record["id"].clone();
             let principal = format!("account:{}", data["owner"]);
+            let preview_origin=preview_origin(&self.env);
             self.state.accept_web_socket(&pair.server);
             let mut attachment = data.clone();
             if let Some(fields) = attachment.as_object_mut() {fields.remove("access");}
@@ -566,6 +620,14 @@ impl WorkspaceSession {
                                         }
                                         // Late checkpoint replies are internal payloads, including after a Save timeout.
                                         if reply.get("checkpoint").is_some() || reply.get("journal").is_some() || reply["id"].is_array() {continue;}
+                                        if handshakes.borrow_mut().preview_opens.remove(&reply["id"].to_string()) && reply["ok"]==true {
+                                            if let (Some(origin),Some(id))=(&preview_origin,reply["preview"].as_str().filter(|id|opaque(id))) {
+                                                let id=id.to_owned();
+                                                handshakes.borrow_mut().previews.insert(id.clone());
+                                                reply["url"]=json!(format!("{origin}/previews/{}/{id}/index.html",workspace.as_str().unwrap_or_default()));
+                                                text=reply.to_string();
+                                            }
+                                        }
                                         if reply.get("id").is_some()
                                             && handshakes.borrow_mut().hello.remove(&reply["id"].to_string())
                                             && reply["ok"] == true
@@ -585,6 +647,7 @@ impl WorkspaceSession {
                                             }
                                             reply["durableCheckpoints"] = json!(valid && reply["checkpoints"]==1);
                                             reply["durableUpdates"] = json!(valid && reply["journals"]==1);
+                                            reply["appPreviews"]=json!(reply["appPreviews"]==true && preview_origin.is_some());
                                             reply["cacheIdentity"] = if valid {
                                                 json!({
                                                     "version": 1,

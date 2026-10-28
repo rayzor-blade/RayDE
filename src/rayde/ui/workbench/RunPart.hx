@@ -101,6 +101,27 @@ class RunPart {
 	var runPollScheduled = false;
 
 	public var runner(default, null):Null<Runner>;
+	public var appPreview(default, null):Null<rayde.run.AppPreviewBuild>;
+
+	public function canPreviewApp():Bool {
+		var session=rayde.workspace.PageHost.session;
+		return session!=null && session.appPreviews && wb.props.display.hxml!=null && wb.extension==null &&
+			(wb.props.display.project==null || ["ash","hashlink"].indexOf(wb.props.display.project.runtime)>=0) &&
+			(wb.props.display.args.indexOf("-main")>=0 || wb.props.display.args.indexOf("--main")>=0);
+	}
+
+	public function previewApp():Void {
+		if(!canPreviewApp()){wb.say("App Preview needs a runnable HashLink project and browser build tooling on its session host.");return;}
+		saveBefore(() -> {
+			if(appPreview==null)appPreview=new rayde.run.AppPreviewBuild(rayde.workspace.PageHost.session);
+			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd);
+			wb.openFile(Workbench.APP_PREVIEW);
+		});
+	}
+
+	public function closeAppPreview():Void {
+		if(appPreview!=null)appPreview.dispose();appPreview=null;
+	}
 
 	var seen = -1;
 

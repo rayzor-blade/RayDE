@@ -8,6 +8,7 @@ import { documentation } from "./documentation.js";
 import { reopenWorkspace } from "./reopen.js";
 import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
+import { AppPreviews } from "./previews.js";
 
 const query = new URLSearchParams(location.search);
 const entry = pageEntry(location, readConnection());
@@ -59,9 +60,10 @@ export const start = ask => serve(ask, {
       for (let at = 0; at < bytes.length; at += 16384) deliver(bytes.subarray(at, at + 16384));
     };
     const documents = client ? new EditorDocuments(client, answer) : null;
+    const previews = client ? new AppPreviews(client) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
-    client?.on("disconnected", () => answer({ ev: "session.disconnected", generation:client.generation }));
-    client?.on("context-changed", ({message}) => answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message}));
+    client?.on("disconnected", () => {previews?.reset();answer({ ev: "session.disconnected", generation:client.generation });});
+    client?.on("context-changed", ({message}) => {previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
     client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation }));
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
@@ -83,6 +85,11 @@ export const start = ask => serve(ask, {
           }
           else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
           else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
+          else if (request.op === "page.preview") {
+            if (!previews) throw new Error("Connect an app preview session first.");
+            reply = previews.update(request);
+            if (request.id === undefined) return;
+          }
           else if (request.op === "page.reopen") reply = await reopenWorkspace(client, async () => {
             await files("readonly", store => store.count());
             if (storageFailure) throw storageFailure;
@@ -121,6 +128,8 @@ export const start = ask => serve(ask, {
           } else if (client) {
             const { id, op, ...params } = request;
             reply = await client.forward(op, params);
+            if (op === "preview.open") previews.register(reply);
+            if (op === "preview.close") previews.unregister(params.preview);
           } else throw new Error("No workspace session is connected.");
           answer({ ...reply, id: request.id, ok: true });
         } catch (error) {
@@ -134,7 +143,7 @@ export const start = ask => serve(ask, {
     });
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
+      close() { previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

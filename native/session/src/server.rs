@@ -86,6 +86,8 @@ pub struct Options {
     pub web: Option<PathBuf>,
     /// Opt-in loopback development bootstrap; never enable on a public listener.
     pub preview_project: Option<String>,
+    /// Host-owned Haxe and browser bridge files for isolated app builds.
+    pub preview_tools: Option<PathBuf>,
     /// A second listener that speaks the session protocol as length-prefixed frames over TCP, with no HTTP or WebSocket.
     pub raw: Option<SocketAddr>,
     /// How long an edit waits for more before the file is written.
@@ -94,7 +96,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, preview_tools:None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -106,6 +108,7 @@ pub struct Running {
     stop: Option<oneshot::Sender<()>>,
     done: tokio::task::JoinHandle<()>,
     unwatch: Option<Box<dyn FnOnce() + Send>>,
+    _previews:Option<crate::previews::Running>,
 }
 
 impl Running {
@@ -185,6 +188,8 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
+    let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools).await?)} else {None};
+    if let Some(previews)=&previews {workspace.set_previews(previews.registry.clone());}
     workspace.set_sources(sources);
     workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));
     if options.exec {workspace.set_terminals(Arc::new(crate::terminal::NativeTerminals::new(store.root().to_path_buf(),options.environment)));}
@@ -238,7 +243,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     let done = tokio::spawn(async move {
         let _ = axum::serve(listener, app).with_graceful_shutdown(async { let _ = stopped.await; }).await;
     });
-    Ok(Running { address, raw_address, token: options.token, workspace, stop: Some(stop), done, unwatch: Some(unwatch) })
+    Ok(Running { address, raw_address, token: options.token, workspace, stop: Some(stop), done, unwatch: Some(unwatch), _previews:previews })
 }
 
 async fn preview_connection(State(shared):State<Shared>, headers:HeaderMap) -> Response {

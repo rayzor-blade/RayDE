@@ -39,6 +39,7 @@ rayde-syntax = { path = "../syntax", optional = true }
 rayde-terminal = { path = "../terminal", default-features = false, optional = true }
 
 [dev-dependencies]
+reqwest = { version = "=0.12.28", default-features = false }
 tokio-tungstenite = "=0.28.0"
 tempfile = "3"
 

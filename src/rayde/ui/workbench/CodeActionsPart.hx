@@ -113,6 +113,13 @@ class CodeActionsPart {
 	var requestingActions = false;
 
 	function setupCodeActions():Void {
+		codeActions.register("rayde.preview", {id:"extension",extensions:["rays"],kinds:["preview"],automatic:true}, request -> {
+			var supported = wb.extension == null;
+			codeActions.respond("rayde.preview", request.request, supported ? [{id:"preview",title:"Preview Extension",kind:"preview",icon:"eye",command:"preview-extension",range:{from:0,to:0}}] : []);
+		}, (context, _) -> wb.extensionsPart.openPreview(context.path));
+		codeActions.register("rayde.preview", {id:"app",languages:["haxe"],kinds:["preview"],automatic:true}, request -> {
+			codeActions.respond("rayde.preview", request.request, wb.runPart.canPreviewApp() ? [{id:"app",title:"Preview App",kind:"preview",icon:"eye",command:"preview-app",range:{from:0,to:0}}] : []);
+		}, (_, _) -> wb.runPart.previewApp());
 		codeActionProviders = new CodeActionProviders(codeActions, wb.props.display.cwd, (owner, name, data) -> {
 			if (wb.extensionsPart.extensionManager == null) return;
 			var entry = Lambda.find(wb.extensionsPart.extensionManager.extensions, e -> e.connection.file == owner);

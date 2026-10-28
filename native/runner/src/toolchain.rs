@@ -29,5 +29,7 @@ pub(crate) async fn restore(config: &Config, sandbox: &str, runner: &str, worksp
 
 pub(crate) fn session_args(config: &Config) -> Vec<&'static str> {
     if config.toolchain.is_none() { return Vec::new(); }
-    vec!["--env-file", "/opt/rayde/environment.json", "--extension-host", "/opt/rayde/bin/rayde-extension-host", "--extensions", "/opt/rayde/extensions", "--read-root", "/opt/rayde/haxelib", "--read-root", "/opt/rayde/haxe-std", "--read-root", "/opt/rayde/haxe/std"]
+    let mut args=vec!["--env-file", "/opt/rayde/environment.json", "--extension-host", "/opt/rayde/bin/rayde-extension-host", "--extensions", "/opt/rayde/extensions", "--read-root", "/opt/rayde/haxelib", "--read-root", "/opt/rayde/haxe-std", "--read-root", "/opt/rayde/haxe/std"];
+    if config.toolchain.as_ref().is_some_and(|toolchain|toolchain.app_previews){args.extend(["--preview-tools","/opt/rayde/preview"]);}
+    args
 }

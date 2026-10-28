@@ -14,6 +14,10 @@ import ashui.components.Icon;
 import ashui.components.Spinner;
 import ashui.components.Resizable;
 import ashui.components.Select;
+import ashui.components.Sheet;
+import ashui.components.Sheet.SheetContent;
+import ashui.components.Sheet.SheetHeader;
+import ashui.components.Sheet.SheetTitle;
 import ashui.components.Tabs;
 import ashui.components.Tooltip;
 import ashui.components.Toast;
@@ -135,6 +139,18 @@ class ExtensionsPart {
 		Manifest.forSource(request.file, request.root, cancelled), () -> ashui.core.Work.notify());
 
 	final activeStudio = Signal.make((null : Null<Studio>));
+	final previewSheets = new Map<String,Signal<Bool>>();
+
+	function previewOpen(file:String):Signal<Bool> {
+		if (!previewSheets.exists(file)) previewSheets.set(file,Signal.make(false));
+		return previewSheets.get(file);
+	}
+
+	public function openPreview(file:String):Void {
+		for (name => opened in previewSheets) if (name != file) opened.set(false);
+		previewOpen(file).set(true);
+	}
+
 
 	/** Namespaced bindings let extensions declare the same local command id. */
 	static function extensionKey(id:String, command:String):String return Manager.commandKey(id, command);
@@ -555,15 +571,25 @@ class ExtensionsPart {
 		if (item.command != null) extensionManager.command(id, item.command, null);
 	}
 
-	/** An extension: its code, and beside it the Preview of what it draws. */
+	/** Source editing keeps the group's full width; its preview is an opt-in sheet. */
 	function studioPage(file:String, ?selected:Signal<String>):Element {
-		var studio = studioOf(file);
+		var opened = previewOpen(file);
+		new ashui.reactive.Watch(() -> wb.active.get(), active -> {if (active != file) opened.set(false);});
 		return <tabs-content value={file} class="flex-1 min-h-0">
-			<resizable id="rayde-studio-columns" class="flex-1 min-h-0">
-				<resizable-panel minSize={200}>${wb.editorPart.activeCodeEditor(file,selected)}</resizable-panel>
-				<resizable-panel size={wb.previewWidth} minSize={220}><studio-view studio={studio} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> showOutput(studio)}/></resizable-panel>
-			</resizable>
+			${wb.editorPart.activeCodeEditor(file,selected)}
+			<sheet open={opened}>
+				<sheet-content id="rayde-extension-preview-sheet" side="right" size={Lg}>
+					<sheet-header><sheet-title>Preview · ${haxe.io.Path.withoutDirectory(file)}</sheet-title></sheet-header>
+					<if {opened.get()}>${previewSheet(file)}</if>
+				</sheet-content>
+			</sheet>
 		</tabs-content>;
+	}
+
+	function previewSheet(file:String):Element {
+		var studio = studioOf(file);
+		activeStudio.set(studio);
+		return <studio-view studio={studio} framed={false} onMocks={() -> openMocks(studio)} onConsole={() -> wb.panelsPart.showPanel("extension")} onOutput={() -> showOutput(studio)}/>;
 	}
 
 	/** Opens the file that answers the extension's remote calls while it is developed, making it when there is none. */

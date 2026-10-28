@@ -16,6 +16,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 def process_environment():
     environment = dict(os.environ)
+    if (ROOT.parent / 'ash/target/release/ash').is_file():
+        environment['PATH'] = str(ROOT.parent / 'ash/target/release') + os.pathsep + environment.get('PATH','')
     if (ROOT.parent / 'rayzor/target/release/rayzor').is_file():
         environment['PATH'] = str(ROOT.parent / 'rayzor/target/release') + os.pathsep + environment.get('PATH','')
         stdlib = ROOT.parent / 'rayzor/compiler/haxe-std'
@@ -87,6 +89,8 @@ def main():
             if not host.is_file():
                 parser.error('Build the extension host first: bash scripts/build-rayscript.sh')
             command += ['--exec', '--extension-host', str(host), '--extensions', str(ROOT / 'extensions')]
+            if (ROOT / 'bin/preview-tools/haxe').is_dir():
+                command += ['--preview-tools', str(ROOT / 'bin/preview-tools')]
             profile = pathlib.Path.home() / '.rayde-session/site-preview' / hashlib.sha256(str(directory).encode()).hexdigest()
             profile.mkdir(parents=True, exist_ok=True, mode=0o700)
             os.chmod(profile, 0o700)

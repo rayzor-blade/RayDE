@@ -20,6 +20,8 @@ The host also writes shared edits as they settle. Hosted sessions store a docume
 
 Build, Run, terminals and language servers use the session host's tools and environment. Extensions run there too, with their views displayed in the browser. The host must allow execution for these features.
 
+For a browser-compatible Ashui project, choose **Preview App** from **Code Actions** or the eye button beside the tabs. RayDE saves your edits, builds the app and opens it in a preview tab. **Rebuild** applies later source changes. This requires [app preview tooling on the host](contributing/session.md#app-previews).
+
 Hiding Terminal leaves commands running. Losing the session connection closes its terminals; start a new terminal after reconnecting. See [Problems, Output and Terminal](panels.md) for panel controls.
 
 ## Reconnecting and recovery

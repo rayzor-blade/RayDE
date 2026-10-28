@@ -197,7 +197,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || file == THEME_TAB || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || file == APP_PREVIEW || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -234,6 +234,7 @@ class Workbench extends Component<WorkbenchProps> {
 	final restoredTabs = new Map<String, Bool>();
 
 	static inline var DIFF_TAB = "@history-diff:";
+	static inline var APP_PREVIEW = "@app-preview";
 
 	static inline var HISTORY_TAB = "@local-history:";
 
@@ -527,6 +528,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
 	public function closeFile(file:String):Void {
+		if (file == APP_PREVIEW) runPart.closeAppPreview();
 		var wasActive = active.get() == file;
 		if (languagesPart.diagnosticJobs != null) languagesPart.diagnosticJobs.cancel(file);
 		var files = open.get(), at = files.indexOf(file);
@@ -541,6 +543,7 @@ class Workbench extends Component<WorkbenchProps> {
 		if (comparison != null) comparison.dispose();
 		documentsPart.comparisonTabs.remove(file);
 		if (!isVirtual(file)) documentsPart.localHistory.flush(file);
+		extensionsPart.previewSheets.remove(file);
 		var studio = extensionsPart.studios.get(file);
 		if (studio != null && !studio.managed) {
 			extensionsPart.manifestJobs.cancel(file);
@@ -998,6 +1001,7 @@ class Workbench extends Component<WorkbenchProps> {
 			if (codeActionsPart.codeActionPoll != null) codeActionsPart.codeActionPoll.cancel();
 			codeActionsPart.codeActionTimer = null; codeActionsPart.codeActionPoll = null;
 			codeActionsPart.entryActions.dispose(); codeActionsPart.codeActions.dispose();
+			runPart.closeAppPreview();
 			if (projectPart.cancelProjectDialog != null) projectPart.cancelProjectDialog();
 			projectPart.cancelProjectDialog = null;
 			projectPart.projectPicker.dispose();

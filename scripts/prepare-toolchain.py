@@ -46,6 +46,7 @@ def main():
     parser.add_argument('--extension-host',type=Path,required=True)
     parser.add_argument('--stdlib',type=Path,required=True)
     parser.add_argument('--haxe-archive',type=Path,required=True)
+    parser.add_argument('--preview-tools',type=Path,help='staged browser preview tooling, including ash_runtime.o')
     parser.add_argument('--base',default='ubuntu:26.04')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
@@ -55,6 +56,8 @@ def main():
         parser.error('The pinned Haxe archive or Rayzor standard library is invalid')
     if args.output.exists():
         parser.error('Choose a new output file; existing template configuration is preserved')
+    if args.preview_tools and not all((args.preview_tools/name).is_file() for name in ['ash_runtime.o','ash_channel.wasm','channel-agent.mjs','rayde_preview_files.mjs','preview-frames.mjs','haxe/rayde/preview/Files.hx']):
+        parser.error('The app preview tooling is incomplete; run scripts/stage-preview.py with --runtime first')
     def msb(*command,timeout=60,capture=False):
         return subprocess.run([str(args.msb),*map(str,command)],env={**os.environ,'MSB_BACKEND':'local'},check=True,timeout=timeout,text=True,stdout=subprocess.PIPE if capture else None)
     builder='rayde-toolchain-build-'+secrets.token_hex(8)
@@ -68,6 +71,8 @@ def main():
             shutil.copy2(source,payload/'bin'/source.name)
         shutil.copytree(args.stdlib,payload/'haxe-std',symlinks=False)
         shutil.copytree(ROOT/'extensions',payload/'extensions',ignore=shutil.ignore_patterns('target','.git'))
+        if args.preview_tools:
+            shutil.copytree(args.preview_tools,payload/'preview',symlinks=False)
         shutil.copytree(ROOT/'site/demo',payload/'pocket-studio',ignore=shutil.ignore_patterns('bin','.rayde','.rayzor','.haxelib','.git'))
         for name in ['bootstrap.sh','finalize.py']:
             shutil.copy2(ROOT/'native/runner/toolchain'/name,payload/name)
@@ -91,7 +96,7 @@ def main():
             msb('snapshot','verify',selector,timeout=120)
             args.output.parent.mkdir(parents=True,exist_ok=True)
             with args.output.open('x') as output:
-                json.dump({'snapshot':selector,'digest':identity},output,indent=2);output.write('\n')
+                json.dump({'snapshot':selector,'digest':identity,'appPreviews':bool(args.preview_tools)},output,indent=2);output.write('\n')
             print('Verified toolchain configuration: '+str(args.output),flush=True)
         finally:
             if created:

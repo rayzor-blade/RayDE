@@ -577,3 +577,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
   padding: 8px 12px;
   text-align: left;
 }
+
+#rayde-extension-preview-sheet { padding: 0; gap: 0; --ui-sheet-width: 480px; }
+#rayde-extension-preview-sheet > .ui-dialog-header { padding: 16px 48px 12px 16px; border-bottom: 1px solid var(--border); }
+#rayde-extension-preview-sheet #rayde-studio { flex: 1; min-height: 0; }

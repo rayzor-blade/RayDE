@@ -192,6 +192,9 @@ fn toolchain_selectors_and_persistent_disk_bindings_are_operator_scoped() {
     let value = serde_json::json!({"listen":"127.0.0.1:9791","stateRoot":"/state","msb":"/bin/msb","sessionBinary":"/bin/session","secretFile":"/private/secret","toolchain":{"snapshot":"rayde-toolchains:linux-x86_64","digest":"a".repeat(64)}});
     let config:Config = serde_json::from_value(value.clone()).unwrap();
     assert!(config.validate().is_ok());
+    assert!(!toolchain::session_args(&config).contains(&"--preview-tools"));
+    let mut previews=value.clone();previews["toolchain"]["appPreviews"]=serde_json::json!(true);
+    assert!(toolchain::session_args(&serde_json::from_value(previews).unwrap()).windows(2).any(|pair|pair==["--preview-tools","/opt/rayde/preview"]));
     for selector in ["--help","../other","/private/image","group:one two",""] {
         let mut invalid = value.clone(); invalid["toolchain"]["snapshot"] = serde_json::json!(selector);
         assert!(serde_json::from_value::<Config>(invalid).unwrap().validate().is_err());

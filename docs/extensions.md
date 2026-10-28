@@ -449,7 +449,9 @@ The [Git history graph](git.md) combines these controls with a RayScript DAG lay
 
 Opening a `.rayext` runs the extension. Its views are drawn in the Preview at the `location` each declares; an extension with no view shows only the tabs it opens. The Studio's console, activity and elements are in the Extension tab of the bottom panel.
 
-Opening its main `.rays` file inside another workspace also finds the declaring `.rayext` in its parent folders. The Studio uses that manifest's settings, imports, capabilities and styles. A script with no declaring manifest runs as a standalone preview.
+Open a `.rays` file, then choose **Preview Extension** from its gutter code action, the **Code Actions** menu, or the eye button beside the tabs. The preview opens in a side sheet and leaves your editor splits in place. Source files open with the preview hidden.
+
+Main scripts and source modules find the declaring `.rayext` in their parent folders. The preview runs its main script with the manifest's settings, imports, capabilities and styles. A script with no declaring manifest runs as a standalone preview.
 
 ![An extension's view in the sidebar, in the Explorer's place](images/studio-sidebar.png)
 

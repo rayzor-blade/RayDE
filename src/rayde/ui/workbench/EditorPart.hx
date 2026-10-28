@@ -211,6 +211,9 @@ class EditorPart {
 	}
 
 	function tabLabel(file:String):String
+		return file == Workbench.APP_PREVIEW ? "App Preview" : fileLabel(file);
+
+	function fileLabel(file:String):String
 		return file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
 
 	function viewTabTitle(file:String):String {
@@ -219,6 +222,7 @@ class EditorPart {
 	}
 
 	function tabIcon(file:String):ashui.svg.SvgDocument {
+		if (file == Workbench.APP_PREVIEW) return Icons.EYE_LINE;
 		if (file.startsWith(Workbench.DIFF_TAB)) return Icons.FILE_HISTORY_LINE;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return Icons.HISTORY_LINE;
 		if (Workbench.isTab(file)) {
@@ -236,6 +240,12 @@ class EditorPart {
 		if (!has)
 			return <div/>;
 		var actions = <div class="flex items-center gap-1">
+			<if {wb.runPart.canPreviewApp() && haxe.io.Path.extension(group.active.get()).toLowerCase() == "hx"}>
+				<tooltip label="Preview App" side="bottom"><button id="rayde-open-app-preview" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); wb.runPart.previewApp(); }}><icon document={Icons.EYE_LINE} class="size-4"/></button></tooltip>
+			</if>
+			<if {ExtensionsPart.isExtension(group.active.get()) && wb.extension == null}>
+				<tooltip label="Open Extension Preview" side="bottom"><button id="rayde-open-extension-preview" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); wb.extensionsPart.openPreview(group.active.get()); }}><icon document={Icons.EYE_LINE} class="size-4"/></button></tooltip>
+			</if>
 			<tooltip label={"Split Editor Right (Vertical)" + shortcut("splitright")} side="bottom"><button id="rayde-split-right" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("horizontal"); }}><icon document={Icons.LAYOUT_COLUMN_LINE} class="size-4"/></button></tooltip>
 			<tooltip label={"Split Editor Down (Horizontal)" + shortcut("splitdown")} side="bottom"><button id="rayde-split-down" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> { groups.select(group); splitEditor("vertical"); }}><icon document={Icons.LAYOUT_ROW_LINE} class="size-4"/></button></tooltip>
 			<tooltip label="File History Diff" side="bottom"><button id="rayde-open-history-diff" variant={Ghost} size={Icon} class="rayde-panel-button" disabled={Computed.make(() -> { var file=wb.realFile(group.active.get()); return file == null || ImagePreview.isRaster(file); })} onClick={_ -> { groups.select(group); wb.documentsPart.openComparison(group.active.get()); }}><icon document={Icons.FILE_HISTORY_LINE} class="size-4"/></button></tooltip>
@@ -308,6 +318,7 @@ class EditorPart {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String, selected:Signal<String>):Element {
+		if (file == Workbench.APP_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file && wb.runPart.appPreview != null}><app-preview build={wb.runPart.appPreview} rebuild={wb.runPart.previewApp} shown={() -> !wb.quickOpen.get() && wb.prompt.get() == null && !Lambda.exists([for (opened in wb.extensionsPart.previewSheets) opened], opened -> opened.get())}/></if></tabs-content>;
 		if (file.startsWith(Workbench.DIFF_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.comparisonPage(file)}</if></tabs-content>;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;
 		if (file == Workbench.THEME_TAB && wb.themePart.themeStudio != null)

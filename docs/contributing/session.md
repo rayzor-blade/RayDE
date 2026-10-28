@@ -209,3 +209,20 @@ Haxe checks cover the bridge and workbench behavior:
 - `SessionEditorChecks`: asynchronous readiness, stale projections, undo, Save failures and binding cleanup.
 - `ExtensionOutputChecks`: stack locations and malformed isolated output.
 - `SessionLspChecks`, `SessionLspQueueChecks`, `SessionLspReconnectChecks`: framed LSP, bounded queues, cancellation, idle wakeups, offline recovery and stale handles.
+
+## App previews
+
+`Preview App` builds a single Haxe/HashLink target with `-D wasm`, keeping its libraries, defines and macros. Builds run on a worker and have a timeout. The host needs Ash with WASM compilation, a compatible WASM runtime, and browser versions of the project's native libraries. Rayzor and other compilation targets are not converted implicitly.
+
+`bash scripts/build-site.sh` stages `bin/preview-tools`. Set `ASH_RUNTIME` to the WASM `ash_runtime.o` when building, or stage it explicitly:
+
+```sh
+python3 scripts/stage-preview.py --runtime /path/to/wasm/ash_runtime.o
+rayde-session --root /path/to/project --exec --preview-tools /path/to/RayDE/bin/preview-tools
+```
+
+The tooling supplies a preview-only filesystem adapter and browser channel; the project's HXML and dependencies stay intact. The app frame can read and write workspace files through the editor's session client. Private host paths and process/account RPC are refused. Hosted writes use the existing durable file-operation queue.
+
+Native sessions serve artifacts on a separate loopback port. Hosted sessions stream bounded artifact chunks through their Durable Object. Set `PREVIEW_ORIGIN` to a dedicated HTTPS origin, separate from `APP_ORIGIN`, routing to the same Worker. This origin serves preview artifacts only. Local development derives a separate hostname from `APP_ORIGIN`. Artifact capabilities expire with the connection; apps receive no account or workspace token.
+
+For an MSB image, pass `--preview-tools /path/to/staged/tools` to `scripts/prepare-toolchain.py`. Its generated toolchain configuration enables the session's preview tooling. Existing templates remain usable without app previews. Rebuild the template to install changed tooling; its files are covered by the image integrity manifest.

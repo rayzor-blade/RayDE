@@ -11,6 +11,7 @@ import rayde.ui.Workbench;
 @:access(rayde.ui.workbench.ExtensionsPart)
 @:access(rayde.ui.workbench.ThemePart)
 @:access(rayde.ui.workbench.DocumentsPart)
+@:access(rayde.ui.workbench.CodeActionsPart)
 class WorkspaceStudioChecks {
 	static function check(ok:Bool, message:String):Void if (!ok) throw message;
 	static function main():Void {
@@ -44,15 +45,27 @@ class WorkspaceStudioChecks {
 		function until(done:Void->Bool,message:String):Void {var end=haxe.Timer.stamp()+8;while (!done()&&haxe.Timer.stamp()<end){settle();Sys.sleep(.005);}if (!done()) for (s in bench.extensionsPart.studios) Sys.println(s.file+" "+s.state.get()+" "+s.progress.get()+" "+haxe.Json.stringify(s.console.get()));check(done(),message);settle();}
 		function click(selector:String):Void {var nodes=Css.query(tree,bench.node.id,selector);check(nodes.length==1,"Missing control "+selector);var b=tree.getScrolledBounds(new ashui.layout.Node(nodes[0]));ashui.input.Pointer.move(tree,b.x+b.width/2,b.y+b.height/2);ashui.input.Pointer.press(tree);ashui.input.Pointer.release(tree);settle();}
 		try {
-			bench.openFile(file);until(() -> bench.extensionsPart.studioFor(file)!=null&&bench.extensionsPart.studioFor(file).hasView(),"Manifest-backed preview did not mount");
+			bench.openFile(file);settle();
+			check(bench.extensionsPart.studioFor(file)==null,"Opening source eagerly started its preview");
+			var editors=Css.query(tree,bench.node.id,".rayde-code-editor");
+			var before=tree.getBounds(new ashui.layout.Node(editors[0]));
+			until(() -> Lambda.exists(bench.codeActionsPart.codeActions.list(), item -> item.action.kind == "preview"),"Source has no Preview code action");
+			check(bench.extensionsPart.studioFor(file)==null,"Requesting code actions eagerly started its preview");
+			click('.rayde-code-action[title="Preview Extension"]');until(() -> bench.extensionsPart.studioFor(file)!=null&&bench.extensionsPart.studioFor(file).hasView(),"Preview code action did not mount the Sheet");
 			var studio=bench.extensionsPart.studioFor(file);
+			var after=tree.getBounds(new ashui.layout.Node(Css.query(tree,bench.node.id,".rayde-code-editor")[0]));
+			check(Math.abs(before.width-after.width)<.1 && Css.query(tree,bench.node.id,"#rayde-studio-columns").length==0,"Preview sheet resized the source editor");
 			check(studio.manifest!=null&&studio.manifest.file==config,"Studio did not use the declaring manifest");
 			check(Lambda.exists(studio.console.get(),e -> e.text=="configured"),"Manifest settings did not reach the script");
 			var preview=Css.query(tree,bench.node.id,"#context-preview");
 			check(preview.length==1&&Css.resolved(ashui.css.Identity.of(tree,preview[0]),"color")=="#abcdef","Late manifest styles did not attach to the preview");
 			bench.closeFile(file);settle();
 			check(bench.extensionsPart.studioFor(file)==null,"Closed source retained its development Studio");
-			bench.openFile(helper);until(() -> bench.extensionsPart.studioFor(helper)!=null&&bench.extensionsPart.studioFor(helper).hasView(),"Helper source did not preview its extension entry");
+			bench.openFile(helper);settle();
+			bench.codeActionsPart.showCodeActions();
+			until(() -> bench.centerRequest.get().picker.items.length == 1 && bench.centerRequest.get().picker.items[0].label == "Preview Extension","Code Actions chooser lost the module preview");
+			bench.centerRequest.get().picker.items[0].run();bench.quickOpen.set(false);settle();
+			until(() -> bench.extensionsPart.studioFor(helper)!=null&&bench.extensionsPart.studioFor(helper).hasView(),"Module code action did not preview its extension entry");
 			var helperStudio=bench.extensionsPart.studioFor(helper);
 			check(helperStudio.file==file&&helperStudio.manifest.file==config,"Helper preview ran the helper instead of its entry point");
 			check(Lambda.exists(helperStudio.console.get(),e -> e.text=="configured"),"Helper preview lost manifest settings");

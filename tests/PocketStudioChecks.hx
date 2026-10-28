@@ -17,8 +17,8 @@ class PocketStudioChecks {
         Sys.putEnv("ASHUI_SNAPSHOT_DIR",previous+"bin/web/pocket-demo-shots");
         Sys.setCwd(scratch);
         ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(),Dark);
-        var tree=new LayoutTree(), app:BoardApp=null, stop:Void->Void=null;
-        var view=Owner.root(tree,cleanup -> {stop=cleanup;app=new BoardApp();return app.render();});
+        var tree=new LayoutTree(), store:BoardStore=null, stop:Void->Void=null;
+        var view=Owner.root(tree,cleanup -> {stop=cleanup;store=new BoardStore();return new BoardApp({store:store});});
         function settle():Void for (_ in 0...4) {
             Offscreen.advance(1/60);Css.setViewport(1100,740);Css.update();tree.flush();tree.computeLayout(view.node,1100,740);
         }
@@ -33,20 +33,20 @@ class PocketStudioChecks {
             settle();
             check(Css.query(tree,view.node.id,".task-card").length==8,"Saved board did not render eight tasks");
             Snapshot.capture("pocket-board",tree,view.node,1100,740,ThemeState.get().color(Background).rgb());
-            click("#pocket-add");var id=app.store.selected.get();
-            check(app.store.tasks.get().length==9&&app.store.current().title=="New task","Add task control did not add/select a task");
-            app.store.query.set("new task");settle();
+            click("#pocket-add");var id=store.selected.get();
+            check(store.tasks.get().length==9&&store.current().title=="New task","Add task control did not add/select a task");
+            store.query.set("new task");settle();
             check(Css.query(tree,view.node.id,".task-card").length==1,"Task filter did not update the board");
-            click("#pocket-next-"+id);check(app.store.current().lane=="In progress","Card action did not move the task");
-            click("#pocket-advance");check(app.store.current().lane=="Done","Inspector action did not move the selected task");
-            app.store.query.set("");settle();
+            click("#pocket-next-"+id);check(store.current().lane=="In progress","Card action did not move the task");
+            click("#pocket-advance");check(store.current().lane=="Done","Inspector action did not move the selected task");
+            store.query.set("");settle();
             click("#pocket-title");ashui.input.Keyboard.text(tree," edited");settle();
-            check(app.store.current().title.indexOf("edited")>=0,"Task title field did not update the board");
+            check(store.current().title.indexOf("edited")>=0,"Task title field did not update the board");
             click("#pocket-description");ashui.input.Keyboard.text(tree," changed");settle();
-            check(app.store.current().description.indexOf("changed")>=0,"Task description field did not update the board");
+            check(store.current().description.indexOf("changed")>=0,"Task description field did not update the board");
             click("#pocket-save");
             var reopened=new BoardStore();check(reopened.tasks.get().length==9&&reopened.done()==3,"Save board did not preserve task transitions");
-            click("#pocket-delete");check(app.store.tasks.get().length==8,"Delete task control did not remove the selected task");
+            click("#pocket-delete");check(store.tasks.get().length==8,"Delete task control did not remove the selected task");
             Snapshot.capture("pocket-board-edited",tree,view.node,1100,740,ThemeState.get().color(Background).rgb());
         } catch(error:Dynamic) {stop();tree.dispose();Sys.setCwd(previous);throw error;}
         stop();tree.dispose();Sys.setCwd(previous);

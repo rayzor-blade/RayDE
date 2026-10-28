@@ -44,6 +44,8 @@ pub struct Config {
 pub struct Toolchain {
     pub snapshot: String,
     pub digest: String,
+    #[serde(default)]
+    pub app_previews:bool,
 }
 fn image() -> String {
     "alpine:3.23".into()

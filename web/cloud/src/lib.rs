@@ -170,6 +170,18 @@ fn public_workspace(value: &Value) -> Value {
     json!({"id":value["id"],"repository":value["repository"],"status":value["status"],"message":value["message"],"project":value["connection"]["project"]})
 }
 
+fn preview_origin(env:&Env)->Option<String> {
+    let configured=config(env,"PREVIEW_ORIGIN");
+    let local=config(env,"LOCAL_DEV").as_deref()==Some("1");
+    let app=Url::parse(&config(env,"APP_ORIGIN")?).ok()?;
+    let mut preview=if let Some(value)=configured {Url::parse(&value).ok()?}else if local {
+        let mut preview=app.clone();preview.set_host(Some(if app.host_str()==Some("localhost"){"127.0.0.1"}else{"localhost"})).ok()?;preview
+    }else{return None;};
+    if !matches!(preview.scheme(),"http"|"https") || preview.origin()==app.origin() || (!local && preview.scheme()!="https") || !preview.username().is_empty() || preview.password().is_some(){return None;}
+    preview.set_path("");preview.set_query(None);preview.set_fragment(None);
+    Some(preview.origin().ascii_serialization())
+}
+
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     finish(route(req, env).await)
@@ -178,6 +190,15 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
     let url = req.url()?;
     let origin = config(&env, "APP_ORIGIN").unwrap_or_else(|| url.origin().ascii_serialization());
     let path = url.path().to_string();
+    if preview_origin(&env).is_some_and(|origin|url.origin().ascii_serialization()==origin) {
+        if req.method()!=Method::Get {return Err(bad(404,"This app preview is unavailable."));}
+        let parts=path.strip_prefix("/previews/").map(|path|path.splitn(3,'/').collect::<Vec<_>>()).unwrap_or_default();
+        if parts.len()!=3 || !workspace_id(parts[0]) || !opaque(parts[1]) {return Err(bad(404,"This app preview is unavailable."));}
+        let namespace=env.durable_object("WORKSPACES")?;
+        let stub=namespace.id_from_name(parts[0])?.get_stub()?;
+        return Ok(stub.fetch_with_request(Request::new(&format!("https://workspace/preview/{}/{}",parts[1],parts[2]),Method::Get)?).await?);
+    }
+    if path.starts_with("/previews/"){return Err(bad(404,"This app preview is unavailable."));}
     if url.scheme() != "https" && config(&env, "LOCAL_DEV").as_deref() != Some("1") {
         return Err(bad(400, "HTTPS is required."));
     }

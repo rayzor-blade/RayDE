@@ -17,6 +17,7 @@ class SessionClient {
 	public var name(default, null) = "";
 	public var exec(default, null) = false;
 	public var syntax(default, null) = false;
+	public var appPreviews(default, null) = false;
 	public var terminal(default,null) = false;
 	public var terminalProfiles(default,null):Array<rayde.term.Profiles.Profile> = [];
 	public var remote(default, null) = true;
@@ -65,6 +66,7 @@ class SessionClient {
 			var hello = client.request("hello", {token:token});
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
 			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
+			client.appPreviews = hello.appPreviews == true;
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;

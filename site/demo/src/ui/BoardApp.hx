@@ -1,27 +1,27 @@
 package ui;
 
 import ashui.layout.Element;
+import ashui.ui.Component;
 import state.BoardStore;
 
 /** HXX composes typed components; each child observes the signals it reads. */
-class BoardApp {
-    final store = new BoardStore();
-    public function new() {}
+typedef BoardAppProps = {store:BoardStore};
 
-    public function render():Element {
+class BoardApp extends Component<BoardAppProps> {
+    function render():Element {
         BoardStyle.use();
         return <div class="pocket-app flex flex-col w-full h-full min-h-0 bg-background text-text-primary p-6 gap-5">
-            ${BoardHeader.view(store)}
-            ${BoardStats.view(store)}
-            <div class="flex flex-1 min-h-0 gap-4">
-                <div class="flex flex-1 min-w-0 gap-3">
-                    ${BoardColumn.view(store, "To do")}
-                    ${BoardColumn.view(store, "In progress")}
-                    ${BoardColumn.view(store, "Done")}
+            <board-header store={props.store}/>
+            <board-stats store={props.store}/>
+            <div class="flex flex-wrap flex-1 min-h-0 gap-4 overflow-y-auto">
+                <div class="board-lanes flex flex-1 gap-3">
+                    <board-column store={props.store} lane="To do"/>
+                    <board-column store={props.store} lane="In progress"/>
+                    <board-column store={props.store} lane="Done"/>
                 </div>
-                ${TaskInspector.view(store)}
+                <task-inspector store={props.store}/>
             </div>
-            <text class="text-xs text-text-secondary">${store.message.get()}</text>
+            <text class="text-xs text-text-secondary">${props.store.message.get()}</text>
         </div>;
     }
 }

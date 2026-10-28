@@ -39,7 +39,7 @@ function output(event){
  }
  framed.set(event.pid,data.length<2000000?data:Buffer.alloc(0));
 }
-const session=spawn(join(root,'native/session/target/debug/rayde-session'),['--root',fixture,'--state-root',join(privateRoot,'state'),'--web',web,'--port','0','--token','builtin-preview-fixture-32-characters','--preview-project','build.hxml','--exec','--extension-host',join(root,'bin/rayde-extension-host'),'--extensions',join(root,'extensions')],{stdio:['ignore','pipe','pipe'],env:{...process.env,PATH:join(root,'../rayzor/target/release')+':'+process.env.PATH,RAYZOR_STD_PATH:join(root,'../rayzor/compiler/haxe-std')}});
+const session=spawn(join(root,'native/session/target/debug/rayde-session'),['--root',fixture,'--state-root',join(privateRoot,'state'),'--web',web,'--port','0','--token','builtin-preview-fixture-32-characters','--preview-project','build.hxml','--exec','--preview-tools',join(root,'bin/preview-tools'),'--extension-host',join(root,'bin/rayde-extension-host'),'--extensions',join(root,'extensions')],{stdio:['ignore','pipe','pipe'],env:{...process.env,HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib'),PATH:join(root,'../ash/target/release')+':'+join(root,'../rayzor/target/release')+':'+process.env.PATH,RAYZOR_STD_PATH:join(root,'../rayzor/compiler/haxe-std')}});
 let browser,page;
 const report={ok:false};const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check,label,timeout=60000){const end=Date.now()+timeout;while(!check()){
@@ -56,7 +56,9 @@ try{
  });
  page.on('console',message=>{const line=message.text();logs.push(line);
   if(line.startsWith('builtin-request:'))requests.push(JSON.parse(line.slice(16)));
-  if(line.startsWith('builtin-event:')){const event=JSON.parse(line.slice(14));events.push(event);output(event);}
+  if(line.startsWith('builtin-event:')){const event=JSON.parse(line.slice(14));events.push(event);output(event);
+   if(event.ev==='proc.out'){const text=Buffer.from(event.data,'base64').toString();if(/: (tw:|hxx:)|Uncaught exception/.test(text))logs.push('PAGE ERROR '+text);}
+  }
  });
  page.on('pageerror',error=>logs.push('PAGE ERROR '+error.stack));
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
@@ -71,9 +73,13 @@ try{
  let doneCount=2;
  const tasks=JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8'));
  const hostMessages = () => messages.filter(message => message.t === 'error');
- for(const file of ['main.rays','panel.rays','summary.rays']) {
+ for(const file of process.env.RAYDE_TEST_APP==='1'?[]:['main.rays','panel.rays','summary.rays']) {
   const before=messages.length;
   await choose(file);
+  await until(()=>requests.some(r=>r.op==='view.open'&&r.path.endsWith(file)),file+' source');
+  assert.equal(messages.slice(before).some(m=>m.t==='log'&&m.message==='Pocket Tools ready'),false,'preview started before requested');
+  const box=await (await page.$('#editor')).boundingBox();
+  await page.mouse.click(box.x+box.width-157,box.y+64);
   await until(()=>messages.slice(before).some(m=>m.t==='log'&&m.message==='Pocket Tools ready'),file+' preview entry');
   await until(()=>messages.slice(before).some(m=>m.t==='log'&&m.message===`Pocket Tools: 8 tasks, ${doneCount} done`),file+' saved board');
   assert.ok(messages.slice(before).some(m=>m.t==='started'&&m.name.endsWith('/ext/main.rays')),file+' did not run its extension entry');
@@ -83,17 +89,43 @@ try{
   await writeFile(join(fixture,'data/tasks.json'),JSON.stringify(tasks));
   const clicked=messages.length, editor=await page.$('#editor');
   await editor.scrollIntoView();const bounds=await editor.boundingBox();
-  await page.mouse.click(bounds.x+bounds.width*.84,bounds.y+bounds.height*.667);
+  await page.mouse.click(bounds.x+bounds.width-248,bounds.y+428);
   await until(()=>messages.slice(clicked).some(m=>m.t==='log'&&m.message===`Pocket Tools: 8 tasks, ${doneCount} done`),file+' refresh button');
-  const reload=messages.length;await choose('>Reload Extension');
+  const reload=messages.length;await page.keyboard.press('Escape');await choose('>Reload Extension');
+  await page.mouse.click(box.x+box.width-157,box.y+64);
   await until(()=>messages.slice(reload).some(m=>m.t==='log'&&m.message===`Pocket Tools: 8 tasks, ${doneCount} done`),file+' reload');
   report[file]=true;
  }
  assert.deepEqual(hostMessages(),[]);
+ if(process.env.RAYDE_TEST_APP==='1'){
+  console.log('Building the app preview through the workspace session');
+  await page.keyboard.press('Escape');await choose('BoardApp.hx');await choose('>Preview App');
+  await until(()=>requests.some(r=>r.op==='proc.spawn'&&r.args?.includes('wasm32-wasip1-threads')),'app compiler',180000);
+  await frame.waitForSelector('iframe[data-rayde-app-preview]',{timeout:180000});
+  const appElement=await frame.$('iframe[data-rayde-app-preview]'),app=await appElement.contentFrame();
+  await until(()=>logs.filter(line=>line==='ashui: ready').length>=2,'app renderer',120000);
+  assert.equal(await app.evaluate(()=>crossOriginIsolated),true);
+  assert.equal(await app.evaluate(()=>{try{parent.localStorage;return false;}catch{return true;}}),true);
+  const before=JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length;
+  const box=await appElement.boundingBox();
+  await appElement.screenshot({path:join(shots,'app-preview-before.png')});
+  const toolbar=106;
+  await page.mouse.click(box.x+box.width-80,box.y+toolbar);await pause(300);
+  await page.mouse.click(box.x+box.width-200,box.y+toolbar);
+  const end=Date.now()+15000;
+  while(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length!==before+1&&Date.now()<end)await pause(100);
+  assert.equal(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length,before+1,'embedded app did not persist the added task');
+  await appElement.screenshot({path:join(shots,'app-preview.png')});
+  // Navigating away destroys the app renderer; its compiled artifacts remain reusable.
+  await frame.evaluate(()=>document.querySelector('#screen').focus());await choose('BoardApp.hx');
+  await frame.waitForFunction(()=>!document.querySelector('iframe[data-rayde-app-preview]'),{timeout:15000});
+  report.appPreview=true;
+ }
  report.ok=true;console.log(JSON.stringify(report));
 }finally{
  await writeFile(join(shots,'result.json'),JSON.stringify(report,null,2));await writeFile(join(shots,'console.log'),logs.join('\n'));
  await writeFile(join(shots,'messages.json'),JSON.stringify(messages));await writeFile(join(shots,'lsp.json'),JSON.stringify(lsp));
+ await writeFile(join(shots,'requests.json'),JSON.stringify(requests));
  await page?.screenshot({path:join(shots,'last.png'),fullPage:true}).catch(()=>{});await browser?.close();
  if(session.exitCode===null){const done=once(session,'exit');session.kill('SIGINT');await done;}
  await rm(fixture,{recursive:true,force:true});await rm(privateRoot,{recursive:true,force:true});

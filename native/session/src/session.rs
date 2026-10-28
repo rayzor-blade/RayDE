@@ -49,6 +49,8 @@ pub struct Workspace<S: FileStore> {
     pub programs: Option<Arc<dyn Programs>>,
     #[cfg(feature = "server")]
     sources:OnceLock<crate::read_roots::ReadRoots>,
+    #[cfg(feature = "server")]
+    previews:OnceLock<Arc<crate::previews::Previews>>,
     syntax:OnceLock<Arc<dyn crate::syntax::Syntax>>,
     terminals:OnceLock<Arc<dyn crate::terminal::Terminals>>,
     /// When set, a connection may look at the workspace but changes nothing until it has signed in.
@@ -66,11 +68,17 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), #[cfg(feature = "server")] previews:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
     }
 
     #[cfg(feature = "server")]
     pub(crate) fn set_sources(&self, sources:crate::read_roots::ReadRoots) { let _ = self.sources.set(sources); }
+    #[cfg(feature = "server")]
+    pub(crate) fn set_previews(&self,previews:Arc<crate::previews::Previews>){let _=self.previews.set(previews);}
+    fn previews_available(&self)->bool {
+        #[cfg(feature = "server")] if self.previews.get().is_some_and(|previews|previews.ready()){return true;}
+        false
+    }
     fn read_roots(&self) -> Value {
         #[cfg(feature = "server")]
         if let Some(sources) = self.sources.get() { return sources.describe(); }
@@ -203,7 +211,7 @@ impl<S: FileStore> Connection<S> {
         let workspace = self.workspace.clone();
         let store = &workspace.store;
         // Looking is open; changing, saving and running are for someone who has signed in.
-        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "doc.restore" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.");
+        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "doc.restore" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.") || op.starts_with("preview.");
         if changes && workspace.authority.is_some() && self.identity.is_none() {
             return Err(SessionError::new("auth-required", "Sign in with GitHub to make changes."));
         }
@@ -211,6 +219,11 @@ impl<S: FileStore> Connection<S> {
             #[cfg(feature = "server")]
             if let Some(sources) = workspace.sources.get() { return sources.request(op, request).await; }
             return Err(SessionError::new("outside", "The source mount is not available."));
+        }
+        if op.starts_with("preview.") {
+            #[cfg(feature = "server")]
+            if let Some(previews)=workspace.previews.get(){return previews.request(self.id,op,request).await;}
+            return Err(SessionError::new("no-exec","This session does not provide app previews."));
         }
         match op {
             "hello" => {
@@ -220,7 +233,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -364,6 +377,8 @@ impl<S: FileStore> Connection<S> {
     /// The connection is gone: its documents lose their subscriber, and the programs it started are stopped.
     pub fn close(&mut self) {
         self.syntax.close();
+        #[cfg(feature = "server")]
+        if let Some(previews)=self.workspace.previews.get(){previews.release(self.id);}
         if let Some(terminals)=self.workspace.terminals.get(){for id in self.terminals.drain(..){terminals.close(id);}}
         self.workspace.connections.lock().unwrap().remove(&self.id);
         for path in self.docs.drain(..) {
