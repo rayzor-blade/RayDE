@@ -21,6 +21,7 @@ class SessionClient {
 	public var terminalProfiles(default,null):Array<rayde.term.Profiles.Profile> = [];
 	public var remote(default, null) = true;
 	public var demo(default, null) = false;
+	public var embedded(default, null) = false;
 	public var repositories(default, null) = false;
 	public var documentBridge(default, null) = false;
 	public var storageKey(default, null):Null<String>;
@@ -66,6 +67,7 @@ class SessionClient {
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
+			client.embedded = hello.embedded == true;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
 			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
 			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;

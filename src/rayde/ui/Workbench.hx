@@ -441,11 +441,16 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Opens the Settings page in a tab, or brings it forward, on the section `category` when one is named; the build file is read as it is now. */
 	public function openSettings(?category:String):Void {
 		SettingsTiming.request();
+		collapseSidebar();
 		if (category != null)
 			settingsCategory.set(SettingsPage.category(category).id);
 		if (open.get().indexOf(SETTINGS) < 0)
 			buildLoad.load(props.display.hxml);
 		openFile(SETTINGS);
+	}
+
+	public function collapseSidebar():Void {
+		if (treeWidth.get() != ACTIVITY) treeWidth.set(ACTIVITY);
 	}
 
 	/** Opens the Settings page on the build form. */
@@ -961,6 +966,7 @@ class Workbench extends Component<WorkbenchProps> {
 		}, (_, _) -> false);
 		var previousActive = "";
 		new ashui.reactive.Watch(() -> active.get(), file -> {
+			if (file == SETTINGS) collapseSidebar();
 			if (previousActive != "" && previousActive != file) assist.stop(previousActive,editorOf(previousActive));
 			previousActive = file;
 			contributions.activeChanged(file);

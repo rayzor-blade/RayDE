@@ -1,0 +1,9 @@
+.pocket-app { --primary: #ed8c44; }
+.board-stats { background: var(--surface-elevated); }
+.board-column { background: var(--surface); border: 1px solid var(--border); }
+.task-card { background: var(--surface-elevated); border: 1px solid var(--border); }
+.task-card:hover { border-color: var(--primary); }
+.task-inspector { background: var(--surface-elevated); border: 1px solid var(--border); }
+
+.task-search { width: 200px; }
+.task-inspector { width: 224px; }

@@ -12,8 +12,8 @@
 // The page shows it as well when it is opened with `?log`. Opened with `?debug` (or `?watch`), the page also
 // says each second, in the console only, how its own animation frames are going: see `watchFrames`.
 
-const module = "./" + document.querySelector('meta[name="ashui-module"]').content;
-const name = module.slice(2);
+const module = new URL(document.querySelector('meta[name="ashui-module"]').content, import.meta.url).href;
+const name = new URL(module).pathname.split("/").pop();
 const query = new URLSearchParams(location.search);
 const screen = document.getElementById("screen");
 const out = document.getElementById("out");
@@ -159,7 +159,7 @@ const takeScreen = () => {
 const threadAgents = [];
 const startThreadAgents = (count) =>
   Promise.all(Array.from({ length: count }, () => new Promise((settle) => {
-    const agent = new Worker("./thread.js", { type: "module" });
+    const agent = new Worker(new URL("./thread.js", import.meta.url), { type: "module" });
     let started = false;
     agent.onmessage = ({ data }) => {
       if (data.kind === "agent") {
@@ -206,7 +206,7 @@ worker.onmessage = ({ data }) => {
     if (!display) {
       const canvas = takeScreen();
       if (!canvas) return; // an agent that draws already has it
-      display = new Worker("./display.js");
+      display = new Worker(new URL("./display.js", import.meta.url));
       display.postMessage({ canvas }, [canvas]);
     }
     display.postMessage(data);
@@ -219,6 +219,6 @@ worker.onerror = (e) => fail("The program could not start", e.message || "worker
 
 const agentPorts = await startThreadAgents(Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
 worker.postMessage(
-  { module, args: [name, ...query.getAll("arg")], environ: query.getAll("env"), display: true, agents: agentPorts },
+  { module, args: [name, ...query.getAll("arg")], environ: globalThis.ashuiEnvironment ?? query.getAll("env"), display: true, agents: agentPorts },
   agentPorts,
 );

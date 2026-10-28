@@ -331,7 +331,7 @@ function write_GamepadEffectParameters(w, o) {
 
 const GamepadHapticsResult = ["complete", "preempted"];
 
-const XwEventKind = ["resized", "focused", "occluded", "close-requested", "redraw-requested", "scale-factor-changed", "theme-changed", "cursor-entered", "cursor-left", "cursor-moved", "mouse-input", "mouse-wheel", "keyboard-input", "modifiers-changed", "ime-enabled", "ime-preedit", "ime-commit", "ime-disabled", "hovered-file", "dropped-file", "hovered-file-cancelled", "touch", "pinch-gesture", "touchpad-pressure", "mouse-motion", "suspended", "resumed", "fullscreen-changed", "screen", "paste-data", "paste", "gamepad-status", "gamepad-snapshot", "gamepad-disconnected", "gamepad-rumble"];
+const XwEventKind = ["resized", "focused", "occluded", "close-requested", "redraw-requested", "scale-factor-changed", "theme-changed", "cursor-entered", "cursor-left", "cursor-moved", "mouse-input", "mouse-wheel", "keyboard-input", "modifiers-changed", "ime-enabled", "ime-preedit", "ime-commit", "ime-disabled", "hovered-file", "dropped-file", "hovered-file-cancelled", "touch", "pinch-gesture", "touchpad-pressure", "mouse-motion", "suspended", "resumed", "fullscreen-changed", "screen", "paste-data", "paste", "gamepad-status", "gamepad-snapshot", "gamepad-disconnected", "gamepad-rumble", "wake"];
 
 function read_XwEvent(r) {
   const o = {};

@@ -25,6 +25,7 @@ cp "$abi" "$out/blinc_abi.wasm"
 cp "$channel_libs/ash_channel.wasm" "$channel_libs/channel-agent.mjs" "$out/"
 (cd "$here/web/session" && npm run build >/dev/null)
 cp "$here/web/session/dist/rayde_session.js" "$out/rayde_session.mjs"
+cp "$here/web/session/dist/rayde_connection.js" "$out/rayde_connection.mjs"
 mkdir -p "$out/notices/marked"
 cp "$here/web/session/node_modules/marked/LICENSE" "$out/notices/marked/LICENSE"
 cd "$here"

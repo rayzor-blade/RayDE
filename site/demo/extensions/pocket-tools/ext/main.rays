@@ -1,0 +1,23 @@
+import haxe.Json;
+import rayde.workspace.readFile;
+import summary.summarize;
+import panel.PocketPanel;
+
+var summary = signal({total: 8, ideas: 3, building: 3, shipped: 2});
+var message = signal('Ready to explore. Refresh to read data/tasks.json.');
+
+function refresh() {
+  try {
+    var source = await readFile('data/tasks.json');
+    summary.value = summarize(Json.parse(source));
+    message.value = 'Read the saved board from this workspace.';
+    trace('Pocket Tools: ' + summary.value.total + ' tasks, ' + summary.value.shipped + ' shipped');
+  } catch (failure) {
+    message.value = 'Connect the Pocket Studio workspace to read its saved board.';
+  }
+}
+
+registerCommand('pocket.summary', () -> refresh());
+onTool('refresh', () -> refresh());
+mount(() -> <PocketPanel summary={summary} message={message} refresh={refresh}/>, 'main');
+trace('Pocket Tools ready');

@@ -1,0 +1,10 @@
+// Pure data transformation: shared by the command and the panel.
+function summarize(tasks) {
+  var result = {total: tasks.length, ideas: 0, building: 0, shipped: 0};
+  for (task in tasks) {
+    if (task.lane == 'Ideas') result.ideas++;
+    if (task.lane == 'Building') result.building++;
+    if (task.lane == 'Shipped') result.shipped++;
+  }
+  return result;
+}

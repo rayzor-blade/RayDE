@@ -1,4 +1,6 @@
 import { pageEntry } from "./entry.js";
+import { readConnection } from "./connection.js";
+import { samplePreset, seedSample } from "./preset.js";
 import { Accounts } from "./accounts.js";
 import { SessionClient } from "./client.js";
 import { EditorDocuments } from "./editor.js";
@@ -8,11 +10,11 @@ import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
 
 const query = new URLSearchParams(location.search);
-const entry = pageEntry(location);
+const entry = pageEntry(location, readConnection());
 const endpoint = entry.endpoint;
 const demo = entry.demo;
 const accounts = new Accounts();
-const token = new URLSearchParams(location.hash.slice(1)).get("token");
+const token = entry.token;
 async function storage() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("rayde-page", 1);
@@ -24,13 +26,26 @@ async function storage() {
 
 export const start = ask => serve(ask, {
   async open({ deliver, closed }) {
-    let project = query.get("project");
+    let project = entry.project;
     if (entry.workspace) {
       const workspace = await accounts.request("account.workspace", { workspace: entry.workspace });
       if (workspace.status !== "ready") throw new Error(workspace.message ?? "The workspace is still starting.");
       project ??= workspace.project;
     }
     const database = await storage();
+    let preset = null;
+    const sample = document.querySelector('meta[name="rayde-demo"]')?.content;
+    if (demo && !endpoint && sample) {
+      const url = new URL(sample, import.meta.url);
+      if (url.origin !== location.origin) throw new Error("The sample must come from this site.");
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("The sample workspace could not be loaded.");
+      const text = await response.text();
+      if (text.length > 3*1024*1024) throw new Error("The sample workspace is too large.");
+      preset = samplePreset(JSON.parse(text));
+      await seedSample(database, preset);
+      project ??= preset.project;
+    }
     let storageFailure = null;
     let client = null;
     if (endpoint) {
@@ -61,7 +76,7 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: "work", exec: false }), generation:client?.generation ?? 0, remote: !!client, documentBridge:!!documents, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
           else if (request.op.startsWith("view.") && documents) {
             reply = {result:await documents.request(request.op, request)};
             if (request.id === undefined) return;

@@ -64,6 +64,7 @@ class JamFeature {
 
 	function panel():Element
 		return <jam-panel workspace={host.name} session={session} active={host.active} dirty={host.dirty} canShare={canShareJam}
+			unavailableMessage={#if wasm "Local Jam is available in desktop RayDE. Browser Jam rooms are not available yet." #else null #end}
 			onClose={host.hideSidebar} onStart={askStartJam} onJoin={askJoinJam} onResume={() -> askRestoreJam(true)} onRejoin={() -> askRestoreJam(false)}
 			onOpenFile={() -> { if (session.get() != null) host.open(session.get().file); }} onCopy={copyJamInvite} onLeave={leaveJam} onFollow={followJam}/>;
 
@@ -73,7 +74,7 @@ class JamFeature {
 	}
 
 	function canShareJam():Bool
-		return host.isDocument(host.active.get());
+		return #if wasm false #else host.isDocument(host.active.get()) #end;
 
 	public function showJam():Void
 		host.showSidebar("jam");
@@ -121,6 +122,9 @@ class JamFeature {
 
 	/** Starts or joins a room on `file`; the prompts of the commands call it, and so do tests. */
 	public function begin(file:String,hosting:Bool,name:String,invitation:String,restore:Bool=false):Void {
+		#if wasm
+		throw "Local Jam is available in desktop RayDE. Browser Jam rooms are not available yet.";
+		#else
 		if (session.get() != null || !host.hasBuffer(file)) throw "Open the document and leave any existing Jam first";
 		if (host.state(file).onTransaction != null) throw "This document is already shared by its workspace session.";
 		if ((!hosting || restore) && host.dirty.get().indexOf(file) >= 0) throw "Save or discard this document's changes before joining";
@@ -129,6 +133,7 @@ class JamFeature {
 		var editor=host.editorOf(file);
 		if (editor != null) current.moved(editor.editing.caret.get(),editor.editing.anchor.get());
 		pollJam(); scheduleJam(); showJam();
+		#end
 	}
 
 	function pollJam():Void {

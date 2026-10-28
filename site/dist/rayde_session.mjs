@@ -1,18 +1,78 @@
 // src/entry.js
-function pageEntry(location2) {
+function pageEntry(location2, connection = null) {
   const url = new URL(location2.href), query2 = url.searchParams;
   const landing = ["rayde.org", "www.rayde.org"].includes(url.hostname);
   const workspace = !landing && /^\/[\w-]{43}$/.test(url.pathname) ? url.pathname.slice(1) : null;
   const socket = workspace ? new URL(`/api/workspaces/${workspace}/socket`, url.origin) : null;
   if (socket) socket.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  const endpoint2 = socket?.href ?? query2.get("session") ?? null;
-  return { workspace, endpoint: endpoint2, demo: !endpoint2 && (query2.get("demo") === "1" || landing && query2.get("demo") !== "0") };
+  const explicit = query2.get("session");
+  const remembered = !workspace && !explicit && query2.get("demo") !== "1" ? connection : null;
+  const endpoint2 = socket?.href ?? explicit ?? remembered?.endpoint ?? null;
+  const token2 = workspace ? void 0 : explicit ? new URLSearchParams(url.hash.slice(1)).get("token") : remembered?.token;
+  const project = query2.get("project") ?? remembered?.project ?? null;
+  return { workspace, endpoint: endpoint2, token: token2, project, demo: !endpoint2 && (query2.get("demo") === "1" || landing && query2.get("demo") !== "0") };
+}
+
+// src/connection.js
+var KEY = "rayde.workspaceConnection.v1";
+function connectionSettings(value) {
+  if (!value || value.version !== 1) throw new Error("Invalid connection settings.");
+  let endpoint2 = null;
+  if (value.endpoint) {
+    const url = new URL(value.endpoint);
+    if (!["ws:", "wss:"].includes(url.protocol) || url.username || url.password || url.hash) throw new Error("Use a ws:// or wss:// session address.");
+    endpoint2 = url.href;
+  }
+  const token2 = value.token ?? "", project = value.project ?? "";
+  if (typeof token2 !== "string" || token2.length > 4096 || typeof project !== "string" || project.length > 4096) throw new Error("Invalid workspace settings.");
+  const environment = value.environment ?? [];
+  if (!Array.isArray(environment) || environment.length > 128 || environment.some((entry2) => typeof entry2 !== "string" || entry2.length > 8192 || !/^[A-Za-z_][A-Za-z0-9_]*=/.test(entry2) || /[\r\n\0]/.test(entry2))) throw new Error("Enter one NAME=value environment variable per line.");
+  return { version: 1, endpoint: endpoint2, token: token2, project, environment };
+}
+function readConnection(storage2) {
+  try {
+    return connectionSettings(JSON.parse((storage2 ?? globalThis.localStorage).getItem(KEY)));
+  } catch {
+    return null;
+  }
+}
+
+// src/preset.js
+function samplePreset(value) {
+  if (!value || value.version !== 1 || typeof value.name !== "string" || value.name.length > 128 || !Array.isArray(value.entries) || value.entries.length > 256) throw new Error("Invalid sample workspace.");
+  const safe = (path) => typeof path === "string" && path.startsWith("/work/") && path.split("/").slice(1).every((part) => part && part !== "." && part !== ".." && !part.includes("\\") && !part.includes("\0"));
+  if (!safe(value.root) || !safe("/work/" + value.project) || !("/work/" + value.project).startsWith(value.root + "/")) throw new Error("Invalid sample workspace path.");
+  let bytes = 0;
+  const paths = /* @__PURE__ */ new Set();
+  for (const entry2 of value.entries) {
+    if (entry2.path !== "/work" && entry2.path !== value.root && !(safe(entry2.path) && entry2.path.startsWith(value.root + "/")) || paths.has(entry2.path)) throw new Error("Invalid sample entry.");
+    paths.add(entry2.path);
+    if (typeof entry2.directory !== "boolean" || entry2.directory && entry2.data != null || !entry2.directory && (typeof entry2.data !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(entry2.data))) throw new Error("Invalid sample contents.");
+    bytes += entry2.data?.length ?? 0;
+  }
+  if (bytes > 2 * 1024 * 1024 || !value.entries.some((entry2) => entry2.path === value.root && entry2.directory) || !value.entries.some((entry2) => entry2.path === "/work/" + value.project && !entry2.directory)) throw new Error("Incomplete sample workspace.");
+  return value;
+}
+function seedSample(database, value) {
+  const preset = samplePreset(value);
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction("files", "readwrite"), store = transaction.objectStore("files");
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = transaction.onabort = () => reject(transaction.error ?? Error("Could not save the sample workspace."));
+    for (const entry2 of preset.entries) {
+      const request = store.get(entry2.path);
+      request.onsuccess = () => {
+        if (request.result === void 0) store.put(entry2);
+        else if (request.result.directory !== entry2.directory) transaction.abort();
+      };
+    }
+  });
 }
 
 // src/accounts.js
 var Accounts = class {
-  constructor({ fetch = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60) } = {}) {
-    this.fetch = fetch;
+  constructor({ fetch: fetch2 = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60) } = {}) {
+    this.fetch = fetch2;
     this.location = location2;
     this.later = later;
     this.csrf = null;
@@ -11255,11 +11315,11 @@ var Frames = class {
 // src/agent.js
 import { serve } from "./channel-agent.mjs";
 var query = new URLSearchParams(location.search);
-var entry = pageEntry(location);
+var entry = pageEntry(location, readConnection());
 var endpoint = entry.endpoint;
 var demo = entry.demo;
 var accounts = new Accounts();
-var token = new URLSearchParams(location.hash.slice(1)).get("token");
+var token = entry.token;
 async function storage() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("rayde-page", 1);
@@ -11270,13 +11330,26 @@ async function storage() {
 }
 var start = (ask) => serve(ask, {
   async open({ deliver, closed }) {
-    let project = query.get("project");
+    let project = entry.project;
     if (entry.workspace) {
       const workspace = await accounts.request("account.workspace", { workspace: entry.workspace });
       if (workspace.status !== "ready") throw new Error(workspace.message ?? "The workspace is still starting.");
       project ??= workspace.project;
     }
     const database = await storage();
+    let preset = null;
+    const sample = document.querySelector('meta[name="rayde-demo"]')?.content;
+    if (demo && !endpoint && sample) {
+      const url = new URL(sample, import.meta.url);
+      if (url.origin !== location.origin) throw new Error("The sample must come from this site.");
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("The sample workspace could not be loaded.");
+      const text2 = await response.text();
+      if (text2.length > 3 * 1024 * 1024) throw new Error("The sample workspace is too large.");
+      preset = samplePreset(JSON.parse(text2));
+      await seedSample(database, preset);
+      project ??= preset.project;
+    }
     let storageFailure = null;
     let client = null;
     if (endpoint) {
@@ -11307,7 +11380,7 @@ var start = (ask) => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: "work", exec: false }, generation: client?.generation ?? 0, remote: !!client, documentBridge: !!documents, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
+          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
           else if (request.op.startsWith("view.") && documents) {
             reply = { result: await documents.request(request.op, request) };
             if (request.id === void 0) return;

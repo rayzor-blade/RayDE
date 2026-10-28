@@ -1,0 +1,5 @@
+.pocket-panel { background: var(--surface); }
+.pocket-muted { color: var(--text-secondary); }
+.pocket-success { color: var(--success); }
+.pocket-refresh { color: var(--text-inverse); background: var(--primary); }
+.pocket-refresh:hover { opacity: 0.85; }

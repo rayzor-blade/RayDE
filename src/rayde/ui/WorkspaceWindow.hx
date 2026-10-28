@@ -80,8 +80,15 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		bench.openProject();
 		#if wasm
 		var demo = rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.demo;
-		var example = rayde.workspace.PageHost.SAMPLE + "/src/Main.hx";
-		if (!started && demo && bench.open.get().length == 0 && Fs.exists(example) && !Fs.isDirectory(example)) bench.openFile(example);
+		var embedded = rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.embedded;
+		var example = workspace.display.cwd + "/src/Main.hx";
+		var board = workspace.display.cwd + "/src/ui/BoardApp.hx";
+		var pocket = Fs.exists(board) && Fs.exists(workspace.display.cwd + "/extensions/pocket-tools/pocket-tools.rayext");
+		if (!started && (demo || embedded && pocket) && bench.open.get().length == 0 && Fs.exists(example) && !Fs.isDirectory(example)) {
+			bench.openFile(example);
+			if (pocket) { bench.openFile(board); bench.editorPart.splitEditor("horizontal"); }
+		}
+		if (!started && embedded) bench.collapseSidebar();
 		#end
 		#if wasm
 		if (!started && rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.repositories)

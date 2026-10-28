@@ -1,0 +1,12 @@
+function PocketPanel(props) {
+  return <div class="pocket-panel flex flex-col gap-4 p-4">
+    <h2 class="text-xl font-semibold">Pocket Studio</h2>
+    <p class="text-sm pocket-muted">A small extension, right beside your project.</p>
+    <div class="flex items-center justify-between"><span>On the board</span><span>{props.summary.value.total}</span></div>
+    <div class="flex items-center justify-between"><span>Ideas</span><span>{props.summary.value.ideas}</span></div>
+    <div class="flex items-center justify-between"><span>Building</span><span>{props.summary.value.building}</span></div>
+    <div class="flex items-center justify-between"><span>Shipped</span><span class="pocket-success">{props.summary.value.shipped}</span></div>
+    <button class="pocket-refresh px-3 py-2 rounded-md" onClick={() -> props.refresh()}>Refresh summary</button>
+    <p class="text-xs pocket-muted">{props.message}</p>
+  </div>;
+}

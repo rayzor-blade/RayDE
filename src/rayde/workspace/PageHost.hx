@@ -35,9 +35,10 @@ class PageHost {
 			var found = storage.exists(path), directory = found && storage.isDirectory(path);
 			bridge.notify("page.store", {entry:{path:path, remove:!found, directory:directory, data:!found || directory ? null : haxe.crypto.Base64.encode(storage.getBytes(path))}});
 		};
-		if (session != null && bridge.project != null && bridge.project != "") {
-			var path = haxe.io.Path.normalize(session.root + "/" + bridge.project);
-			if (rayde.files.FileOps.inside(session.root,path)) return path;
+		if (bridge.project != null && bridge.project != "") {
+			var root = session == null ? SAMPLE : session.root;
+			var path = haxe.io.Path.normalize(root + "/" + bridge.project);
+			if (rayde.files.FileOps.inside(root,path) && (session != null || storage.exists(path))) return path;
 		}
 		return entry;
 		#else

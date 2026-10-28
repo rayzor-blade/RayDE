@@ -1,0 +1,7 @@
+-cp src
+-L ashui:0.1.5
+-L ashui-components:0.1.5
+-L ashui-icons:0.1.5
+-D ashui_css=styles/app.css
+-main Main
+-hl bin/pocket-studio.hl

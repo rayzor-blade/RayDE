@@ -1,0 +1,13 @@
+{
+  "id":"pocket-tools",
+  "name":"Pocket Tools",
+  "version":"0.1.0",
+  "description":"A reactive workspace summary for the Pocket Studio demo.",
+  "main":"ext/main.rays",
+  "sources":["ext"],
+  "styles":["styles/panel.css"],
+  "capabilities":["workspace.read"],
+  "activationEvents":["onCommand:pocket.summary"],
+  "views":[{"id":"main","title":"Pocket Tools","icon":"layout-masonry","location":"sidebar","tools":[{"id":"refresh","title":"Refresh summary","icon":"refresh"}]}],
+  "contributes":{"commands":[{"id":"pocket.summary","title":"Pocket Studio: Refresh Summary","icon":"refresh"}]}
+}

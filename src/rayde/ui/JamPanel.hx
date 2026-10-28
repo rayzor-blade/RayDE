@@ -18,6 +18,7 @@ typedef JamPanelProps = {
 	active:Signal<String>,
 	dirty:Signal<Array<String>>,
 	canShare:Void->Bool,
+	?unavailableMessage:String,
 	onClose:Void->Void,
 	onStart:Void->Void,
 	onJoin:Void->Void,
@@ -49,6 +50,7 @@ class JamPanel extends Component<JamPanelProps> {
 			<div class="rayde-jam-welcome"><icon document={Icons.JAM_JOYSTICK} class="size-6"/></div>
 			<text class="rayde-jam-hero-title">Code together</text>
 			<text class="rayde-jam-muted">Share a document or join someone else's Jam.</text>
+			<if {props.unavailableMessage != null}><text class="rayde-jam-muted">${props.unavailableMessage}</text></if>
 			<div id="rayde-jam-selected" class="rayde-jam-file rayde-jam-card flex items-center gap-2 min-w-0">
 				<for {file in [props.active.get()]}>
 					<if {props.canShare()}><icon document={FileIcons.of(file)} class="size-4 shrink-0"/><text class="flex-1 min-w-0">${haxe.io.Path.withoutDirectory(file)}</text>

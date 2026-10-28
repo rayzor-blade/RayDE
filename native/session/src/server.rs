@@ -82,6 +82,8 @@ pub struct Options {
     pub authority: Option<Arc<dyn crate::auth::Authority>>,
     /// A directory of files for pages to load, served beside the session.
     pub web: Option<PathBuf>,
+    /// Opt-in loopback development bootstrap; never enable on a public listener.
+    pub preview_project: Option<String>,
     /// A second listener that speaks the session protocol as length-prefixed frames over TCP, with no HTTP or WebSocket.
     pub raw: Option<SocketAddr>,
     /// How long an edit waits for more before the file is written.
@@ -90,7 +92,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, authority: None, web: None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, authority: None, web: None, preview_project:None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -126,9 +128,18 @@ struct Shared {
     workspace: Arc<Workspace<DirStore>>,
     origins: Arc<Vec<String>>,
     web: Option<Arc<PathBuf>>,
+    preview: Option<(String,String)>,
 }
 
 pub async fn start(options: Options) -> std::io::Result<Running> {
+    if options.preview_project.is_some() && (!options.address.ip().is_loopback() || options.web.is_none() || options.token.is_none() || options.authority.is_some()) {
+        return Err(std::io::Error::other("Preview bootstrap requires a token-protected loopback web server without account authentication."));
+    }
+    if let Some(project) = &options.preview_project {
+        if !project.is_empty() && std::path::Path::new(project).components().any(|part| !matches!(part,std::path::Component::Normal(_))) {
+            return Err(std::io::Error::other("The preview project must be workspace-relative."));
+        }
+    }
     let store = Arc::new(match &options.state_root { Some(state) => DirStore::with_state_root(&options.root,state)?, None => DirStore::new(&options.root)? });
     let extension_host = options.extension_host.as_ref().map(std::fs::canonicalize).transpose()?;
     let extensions = options.extensions.as_ref().map(std::fs::canonicalize).transpose()?;
@@ -198,8 +209,9 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
         }))
     };
 
-    let shared = Shared { workspace: workspace.clone(), origins: Arc::new(options.origins), web: options.web.map(Arc::new) };
-    let app = Router::new().route("/session", get(upgrade)).fallback(get(page)).with_state(shared);
+    let preview = options.preview_project.map(|project| (project,options.token.clone().unwrap()));
+    let shared = Shared { workspace: workspace.clone(), origins: Arc::new(options.origins), web: options.web.map(Arc::new), preview };
+    let app = Router::new().route("/session", get(upgrade)).route("/.well-known/rayde-preview",get(preview_connection)).fallback(get(page)).with_state(shared);
     let listener = TcpListener::bind(options.address).await?;
     let address = listener.local_addr()?;
     let (stop, stopped) = oneshot::channel::<()>();
@@ -221,6 +233,18 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
         let _ = axum::serve(listener, app).with_graceful_shutdown(async { let _ = stopped.await; }).await;
     });
     Ok(Running { address, raw_address, token: options.token, workspace, stop: Some(stop), done, unwatch: Some(unwatch) })
+}
+
+async fn preview_connection(State(shared):State<Shared>, headers:HeaderMap) -> Response {
+    let Some((project,token)) = shared.preview else { return StatusCode::NO_CONTENT.into_response() };
+    let host = headers.get(header::HOST).and_then(|value|value.to_str().ok()).unwrap_or("");
+    let loopback = ["127.0.0.1:","localhost:","[::1]:"].iter().any(|prefix|host.strip_prefix(prefix).is_some_and(|port|port.parse::<u16>().is_ok()));
+    if !loopback || headers.get("Sec-Fetch-Site").and_then(|value|value.to_str().ok()) != Some("same-origin") {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let mut response = axum::Json(serde_json::json!({"version":1,"endpoint":format!("ws://{host}/session"),"project":project,"token":token,"environment":[]})).into_response();
+    response.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+    response
 }
 
 /// A page may reach the session only from the server's own origin or one it was told of: a token alone does not stop another site's page that holds it.
@@ -300,7 +324,7 @@ async fn connection_socket(workspace: Arc<Workspace<DirStore>>, mut connection: 
 async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
     let Some(web) = shared.web else { return StatusCode::NOT_FOUND.into_response() };
     let requested = uri.path().trim_start_matches('/');
-    let name = if requested.is_empty() { "index.html" } else { requested };
+    let name = if requested.is_empty() || requested.ends_with('/') { format!("{requested}index.html") } else { requested.into() };
     if name.split('/').any(|part| part == ".." || part.contains('\\')) {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -313,6 +337,14 @@ async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
                 Some("css") => "text/css",
                 Some("wasm") => "application/wasm",
                 Some("json" | "map") => "application/json",
+                Some("svg") => "image/svg+xml",
+                Some("png") => "image/png",
+                Some("webp") => "image/webp",
+                Some("jpg" | "jpeg") => "image/jpeg",
+                Some("ico") => "image/x-icon",
+                Some("woff2") => "font/woff2",
+                Some("woff") => "font/woff",
+                Some("ttf") => "font/ttf",
                 _ => "application/octet-stream",
             };
             Response::builder().header(header::CONTENT_TYPE, kind).header(header::CACHE_CONTROL, "no-store")

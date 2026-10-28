@@ -1,0 +1,10 @@
+[
+  {"id":1,"title":"Shape the board","description":"Start in ui/BoardApp.hx, then follow the child components. Try changing the layout or spacing.","lane":"Building","tag":"Ashui","owner":"You"},
+  {"id":2,"title":"A better empty state","description":"Give an empty column a little personality in BoardColumn.hx.","lane":"Ideas","tag":"Design","owner":"Teammate"},
+  {"id":3,"title":"Make it reactive","description":"Signals in BoardStore keep filters, counts and the inspector in sync.","lane":"Shipped","tag":"Haxe","owner":"You"},
+  {"id":4,"title":"Build Pocket Tools","description":"Open the companion extension's main.rays in RayDE to inspect and reload its view.","lane":"Building","tag":"RayScript","owner":"Teammate"},
+  {"id":5,"title":"Style the task cards","description":"Adjust the .task-card rules in styles/app.css and rebuild the app.","lane":"Ideas","tag":"CSS","owner":"You"},
+  {"id":6,"title":"Add a workspace command","description":"The extension registers a summary command and a command that opens this JSON file.","lane":"Shipped","tag":"RayScript","owner":"Teammate"},
+  {"id":7,"title":"Pair on an inspector","description":"Start a local Jam while editing TaskInspector.hx and make the detail view together.","lane":"Ideas","tag":"Jam","owner":"You"},
+  {"id":8,"title":"Follow a macro","description":"Ashui's typed HXX is built with macros. Explore declarations and generated code with Rayzor.","lane":"Building","tag":"Rayzor","owner":"Teammate"}
+]

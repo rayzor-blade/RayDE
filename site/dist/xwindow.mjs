@@ -3,7 +3,7 @@
 // thread, where the canvas's events fire, and calls
 // `start({ memory, address, canvas })` with the program's shared memory and
 // the address of its block: a mailbox, then 24 bytes on a queue, then 44
-// bytes on a redraw word.
+// bytes on a redraw word, then the runtime's completion-word address at 48.
 //
 // The agent serves the mailbox, whose commands the generated wire
 // (xwindow_wire.mjs) runs against the page's objects. It posts each event it
@@ -14,6 +14,8 @@ import { Wire, Queue, serve, post_XwEvent } from "./xwindow_wire.mjs";
 
 const QUEUE = 24;
 const REDRAW = 44;
+const RUNTIME_WAKE = 48;
+const APPLICATION_WAKE = 52;
 
 // The page's objects, under the handles the program names them by.
 const WINDOW = 1;
@@ -269,11 +271,15 @@ export function start({ memory, address, canvas }) {
       const bit = e.location === 1 ? side : side * 2;
       sides = pressed ? sides | bit : sides & ~bit;
     }
+    const printable = Array.from(e.key).length === 1;
+    const shortcut = (e.metaKey || e.ctrlKey) && !e.getModifierState?.("AltGraph");
     post({
       kind: "keyboard-input",
       on: pressed,
       code: e.code,
       key: e.key,
+      // Text ownership is captured before queued events cross a focus change.
+      text: pressed && !imeAllowed && !shortcut && printable ? e.key : "",
       location: e.location,
       repeat: e.repeat,
       synthetic: !e.isTrusted,
@@ -283,10 +289,11 @@ export function start({ memory, address, canvas }) {
       lastModifiers = (mods << 8) | sides;
       post({ kind: "modifiers-changed", modifiers: mods, sides });
     }
-    // Keys the program handles should not also scroll or navigate the page.
-    // While text input is allowed they keep their default action, which is
-    // how typed text reaches the input method.
-    if (!e.metaKey && !e.ctrlKey && !imeAllowed) e.preventDefault();
+    // Clipboard shortcuts need their DOM copy/cut events; paste is handled above.
+    // Only text entry and composition keep the input method's default action.
+    const clipboard = shortcut && !e.altKey && /^[cx]$/i.test(e.key);
+    const input = imeAllowed && (e.isComposing || !shortcut && (printable || e.key === "Dead" || e.key === "Process"));
+    if (pressed && !clipboard && !input) e.preventDefault();
   };
   const listenKeys = (target) => {
     target.addEventListener("keydown", key(true));
@@ -572,8 +579,17 @@ export function start({ memory, address, canvas }) {
 
   // A redraw the program asked for since the last frame is answered in this
   // one.
+  let wakeSeen = 0;
   const frame = () => {
     sampleGamepads();
+    const wakeAt = Atomics.load(new Int32Array(memory.buffer, address + RUNTIME_WAKE, 1), 0) >>> 0;
+    const now = wakeAt ? Atomics.load(new Int32Array(memory.buffer, wakeAt, 1), 0) : wakeSeen;
+    const application = new Int32Array(memory.buffer, address + APPLICATION_WAKE, 1);
+    const requested = Atomics.exchange(application, 0, 0) !== 0;
+    if (requested || now !== wakeSeen) {
+      if (post({ kind: "wake" })) wakeSeen = now;
+      else if (requested) Atomics.store(application, 0, 1);
+    }
     const words = new Int32Array(memory.buffer, address + REDRAW, 1);
     // Taken only once it is posted: one the ring had no room for is asked for again at the next frame.
     if (Atomics.exchange(words, 0, 0) !== 0 && !post({ kind: "redraw-requested" })) Atomics.store(words, 0, 1);

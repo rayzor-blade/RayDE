@@ -1,246 +1,198 @@
-
+<!doctype html>
+<html lang="en">
 
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="ashui-module" content="rayde.wasm">
-  <title>RayDE - Integrated Development Environment For The Haxe Programming Language</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Arimo:ital,wght@0,400..700;1,400..700&display=swap"
-    rel="stylesheet">
-  <style>
-    body {
-      margin: 0%;
-      font-family: "Arimo", sans-serif;
-      background-color: #181C22;
-      margin-bottom: 10px;
-    }
-
-    footer {
-      margin-top: 4rem;
-      height: 80px;
-    }
-
-    .rayde {
-      display: block;
-      width: 100%;
-      background: radial-gradient(circle at 12% 0%, rgba(234, 130, 32, 0.10), rgba(234, 130, 32, 0) 55%);
-    }
-
-    a {
-      color: #F97316;
-      text-decoration: none;
-    }
-
-    .header {
-      display: block;
-      padding: 16px;
-      margin: auto;
-      padding-top: 120px;
-      max-width: 1024px;
-    }
-
-    .header-wrapper {
-      display: flex;
-      flex-direction: row;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .header nav a {
-      font-size: 1rem;
-    }
-
-    section {
-      max-width: 1024px;
-      margin: auto;
-    }
-
-    .hero {
-      display: flex;
-      flex-direction: row;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .hero h1 {
-      color: #F2F4F7;
-      font-size: 3rem;
-    }
-
-    .hero p {
-      font-size: 20px;
-      color: #A9B0BD;
-    }
-
-
-    .hero-left {
-      margin-top: 4rem;
-      line-height: 1rem;
-    }
-
-    .hero-cta {
-      display: flex;
-      flex-direction: row;
-      gap: 2rem;
-      margin-top: 3rem;
-    }
-
-    button {
-      padding: 1rem;
-      padding-inline: 2rem;
-      font-size: 1rem;
-      border-radius: 40px;
-      background: none;
-    }
-
-    .hero-cta button {
-      border: 1px solid #ffffff50;
-    }
-
-    .hero button.download {
-      background-color: #F2F4F7;
-    }
-
-    .hero button.try {
-      color: #F2F4F7;
-    }
-
-    .demo {
-      background-color: #0F1216;
-      border-radius: 8px;
-      display: block;
-      height: 640px;
-      margin-top: 4rem;
-      margin-bottom: 4rem;
-      box-shadow: 0 2px 4px 0 #00000026, 0 12px 20px 0 #00000038;
-    }
-
-    #screen {
-      position: relative;
-      inset: 0;
-      display: block;
-      outline: none;
-      width: 100%;
-      height: 100%;
-    }
-
-    #status {
-      width: 100%;
-      height: 100%;
-      display: grid;
-      place-content: center;
-      justify-items: center;
-      gap: .6rem;
-      text-align: center;
-      font: 15px/1.5 system-ui, sans-serif;
-      color: #e8e9ee;
-      transition: opacity .25s;
-    }
-
-    #status[hidden] {
-      display: none;
-    }
-
-    #status.fading {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #status h1 {
-      margin: 0;
-      font-size: 1.1rem;
-      font-weight: 600;
-    }
-
-    #status p {
-      margin: 0;
-      max-width: 34rem;
-      color: var(--muted);
-    }
-
-    #status button {
-      margin-top: .4rem;
-      padding: .45rem 1rem;
-      font: inherit;
-      color: var(--page);
-      background: var(--accent);
-      border: 0;
-      border-radius: .5rem;
-      cursor: pointer;
-    }
-
-    .spinner {
-      width: 1.6rem;
-      height: 1.6rem;
-      border: 2px solid var(--muted);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
-
-    #status.failed .spinner {
-      display: none;
-    }
-
-    #out {
-      display: none;
-      margin: 0;
-    }
-
-    .spinner {
-      width: 1.6rem;
-      height: 1.6rem;
-      border: 2px solid #9a9cab;
-      border-top-color: #6d8cff;
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
-    }
-
-    #status.failed .spinner {
-      display: none;
-    }
-  </style>
-
-
+  <meta name="color-scheme" content="dark">
+  <meta name="description"
+    content="RayDE is an open-source Haxe IDE. Explore code, build projects, preview your work and code together, on desktop or in your browser.">
+  <title>RayDE — A powerful IDE for Haxe</title>
+  <link rel="icon" href="./assets/rayde-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./landing.css">
+  <script type="module" src="./landing.mjs"></script>
 </head>
 
 <body>
-  <div class="rayde">
-    <header class="header">
-      <div class="header-wrapper">
-        <img src="assets/rayde_dark_transparent_final.svg" width="200px" height="auto" />
-        <nav style="display:flex;gap:26px;font-size:14px">
-          <a href="/docs" style="color:#9AA0AA" class="dch7">Docs</a>
-          <a href="#features" style="color:#9AA0AA" class="dch7">Features</a>
-          <a href="#install" style="color:#9AA0AA" class="dch7">Install</a>
-        </nav>
-      </div>
-    </header>
-    <section class="hero">
-      <div class="hero-left">
-        <h1>A Powerful IDE for Haxe</h1>
-        <p>Built with Haxe, for a smoother Haxe experience.</p>
-
-        <div class="hero-cta">
-          <button class="download">Download</button>
-          <button class="try">Try it online</button>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="./" aria-label="RayDE home"><img src="./assets/rayde_dark_transparent_final.svg" width="173"
+        height="52" alt="RayDE"></a>
+    <nav aria-label="Main navigation">
+      <a href="#features">Features</a><a href="#jam">Jam</a>
+      <a href="./docs/">Docs</a>
+      <a class="nav-source" href="https://github.com/rayzor-blade/RayDE"><svg class="icon" aria-hidden="true"
+          viewBox="0 0 24 24">
+          <use href="./assets/remix.svg#github"></use>
+        </svg> GitHub</a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">YOUR HAXE DX JUST GOT A BOOST.</p>
+        <h1 id="hero-title">A powerful IDE<br>for <span>Haxe.</span></h1>
+        <p class="intro">Built with Haxe, for a smoother Haxe experience.<br class="desktop-break"> From the first line
+          to the next thing you ship.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#install">Get RayDE <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#download"></use>
+            </svg></a>
+          <a class="button secondary" href="#playground" data-try-editor>Try it online <svg class="icon"
+              aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a>
         </div>
+        <p class="hero-note">Open source. Made for your desktop and the web.</p>
       </div>
-      <img style="margin-right: -0.5%;" src="assets/rayde-icon.svg" width="150px" height="150px" />
+      <img class="hero-mark" src="./assets/rayde-icon.svg" width="184" height="184" alt="" aria-hidden="true">
     </section>
-    <section class="demo">
-      <div id="status" role="status" aria-live="polite">
-        <div class="spinner"></div>
-        <h1 id="status-title">Starting</h1>
-        <p id="status-detail"></p>
+    <section class="playground wrap" id="playground" aria-labelledby="playground-title">
+      <div class="section-heading demo-heading">
+        <div>
+          <p class="eyebrow">TAKE A LOOK AROUND</p>
+          <h2 id="playground-title">Your next project starts here.</h2>
+        </div>
+        <div class="demo-links"><a class="text-link editor-link" href="./dist/index.html?demo=1"
+            target="_blank" rel="noopener noreferrer">Open full editor <svg class="icon" aria-hidden="true"
+              viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a></div>
       </div>
-      <canvas id="screen" tabindex="0" data-xwindow="fit"></canvas>
-      <pre id="out"></pre>
+      <div class="editor-frame">
+        <img class="editor-poster" src="./assets/editor-preview.webp" width="1238" height="695"
+          alt="RayDE showing Main.hx and BoardApp.hx in side-by-side editors" fetchpriority="high">
+        <iframe id="editor" title="Interactive RayDE editor" allow="clipboard-read; clipboard-write; fullscreen"
+          referrerpolicy="no-referrer" hidden></iframe>
+      </div>
+      <div class="demo-caption"><span id="demo-state" role="status">Interactive demo on desktop</span><span
+          id="demo-detail">Your edits stay in this browser.</span></div>
+      <noscript>
+        <p class="demo-caption">Enable JavaScript to try the live editor, or <a href="./dist/index.html?demo=1">open it
+            in its own tab</a>.</p>
+      </noscript>
     </section>
-    <footer></footer>
-  </div>
+    <section class="features wrap" id="features" aria-labelledby="features-title">
+      <p class="eyebrow">LESS FRICTION. MORE FOCUS.</p>
+      <h2 id="features-title">Room for the way you work.</h2>
+      <div class="feature-grid">
+        <article><svg class="icon feature-icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#code"></use>
+          </svg>
+          <h3>Haxe, in focus.</h3>
+          <p>Follow definitions, explore your outline and dependencies, and get language-server feedback where you
+            write.</p><a class="text-link" href="https://github.com/rayzor-blade/RayDE/blob/main/docs/editor.md">Explore
+            the editor <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a>
+        </article>
+        <article><svg class="icon feature-icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#terminal"></use>
+          </svg>
+          <h3>Keep your tools close.</h3>
+          <p>Build and run projects, inspect Git changes, open a terminal and preview Markdown or images beside your
+            code.</p><a class="text-link" href="https://github.com/rayzor-blade/RayDE/blob/main/docs/README.md">See the
+            workflow <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a>
+        </article>
+        <article><svg class="icon feature-icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#palette"></use>
+          </svg>
+          <h3>Leave your mark.</h3>
+          <p>Arrange split editors, shape a theme, write RayScript extensions and make the workspace your own.</p><a
+            class="text-link" href="https://github.com/rayzor-blade/RayDE/blob/main/docs/extensions.md">Build an
+            extension <svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a>
+        </article>
+      </div>
+    </section>
+    <section class="language wrap" id="rayzor" aria-labelledby="rayzor-title">
+      <div class="language-title"><img src="./assets/rayzor.svg" width="42" height="42" alt="">
+        <p class="eyebrow">RAYZOR LANGUAGE SERVER</p>
+        <h2 id="rayzor-title">Haxe intelligence.<br>Powered by Rayzor.</h2>
+      </div>
+      <div class="language-copy">
+        <p>Macro-heavy Haxe deserves a deeper look. Rayzor follows nested macro expansion and exposes the expanded Haxe
+          source at macro invocations, helping you understand the code your macros produce.</p>
+        <p>As RayDE’s default Haxe language server, it also brings completions, hover documentation, signature help,
+          definitions and diagnostics to your editor. On desktop or in a browser, Rayzor runs where your workspace
+          lives.</p>
+        <div class="language-links"><a class="text-link"
+            href="https://github.com/rayzor-blade/RayDE/blob/main/docs/languages.md">Language assistance <svg
+              class="icon" aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a><a class="text-link" href="https://rayzor.tech">Meet Rayzor <svg class="icon"
+              aria-hidden="true" viewBox="0 0 24 24">
+              <use href="./assets/remix.svg#external"></use>
+            </svg></a></div>
+      </div>
+    </section>
+    <section class="jam wrap" id="jam" aria-labelledby="jam-title">
+      <div class="jam-intro"><svg class="icon" aria-hidden="true" viewBox="0 0 16 16">
+          <use href="./assets/jam-joystick.svg#jam-mark"></use>
+        </svg>
+        <p class="eyebrow">GET IN FLOW WITH YOUR AMIGO.</p>
+        <h2 id="jam-title">Start a Jam together.</h2>
+        <p>Invite a teammate into your flow. Write code together, see each other’s carets and selections, and follow
+          along when it’s their turn to drive.</p><a class="text-link"
+          href="https://github.com/rayzor-blade/RayDE/blob/main/docs/jam.md">Get started with Jam <svg class="icon"
+            aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#external"></use>
+          </svg></a>
+      </div>
+      <div class="jam-details">
+        <div><svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#cursor"></use>
+          </svg>
+          <div>
+            <h3>Code in the same moment.</h3>
+            <p>Live edits, shared selections and names beside each participant’s cursor. Your undo history stays yours.
+            </p>
+          </div>
+        </div>
+        <div><svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#follow"></use>
+          </svg>
+          <div>
+            <h3>Follow a teammate.</h3>
+            <p>See their selection and viewport while they explain. Start editing or navigating to take the lead again.
+            </p>
+          </div>
+        </div>
+        <div><svg class="icon" aria-hidden="true" viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#history"></use>
+          </svg>
+          <div>
+            <h3>Watch the work take shape.</h3>
+            <p>Keep a history diff beside your editor to see changes from the start of the Jam, with participant names
+              on their lines.</p>
+          </div>
+        </div>
+        <p class="jam-note">Available in the local Jam preview. See the guide for connecting another machine.</p>
+      </div>
+    </section>
+    <section class="install wrap" id="install" aria-labelledby="install-title">
+      <div>
+        <p class="eyebrow">KEEP GOING</p>
+        <h2 id="install-title">Make something with it.</h2>
+        <p>Get a desktop build or start from source.<br>For a quick look, the browser demo is right above.</p>
+      </div>
+      <div class="install-actions"><a class="button primary"
+          href="https://github.com/rayzor-blade/RayDE/releases">Desktop releases <svg class="icon" aria-hidden="true"
+            viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#external"></use>
+          </svg></a><a class="text-link" href="./docs/">Build from source <svg class="icon" aria-hidden="true"
+            viewBox="0 0 24 24">
+            <use href="./assets/remix.svg#right"></use>
+          </svg></a></div>
+    </section>
+  </main>
+  <footer class="site-footer wrap"><span>Built with Haxe, Ash and Ashui.</span>
+    <div><a href="https://github.com/rayzor-blade/RayDE/blob/main/LICENSE">License</a><a
+        href="https://github.com/rayzor-blade/RayDE">Source</a><a href="./docs/">Documentation</a></div>
+  </footer>
 </body>
-<script src="./dist/rayde-platform.js"></script>
-<script type="module" src="./dist/ashui-host.mjs"></script>
+
+</html>
