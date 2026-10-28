@@ -9,14 +9,15 @@ class BoardApp {
     public function new() {}
 
     public function render():Element {
-        return <div class="pocket-app flex flex-col flex-1 min-h-0 bg-background text-text-primary p-6 gap-5">
+        BoardStyle.use();
+        return <div class="pocket-app flex flex-col w-full h-full min-h-0 bg-background text-text-primary p-6 gap-5">
             ${BoardHeader.view(store)}
             ${BoardStats.view(store)}
             <div class="flex flex-1 min-h-0 gap-4">
                 <div class="flex flex-1 min-w-0 gap-3">
-                    ${BoardColumn.view(store, "Ideas")}
-                    ${BoardColumn.view(store, "Building")}
-                    ${BoardColumn.view(store, "Shipped")}
+                    ${BoardColumn.view(store, "To do")}
+                    ${BoardColumn.view(store, "In progress")}
+                    ${BoardColumn.view(store, "Done")}
                 </div>
                 ${TaskInspector.view(store)}
             </div>

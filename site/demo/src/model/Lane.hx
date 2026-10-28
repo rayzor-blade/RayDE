@@ -1,15 +1,15 @@
 package model;
 
 enum abstract Lane(String) to String {
-    var Ideas = "Ideas";
-    var Building = "Building";
-    var Shipped = "Shipped";
+    var ToDo = "To do";
+    var InProgress = "In progress";
+    var Done = "Done";
 
     public static function next(value:String):String {
         return switch value {
-            case Ideas: Building;
-            case Building: Shipped;
-            case _: Ideas;
+            case ToDo: InProgress;
+            case InProgress: Done;
+            case _: ToDo;
         };
     }
 }

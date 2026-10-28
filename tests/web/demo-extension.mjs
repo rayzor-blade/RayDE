@@ -7,7 +7,7 @@ import {resolve,join} from 'node:path';
 const root=resolve(import.meta.dirname,'../..'),extension=join(root,'site/demo/extensions/pocket-tools');
 const source=await readFile(join(extension,'ext/main.rays'),'utf8');
 const tasks=JSON.parse(await readFile(join(root,'site/demo/data/tasks.json'),'utf8'));
-tasks[0].lane='Shipped';
+tasks[0].lane='Done';
 const child=spawn(join(root,'bin/rayde-extension-host'),['--root',join(extension,'ext'),'--extension','pocket-tools'],{stdio:['pipe','pipe','pipe']});
 const messages=[],errors=[];
 child.stderr.on('data',bytes=>errors.push(String(bytes)));
@@ -33,8 +33,13 @@ try{
   await until(()=>messages.slice(before).some(message=>message.t==='log'&&message.message==='Pocket Tools ready'),'sample mounted');
   assert.ok(messages.slice(before).some(message=>message.t==='registered'&&message.id==='pocket.summary'));
   assert.ok(messages.slice(before).some(message=>message.t==='ops'&&message.ops.some(op=>op[0]==='createText'&&op[2]==='Pocket Studio')));
+  const clicks=messages.slice(before).flatMap(message=>message.t==='ops'?message.ops:[]).filter(op=>op[0]==='listen'&&op[2]==='click');
+  assert.equal(clicks.length,1,'the panel exposes its refresh button');
+  const clicked=messages.length;
+  send({t:'event',node:clicks[0][1],event:'click',payload:{}});
+  await until(()=>messages.slice(clicked).some(message=>message.t==='log'&&message.message==='Pocket Tools: 8 tasks, 3 done'),'preview button refresh');
   send({t:'command',id:'pocket.summary'});
-  await until(()=>messages.slice(before).some(message=>message.t==='log'&&message.message==='Pocket Tools: 8 tasks, 3 shipped'),'workspace command');
+  await until(()=>messages.slice(before).some(message=>message.t==='log'&&message.message==='Pocket Tools: 8 tasks, 3 done'),'workspace command');
   assert.ok(messages.slice(before).some(message=>message.t==='ops'&&message.ops.some(op=>op[0]==='setText')));
  }
  console.log('Pocket Tools: imported modules, mounted view, workspace command, reactive updates and reload passed.');

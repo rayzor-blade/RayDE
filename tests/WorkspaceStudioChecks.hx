@@ -23,6 +23,13 @@ class WorkspaceStudioChecks {
 		sys.io.File.saveContent(config,'{"id":"context","main":"ext/main.rays","sources":["ext"],"styles":["view.css"],"views":[{"id":"main","title":"Context preview","location":"editor"}],"contributes":{"configuration":{"properties":{"greeting":{"type":"string","default":"configured"}}}}}');
 		sys.io.File.saveContent(root+"/src/plugin/view.css",'#context-preview { color: #abcdef; }');
 		sys.io.File.saveContent(root+"/src/plugin/ext/unrelated.rayext",'{"id":"wrong","main":"another.rays","capabilities":["workspace.write"]}');
+		var helper=root+"/src/plugin/ext/helper.rays";
+		sys.io.File.saveContent(helper,'function helper() return "module";');
+		var module=Manifest.forSource(helper,root,() -> false);
+		check(module!=null&&module.file==config,"Source module lost its declaring manifest");
+		check(Manifest.forMain(helper,root,() -> false)==null,"Module lookup changed the entry-only contract");
+		check(Manifest.forSource(helper,root+"/src/plugin/ext",() -> false)==null,"Module search crossed its workspace boundary");
+		check(Manifest.forSource(helper,root,() -> true)==null,"Module search ignored cancellation");
 		var found=Manifest.forMain(file,root,() -> false);
 		check(found!=null&&found.file==config&&found.importRoot()==root+"/src/plugin/ext","Main script lost its ancestor manifest");
 		check(Manifest.forMain(file,root+"/src/plugin/ext",() -> false)==null,"Manifest search crossed its workspace boundary");
@@ -45,6 +52,12 @@ class WorkspaceStudioChecks {
 			check(preview.length==1&&Css.resolved(ashui.css.Identity.of(tree,preview[0]),"color")=="#abcdef","Late manifest styles did not attach to the preview");
 			bench.closeFile(file);settle();
 			check(bench.extensionsPart.studioFor(file)==null,"Closed source retained its development Studio");
+			bench.openFile(helper);until(() -> bench.extensionsPart.studioFor(helper)!=null&&bench.extensionsPart.studioFor(helper).hasView(),"Helper source did not preview its extension entry");
+			var helperStudio=bench.extensionsPart.studioFor(helper);
+			check(helperStudio.file==file&&helperStudio.manifest.file==config,"Helper preview ran the helper instead of its entry point");
+			check(Lambda.exists(helperStudio.console.get(),e -> e.text=="configured"),"Helper preview lost manifest settings");
+			bench.closeFile(helper);settle();
+			check(bench.extensionsPart.studioFor(helper)==null,"Closed helper retained its development Studio");
 			bench.explorerPart.openExplorerFile(one);settle();
 			check(bench.active.get()==one&&Css.query(tree,bench.node.id,"#rayde-theme-studio").length==1,"Explorer did not open a workspace theme form");
 			check(bench.themePart.themeStudio==null&&bench.explorerPart.headRow().path==root+"/build.hxml","Theme preview changed workspace identity");

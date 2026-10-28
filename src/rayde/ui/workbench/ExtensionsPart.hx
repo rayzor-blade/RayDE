@@ -132,7 +132,7 @@ class ExtensionsPart {
 	/** The extensions open in the Studio, by their main file, and the one of the file in front, if it is one. */
 	final studios = new Map<String, Studio>();
 	final manifestJobs = new rayde.run.Worker<{file:String, root:String}, Null<Manifest>>((request, cancelled) ->
-		Manifest.forMain(request.file, request.root, cancelled), () -> ashui.core.Work.notify());
+		Manifest.forSource(request.file, request.root, cancelled), () -> ashui.core.Work.notify());
 
 	final activeStudio = Signal.make((null : Null<Studio>));
 
@@ -179,7 +179,7 @@ class ExtensionsPart {
 		if (studio != null)
 			return studio;
 		var own = wb.extension != null && wb.extension.mainPath() == file ? wb.extension : null;
-		studio = new Studio(file, () -> wb.documentsPart.buffer(file).get(), wb.tree, own);
+		studio = new Studio(file, () -> wb.documentsPart.buffer(studio.file).get(), wb.tree, own);
 		studios.set(file, studio);
 		studio.services = services();
 		studio.debug.load(wb.debugPart.readBreakpoints());

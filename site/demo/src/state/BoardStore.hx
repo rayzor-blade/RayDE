@@ -36,11 +36,25 @@ class BoardStore {
     public function add():Void {
         var id = 1;
         for (task in tasks.get()) if (task.id >= id) id = task.id + 1;
-        tasks.set(tasks.get().concat([{id:id, title:"A new idea", description:"Make this idea your own.", lane:Lane.Ideas, tag:"Idea", owner:"You"}]));
-        selected.set(id); message.set("New idea added. Try changing its component or stylesheet.");
+        tasks.set(tasks.get().concat([{id:id, title:"New task", description:"Add a description for this task.", lane:Lane.ToDo, tag:"Idea", owner:"You"}]));
+        selected.set(id); message.set("Add task added. Try changing its component or stylesheet.");
     }
 
-    public function shipped():Int return tasks.get().filter(task -> task.lane == Lane.Shipped).length;
+    public function update(id:Int, ?title:String, ?description:String):Void {
+        tasks.set([for (task in tasks.get()) task.id != id ? task : {
+            id:task.id, title:title ?? task.title, description:description ?? task.description,
+            lane:task.lane, tag:task.tag, owner:task.owner
+        }]);
+        message.set("Task updated. Save the board to keep your changes.");
+    }
+
+    public function remove(id:Int):Void {
+        tasks.set(tasks.get().filter(task -> task.id != id));
+        selected.set(tasks.get().length == 0 ? 0 : tasks.get()[0].id);
+        message.set("Task deleted. Save the board to keep your changes.");
+    }
+
+    public function done():Int return tasks.get().filter(task -> task.lane == Lane.Done).length;
 
     public function save():Void {
         sys.io.File.saveContent("data/tasks.json", TaskData.export(tasks.get()));

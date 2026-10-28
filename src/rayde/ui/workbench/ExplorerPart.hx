@@ -605,7 +605,7 @@ class ExplorerPart {
 
 	function refreshFileIndex():Void {
 		if (wb.props.empty == true) return;
-		fileIndex.refresh([for (cp in classpaths()) cp.dir]);
+		fileIndex.refresh([wb.props.display.cwd]);
 		if (fileIndexScheduled || wb.gone) return;
 		fileIndexScheduled = true;
 		ashui.animation.AnimationScheduler.main.after(.016, pollFileIndex);

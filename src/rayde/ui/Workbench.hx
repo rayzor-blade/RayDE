@@ -575,7 +575,9 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** Adds the tabs of an extension to the editor, and takes those it has unmounted away. */
 	function syncTabs(studio:Studio, list:Array<TabView>):Void {
-		var mine = TAB + studio.file + "#", ids = [for (t in list) mine + t.root];
+		var owner = studio.file;
+		for (file => candidate in extensionsPart.studios) if (candidate == studio) { owner = file; break; }
+		var mine = TAB + owner + "#", ids = [for (t in list) mine + t.root];
 		var before = open.get();
 		var kept = [for (f in before) if (!StringTools.startsWith(f, mine) || ids.indexOf(f) >= 0) f];
 		var added = [for (i in ids) if (before.indexOf(i) < 0) i];

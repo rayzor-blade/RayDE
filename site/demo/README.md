@@ -1,6 +1,6 @@
 # Pocket Studio
 
-A project board built with Haxe and Ashui, plus a RayScript workspace extension. Explore the source, change a component, restyle a task card or add an extension command.
+A Kanban board with To do, In progress and Done columns, built with Haxe and Ashui, plus a RayScript workspace extension. Explore the source, change a component, restyle a task card or add an extension command.
 
 ## Run the app
 
@@ -18,6 +18,7 @@ All library dependencies come from Haxelib. `src` is this project's own source f
 ## Explore
 
 - `src/Main.hx` opens the app. `ui/BoardApp.hx` composes the board.
+- Add tasks, edit their title and description, move them between columns, filter the board and save your changes.
 - `state/BoardStore.hx` owns reactive state, filtering and task transitions.
 - `ui/` contains reusable header, stats, column, card and inspector views.
 - `data/tasks.json` is the saved board. **Save board** writes a new snapshot.
@@ -25,7 +26,7 @@ All library dependencies come from Haxelib. `src` is this project's own source f
 
 ## Develop the extension
 
-Open `extensions/pocket-tools/ext/main.rays` in RayDE. Its parent manifest supplies imports, workspace-read permission, commands, views and a stylesheet. The Preview displays the reactive Pocket Tools panel. Click **Refresh summary**, or run **Pocket Studio: Refresh Summary**. Use **Reload Extension** after changing a script or stylesheet.
+Open any `.rays` file under `extensions/pocket-tools/ext` in RayDE. Each source tab previews the extension through `main.rays`. Its parent manifest supplies imports, workspace-read permission, commands, views and a stylesheet. The Preview displays the reactive Pocket Tools panel. Click **Refresh summary**, or run **Pocket Studio: Refresh Summary**. Use **Reload Extension** after changing a script or stylesheet.
 
 `summary.rays` transforms saved task data. `panel.rays` renders the UI. Try adding a count, changing a label or registering another command.
 

@@ -25,7 +25,7 @@ class FileIndex {
 	}
 
 	static function scan(directories:Array<String>, cancelled:Void->Bool):Array<String> {
-		var paths:Array<String> = [], seen = new Map<String, Bool>();
+		var paths:Array<String> = [], seen = new Map<String, Bool>(), ignore:Null<GitIgnore> = null;
 		function walk(dir:String):Void {
 			if (cancelled()) return;
 			var real:String, names:Array<String>;
@@ -38,13 +38,14 @@ class FileIndex {
 			names.sort((a, b) -> a < b ? -1 : a > b ? 1 : 0);
 			for (name in names) {
 				if (cancelled()) return;
-				if (StringTools.startsWith(name, ".")) continue;
+				if (name == ".git" || name == ".haxelib" || name == ".rayde" || name == ".rayzor" || name == ".deps") continue;
 				var path = haxe.io.Path.join([dir, name]), directory:Bool;
 				try directory = Fs.isDirectory(path) catch (_:Dynamic) { continue; }
+				if (ignore != null && ignore.ignored(path)) continue;
 				if (directory) walk(path); else paths.push(path);
 			}
 		}
-		for (dir in directories) walk(dir);
+		for (dir in directories) { ignore = new GitIgnore(dir); walk(dir); }
 		return paths;
 	}
 }

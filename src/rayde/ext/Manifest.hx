@@ -419,22 +419,38 @@ class Manifest {
 	public static function isManifest(path:String):Bool
 		return StringTools.endsWith(path, EXTENSION);
 
+	/** Source modules preview through their declaring extension's entry point. */
+	public function ownsSource(file:String):Bool {
+		if (mainPath() == file) return true;
+		return StringTools.endsWith(file,".rays") && Lambda.exists(sources, source -> {
+			var directory = absolute(source);
+			return rayde.files.FileOps.inside(root,directory) && rayde.files.FileOps.inside(directory,file);
+		});
+	}
+
+	public static function forSource(file:String, root:String, cancelled:Void->Bool):Null<Manifest>
+		return declaring(file,root,cancelled,true);
+
 	/** Finds a declaring manifest without crossing the workspace boundary or borrowing a sibling's grants. */
-	public static function forMain(file:String, root:String, cancelled:Void->Bool):Null<Manifest> {
+	public static function forMain(file:String, root:String, cancelled:Void->Bool):Null<Manifest>
+		return declaring(file,root,cancelled,false);
+
+	static function declaring(file:String, root:String, cancelled:Void->Bool, modules:Bool):Null<Manifest> {
 		file = Fs.fullPath(file); root = Fs.fullPath(root);
-		var directory = haxe.io.Path.directory(file);
+		var directory = haxe.io.Path.directory(file), owner:Null<Manifest> = null;
 		while (rayde.files.FileOps.inside(root, directory) && !cancelled()) {
 			var names = Fs.readDirectory(directory); names.sort((a, b) -> a == b ? 0 : a < b ? -1 : 1);
 			for (name in names) if (isManifest(name) && !cancelled()) {
 				var manifest = read(haxe.io.Path.join([directory, name]));
 				if (manifest.mainPath() == file) return manifest;
+				if (modules && owner == null && manifest.ownsSource(file) && Fs.exists(manifest.mainPath())) owner = manifest;
 			}
 			if (directory == root) break;
 			var parent = haxe.io.Path.directory(directory);
 			if (parent == directory) break;
 			directory = parent;
 		}
-		return null;
+		return cancelled() ? null : owner;
 	}
 
 	function text(json:Dynamic, field:String, fallback:String):String {
