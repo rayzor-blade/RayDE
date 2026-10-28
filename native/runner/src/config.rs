@@ -22,6 +22,11 @@ pub struct Config {
     pub public_url: Option<String>,
     #[serde(default = "image")]
     pub image: String,
+    /// A verified disk-only MSB template containing the complete guest toolchain.
+    #[serde(default)]
+    pub toolchain: Option<Toolchain>,
+    #[serde(default = "persistent")]
+    pub persistent_disks: bool,
     #[serde(default = "memory")]
     pub memory_mib: u32,
     #[serde(default = "cpus")]
@@ -34,9 +39,16 @@ pub struct Config {
     #[serde(default)]
     pub local_repositories: Vec<LocalRepository>,
 }
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Toolchain {
+    pub snapshot: String,
+    pub digest: String,
+}
 fn image() -> String {
     "alpine:3.23".into()
 }
+fn persistent() -> bool { true }
 fn memory() -> u32 {
     512
 }
@@ -74,6 +86,16 @@ impl Config {
             || self.image.chars().any(char::is_whitespace)
             || self.local_repositories.len() > 32
         {
+            return Err(invalid());
+        }
+        if self.toolchain.as_ref().is_some_and(|toolchain| {
+            toolchain.snapshot.is_empty()
+                || toolchain.snapshot.len() > 256
+                || toolchain.snapshot.starts_with(['-', '.'])
+                || !toolchain.snapshot.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+                || toolchain.digest.len() != 64
+                || !toolchain.digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
             return Err(invalid());
         }
         if self

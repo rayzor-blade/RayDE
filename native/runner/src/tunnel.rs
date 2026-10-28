@@ -57,6 +57,7 @@ pub(crate) async fn probe(config: &Config, sandbox: &str) -> Result<serde_json::
         if response["ok"] != true || response["root"] != "/workspace/project" {
             return Err(unavailable());
         }
+        if config.persistent_disks && response["privateJournals"] != 1 {return Err(unavailable());}
         identity(&response)
     };
     tokio::time::timeout(Duration::from_secs(5), work)

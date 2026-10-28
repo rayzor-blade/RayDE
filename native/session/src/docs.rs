@@ -279,6 +279,16 @@ impl<S: FileStore> DocHub<S> {
         crate::checkpoint::pack_delta(&txn.encode_state_as_update_v1(&from), &txn.state_vector().encode_v1())
     }
 
+    /// Keep acknowledged edits recoverable on the compute volume before the delayed file flush.
+    pub async fn persist_journal(&self, path: &str) -> Result<()> {
+        let open = self.get(path).ok_or_else(|| SessionError::new("not-open", "The document is not open."))?;
+        let _saving = open.saving.lock().await;
+        let state = state_of(&open.doc);
+        let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
+        let state = crate::buffer_state::pack(&state, &baseline, None)?;
+        self.store.write_state(&format!("doc:{path}"), &state).await
+    }
+
     pub fn detach(&self, path: &str, client: &str) {
         if let Some(open) = self.get(path) {
             open.subscribers.lock().unwrap().remove(client);
@@ -338,7 +348,11 @@ impl<S: FileStore> DocHub<S> {
         }
         let changed = *open.last_disk.lock().unwrap() != text;
         if changed {
-            if open.buffered {self.persist(path,&open,&state,Some(&crate::checkpoint::digest(text.as_bytes()))).await?;}
+            if open.buffered || state.len() <= crate::checkpoint::MAX_BYTES {
+                let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
+                let intent = crate::buffer_state::pack(&state, &baseline, Some(&crate::checkpoint::digest(text.as_bytes())))?;
+                self.store.write_state(&format!("doc:{path}"), &intent).await?;
+            }
             self.store.write(path, text.as_bytes()).await?;
             *open.last_disk.lock().unwrap() = text;
         }

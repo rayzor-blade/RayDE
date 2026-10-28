@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret" } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", provision } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -63,6 +63,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
           const response=await fetch(runnerUrl.replace(/\/$/,"")+"/workspaces/open",{method:"POST",headers:{Authorization:"Bearer "+runnerSecret,"Content-Type":"application/json"},body:JSON.stringify(data)});
           return json(await response.json(),response.status);
         }
+        if (provision) return provision(data,calls.runner.length);
         if (failProvisionOnce && calls.runner.length === 1) return json({}, 503);
         return json({ url: endpoint, token: "compute-secret", project: "build.hxml" });
       },

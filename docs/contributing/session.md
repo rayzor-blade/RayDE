@@ -136,6 +136,12 @@ Stdio language servers use host executable paths, environment and workspace dire
 
 Network loss pauses extension and LSP supervision. Reconnecting to the same recovery context restarts active hosts and replays unsaved text. Explicit LSP Stop stays stopped. Remote inspection never probes the browser machine's localhost compiler ports. Build, Run and terminals also execute on the session host.
 
+## Installed source mounts
+
+A native operator may repeat `--read-root DIR` for up to 32 installed library/source directories outside the editable checkout. The installed extensions root is included automatically. `hello.readRoots` advertises `{id,path}` mounts; `fs.stat`, `fs.list` and `fs.read` accept their `mount` ID plus a relative `path`. Traversal and symlink escape are refused. Mounts accept neither mutations nor document subscriptions. Files remain read-only in browser tabs, and installed extension manifests come from the actual host installation.
+
+Prepared Linux guest setup and local VM recovery are in [the runner reference](../../native/runner/README.md). With `privateJournals = 1`, a native journal reply also follows atomic private graph persistence. Directory entries and identities are flushed before acknowledgement; the hosted gateway's separate durable storage barrier remains required.
+
 ## Terminals
 
 When `hello.terminal` is true, `term.open` starts a connection-owned PTY. It accepts a client key, workspace-relative `cwd`, optional `program`/`args`, `cols` and `rows`. Host profiles arrive in `hello.terminalProfiles`.

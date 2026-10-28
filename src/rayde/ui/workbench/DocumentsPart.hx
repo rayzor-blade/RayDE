@@ -110,7 +110,9 @@ class DocumentsPart {
 
 	function setupSession():Void {
 		var client = rayde.workspace.PageHost.session;
-		if (client == null || !client.documentBridge) return;
+		if (client == null) return;
+		wb.contributions.readOnlyWhen(client.readOnly);
+		if (!client.documentBridge) return;
 		sessionDocs = new rayde.workspace.session.EditorDocuments(client, (file, local) -> {
 			if (wb.gone) return;
 			if (local) edited(file);

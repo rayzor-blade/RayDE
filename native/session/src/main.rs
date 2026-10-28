@@ -36,7 +36,7 @@ fn main() {
     if args.iter().any(|a| a == "--help") {
         println!("rayde-session bridge --port N: relay stdin/stdout to a private framed loopback session; EOF closes the connection.");
         println!("rayde-session [--root DIR] [--port N] [--host ADDR] [--token T] [--origin URL]... [--web DIR] [--exec]\n              [--raw-port N] [--extension-host BIN --extensions DIR] [--auth-secret S --login-url URL]\nrayde-session issue --auth-secret S --login NAME --id N [--ttl SECONDS]\n\nServes DIR (default: the current directory) to RayDE over a WebSocket at /session.\nPrograms run only with --exec. --extension-host enables a supervised RayScript host per extension; --extensions locates the built-in installation. Without --token a random one is made and printed.\nWith --auth-secret, changes need a credential the sign-in edge signed with that secret; `issue` mints one for development.");
-        println!("Environment defaults load from ~/.rayde-session/environment.json; --env-file PATH selects another JSON string map.\nState is stored under ~/.rayde-session, separated by workspace. --state-root DIR selects another private state directory.");
+        println!("Environment defaults load from ~/.rayde-session/environment.json; --env-file PATH selects another JSON string map.\n--read-root DIR exposes an installed source directory read-only; may be repeated.\nState is stored under ~/.rayde-session, separated by workspace. --state-root DIR selects another private state directory.");
         println!("--token-file PATH reads a persistent token from a private file instead of putting it in process arguments.\n--preview-project FILE enables same-origin bootstrap for a trusted loopback preview with --web and an explicit token; never use it for a public deployment.");
         return;
     }
@@ -68,6 +68,7 @@ fn main() {
     options.exec = args.iter().any(|a| a == "--exec");
     options.extension_host = option("--extension-host").map(PathBuf::from);
     options.extensions = option("--extensions").map(PathBuf::from);
+    options.read_roots = args.iter().enumerate().filter(|(_,a)| *a == "--read-root").filter_map(|(i,_)| args.get(i+1).map(PathBuf::from)).collect();
     options.web = option("--web").map(PathBuf::from);
     options.preview_project = option("--preview-project");
     options.raw = option("--raw-port").and_then(|p| p.parse::<u16>().ok()).map(|p| SocketAddr::new(address.ip(), p));

@@ -29,6 +29,27 @@ fn io_error(error: io::Error) -> SessionError {
     }
 }
 
+async fn sync_directory(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    tokio::fs::File::open(path).await.map_err(io_error)?.sync_all().await.map_err(io_error)?;
+    Ok(())
+}
+
+async fn create_directories(path: &Path) -> Result<()> {
+    let mut missing = Vec::new();
+    let mut probe = path;
+    while !tokio::fs::try_exists(probe).await.map_err(io_error)? {
+        missing.push(probe.to_path_buf());
+        probe = probe.parent().ok_or_else(||SessionError::new("failed","The directory has no parent."))?;
+    }
+    tokio::fs::create_dir_all(path).await.map_err(io_error)?;
+    for directory in missing {
+        sync_directory(&directory).await?;
+        if let Some(parent) = directory.parent() {sync_directory(parent).await?;}
+    }
+    Ok(())
+}
+
 fn entry(name: String, meta: &std::fs::Metadata) -> Entry {
     let mtime = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
     Entry { name, kind: if meta.is_file() { "file" } else if meta.is_dir() { "dir" } else { "other" }, size: meta.len(), mtime }
@@ -90,15 +111,25 @@ impl DirStore {
 
     async fn replace(&self, target: &Path, data: &[u8]) -> Result<()> {
         if let Some(parent) = target.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(io_error)?;
+            create_directories(parent).await?;
         }
         // A temporary file renamed over the target, so a reader never sees half a file.
         let temporary = self.temporary(target);
-        tokio::fs::write(&temporary, data).await.map_err(io_error)?;
+        let written = async {
+            use tokio::io::AsyncWriteExt;
+            let mut file = tokio::fs::File::create(&temporary).await?;
+            file.write_all(data).await?;
+            file.sync_all().await
+        }.await;
+        if let Err(error) = written {
+            let _ = tokio::fs::remove_file(&temporary).await;
+            return Err(io_error(error));
+        }
         if let Err(error) = tokio::fs::rename(&temporary, target).await {
             let _ = tokio::fs::remove_file(&temporary).await;
             return Err(io_error(error));
         }
+        sync_directory(target.parent().ok_or_else(|| SessionError::new("failed", "The file has no parent."))?).await?;
         Ok(())
     }
 }
@@ -211,7 +242,7 @@ impl FileStore for DirStore {
     }
 
     async fn mkdir(&self, path: &str) -> Result<()> {
-        tokio::fs::create_dir_all(self.inside(path).await?).await.map_err(io_error)
+        create_directories(&self.inside(path).await?).await
     }
 
     async fn remove(&self, path: &str, recursive: bool) -> Result<()> {
@@ -225,15 +256,18 @@ impl FileStore for DirStore {
         } else {
             tokio::fs::remove_file(&absolute).await
         }
-        .map_err(io_error)
+        .map_err(io_error)?;
+        sync_directory(absolute.parent().ok_or_else(||SessionError::new("outside","The workspace itself cannot be removed."))?).await
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<()> {
         let (from, to) = (self.inside(from).await?, self.inside(to).await?);
         if let Some(parent) = to.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(io_error)?;
+            create_directories(parent).await?;
         }
-        tokio::fs::rename(from, to).await.map_err(io_error)
+        tokio::fs::rename(&from, &to).await.map_err(io_error)?;
+        for parent in [from.parent(),to.parent()].into_iter().flatten() {sync_directory(parent).await?;}
+        Ok(())
     }
 
     fn watch(&self, change: Change) -> Box<dyn FnOnce() + Send> {

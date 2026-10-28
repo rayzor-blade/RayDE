@@ -32,6 +32,7 @@ class SessionExtensionHost {
 			if (session.extensionsRoot == null) throw "This workspace session has no built-in extension installation.";
 			return session.extensionsRoot + "/" + path.substr(prefix.length);
 		}
+		if (session.extensionsRoot != null && session.readOnly(path) && rayde.files.FileOps.inside(session.extensionsRoot,path)) return path;
 		if (path == session.root || StringTools.startsWith(path, session.root + "/")) return path;
 		throw "The extension is not installed in this workspace session.";
 	}

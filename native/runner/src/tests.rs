@@ -138,6 +138,9 @@ async fn registry_is_exclusive_private_and_does_not_reset_corrupt_state() {
         identity: Some(
             serde_json::json!({"version":1,"authority":"a","workspace":"w","principal":"token"}),
         ),
+        toolchain: None,
+        storage: None,
+        recovery_attempts: Vec::new(),
     };
     registry.save(&record).await.unwrap();
     let cell = registry::Cell::new(record.clone());
@@ -182,4 +185,21 @@ async fn process_output_and_lifetime_are_bounded() {
     let began = std::time::Instant::now();
     assert!(command::capture(process, 1).await.is_err());
     assert!(began.elapsed() < std::time::Duration::from_secs(3));
+}
+
+#[test]
+fn toolchain_selectors_and_persistent_disk_bindings_are_operator_scoped() {
+    let value = serde_json::json!({"listen":"127.0.0.1:9791","stateRoot":"/state","msb":"/bin/msb","sessionBinary":"/bin/session","secretFile":"/private/secret","toolchain":{"snapshot":"rayde-toolchains:linux-x86_64","digest":"a".repeat(64)}});
+    let config:Config = serde_json::from_value(value.clone()).unwrap();
+    assert!(config.validate().is_ok());
+    for selector in ["--help","../other","/private/image","group:one two",""] {
+        let mut invalid = value.clone(); invalid["toolchain"]["snapshot"] = serde_json::json!(selector);
+        assert!(serde_json::from_value::<Config>(invalid).unwrap().validate().is_err());
+    }
+    let instance = "b".repeat(64);
+    let id = workspace_id(1,111);
+    let storage = volumes::Storage::new(&instance,&id);
+    assert!(storage.valid(&instance,&id));
+    assert!(!storage.valid(&"c".repeat(64),&id));
+    assert!(!storage.valid(&instance,&workspace_id(2,111)));
 }

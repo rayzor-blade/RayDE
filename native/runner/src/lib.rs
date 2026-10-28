@@ -6,7 +6,9 @@ mod service;
 #[cfg(test)]
 mod tests;
 mod tunnel;
-pub use config::{Config, LocalRepository};
+mod toolchain;
+mod volumes;
+pub use config::{Config, LocalRepository, Toolchain};
 pub use service::{Running, start};
 
 use axum::{

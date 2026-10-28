@@ -78,6 +78,8 @@ pub struct Options {
     /// The trusted installed extension host; its processes still require the session's execution permission.
     pub extension_host: Option<PathBuf>,
     pub extensions: Option<PathBuf>,
+    /// Read-only source directories outside the workspace.
+    pub read_roots: Vec<PathBuf>,
     /// Who may edit; without it every connection may.
     pub authority: Option<Arc<dyn crate::auth::Authority>>,
     /// A directory of files for pages to load, served beside the session.
@@ -92,7 +94,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, authority: None, web: None, preview_project:None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -146,6 +148,9 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     if extension_host.is_some() && !options.exec {
         return Err(std::io::Error::other("The extension host requires --exec."));
     }
+    let mut read_roots = options.read_roots.clone();
+    if let Some(root) = &extensions { if !root.starts_with(store.root()) { read_roots.push(root.clone()); } }
+    let sources = crate::read_roots::ReadRoots::new(read_roots, store.root())?;
     let programs: Option<Arc<dyn Programs>> = options.exec.then(|| {
         let mut programs = ChildPrograms::new(store.root().to_path_buf(), 16).with_environment(options.environment.clone());
         if let Some(host) = extension_host { programs = programs.with_extensions(host, extensions); }
@@ -180,6 +185,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
+    workspace.set_sources(sources);
     workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));
     if options.exec {workspace.set_terminals(Arc::new(crate::terminal::NativeTerminals::new(store.root().to_path_buf(),options.environment)));}
     let _ = link.set(Arc::downgrade(&workspace));

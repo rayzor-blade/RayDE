@@ -106,6 +106,8 @@ class PageHost {
 		var routed = new RoutedWorkspace(storage);
 		if (session != null) {
 			routed.mount(session.root, new SessionWorkspace(session));
+			for (source in session.readRoots) routed.mount(source.path,new SessionWorkspace(session,source));
+			if (session.extensionsRoot != null && session.readOnly(session.extensionsRoot)) Sys.putEnv("RAYDE_EXTENSIONS",session.extensionsRoot);
 			Fs.current = routed;
 			Procs.current = session.exec ? new SessionLauncher(session) : new NoLauncher();
 			return session.root;

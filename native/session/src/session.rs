@@ -47,6 +47,8 @@ pub struct Workspace<S: FileStore> {
     pub store: Arc<S>,
     pub docs: DocHub<S>,
     pub programs: Option<Arc<dyn Programs>>,
+    #[cfg(feature = "server")]
+    sources:OnceLock<crate::read_roots::ReadRoots>,
     syntax:OnceLock<Arc<dyn crate::syntax::Syntax>>,
     terminals:OnceLock<Arc<dyn crate::terminal::Terminals>>,
     /// When set, a connection may look at the workspace but changes nothing until it has signed in.
@@ -64,7 +66,15 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+    }
+
+    #[cfg(feature = "server")]
+    pub(crate) fn set_sources(&self, sources:crate::read_roots::ReadRoots) { let _ = self.sources.set(sources); }
+    fn read_roots(&self) -> Value {
+        #[cfg(feature = "server")]
+        if let Some(sources) = self.sources.get() { return sources.describe(); }
+        json!([])
     }
 
     pub fn set_syntax(&self,syntax:Arc<dyn crate::syntax::Syntax>)->bool {self.syntax.set(syntax).is_ok()}
@@ -197,6 +207,11 @@ impl<S: FileStore> Connection<S> {
         if changes && workspace.authority.is_some() && self.identity.is_none() {
             return Err(SessionError::new("auth-required", "Sign in with GitHub to make changes."));
         }
+        if self.ready && request.get("mount").is_some() {
+            #[cfg(feature = "server")]
+            if let Some(sources) = workspace.sources.get() { return sources.request(op, request).await; }
+            return Err(SessionError::new("outside", "The source mount is not available."));
+        }
         match op {
             "hello" => {
                 if !self.ready {
@@ -205,7 +220,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -269,6 +284,7 @@ impl<S: FileStore> Connection<S> {
                 let update = bytes(request, "update")?;
                 if request["journal"] == true {
                     let delta = workspace.docs.receive_journal(&path, &self.name, &update, text(request, "vector")?)?;
+                    workspace.docs.persist_journal(&path).await?;
                     Ok(json!({"journal":delta}))
                 } else {
                     workspace.docs.receive(&path, &self.name, &update).map(|_| json!({}))

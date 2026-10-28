@@ -24,6 +24,7 @@ rayde-session = { path = "../session", default-features = false }
 [dev-dependencies]
 tempfile = "3"
 tokio-tungstenite = "=0.28.0"
+yrs = { version = "=0.28.0", features = ["sync"] }
 
 [profile.release]
 opt-level = "s"

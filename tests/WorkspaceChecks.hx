@@ -176,8 +176,10 @@ class WorkspaceChecks {
 		if (!sys.FileSystem.exists(binary)) { Sys.println("Workspace: skipped the session provider, native/session is not built"); return; }
 		var root = sys.FileSystem.fullPath(Sys.getCwd() + "bin") + "/session-checks-" + Std.random(0x3fffffff), port = 20000 + Std.random(20000);
 		sys.FileSystem.createDirectory(root);
-		var raw = port + 1;
-		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--raw-port", Std.string(raw), "--token", "t", "--exec"]);
+		var raw = port + 1, library = root + "-library";
+		sys.FileSystem.createDirectory(library);
+		sys.io.File.saveContent(library + "/Library.hx","class Library {}");
+		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--raw-port", Std.string(raw), "--token", "t", "--exec", "--read-root", library]);
 		try {
 			var client:SessionClient = null;
 			for (_ in 0...100) {
@@ -187,6 +189,10 @@ class WorkspaceChecks {
 			var real = sys.FileSystem.fullPath(root);
 			check(client.root == real, 'the session reports its root: ${client.root} vs $real');
 			conform(new SessionWorkspace(client), client.root, "session workspace");
+			check(client.readRoots.length == 1 && client.readOnly(library + "/Library.hx") && !client.readOnly(root + "/Main.hx"),"source mounts are advertised separately from the editable workspace");
+			var sources = new SessionWorkspace(client,client.readRoots[0]);
+			check(sources.getContent(library + "/Library.hx") == "class Library {}","installed source text comes from its read-only mount");
+			check(fails(() -> sources.saveContent(library + "/Library.hx","overwrite")),"the source provider refuses writes");
 			#if rayde_page
 			var beforeFiles = Fs.current, beforePrograms = Procs.current;
 			try {

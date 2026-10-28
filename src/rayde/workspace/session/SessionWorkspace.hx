@@ -10,10 +10,12 @@ import haxe.io.Bytes;
 class SessionWorkspace implements Workspace {
 	final client:SessionClient;
 	final mount:String;
+	final source:Null<String>;
 
-	public function new(client:SessionClient) {
+	public function new(client:SessionClient, ?readRoot:{id:String,path:String}) {
 		this.client = client;
-		mount = normalize(client.root);
+		mount = normalize(readRoot == null ? client.root : readRoot.path);
+		source = readRoot == null ? null : readRoot.id;
 	}
 
 	/** `/`-separated, absolute, without `.` or `..` segments or a trailing slash. */
@@ -32,7 +34,15 @@ class SessionWorkspace implements Workspace {
 		throw "Not in the session's workspace: " + path;
 	}
 
-	function entry(path:String):Null<Dynamic> return client.request("fs.stat", {path: inside(path)}).entry;
+	function request(op:String, params:Dynamic):Dynamic {
+		if (source != null) {
+			if (op != "fs.stat" && op != "fs.list" && op != "fs.read") throw "Installed sources are read-only.";
+			Reflect.setField(params,"mount",source);
+		}
+		return client.request(op,params);
+	}
+
+	function entry(path:String):Null<Dynamic> return request("fs.stat", {path: inside(path)}).entry;
 
 	public function exists(path:String):Bool return entry(path) != null;
 
@@ -42,7 +52,7 @@ class SessionWorkspace implements Workspace {
 	}
 
 	public function readDirectory(path:String):Array<String> {
-		var names:Array<String> = [for (item in (client.request("fs.list", {path: inside(path)}).entries : Array<Dynamic>)) item.name];
+		var names:Array<String> = [for (item in (request("fs.list", {path: inside(path)}).entries : Array<Dynamic>)) item.name];
 		return names;
 	}
 
@@ -64,30 +74,30 @@ class SessionWorkspace implements Workspace {
 		return getBytes(path).toString();
 	}
 
-	public function getBytes(path:String):Bytes return Base64.decode(client.request("fs.read", {path: inside(path), encoding: "base64"}).data);
+	public function getBytes(path:String):Bytes return Base64.decode(request("fs.read", {path: inside(path), encoding: "base64"}).data);
 
-	public function readFrom(path:String, offset:Int):Bytes return Base64.decode(client.request("fs.read", {path: inside(path), encoding: "base64", offset: offset}).data);
+	public function readFrom(path:String, offset:Int):Bytes return Base64.decode(request("fs.read", {path: inside(path), encoding: "base64", offset: offset}).data);
 
-	public function saveContent(path:String, content:String):Void client.request("fs.write", {path: inside(path), data: content});
+	public function saveContent(path:String, content:String):Void request("fs.write", {path: inside(path), data: content});
 
-	public function saveBytes(path:String, bytes:Bytes):Void client.request("fs.write", {path: inside(path), data: Base64.encode(bytes), encoding: "base64"});
+	public function saveBytes(path:String, bytes:Bytes):Void request("fs.write", {path: inside(path), data: Base64.encode(bytes), encoding: "base64"});
 
-	public function createDirectory(path:String):Void client.request("fs.mkdir", {path: inside(path)});
+	public function createDirectory(path:String):Void request("fs.mkdir", {path: inside(path)});
 
 	public function deleteFile(path:String):Void {
 		if (isDirectory(path)) throw "Is a directory: " + path;
-		client.request("fs.remove", {path: inside(path)});
+		request("fs.remove", {path: inside(path)});
 	}
 
 	public function deleteDirectory(path:String):Void {
 		if (!isDirectory(path)) throw "Not a directory: " + path;
-		client.request("fs.remove", {path: inside(path)});
+		request("fs.remove", {path: inside(path)});
 	}
 
 	public function rename(path:String, to:String):Void {
 		// The session creates a missing destination directory; the contract does not.
 		if (!isDirectory(haxe.io.Path.directory(normalize(to)))) throw "No such directory: " + to;
-		client.request("fs.rename", {from: inside(path), to: inside(to)});
+		request("fs.rename", {from: inside(path), to: inside(to)});
 	}
 
 	public function copy(source:String, destination:String):Void saveBytes(destination, getBytes(source));

@@ -383,7 +383,7 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                     &json!({"owner":session["user"]["id"]}),
                 )
                 .await?;
-                rpc(
+                let granted = rpc(
                     &env,
                     "ACCOUNTS",
                     &sid,
@@ -393,7 +393,7 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                 .await?;
                 let headers = Headers::new();
                 headers.set("Upgrade", "websocket")?;
-                headers.set("X-RayDE-Identity",&json!({"owner":session["user"]["id"],"sid":sid,"expires":session["expires"],"origin":origin}).to_string())?;
+                headers.set("X-RayDE-Identity",&json!({"owner":session["user"]["id"],"sid":sid,"expires":session["expires"],"origin":origin,"access":granted["access"]}).to_string())?;
                 let request = Request::new_with_init(
                     "https://internal/socket",
                     RequestInit::new().with_headers(headers),

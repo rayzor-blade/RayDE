@@ -302,6 +302,7 @@ async fn delete(
     service.registry.save(&record).await?;
     cell.closed.send_modify(|generation| *generation += 1);
     service.cleanup(&record).await?;
+    if let Some(storage) = &record.storage {storage.remove(&service.config).await?;}
     record.phase = "deleted".into();
     record.token = random();
     service.registry.save(&record).await?;
@@ -313,8 +314,10 @@ async fn delete(
 async fn socket(
     State(service): State<Arc<Service>>,
     RoutePath(id): RoutePath<String>,
+    headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response> {
+    authenticate(&service, &headers)?;
     if !valid_id(&id) {
         return Err(invalid());
     }
@@ -340,15 +343,22 @@ async fn socket(
     if record.phase != "ready" {
         return Err(Failure(StatusCode::CONFLICT, "The workspace is not ready."));
     }
+    if tunnel::probe(&service.config, &record.sandbox).await.ok().as_ref() != record.identity.as_ref() {
+        return Err(Failure(StatusCode::SERVICE_UNAVAILABLE, "Workspace compute needs to reconnect."));
+    }
     let config = service.config.clone();
-    Ok(upgrade
+    let relay_record = record.clone();
+    let mut response = upgrade
         .max_message_size(rayde_session::session::MAX_MESSAGE)
         .max_frame_size(rayde_session::session::MAX_MESSAGE)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            tunnel::relay(socket, config, cell, record).await;
+            tunnel::relay(socket, config, cell, relay_record).await;
         })
-        .into_response())
+        .into_response();
+    response.headers_mut().insert("X-RayDE-Token", record.token.parse().map_err(|_| unavailable())?);
+    response.headers_mut().insert("X-RayDE-Generation", record.generation.to_string().parse().map_err(|_| unavailable())?);
+    Ok(response)
 }
 impl Service {
     async fn inventory(&self, id: Option<&str>) -> Result<Vec<serde_json::Value>> {
@@ -413,29 +423,16 @@ impl Service {
         Ok(())
     }
     async fn launch_session(&self, record: &Record) -> Result<serde_json::Value> {
+        let mut args = vec![
+            "exec", &record.sandbox, "--detach", "--no-stdin", "--",
+            "/opt/rayde-session", "--root", "/workspace/project", "--state-root", "/state",
+            "--host", "127.0.0.1", "--port", "7070", "--raw-port", "7071",
+            "--token", tunnel::GUEST_TOKEN, "--exec",
+        ];
+        args.extend(toolchain::session_args(&self.config));
         command::call(
             &self.config,
-            [
-                "exec",
-                &record.sandbox,
-                "--detach",
-                "--no-stdin",
-                "--",
-                "/opt/rayde-session",
-                "--root",
-                "/workspace/project",
-                "--state-root",
-                "/state",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                "7070",
-                "--raw-port",
-                "7071",
-                "--token",
-                tunnel::GUEST_TOKEN,
-                "--exec",
-            ],
+            args,
             10,
         )
         .await?;
@@ -476,6 +473,9 @@ impl Service {
                     generation: 1,
                     project: None,
                     identity: None,
+                    toolchain: toolchain::identity(&self.config),
+                    recovery_attempts: Vec::new(),
+                    storage: self.config.persistent_disks.then(|| volumes::Storage::new(&self.registry.instance, &request.id)),
                 };
                 self.registry.save(&record).await?;
                 let cell = Arc::new(Cell::new(record));
@@ -489,6 +489,9 @@ impl Service {
                 StatusCode::FORBIDDEN,
                 "Workspace ownership or repository binding changed.",
             ));
+        }
+        if record.phase != "deleted" && record.toolchain != toolchain::identity(&self.config) {
+            return Err(Failure(StatusCode::CONFLICT, "This workspace needs a toolchain migration before reopening."));
         }
         if record.phase == "ready" {
             let identity = match tunnel::probe(&self.config, &record.sandbox).await {
@@ -505,16 +508,15 @@ impl Service {
                 }
             };
             if identity.is_none() || identity != record.identity {
+                if identity.is_none() && record.storage.is_some() {return self.recover(&cell, &mut record).await;}
                 record.phase = "recovery-required".into();
                 self.registry.save(&record).await?;
-                return Err(Failure(
-                    StatusCode::CONFLICT,
-                    "The workspace needs recovery; its checkout will not be replaced.",
-                ));
+                return Err(Failure(StatusCode::CONFLICT, "The workspace needs recovery; its checkout will not be replaced."));
             }
             self.registry.save(&record).await?;
             return Ok(self.connection(&record));
         }
+        if record.phase == "recovering" || record.phase == "recovery-required" && record.storage.is_some() && record.identity.is_some() {return self.recover(&cell, &mut record).await;}
         if record.phase == "recovery-required" {
             return Err(Failure(
                 StatusCode::CONFLICT,
@@ -544,6 +546,9 @@ impl Service {
             cell.active.store(true, Ordering::Release);
         }
         if record.phase == "deleted" {
+            record.recovery_attempts.clear();
+            record.toolchain = toolchain::identity(&self.config);
+            record.storage = self.config.persistent_disks.then(|| volumes::Storage::new(&self.registry.instance, &record.id));
             record.generation = record.generation.checked_add(1).ok_or_else(unavailable)?;
             record.token = random();
             record.sandbox = format!(
@@ -561,7 +566,10 @@ impl Service {
         let checkout = self.config.state_root.join("checkout").join(&record.id);
         let _ = tokio::fs::remove_dir_all(checkout).await;
         if let Err(error) = result {
-            if self.cleanup(&record).await.is_ok() {
+            let cleaned = if self.cleanup(&record).await.is_ok() {
+                if let Some(storage) = &record.storage {storage.remove(&self.config).await.is_ok()} else {true}
+            } else {false};
+            if cleaned {
                 record.phase = "failed".into();
                 cell.deactivate();
             } else {
@@ -575,7 +583,7 @@ impl Service {
         Ok(self.connection(&record))
     }
     fn connection(&self, record: &Record) -> serde_json::Value {
-        serde_json::json!({"url":format!("{}/workspaces/{}/session",self.base,record.id),"token":record.token,"project":record.project,"generation":record.generation})
+        serde_json::json!({"url":format!("{}/workspaces/{}/session",self.base,record.id),"token":record.token,"project":record.project,"generation":record.generation,"toolchain":record.toolchain,"recoverable":record.storage.is_some()})
     }
     async fn provision(
         &self,
@@ -603,47 +611,7 @@ impl Service {
                 break;
             }
         }
-        let cpus = self.config.cpus.to_string();
-        let memory = format!("{}M", self.config.memory_mib);
-        let lifetime = format!("{}s", self.config.max_duration_seconds);
-        let runner = format!("rayde.runner={}", self.registry.instance);
-        let workspace = format!("rayde.workspace={}", record.id);
-        let binary = format!(
-            "{}:/opt/rayde-session",
-            self.config.session_binary.display()
-        );
-        command::call(
-            &self.config,
-            [
-                "create",
-                &self.config.image,
-                "--name",
-                &record.sandbox,
-                "--cpus",
-                &cpus,
-                "--memory",
-                &memory,
-                "--security",
-                "restricted",
-                "--deployment-profile",
-                "multi-tenant",
-                "--no-net",
-                "--mount-owned",
-                "/workspace",
-                "--mount-owned",
-                "/state",
-                "--copy-file",
-                &binary,
-                "--label",
-                &runner,
-                "--label",
-                &workspace,
-                "--max-duration",
-                &lifetime,
-            ],
-            30,
-        )
-        .await?;
+        self.boot(record, true).await?;
         let destination = format!("{}:/workspace/project", record.sandbox);
         command::call(
             &self.config,
@@ -658,4 +626,62 @@ impl Service {
         record.identity = Some(self.launch_session(record).await?);
         Ok(())
     }
+    async fn boot(&self, record: &Record, initialize: bool) -> Result<()> {
+        let mounts = if let Some(storage) = &record.storage {
+            Some(if initialize {storage.prepare(&self.config).await?} else {storage.mounts(&self.config).await?})
+        } else {None};
+        let cpus = self.config.cpus.to_string();
+        let memory = format!("{}M", self.config.memory_mib);
+        let lifetime = format!("{}s", self.config.max_duration_seconds);
+        let runner = format!("rayde.runner={}", self.registry.instance);
+        let workspace = format!("rayde.workspace={}", record.id);
+        if self.config.toolchain.is_some() {
+            toolchain::restore(&self.config, &record.sandbox, &runner, &workspace, mounts.as_ref()).await?;
+            let destination = format!("{}:/opt/rayde-session", record.sandbox);
+            command::call(&self.config, [std::ffi::OsString::from("copy"), self.config.session_binary.clone().into_os_string(), destination.into()], 15).await?;
+        } else {
+            let mut args = vec!["create".to_owned(), self.config.image.clone(), "--name".into(), record.sandbox.clone(),
+                "--cpus".into(), cpus, "--memory".into(), memory, "--security".into(), "restricted".into(),
+                "--deployment-profile".into(), "multi-tenant".into(), "--no-net".into(),
+                "--copy-file".into(), format!("{}:/opt/rayde-session", self.config.session_binary.display()),
+                "--label".into(), runner, "--label".into(), workspace, "--max-duration".into(), lifetime];
+            if let Some(storage) = &record.storage {args.extend(storage.create_args());}
+            else {args.extend(["--mount-owned".into(), "/workspace".into(), "--mount-owned".into(), "/state".into()]);}
+            command::call(&self.config, args, 45).await?;
+        }
+        if let Some(storage) = &record.storage {storage.bind(&self.config, &record.sandbox, initialize).await?;}
+        Ok(())
+    }
+
+    async fn recover(&self, cell: &Cell, record: &mut Record) -> Result<serde_json::Value> {
+        if record.storage.is_none() || record.identity.is_none() {return Err(Failure(StatusCode::CONFLICT, "The workspace needs recovery; its checkout will not be replaced."));}
+        let _work = self.registry.work(cell)?;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_| unavailable())?.as_secs();
+        record.recovery_attempts.retain(|at| now.saturating_sub(*at) < 120);
+        if record.recovery_attempts.len() >= 3 {return Err(Failure(StatusCode::TOO_MANY_REQUESTS, "Wait before retrying workspace recovery."));}
+        record.recovery_attempts.push(now);
+        cell.closed.send_modify(|generation| *generation += 1);
+        record.phase = "recovering".into();
+        self.registry.save(record).await?;
+        if let Err(error) = self.cleanup(record).await {
+            record.phase = "recovery-required".into();
+            self.registry.save(record).await?;
+            return Err(error);
+        }
+        record.generation = record.generation.checked_add(1).ok_or_else(unavailable)?;
+        record.token = random();
+        record.sandbox = format!("rayde-{}-{}-{}", &self.registry.instance[..16], record.id, record.generation);
+        self.registry.save(record).await?;
+        let result = async {
+            self.boot(record, false).await?;
+            let identity = self.launch_session(record).await?;
+            if Some(identity) != record.identity {return Err(Failure(StatusCode::CONFLICT, "The restored document-state identity does not match this workspace."));}
+            Ok(())
+        }.await;
+        record.phase = if result.is_ok() {"ready"} else {"recovery-required"}.into();
+        self.registry.save(record).await?;
+        result?;
+        Ok(self.connection(record))
+    }
+
 }

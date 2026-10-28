@@ -23,6 +23,12 @@ pub(crate) struct Record {
     pub project: Option<String>,
     #[serde(default)]
     pub identity: Option<serde_json::Value>,
+    #[serde(default)]
+    pub toolchain: Option<String>,
+    #[serde(default)]
+    pub storage: Option<crate::volumes::Storage>,
+    #[serde(default)]
+    pub recovery_attempts: Vec<u64>,
 }
 pub(crate) struct Cell {
     pub record: Mutex<Record>,
@@ -104,12 +110,19 @@ impl Registry {
                     != Some(record.id.as_str())
                 || !matches!(
                     record.phase.as_str(),
-                    "preparing" | "ready" | "failed" | "deleting" | "deleted" | "recovery-required"
+                    "preparing" | "recovering" | "ready" | "failed" | "deleting" | "deleted" | "recovery-required"
                 )
             {
                 return Err(unavailable());
             }
             if record.phase == "ready" && record.identity.is_none() {
+                return Err(unavailable());
+            }
+            if record.toolchain.as_ref().is_some_and(|value| value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit())) {
+                return Err(unavailable());
+            }
+            if record.recovery_attempts.len() > 3 {return Err(unavailable());}
+            if record.storage.as_ref().is_some_and(|storage| !storage.valid(&instance, &record.id)) {
                 return Err(unavailable());
             }
             records.insert(record.id.clone(), Arc::new(Cell::new(record)));

@@ -28,6 +28,7 @@ class SessionClient {
 	public var project(default, null):Null<String>;
 	public var extensionHost(default, null):Null<String>;
 	public var extensionsRoot(default, null):Null<String>;
+	public var readRoots(default, null):Array<{id:String, path:String}> = [];
 	public var signin(default, null):Null<String>;
 	public var onEvent:Null<Dynamic->Void>;
 	public var onWake:Null<Void->Void>;
@@ -69,10 +70,17 @@ class SessionClient {
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
 			client.embedded = hello.embedded == true;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
+			if (Std.isOfType(hello.readRoots,Array)) for (source in (hello.readRoots:Array<Dynamic>))
+				if (Std.isOfType(source.id,String) && Std.isOfType(source.path,String) && source.path != "") client.readRoots.push({id:source.id,path:source.path});
 			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
 			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
 		} catch (error:Dynamic) { client.close(); throw error; }
 		return client;
+	}
+
+	public function readOnly(file:String):Bool {
+		for (source in readRoots) if (rayde.files.FileOps.inside(source.path,file)) return true;
+		return false;
 	}
 
 	public function isClosed():Bool { mutex.acquire(); var value = closed; mutex.release(); return value; }

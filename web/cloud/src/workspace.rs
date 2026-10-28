@@ -203,6 +203,7 @@ pub struct WorkspaceSession {
     state: State,
     env: Env,
     starting: Rc<Cell<bool>>,
+    reconnecting: futures_util::lock::Mutex<()>,
     backends: Rc<RefCell<Vec<Backend>>>,
     checkpoints: Rc<crate::checkpoints::Checkpoints>,
     saving: Rc<futures_util::lock::Mutex<()>>,
@@ -218,6 +219,7 @@ impl DurableObject for WorkspaceSession {
             state,
             env,
             starting: Rc::new(Cell::new(false)),
+            reconnecting: futures_util::lock::Mutex::new(()),
             backends: Rc::new(RefCell::new(Vec::new())),
             checkpoints,
             saving: Rc::new(futures_util::lock::Mutex::new(())),
@@ -487,30 +489,46 @@ impl WorkspaceSession {
                 ticket,
                 controller: Some(controller),
             };
-            let mut endpoint = Url::parse(text(&record["connection"], "url")?)
-                .map_err(|_| bad(502, "Invalid workspace endpoint."))?;
-            let scheme = if endpoint.scheme() == "wss" {
-                "https"
-            } else {
-                "http"
+            let connect = async {
+                let mut current = storage.get::<Value>("workspace").await?.ok_or_else(||bad(404,"Workspace not found."))?;
+                let mut response = connect_backend(&self.env, &current["connection"], &data, &signal).await;
+                let mut recovery = None;
+                if current["connection"]["recoverable"] == true && !response.as_ref().is_ok_and(|response|response.status_code() == 101) {
+                    recovery = Some(self.reconnecting.lock().await);
+                    current = storage.get::<Value>("workspace").await?.ok_or_else(||bad(404,"Workspace not found."))?;
+                    response = connect_backend(&self.env, &current["connection"], &data, &signal).await;
+                    if !response.as_ref().is_ok_and(|response|response.status_code() == 101) {
+                        let connection = deadline(prepare(&self.env, &current, data["access"].clone()),150).await
+                            .map_err(|_|bad(504,"Workspace recovery timed out. Try reconnecting."))??;
+                        current["connection"] = connection;
+                        storage.put("workspace", &current).await?;
+                        response = connect_backend(&self.env, &current["connection"], &data, &signal).await;
+                    }
+                }
+                let response = response?;
+                if recovery.is_none() {
+                    recovery = Some(self.reconnecting.lock().await);
+                    current = storage.get::<Value>("workspace").await?.ok_or_else(||bad(404,"Workspace not found."))?;
+                }
+                let _recovery = recovery;
+                if let Some(token) = response.headers().get("X-RayDE-Token")? {
+                    let generation = response.headers().get("X-RayDE-Generation")?.and_then(|value|value.parse::<u64>().ok())
+                        .filter(|generation| *generation > 0).ok_or_else(||bad(502,"Invalid compute generation."))?;
+                    if token.len()!=64 || !token.bytes().all(|byte|byte.is_ascii_hexdigit()) || current["connection"]["generation"].as_u64().is_some_and(|old|generation<old) {
+                        if let Some(socket) = response.websocket() {let _ = socket.close(Some(1008),Some("Stale compute generation"));}
+                        return Err(bad(409,"The workspace compute generation needs reconciliation."));
+                    }
+                    if current["connection"]["token"] != token || current["connection"]["generation"] != generation {
+                        current["connection"]["token"] = json!(token);
+                        current["connection"]["generation"] = json!(generation);
+                        storage.put("workspace", &current).await?;
+                    }
+                }
+                Ok::<_,Failure>((current,response))
             };
-            endpoint
-                .set_scheme(scheme)
-                .map_err(|_| bad(502, "Invalid workspace endpoint."))?;
-            let headers = Headers::new();
-            headers.set("Upgrade", "websocket")?;
-            headers.set("Origin", text(&data, "origin")?)?;
-            let fetch = Fetch::Request(Request::new_with_init(
-                endpoint.as_str(),
-                RequestInit::new().with_headers(headers),
-            )?);
-            let response = futures_util::future::Abortable::new(
-                deadline(fetch.send_with_signal(&signal), 10),
-                registration,
-            )
-            .await
-            .map_err(|_| bad(403, "The account signed out before connecting."))?
-            .map_err(|_| bad(504, "The workspace did not respond. Reconnect and try again."))??;
+            let (record,response) = futures_util::future::Abortable::new(deadline(connect,170),registration).await
+                .map_err(|_|bad(403,"The account signed out before connecting."))?
+                .map_err(|_|bad(504,"The workspace did not respond. Reconnect and try again."))??;
             let backend = response
                 .websocket()
                 .ok_or_else(|| bad(502, "The workspace could not be reached."))?;
@@ -521,7 +539,9 @@ impl WorkspaceSession {
             let workspace = record["id"].clone();
             let principal = format!("account:{}", data["owner"]);
             self.state.accept_web_socket(&pair.server);
-            pair.server.serialize_attachment(&data)?;
+            let mut attachment = data.clone();
+            if let Some(fields) = attachment.as_object_mut() {fields.remove("access");}
+            pair.server.serialize_attachment(&attachment)?;
             self.backends.borrow_mut().push((
                 pair.server.clone(),
                 backend.clone(),
@@ -701,5 +721,18 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     let project = connection["project"]
         .as_str()
         .filter(|p| !p.starts_with('/') && !p.split('/').any(|part| part == ".."));
-    Ok(json!({"url":endpoint.as_str(),"token":token,"project":project}))
+    Ok(json!({"url":endpoint.as_str(),"token":token,"project":project,"generation":connection["generation"],"toolchain":connection["toolchain"],"recoverable":connection["recoverable"]==true}))
+}
+
+async fn connect_backend(env: &Env, connection: &Value, data: &Value, signal: &worker::AbortSignal) -> AppResult<Response> {
+    let mut endpoint = Url::parse(text(connection,"url")?).map_err(|_|bad(502,"Invalid workspace endpoint."))?;
+    let scheme = if endpoint.scheme()=="wss" {"https"} else {"http"};
+    endpoint.set_scheme(scheme).map_err(|_|bad(502,"Invalid workspace endpoint."))?;
+    let headers = Headers::new();
+    headers.set("Upgrade","websocket")?;
+    headers.set("Origin",text(data,"origin")?)?;
+    if let Some(secret) = config(env,"RUNNER_SECRET") {headers.set("Authorization",&format!("Bearer {secret}"))?;}
+    let fetch=Fetch::Request(Request::new_with_init(endpoint.as_str(),RequestInit::new().with_headers(headers))?);
+    deadline(fetch.send_with_signal(signal),10).await
+        .map_err(|_|bad(504,"The workspace did not respond. Reconnect and try again."))?.map_err(Failure::from)
 }

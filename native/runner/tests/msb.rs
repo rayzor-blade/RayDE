@@ -3,12 +3,13 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use futures_util::{SinkExt, StreamExt};
 use rayde_runner::{Config, LocalRepository, start, workspace_id};
 use serde_json::{Value, json};
+use yrs::{Doc, ReadTxn, Text, Transact, Update, updates::decoder::Decode};
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::Duration,
 };
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async, tungstenite::{Message,client::IntoClientRequest}};
 
 fn git(root: &Path, args: &[&str]) {
     assert!(
@@ -43,6 +44,12 @@ impl Drop for Cleanup {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+            if let Ok(list) = Command::new(&self.msb).env("MSB_BACKEND","local").args(["volume","list"]).output() {
+                let prefix = format!("rayde-{}-",&instance[..16]);
+                for name in String::from_utf8_lossy(&list.stdout).lines().filter_map(|line|line.split_whitespace().next()).filter(|name|name.starts_with(&prefix)) {
+                    let _ = Command::new(&self.msb).env("MSB_BACKEND","local").args(["volume","remove",name]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+                }
+            }
         }
     }
 }
@@ -54,8 +61,10 @@ struct Peer {
     events: Vec<Value>,
 }
 impl Peer {
-    async fn connect(connection: &Value) -> Self {
-        let (socket, _) = connect_async(connection["url"].as_str().unwrap())
+    async fn connect(connection: &Value, secret: &str) -> Self {
+        let mut request = connection["url"].as_str().unwrap().into_client_request().unwrap();
+        request.headers_mut().insert("Authorization",format!("Bearer {secret}").parse().unwrap());
+        let (socket, _) = connect_async(request)
             .await
             .unwrap();
         let mut peer = Self {
@@ -71,7 +80,7 @@ impl Peer {
     }
     async fn next(&mut self) -> Value {
         loop {
-            let message = tokio::time::timeout(Duration::from_secs(15), self.socket.next())
+            let message = tokio::time::timeout(Duration::from_secs(60), self.socket.next())
                 .await
                 .unwrap()
                 .unwrap()
@@ -114,7 +123,7 @@ impl Peer {
                 ));
             }
             if event["ev"] == "proc.exit" {
-                assert_eq!(event["code"], 0);
+                assert_eq!(event["code"], 0, "{output}");
                 return output;
             }
         }
@@ -165,7 +174,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     );
     std::fs::write(source.join("build.hxml"), "-cp src\n-main Main\n--interp\n").unwrap();
     std::fs::create_dir(source.join("src")).unwrap();
-    std::fs::write(source.join("src/Main.hx"), "class Main {}\n").unwrap();
+    std::fs::write(source.join("src/Main.hx"), "class Main { static function main() trace(\"toolchain-ready\"); }\n").unwrap();
     git(&source, &["add", "."]);
     git(&source, &["commit", "-m", "fixture"]);
     let secret = "provisioning-control-credential-for-local-test";
@@ -176,7 +185,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&secret_file, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    let config = Config {
+    let mut config = Config {
         listen: ([127, 0, 0, 1], 0).into(),
         state_root: temp.path().join("state"),
         msb: std::env::var_os("RAYDE_TEST_MSB")
@@ -190,6 +199,8 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
         secret_file,
         public_url: None,
         image: "alpine:3.23".into(),
+        toolchain: None,
+        persistent_disks: true,
         memory_mib: 512,
         cpus: 1,
         max_workspaces: 2,
@@ -212,6 +223,10 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
             },
         ],
     };
+    if let Some(path) = std::env::var_os("RAYDE_TEST_TOOLCHAIN") {
+        config.toolchain = Some(serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap());
+        config.memory_mib = 1024;
+    }
     let _cleanup = Cleanup {
         msb: config.msb.clone(),
         state: config.state_root.clone(),
@@ -239,7 +254,10 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     let (b_status, b) = open(&http, &base, secret, opening(2, 111)).await;
     assert_eq!(b_status, 200);
     assert!(a["token"] != b["token"]);
-    let (mut unauthenticated, _) = connect_async(a["url"].as_str().unwrap()).await.unwrap();
+    assert!(connect_async(a["url"].as_str().unwrap()).await.is_err());
+    let mut request = a["url"].as_str().unwrap().into_client_request().unwrap();
+    request.headers_mut().insert("Authorization",format!("Bearer {secret}").parse().unwrap());
+    let (mut unauthenticated, _) = connect_async(request).await.unwrap();
     unauthenticated
         .send(Message::Text(
             json!({"id":1,"op":"hello","token":"wrong"})
@@ -264,8 +282,16 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     assert_eq!(forbidden.status(), 403);
     assert_eq!(open(&http, &base, secret, opening(1, 222)).await.0, 429);
     assert_eq!(delete(&http, &base, secret, 2, 1111).await, 404);
-    let mut first = Peer::connect(&a).await;
-    let mut second = Peer::connect(&b).await;
+    let mut first = Peer::connect(&a, secret).await;
+    let mut second = Peer::connect(&b, secret).await;
+    if config.toolchain.is_some() {
+        let hello = first.rpc("hello",json!({"token":a["token"]})).await;
+        assert_eq!(hello["readRoots"].as_array().unwrap().len(),4);
+        assert_eq!(hello["extensions"]["root"],"/opt/rayde/extensions");
+        let process = first.rpc("proc.spawn",json!({"command":"python3","args":["-u","-c",include_str!("toolchain.py")]})).await;
+        assert_eq!(process["ok"],true);
+        assert!(first.output(&process["pid"]).await.contains("toolchain-build-run-lsp-native-extension-ready"));
+    }
     assert_eq!(
         first
             .rpc(
@@ -277,7 +303,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     );
     assert_eq!(
         second.rpc("fs.read", json!({"path":"src/Main.hx"})).await["data"],
-        "class Main {}\n"
+        "class Main { static function main() trace(\"toolchain-ready\"); }\n"
     );
     let process = first
         .rpc(
@@ -319,6 +345,22 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
             first.events.push(response);
         }
     }
+    assert_eq!(first.rpc("fs.write",json!({"path":"live.txt","data":"base"})).await["ok"],true);
+    let opened = first.rpc("doc.open",json!({"path":"live.txt"})).await;
+    let shared = Doc::new();
+    let text = shared.get_or_insert_text("text");
+    shared.transact_mut().apply_update(Update::decode_v1(&B64.decode(opened["update"].as_str().unwrap()).unwrap()).unwrap()).unwrap();
+    let vector = shared.transact().state_vector();
+    text.insert(&mut shared.transact_mut(),4," live");
+    let update = shared.transact().encode_state_as_update_v1(&vector);
+    let journal = first.rpc("doc.update",json!({"path":"live.txt","journal":true,"vector":"AA==","update":B64.encode(update)})).await;
+    assert_eq!(journal["ok"],true);
+    let before_deletion = shared.transact().state_vector();
+    text.remove_range(&mut shared.transact_mut(),4,1);
+    assert_eq!(before_deletion,shared.transact().state_vector());
+    let deleted = shared.transact().encode_state_as_update_v1(&before_deletion);
+    let deletion = first.rpc("doc.update",json!({"path":"live.txt","journal":true,"vector":journal["journal"]["vector"],"update":B64.encode(deleted)})).await;
+    assert_eq!(deletion["ok"],true);
     first.socket.close(None).await.unwrap();
     second.socket.close(None).await.unwrap();
     drop(first);
@@ -330,7 +372,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     assert_eq!(status, 200);
     assert!(retained["token"] == a["token"]);
     assert_eq!(retained["generation"], 1);
-    let mut first = Peer::connect(&retained).await;
+    let mut first = Peer::connect(&retained, secret).await;
     assert_eq!(
         first.rpc("fs.read", json!({"path":"src/Main.hx"})).await["data"],
         "changed in the first guest"
@@ -357,12 +399,21 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
             .unwrap()
             .success()
     );
-    assert_eq!(
-        open(&http, &base, secret, opening(1, 111)).await.0,
-        409,
-        "lost compute must not be silently replaced from Git"
-    );
-    assert_eq!(open(&http, &base, secret, opening(1, 111)).await.0, 409);
+    let ((status,recovered),(duplicate_status,duplicate)) = tokio::join!(open(&http,&base,secret,opening(1,111)),open(&http,&base,secret,opening(1,111)));
+    assert_eq!(status,200,"{}",recovered["message"]);
+    assert_eq!(duplicate_status,200);
+    assert_eq!(recovered,duplicate);
+    assert_eq!(recovered["generation"],2);
+    assert_ne!(recovered["token"],a["token"]);
+    let mut recovered_peer = Peer::connect(&recovered,secret).await;
+    assert_eq!(recovered_peer.rpc("fs.read",json!({"path":"src/Main.hx"})).await["data"],"changed in the first guest");
+    assert_eq!(recovered_peer.rpc("fs.read",json!({"path":"large.txt"})).await["data"],payload);
+    let restored = recovered_peer.rpc("doc.open",json!({"path":"live.txt"})).await;
+    assert_eq!(restored["text"],"baselive");
+    assert_eq!(restored["vector"],deletion["journal"]["vector"]);
+    let git_result = recovered_peer.rpc("proc.spawn",json!({"command":"/bin/sh","args":["-c","test -f .git/HEAD && test -f .git/index && echo git-preserved"]})).await;
+    assert!(recovered_peer.output(&git_result["pid"]).await.contains("git-preserved"));
+    recovered_peer.socket.close(None).await.unwrap();
     assert_eq!(delete(&http, &base, secret, 1, 111).await, 200);
     assert_eq!(delete(&http, &base, secret, 1, 111).await, 200);
     #[cfg(unix)]
@@ -383,7 +434,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     }
     let (status, reopened) = open(&http, &base, secret, opening(1, 111)).await;
     assert_eq!(status, 200);
-    assert_eq!(reopened["generation"], 2);
+    assert_eq!(reopened["generation"], 3);
     assert!(reopened["token"] != a["token"]);
     assert_eq!(delete(&http, &base, secret, 1, 111).await, 200);
     assert_eq!(delete(&http, &base, secret, 2, 111).await, 200);

@@ -9,6 +9,35 @@ use std::fs;
 use support::{Client, Peer};
 
 #[tokio::test]
+async fn acknowledged_journal_reopens_from_private_state_before_the_file_flush() {
+    use rayde_session::{dir_store::DirStore, docs::DocHub};
+    use std::{sync::Arc, time::Duration};
+    let root = tempfile::tempdir().unwrap();
+    let state = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("a.txt"), "base").unwrap();
+    let mut options = Options::new(root.path());
+    options.state_root = Some(state.path().into());
+    options.flush_delay = Duration::from_secs(60);
+    let running = start(options).await.unwrap();
+    let mut client = Client::connect(&running).await;
+    assert_eq!(client.request(json!({"op":"hello"})).await["privateJournals"], 1);
+    let peer = Peer::new();
+    peer.apply(client.request(json!({"op":"doc.open","path":"a.txt"})).await["update"].as_str().unwrap());
+    let reply = client.request(json!({"op":"doc.update","path":"a.txt","journal":true,"vector":"AA==","update":peer.edit(4,0," pending")})).await;
+    assert_eq!(reply["ok"], true);
+    assert_eq!(fs::read_to_string(root.path().join("a.txt")).unwrap(), "base");
+    let replacement = DocHub::new(Arc::new(DirStore::with_state_root(root.path(),state.path()).unwrap()),Arc::new(|_|{}));
+    let opened = replacement.attach("a.txt","replacement",None,Arc::new(|_|{})).await.unwrap();
+    assert_eq!(opened.text, "base pending");
+    assert!(opened.buffered && opened.dirty);
+    assert_eq!(B64.encode(opened.vector), reply["journal"]["vector"]);
+    assert_eq!(fs::read_to_string(root.path().join("a.txt")).unwrap(), "base");
+    replacement.close().await;
+    client.close().await;
+    running.shutdown().await;
+}
+
+#[tokio::test]
 async fn recovery_deltas_capture_a_baseline_then_only_missing_edits_and_deletions() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();

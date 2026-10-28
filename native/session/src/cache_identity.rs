@@ -17,7 +17,18 @@ pub(crate) fn persistent_id(path: &Path) -> io::Result<String> {
         use std::os::unix::fs::DirBuilderExt;
         directories.mode(0o700);
     }
+    let mut missing = Vec::new();
+    let mut probe = parent;
+    while !probe.try_exists()? {
+        missing.push(probe.to_path_buf());
+        probe = probe.parent().ok_or_else(||io::Error::other("Missing identity ancestor"))?;
+    }
     directories.create(parent)?;
+    #[cfg(unix)]
+    for directory in missing {
+        fs::File::open(&directory)?.sync_all()?;
+        if let Some(parent) = directory.parent() {fs::File::open(parent)?.sync_all()?;}
+    }
     if !path.try_exists()? {
         let mut random = [0u8; 32];
         rand::rngs::OsRng.fill_bytes(&mut random);
@@ -46,6 +57,8 @@ pub(crate) fn persistent_id(path: &Path) -> io::Result<String> {
         drop(file);
         let _ = fs::remove_file(temporary);
         published?;
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
     }
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() != 64 {
