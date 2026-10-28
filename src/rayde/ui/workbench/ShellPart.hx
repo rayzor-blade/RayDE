@@ -209,7 +209,7 @@ class ShellPart {
 			on:() -> wb.active.get() == Workbench.SETTINGS, run:() -> wb.openSettings()});
 		wb.contributions.status({id:"problems", place:"left", order:300, build:() -> <for {list in [wb.problems.get()]}>${wb.panelsPart.problemCounts(list)}</for>});
 		wb.contributions.status({id:"notice", place:"right", order:100, build:() -> <if {wb.notice.get() != ""}><text id="rayde-notice">${wb.notice}</text></if>});
-		wb.contributions.status({id:"run", place:"right", order:200, build:() -> <for {state in [wb.runPart.runState.get()]}>${wb.runPart.runStatus(state)}</for>});
+		wb.contributions.status({id:"run", place:"right", order:200, build:() -> <for {state in [wb.runPart.statusState()]}>${wb.runPart.runStatus(state)}</for>});
 		wb.contributions.status({id:"language-server", place:"right", order:400, build:() -> <for {server in [wb.languagesPart.languageStatus()]}><if {server != null}>${wb.languagesPart.languageServerItem(server)}</if></for>});
 		wb.contributions.status({id:"language", place:"right", order:500, build:() ->
 			<for {name in [LanguageNames.of(wb.realFile(wb.active.get()))]}><if {name != null}><div id="rayde-language" class="rayde-status-item flex"><text>${name}</text></div></if></for>});

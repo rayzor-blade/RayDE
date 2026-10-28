@@ -12,14 +12,18 @@ const shots=join(root,'bin/web/pocket-demo-browser-shots');await mkdir(shots,{re
 const fixture=await mkdtemp(join(root,'bin/published-demo/landing-'));
 const privateRoot=await mkdtemp(join(tmpdir(),'rayde-builtins-'));
 const web=join(privateRoot,'web');await mkdir(join(web,'dist'),{recursive:true});
+await writeFile(join(privateRoot,'environment.json'),JSON.stringify({HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib')}));
 await cp(join(root,'site/demo'),fixture,{recursive:true,filter:path=>!/(?:^|\/)bin(?:\/|$)/.test(path)});
+const installed=join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib');
+await mkdir(join(fixture,'.haxelib'),{recursive:true});
+for(const name of await readdir(installed))await symlink(join(installed,name),join(fixture,'.haxelib',name));
 await mkdir(join(fixture,'.rayde'),{recursive:true});await writeFile(join(fixture,'.rayde/settings.json'),JSON.stringify({extensions:{disabled:['rayzor','git','markdown','jam']}}));
 await cp(join(fixture,'README.md'),join(fixture,'src/Guide.md'));
 for(const name of await readdir(join(root,'site')))if(name!=='dist')await symlink(join(root,'site',name),join(web,name));
 for(const name of await readdir(join(root,'site/dist')))if(name!=='rayde_session.mjs')await symlink(join(root,'site/dist',name),join(web,'dist',name));
 const agent=(await readFile(join(root,'site/dist/rayde_session.mjs'),'utf8'))
- .replace('const request = JSON.parse(text2);','const request = JSON.parse(text2); if (["proc.spawn","proc.write","proc.kill","view.open","page.markdown"].includes(request.op)) console.log("builtin-request:"+JSON.stringify(request));')
- .replace('const answer = (message) => {','const answer = (message) => { if (message.ev === "proc.out" || message.result?.kind === "document") console.log("builtin-event:"+JSON.stringify(message));');
+ .replace('const request = JSON.parse(text2);','const request = JSON.parse(text2); if (["proc.spawn","proc.write","proc.kill","view.open","page.markdown"].includes(request.op) || request.op.startsWith("preview.")) console.log("builtin-request:"+JSON.stringify(request));')
+ .replace('const answer = (message) => {','const answer = (message) => { if (message.ev === "proc.out" || message.result?.kind === "document" || message.preview != null || message.directory != null || message.ok === false) console.log("builtin-event:"+JSON.stringify(message));');
 await writeFile(join(web,'dist/rayde_session.mjs'),agent);
 const git=args=>execFileSync('git',['-C',fixture,...args],{stdio:'ignore'});
 git(['init','-b','main']);git(['add','.']);git(['-c','user.name=Demo Developer','-c','user.email=demo@example.invalid','commit','-m','Start Pocket Studio']);
@@ -39,7 +43,7 @@ function output(event){
  }
  framed.set(event.pid,data.length<2000000?data:Buffer.alloc(0));
 }
-const session=spawn(join(root,'native/session/target/debug/rayde-session'),['--root',fixture,'--state-root',join(privateRoot,'state'),'--web',web,'--port','0','--token','builtin-preview-fixture-32-characters','--preview-project','build.hxml','--exec','--preview-tools',join(root,'bin/preview-tools'),'--extension-host',join(root,'bin/rayde-extension-host'),'--extensions',join(root,'extensions')],{stdio:['ignore','pipe','pipe'],env:{...process.env,HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib'),PATH:join(root,'../ash/target/release')+':'+join(root,'../rayzor/target/release')+':'+process.env.PATH,RAYZOR_STD_PATH:join(root,'../rayzor/compiler/haxe-std')}});
+const session=spawn(join(root,'native/session/target/debug/rayde-session'),['--root',fixture,'--state-root',join(privateRoot,'state'),'--env-file',join(privateRoot,'environment.json'),'--web',web,'--port','0','--token','builtin-preview-fixture-32-characters','--preview-project','build.hxml','--exec','--preview-tools',join(root,'bin/preview-tools'),'--extension-host',join(root,'bin/rayde-extension-host'),'--extensions',join(root,'extensions')],{stdio:['ignore','pipe','pipe'],env:{...process.env,HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib'),PATH:join(root,'../ash/target/release')+':'+join(root,'../rayzor/target/release')+':'+process.env.PATH,RAYZOR_STD_PATH:join(root,'../rayzor/compiler/haxe-std')}});
 let browser,page;
 const report={ok:false};const pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check,label,timeout=60000){const end=Date.now()+timeout;while(!check()){
@@ -57,7 +61,7 @@ try{
  page.on('console',message=>{const line=message.text();logs.push(line);
   if(line.startsWith('builtin-request:'))requests.push(JSON.parse(line.slice(16)));
   if(line.startsWith('builtin-event:')){const event=JSON.parse(line.slice(14));events.push(event);output(event);
-   if(event.ev==='proc.out'){const text=Buffer.from(event.data,'base64').toString();if(/: (tw:|hxx:)|Uncaught exception/.test(text))logs.push('PAGE ERROR '+text);}
+   if(event.ev==='proc.out'){const text=Buffer.from(event.data,'base64').toString();if(/(^|\n)Error:|: (tw:|hxx:)|Uncaught exception/.test(text))logs.push('PAGE ERROR '+text);}
   }
  });
  page.on('pageerror',error=>logs.push('PAGE ERROR '+error.stack));
@@ -100,6 +104,8 @@ try{
  if(process.env.RAYDE_TEST_APP==='1'){
   console.log('Building the app preview through the workspace session');
   await page.keyboard.press('Escape');await choose('BoardApp.hx');await choose('>Preview App');
+  await until(()=>requests.some(r=>r.op==='preview.prepare'),'preview preparation',30000);
+  await (await page.$('#editor')).screenshot({path:join(shots,'app-building.png')});
   await until(()=>requests.some(r=>r.op==='proc.spawn'&&r.args?.includes('wasm32-wasip1-threads')),'app compiler',180000);
   await frame.waitForSelector('iframe[data-rayde-app-preview]',{timeout:180000});
   const appElement=await frame.$('iframe[data-rayde-app-preview]'),app=await appElement.contentFrame();
@@ -111,10 +117,20 @@ try{
   await appElement.screenshot({path:join(shots,'app-preview-before.png')});
   const toolbar=106;
   await page.mouse.click(box.x+box.width-80,box.y+toolbar);await pause(300);
+  await page.mouse.move(box.x+65,box.y+300);await page.mouse.down();
+  await page.mouse.move(box.x+80,box.y+312,{steps:3});await pause(150);
+  await page.mouse.move(box.x+box.width-90,box.y+228,{steps:8});await pause(150);
+  await appElement.screenshot({path:join(shots,'app-drag.png')});
+  await page.mouse.up();await pause(300);
+  await page.mouse.move(box.x+250,box.y+300);await page.mouse.down();
+  await page.mouse.move(box.x+95,box.y+228,{steps:8});await pause(100);
+  await page.keyboard.press('Escape');await page.mouse.up();await pause(200);
   await page.mouse.click(box.x+box.width-200,box.y+toolbar);
   const end=Date.now()+15000;
   while(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length!==before+1&&Date.now()<end)await pause(100);
   assert.equal(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).length,before+1,'embedded app did not persist the added task');
+  assert.equal(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).find(task=>task.id===2).lane,'Done','browser drag did not persist the destination lane');
+  assert.equal(JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8')).find(task=>task.id===1).lane,'In progress','Escape committed the cancelled browser drag');
   await appElement.screenshot({path:join(shots,'app-preview.png')});
   // Navigating away destroys the app renderer; its compiled artifacts remain reusable.
   await frame.evaluate(()=>document.querySelector('#screen').focus());await choose('BoardApp.hx');

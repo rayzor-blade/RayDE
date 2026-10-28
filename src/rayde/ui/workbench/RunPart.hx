@@ -13,6 +13,7 @@ import ashui.components.CodeView;
 import ashui.components.Icon;
 import ashui.components.Resizable;
 import ashui.components.Select;
+import ashui.components.Spinner;
 import ashui.components.Tabs;
 import ashui.components.Tooltip;
 import ashui.components.Toast;
@@ -102,6 +103,25 @@ class RunPart {
 
 	public var runner(default, null):Null<Runner>;
 	public var appPreview(default, null):Null<rayde.run.AppPreviewBuild>;
+	final previewRevision = Signal.make(0);
+
+	function previewBuilding():Bool {
+		previewRevision.get();
+		return appPreview!=null && appPreview.state.get()=="building";
+	}
+
+	function statusState():String {
+		previewRevision.get();
+		var state=runState.get();
+		if(appPreview!=null && (appPreview.state.get()=="building" || wb.active.get()==Workbench.APP_PREVIEW))
+			return "preview-"+appPreview.state.get();
+		return state;
+	}
+
+	function publishBuildOutput(text:String):Void {
+		wb.extensionsPart.outputJobs.request("build", [text], null);
+		if (!wb.extensionsPart.outputScheduled) { wb.extensionsPart.outputScheduled = true; ashui.animation.AnimationScheduler.main.after(.016, wb.extensionsPart.pollOutput); }
+	}
 
 	public function canPreviewApp():Bool {
 		var session=rayde.workspace.PageHost.session;
@@ -112,8 +132,9 @@ class RunPart {
 
 	public function previewApp():Void {
 		if(!canPreviewApp()){wb.say("App Preview needs a runnable HashLink project and browser build tooling on its session host.");return;}
+		if(runner!=null && runner.active())return;
 		saveBefore(() -> {
-			if(appPreview==null)appPreview=new rayde.run.AppPreviewBuild(rayde.workspace.PageHost.session);
+			if(appPreview==null){appPreview=new rayde.run.AppPreviewBuild(rayde.workspace.PageHost.session,publishBuildOutput);previewRevision.set(previewRevision.get()+1);}
 			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd);
 			wb.openFile(Workbench.APP_PREVIEW);
 		});
@@ -121,6 +142,7 @@ class RunPart {
 
 	public function closeAppPreview():Void {
 		if(appPreview!=null)appPreview.dispose();appPreview=null;
+		previewRevision.set(previewRevision.get()+1);
 	}
 
 	var seen = -1;
@@ -212,6 +234,7 @@ class RunPart {
 
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
+		if(previewBuilding())return;
 		if (wb.props.empty == true || wb.props.display.project != null && !wb.props.display.project.runnable && !ExtensionsPart.isExtension(wb.active.get())) return;
 		// Run is Continue while the extension is stopped.
 		var d = wb.debugPart.debugger();
@@ -240,7 +263,7 @@ class RunPart {
 
 	/** Saves edited files and builds the project's declared targets on the process worker. */
 	public function buildProject():Void {
-		if (!canBuild() || runner.active()) return;
+		if (!canBuild() || runner.active() || previewBuilding()) return;
 		saveBefore(() -> { runner.build(); wb.panelsPart.showPanel("console"); poll(); });
 	}
 
@@ -255,7 +278,8 @@ class RunPart {
 	}
 
 	public function stopRun():Void {
-		runner.stop();
+		if(previewBuilding())appPreview.stop();
+		else if(runner!=null)runner.stop();
 		tick();
 	}
 
@@ -267,8 +291,7 @@ class RunPart {
 		if (runner.revision == seen)
 			return;
 		seen = runner.revision;
-		wb.extensionsPart.outputJobs.request("build", [runner.console], null);
-		if (!wb.extensionsPart.outputScheduled) { wb.extensionsPart.outputScheduled = true; ashui.animation.AnimationScheduler.main.after(.016, wb.extensionsPart.pollOutput); }
+		publishBuildOutput(runner.console);
 		runState.set(runner.state);
 		if (runner.problems != lastBuild) {
 			var previous = lastBuild;
@@ -296,17 +319,23 @@ class RunPart {
 	function runStatus(state:String):Element {
 		var runnable = wb.props.display.project == null || wb.props.display.project.runnable;
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
-		var active = state == "building" || state == "running";
+		var preview = state == "preview-building";
+		var active = preview || state == "building" || state == "running";
 		var shortcut = wb.keymapPart.bindings.label("buildproject");
 		return <div class="flex items-center gap-2">
 			<if {canBuild()}><tooltip label={"Build project" + (shortcut == null ? "" : " (" + shortcut + ")")} side="top">
 				<button id="rayde-build" variant={Ghost} size={Sm} class="rayde-status-item action" disabled={active} onClick={_ -> buildProject()}><icon document={Icons.HAMMER_LINE} class="size-3.5"/>Build</button>
 			</tooltip></if>
-			<if {state == "building"}><text class="text-text-tertiary">Building</text></if>
+			<if {preview}><tooltip label="Building app preview · Click for Build output" side="top">
+				<button id="rayde-preview-building" variant={Ghost} size={Sm} class="rayde-status-item action" onClick={_ -> wb.panelsPart.showPanel("console")}><spinner size={Sm}/><text>${appPreview.phase.get()+" · "+appPreview.elapsed.get()+"s"}</text></button>
+			</tooltip><else><if {state == "building"}><div class="flex items-center gap-1.5"><spinner size={Sm}/><text class="text-text-secondary">Building</text></div></if></if>
 			<if {state == "running"}><text class="text-text-tertiary">Running</text></if>
 			<if {state == "finished"}><text id="rayde-status" class="text-text-tertiary">${"Exited " + runner.exitCode}</text></if>
 			<if {state == "built"}><text id="rayde-status" class="text-text-tertiary">Build succeeded</text></if>
 			<if {state == "failed"}><text id="rayde-status" class="text-error">Build failed</text></if>
+			<if {state == "preview-ready"}><text class="text-success">Preview ready</text></if>
+			<if {state == "preview-failed"}><button variant={Ghost} size={Sm} class="rayde-status-item text-error" onClick={_ -> wb.panelsPart.showPanel("console")}>Preview build failed</button></if>
+			<if {state == "preview-cancelled"}><text class="text-text-secondary">Build cancelled</text></if>
 			<if {active}><div id="rayde-stop" class="rayde-status-item action flex text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-3.5"/><text>Stop</text></div>
 			<else><if {runnable}><div id="rayde-run" class="rayde-status-item action flex" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-3.5"/><text>Run</text></div></if></if>
 		</div>;
