@@ -129,6 +129,8 @@ class ExtensionsPart {
 
 	final outputStates = new Map<String, CodeEditorState>();
 
+	final outputFollows = new Map<String, OutputFollow>();
+
 	final buildOutputSyntax = new OutputHighlighter();
 
 	final outputSyntax = new Map<String, OutputHighlighter>();
@@ -368,6 +370,12 @@ class ExtensionsPart {
 		return state;
 	}
 
+	function followOutput(channel:String, view:CodeView):Void {
+		var follow = outputFollows.get(channel);
+		if (follow == null) { follow = new OutputFollow(); outputFollows.set(channel, follow); }
+		follow.attach(view);
+	}
+
 	function revealExtensionOutput(tries = 0):Void {
 		if (wb.gone || !wb.panelsPart.panelShown.get() || wb.panelsPart.bottom.get() != "console" || outputChannel.get() == "build") return;
 		if (outputScheduled) { outputRevealChannel = outputChannel.get(); return; }
@@ -605,6 +613,7 @@ class ExtensionsPart {
 		var syntax = outputSyntax.get(channel);
 		if (syntax == null) { syntax = new OutputHighlighter(kinds, spans); outputSyntax.set(channel, syntax); }
 		var view:CodeView = <code-view ref={extensionOutputView} id="rayde-extension-output" state={outputState(channel)} highlighter={syntax} tokenStyles={true} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		followOutput(channel, view);
 		new ashui.reactive.Watch(() -> { outputStyleRevision.get(); extensionOutputKinds.get(); }, _ -> {
 			var kinds = extensionOutputKinds.get(), spans = outputSpans.get(channel);
 			if (syntax.kinds == kinds && syntax.spans == spans) return;

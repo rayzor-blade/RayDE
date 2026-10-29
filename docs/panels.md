@@ -10,6 +10,8 @@ Problems lists diagnostics from language support and the last build. Select a pr
 
 Choose a channel to read build logs or extension messages. Output displays ANSI colors and text formatting; copying gives you plain text without escape sequences. A notification's **Show Output** action opens the relevant channel.
 
+Output follows new messages automatically. Scroll up to read earlier lines; scroll back to the bottom to resume following.
+
 The status bar shows when an extension is starting or preparing a command. Its view shows loading feedback while content is unavailable; a failed or stopped view offers **Show Output**.
 
 ## Terminal

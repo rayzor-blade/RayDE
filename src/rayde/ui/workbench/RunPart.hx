@@ -317,6 +317,7 @@ class RunPart {
 	function buildLog():Element {
 		wb.extensionsPart.buildOutputSyntax.spans = wb.extensionsPart.outputSpans.get("build");
 		var view:CodeView = <code-view id="rayde-console" state={wb.extensionsPart.outputState("build")} highlighter={wb.extensionsPart.buildOutputSyntax} tokenStyles={true} lineNumbers={false} folding={false} class="rayde-output flex-1 min-h-0"/>;
+		wb.extensionsPart.followOutput("build", view);
 		new ashui.reactive.Watch(() -> wb.extensionsPart.outputStyleRevision.get(), _ -> {
 			var spans = wb.extensionsPart.outputSpans.get("build");
 			if (wb.extensionsPart.buildOutputSyntax.spans == spans) return;

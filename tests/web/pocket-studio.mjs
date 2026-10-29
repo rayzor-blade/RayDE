@@ -9,8 +9,9 @@ import {resolve,join,dirname} from 'node:path';
 const root=resolve(import.meta.dirname,'../..');
 const javascript=process.env.RAYDE_TEST_JAVASCRIPT==='1',appMode=javascript||process.env.RAYDE_TEST_APP==='1';
 const welcomeMode=process.env.RAYDE_TEST_WELCOME==='1';
+const outputMode=process.env.RAYDE_TEST_OUTPUT==='1';
 const puppeteer=createRequire(join(root,'web/session/package.json'))('puppeteer-core');
-const shots=join(root,welcomeMode?'bin/web/welcome-layout-shots':'bin/web/pocket-demo-browser-shots');await mkdir(shots,{recursive:true});
+const shots=join(root,outputMode?'bin/web/output-scroll-shots':welcomeMode?'bin/web/welcome-layout-shots':'bin/web/pocket-demo-browser-shots');await mkdir(shots,{recursive:true});
 const fixture=await mkdtemp(join(root,'bin/published-demo/landing-'));
 const privateRoot=await mkdtemp(join(tmpdir(),'rayde-builtins-'));
 const web=join(privateRoot,'web');await mkdir(join(web,'dist'),{recursive:true});
@@ -33,6 +34,18 @@ if(javascript){
  await writeFile(join(fixture,'src/Main.hx'),'class Main {static function main(){js.Browser.document.querySelector("#app").textContent="Configured JavaScript preview";}}\n');
  await writeFile(join(fixture,'public/index.html'),'<main id="app"></main><script src="bin/app.js"></script>');
  await writeFile(join(fixture,'.rayde/settings.json'),JSON.stringify({extensions:{disabled:['rayzor','git','markdown','jam']},run:{targets:{js:{mode:'browser',runner:'browser',previewDirectory:'public',arguments:['literal $(false)','space here']}}}}));
+}
+if(outputMode){
+ await writeFile(join(fixture,'build.hxml'),'-cp src\n-main Main\n--interp\n');
+ await writeFile(join(fixture,'src/Main.hx'),`class Main {
+ static function main() {
+  for (stage in 1...4) {
+   for (line in 0...120) Sys.println('Stage ' + stage + ' output line ' + line);
+   Sys.println('LATEST OUTPUT: stage ' + stage);
+   if (stage < 3) while (!sys.FileSystem.exists('continue-' + stage)) Sys.sleep(.05);
+  }
+ }
+}\n`);
 }
 for(const name of await readdir(join(root,'site')))if(name!=='dist')await symlink(join(root,'site',name),join(web,name));
 for(const name of await readdir(join(root,'site/dist')))if(name!=='rayde_session.mjs')await symlink(join(root,'site/dist',name),join(web,'dist',name));
@@ -106,7 +119,31 @@ try{
    };
   }),{path,data});
  }
- if(welcomeMode){
+ if(outputMode){
+  await choose('Main.hx');
+  const editor=await page.$('#editor');await editor.scrollIntoView();
+  const box=await editor.boundingBox();
+  await page.mouse.click(box.x+box.width-26,box.y+20);
+  const isRun=r=>r.op==='proc.spawn'&&r.args?.some(arg=>arg.includes('--interp')&&arg.includes('/.rayde/run/build.log'));
+  await until(()=>requests.some(isRun),'streaming Output process');
+  const request=requests.find(isRun);
+  await until(()=>events.some(event=>event.id===request.id&&event.pid!=null),'Output process handle');
+  const pid=events.find(event=>event.id===request.id).pid;
+  const text=()=>readFile(join(fixture,'.rayde/run/build.log'),'utf8').catch(error=>{if(error.code==='ENOENT')return '';throw error;});
+  await until(async()=>(await text()).includes('LATEST OUTPUT: stage 1'),'first Output batch');await pause(700);
+  await (await page.$('#editor')).screenshot({path:join(shots,'output-follow.png')});
+  await page.mouse.move(box.x+box.width/2,box.y+box.height-100);await page.mouse.wheel({deltaY:-180});await pause(300);
+  await (await page.$('#editor')).screenshot({path:join(shots,'output-paused.png')});
+  await workspaceWrite('continue-1',Buffer.from('next').toString('base64'));
+  await until(async()=>(await text()).includes('LATEST OUTPUT: stage 2'),'second Output batch');await pause(700);
+  await (await page.$('#editor')).screenshot({path:join(shots,'output-paused-updated.png')});
+  await page.mouse.wheel({deltaY:100000});await pause(300);
+  await workspaceWrite('continue-2',Buffer.from('next').toString('base64'));
+  await until(()=>events.some(event=>event.ev==='proc.exit'&&event.pid===pid),'Output process completion');await pause(700);
+  assert.ok((await text()).includes('LATEST OUTPUT: stage 3'));
+  await (await page.$('#editor')).screenshot({path:join(shots,'output-resumed.png')});
+  report.outputStream=true;
+ }else if(welcomeMode){
   for(const query of ['>Join All Editor Groups','>Close Tab','>Close Tab','>Toggle Explorer'])await choose(query);
   const editor=await page.$('#editor');
   for(const [width,height] of [[1240,700],[800,600],[800,400],[1240,700]]){
