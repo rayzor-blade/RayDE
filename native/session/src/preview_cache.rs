@@ -223,7 +223,7 @@ impl Cache {
         let hashes = self.hashes.clone();
         tokio::task::spawn_blocking(move || {
             let mut haxe = Sha256::new();
-            haxe.update(b"rayde-preview-bytecode-v3\0");
+            haxe.update(b"rayde-preview-bytecode-v4\0");
             hash_tool(&mut haxe, &compiler)?;
             haxe.update(serde_json::to_vec(&serde_json::json!({"compiler":recipe.compiler,"args":recipe.args,"cwd":recipe.cwd,"primary":recipe.primary,"assets":recipe.assets,"entry":recipe.entry})).map_err(err)?);
             haxe.update(serde_json::to_vec(&env).map_err(err)?);
@@ -451,9 +451,7 @@ fn hash_files(
         }
         let metadata = std::fs::metadata(&path).map_err(err)?;
         let before = stamp(&metadata)?;
-        hash.update(before.modified.to_le_bytes());
-        hash.update(before.changed.0.to_le_bytes());
-        hash.update(before.changed.1.to_le_bytes());
+        // Metadata validates memoized digests; build identity follows file content.
         size += metadata.len();
         if size > 512 * 1024 * 1024 {
             return Err("Compiler inputs exceed cache size limits".into());
@@ -568,6 +566,7 @@ mod tests {
             tools.join("haxe/Support.hx"),
             host.join("std/StdTypes.hx"),
             library.join("Dependency.hx"),
+            library.join("blinc-css"),
             host.join("haxe"),
             host.join("ash"),
         ] {
@@ -606,6 +605,21 @@ mod tests {
             ..Recipe::default()
         };
         let plan = cache.plan(recipe.clone()).await.unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                library.join("blinc-css"),
+                std::fs::Permissions::from_mode(0o755),
+            ).unwrap();
+        }
+        std::fs::write(library.join("blinc-css"), "initial").unwrap();
+        let unchanged = cache.plan(recipe.clone()).await.unwrap();
+        assert_eq!(
+            plan.bytecode, unchanged.bytecode,
+            "preparing an unchanged bundled tool must preserve cached compiler output"
+        );
+        assert_eq!(plan.wasm, unchanged.wasm);
         let mut configured = recipe.clone();
         configured.runner = Some(CompilerRunner {
             command: host.join("ash").to_string_lossy().into(),

@@ -24,8 +24,16 @@ mkdir -p /tmp/rayde-probe
 printf 'class Main { static function main() trace("toolchain-ready"); }\n' > /tmp/rayde-probe/Main.hx
 haxe -cp /tmp/rayde-probe -main Main -hl /tmp/rayde-probe/main.hl
 ash /tmp/rayde-probe/main.hl | grep toolchain-ready
+if [ -d /opt/rayde/preview ]; then
+  ASH_RUNTIME=/opt/rayde/preview/ash_runtime.o ASH_WASM_FIBERS=1 ash --build /tmp/rayde-probe/main.wasm \
+    -O3 --codegen-opt-level 0 --target wasm32-wasip1-threads /tmp/rayde-probe/main.hl
+  test -s /tmp/rayde-probe/main.wasm
+fi
 cd /opt/rayde/pocket-studio
 haxe build.hxml
+if [ -d /opt/rayde/preview ]; then
+  haxe build.hxml -D wasm -cp /opt/rayde/preview/haxe
+fi
 rm -rf bin .rayde .rayzor /tmp/rayde-probe
 apt-get clean
 rm -rf /var/lib/apt/lists/*

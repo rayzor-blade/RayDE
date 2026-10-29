@@ -50,7 +50,9 @@ python3 scripts/prepare-toolchain.py \
 
 Preparation runs in a disposable, network-enabled builder. It installs Git, Neko and published `ashui`, `ashui-components` and `ashui-icons` 0.2.2, compiles/runs a Haxe/Ash probe and builds Pocket Studio. It installs platform-correct built-in extension manifests, records installed package versions and file hashes, then captures and verifies a disk-only MSB snapshot. Builder compute is removed afterward; keep the verified snapshot. This explicit preparation is separate from page startup. Package repositories may change; preserve the resulting template and digest rather than treating a later rebuild as the same image.
 
-Copy the output object's `snapshot` and `digest` into the runner configuration as `"toolchain": { ... }`, and use `"memoryMib": 1024`. Each launch verifies snapshot integrity, installed files and the expected manifest identity. The runner copies its configured static session executable into the guest, loads `/opt/rayde/environment.json`, and starts supervised extension hosts there. Installed sources use read-only session mounts. Existing live workspaces refuse a different toolchain identity until migrated.
+For app preview tabs, also pass `--preview-tools /absolute/preview-tools`. Stage that directory with `scripts/stage-preview.py --runtime /path/to/wasm32-wasip1-threads/ash_runtime.o`. Preparation checks the WASM runtime/channel and Ash's `--codegen-opt-level` support before booting a builder, then compiles a WASM probe with the preview optimization flags and checks Pocket Studio's WASM dependencies inside it. A file/LSP-only template can omit preview tooling.
+
+Use the complete output object as the runner configuration's `"toolchain": { ... }`, including `appPreviews` when enabled. Start with `"memoryMib": 1024` for files/LSP, or `3072` for app compilation alongside Rayzor; size the budget for your projects. Compiler temporary files use `/tmp`, keeping generated CSS out of workspace inputs. Each launch verifies snapshot integrity, installed files and the expected manifest identity. The runner copies its configured static session executable into the guest, loads `/opt/rayde/environment.json`, and starts supervised extension hosts there. Installed sources use read-only session mounts. Existing live workspaces refuse a different toolchain identity until migrated.
 
 ## Lifecycle and isolation
 
@@ -73,6 +75,7 @@ Missing disks, changed identities, unexpected inventory and unverifiable runtime
 ## Verification
 
 ```sh
+python3 tests/toolchain_preview_test.py
 cargo test --manifest-path native/runner/Cargo.toml
 RAYDE_TEST_SESSION=/absolute/static/linux/rayde-session \
   RAYDE_TEST_TOOLCHAIN=/private/toolchain.json \
@@ -87,6 +90,8 @@ To run the full browser flow through a forwarded runner, create a private JSON f
 RAYDE_MSB_RUNNER_CONFIG=/private/runner-test.json \
   node test/browser-flow.mjs ../../bin/web/rayde
 ```
+
+Add `--app-preview` with a preview-equipped template and the Pocket Studio Git fixture to check the actual guest build, isolated app renderer, cached rebuild and workspace writes.
 
 The fixture emulates GitHub and Cloudflare storage while the Rust Worker uses the real runner and guest. Delete the test workspace through the runner afterward. JavaScript here is test tooling; both backend services run in Rust.
 

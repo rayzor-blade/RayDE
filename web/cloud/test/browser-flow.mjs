@@ -14,7 +14,9 @@ const Y = createRequire(new URL("../../session/package.json", import.meta.url))(
 const {WebSocket}=createRequire(new URL("../../session/package.json",import.meta.url))("ws");
 const buffered=process.argv.includes("--buffered-restore"),file=buffered?"src/Recovered.hx":"src/Main.hx";
 const runnerConfig=process.env.RAYDE_MSB_RUNNER_CONFIG?JSON.parse(await readFile(process.env.RAYDE_MSB_RUNNER_CONFIG,"utf8")):null;
+const appPreview=process.argv.includes("--app-preview");
 if(buffered&&runnerConfig)throw Error("Run buffered restore and the MSB provider flow separately");
+if(appPreview&&!runnerConfig)throw Error("--app-preview requires a preview-equipped MSB runner configuration");
 const root = resolve("../.."), artifact = resolve(process.argv.slice(2).find(arg=>!arg.startsWith("--")) ?? "../../bin/web/repositories"), shots = join(root,"bin/web/github-flow");
 await mkdir(shots,{recursive:true});
 const sleep = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -46,9 +48,20 @@ const assets=createServer(async(req,res)=>{try{
   if (name==="/thread.js") bytes=Buffer.from('addEventListener("unhandledrejection",e=>console.error("thread rejected:",String(e.reason)));\n'+bytes.toString());
   if (name==="/ashui-host.mjs") bytes=Buffer.from(bytes.toString().replace("Math.max(1, (navigator.hardwareConcurrency || 4) - 1)","3"));
   if (name==="/rayde_session.mjs") bytes=Buffer.from(bytes.toString()
-    .replace("const answer = (message) => {",'const answer = (message) => { if(message.result?.dirty) console.log("restored-buffer-dirty"); if(message.result?.durable) console.log("durable-save:"+JSON.stringify(message.result.durable));')
-    .replace("const request = JSON.parse(text2);",'const request = JSON.parse(text2); if(request.op==="view.ready") console.log("shared-view-ready");'));
-  res.writeHead(200,{"Content-Type":/\.wasm$/.test(name)?"application/wasm":/\.(m?js)$/.test(name)?"text/javascript":"text/html"});res.end(bytes);
+    .replace("const answer = (message) => {",`const previewRequests=new Set(),previewPids=new Set();
+      const answer = (message) => {
+        if(previewRequests.delete(message.id)&&message.pid)previewPids.add(message.pid);
+        if(previewPids.has(message.pid)){
+          if(message.ev==="proc.out")console.log("preview-output:"+atob(message.data));
+          if(message.ev==="proc.exit"){previewPids.delete(message.pid);if(message.code!==0)globalThis.previewFailure="Guest compiler exited with "+message.code;}
+        }
+        if(message.ok===false)console.log("workspace-rpc-error:"+message.code+":"+message.message);
+        if(message.cacheNote)console.log("preview-cache-note:"+message.cacheNote);
+        if(message.cached==="wasm")console.log("preview-cache-hit");
+        if(message.result?.dirty)console.log("restored-buffer-dirty");
+        if(message.result?.durable)console.log("durable-save:"+JSON.stringify(message.result.durable));`)
+    .replace("const request = JSON.parse(text2);",'const request = JSON.parse(text2); if(request.op==="proc.spawn"&&request.args?.some(arg=>String(arg).endsWith("/app.hl"))){console.log("preview-compile");previewRequests.add(request.id);} if(request.op==="view.ready") console.log("shared-view-ready");'));
+  res.writeHead(200,{"Content-Type":/\.wasm$/.test(name)?"application/wasm":/\.(m?js)$/.test(name)?"text/javascript":name.endsWith(".css")?"text/css":"text/html"});res.end(bytes);
 }catch{res.writeHead(404).end();}}).listen(0,"127.0.0.1");
 await new Promise(resolve=>assets.once("listening",resolve));
 const runnerSettings=runnerConfig?{runnerUrl:runnerConfig.url,runnerSecret:(await readFile(runnerConfig.secretFile,"utf8")).trim()}:{};
@@ -99,6 +112,51 @@ try {
     await sleep(500);await page.keyboard.type(buffered?"Recovered.hx":"Main.hx",{delay:20});await sleep(250);await page.keyboard.press("Enter");
     for(let i=0;i<300 && !lines.includes("shared-view-ready");i++)await sleep(50);
     assert.ok(lines.includes("shared-view-ready"),"hosted editor did not open its shared document");
+    if(appPreview){
+      async function choose(query){
+        await page.evaluate(()=>document.querySelector("#screen").focus());
+        await page.keyboard.down(modifier);await page.keyboard.press("p");await page.keyboard.up(modifier);
+        await sleep(500);await page.keyboard.sendCharacter(query);await sleep(400);await page.keyboard.press("Enter");
+      }
+      async function previewReady(previous){
+        await page.waitForFunction(previous=>{const frame=document.querySelector('iframe[data-rayde-app-preview]');return globalThis.previewFailure||frame?.title==="Pocket Studio"&&(!previous||frame.src!==previous);},{timeout:180000},previous);
+        assert.equal(await page.evaluate(()=>globalThis.previewFailure),undefined,"The guest app compiler failed; see browser.log");
+        const element=await page.$('iframe[data-rayde-app-preview]'),frame=await element.contentFrame();
+        await frame.waitForFunction(()=>document.querySelector("#status")?.hidden,{timeout:90000});
+        return {element,frame};
+      }
+      console.log("Building Pocket Studio through the Worker and real MSB guest");
+      await choose(">Preview App");
+      let preview=await previewReady();
+      let previewUrl=preview.frame.url();
+      assert.notEqual(new URL(previewUrl).origin,appOrigin);
+      assert.equal(await preview.frame.evaluate(()=>crossOriginIsolated),true);
+      assert.equal(await preview.frame.evaluate(()=>{try{parent.localStorage;return false;}catch{return true;}}),true);
+      const compiles=lines.filter(line=>line==="preview-compile").length;
+      assert.equal(compiles,2,"The initial preview must compile Haxe and WASM in the guest");
+      const cached=lines.length;
+      await choose(">Preview App");
+      for(let i=0;i<600&&!lines.slice(cached).includes("preview-cache-hit");i++)await sleep(50);
+      assert.ok(lines.slice(cached).includes("preview-cache-hit"),"unchanged MSB preview missed its build cache");
+      preview=await previewReady(previewUrl);previewUrl=preview.frame.url();
+      assert.equal(lines.filter(line=>line==="preview-compile").length,compiles,"cached MSB preview ran a compiler");
+      const savedTasks=async()=>{const response=await rpc("fs.read",{path:"data/tasks.json"});assert.equal(response.ok,true);return JSON.parse(response.data);};
+      const tasks=await savedTasks(),box=await preview.element.boundingBox();
+      await page.mouse.click(box.x+box.width-80,box.y+106);await sleep(300);
+      await page.mouse.click(box.x+box.width-200,box.y+106);
+      let changed=tasks;
+      for(let i=0;i<300&&changed.length===tasks.length;i++){await sleep(50);changed=await savedTasks();}
+      assert.equal(changed.length,tasks.length+1,"the guest-built app did not save its task through the authorized workspace bridge");
+      await preview.element.screenshot({path:join(shots,"msb-app-preview.png")});
+      assert.equal((await fetch(previewUrl)).status,200,"the active preview capability is unavailable");
+      await choose(">Close Tab");
+      await page.waitForFunction(()=>!document.querySelector('iframe[data-rayde-app-preview]'),{timeout:15000});
+      let status=0;
+      for(let i=0;i<100&&status!==404;i++){status=(await fetch(previewUrl)).status;if(status!==404)await sleep(50);}
+      assert.equal(status,404,"obsolete MSB preview capability remained usable");
+      await choose("Main.hx");
+      console.log("MSB preview render, origin isolation, cached rebuild, workspace save and closure passed");
+    }
     if(buffered){
       assert.ok(lines.includes("restored-buffer-dirty"));assert.equal(await savedText(),savedBaseline);
       await page.keyboard.down(modifier);await page.keyboard.press("s");await page.keyboard.up(modifier);

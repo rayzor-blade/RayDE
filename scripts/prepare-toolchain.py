@@ -19,6 +19,18 @@ def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream,'sha256').hexdigest()
 
+def validate_previews(ash,tools):
+    required=['ash_runtime.o','ash_channel.wasm','channel-agent.mjs','rayde_preview_files.mjs','preview-frames.mjs','haxe/rayde/preview/Files.hx']
+    if not all((tools/name).is_file() for name in required):
+        raise ValueError('The app preview tooling is incomplete; run scripts/stage-preview.py with --runtime first')
+    for name in ['ash_runtime.o','ash_channel.wasm']:
+        with (tools/name).open('rb') as stream:
+            if stream.read(8)!=b'\x00asm\x01\x00\x00\x00':
+                raise ValueError('The app preview runtime and channel must be WebAssembly modules')
+    help=subprocess.run([str(ash),'--help'],text=True,capture_output=True,check=True,timeout=10).stdout
+    if '--codegen-opt-level' not in help:
+        raise ValueError('App previews require an Ash build with --codegen-opt-level support')
+
 def copy_binary(source,destination,libraries):
     source=source.resolve(strict=True)
     with source.open('rb') as stream:
@@ -56,8 +68,11 @@ def main():
         parser.error('The pinned Haxe archive or Rayzor standard library is invalid')
     if args.output.exists():
         parser.error('Choose a new output file; existing template configuration is preserved')
-    if args.preview_tools and not all((args.preview_tools/name).is_file() for name in ['ash_runtime.o','ash_channel.wasm','channel-agent.mjs','rayde_preview_files.mjs','preview-frames.mjs','haxe/rayde/preview/Files.hx']):
-        parser.error('The app preview tooling is incomplete; run scripts/stage-preview.py with --runtime first')
+    if args.preview_tools:
+        try:
+            validate_previews(args.ash,args.preview_tools)
+        except (ValueError,OSError,subprocess.SubprocessError) as error:
+            parser.error(str(error))
     def msb(*command,timeout=60,capture=False):
         return subprocess.run([str(args.msb),*map(str,command)],env={**os.environ,'MSB_BACKEND':'local'},check=True,timeout=timeout,text=True,stdout=subprocess.PIPE if capture else None)
     builder='rayde-toolchain-build-'+secrets.token_hex(8)
@@ -77,7 +92,7 @@ def main():
         for name in ['bootstrap.sh','finalize.py']:
             shutil.copy2(ROOT/'native/runner/toolchain'/name,payload/name)
         shutil.copy2(args.haxe_archive,payload/'haxe.tar.gz')
-        environment={'PATH':'/opt/rayde/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LD_LIBRARY_PATH':'/opt/rayde/lib','HAXE_STD_PATH':'/opt/rayde/haxe/std/','HAXELIB_PATH':'/opt/rayde/haxelib','RAYZOR_STD_PATH':'/opt/rayde/haxe-std'}
+        environment={'PATH':'/opt/rayde/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LD_LIBRARY_PATH':'/opt/rayde/lib','TMPDIR':'/tmp','HAXE_STD_PATH':'/opt/rayde/haxe/std/','HAXELIB_PATH':'/opt/rayde/haxelib','RAYZOR_STD_PATH':'/opt/rayde/haxe-std'}
         (payload/'environment.json').write_text(json.dumps(environment)+'\n')
         variables=[part for key,value in environment.items() for part in ['--env',key+'='+value]]
         try:
