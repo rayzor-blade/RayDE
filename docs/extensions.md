@@ -163,7 +163,7 @@ The runnable fixture is [Console Starter](../tests/fixtures/starters/console/mai
 
 ## Code actions
 
-Providers use the same registry for the editor's gutter hints and **Show Code Actions** chooser. No view or sidebar contribution is needed. Add `"activationEvents": ["onCodeActions:haxe"]` and `"capabilities": ["codeActions.provide", "workspace.read", "workspace.write"]` to the manifest; `workspace.write` is required only for actions that return edits.
+Providers use the same registry for inline buttons above source lines and the **Show Code Actions** chooser. Run, Preview, Debug and other provider actions appear together on their source line; the gutter remains available for breakpoints and file changes. No view or sidebar contribution is needed. Add `"activationEvents": ["onCodeActions:haxe"]` and `"capabilities": ["codeActions.provide", "workspace.read", "workspace.write"]` to the manifest; `workspace.write` is required only for actions that return edits.
 
 ```haxe
 import rayde.codeActions.registerProvider;
@@ -450,7 +450,7 @@ The [Git history graph](git.md) combines these controls with a RayScript DAG lay
 
 Opening a `.rayext` runs the extension. Its views are drawn in the Preview at the `location` each declares; an extension with no view shows only the tabs it opens. The Studio's console, activity and elements are in the Extension tab of the bottom panel.
 
-Open a `.rays` file, then choose **Preview Extension** from its gutter code action, the **Code Actions** menu, or the eye button beside the tabs. The preview opens in a side sheet and leaves your editor splits in place. Source files open with the preview hidden.
+Open a `.rays` file, then choose **Preview Extension** above the source, from the **Code Actions** menu, or with the eye button beside the tabs. The preview opens in a side sheet and leaves your editor splits in place. Source files open with the preview hidden.
 
 Main scripts and source modules find the declaring `.rayext` in their parent folders. The preview runs its main script with the manifest's settings, imports, capabilities and styles. A script with no declaring manifest runs as a standalone preview.
 

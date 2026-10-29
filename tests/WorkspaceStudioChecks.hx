@@ -51,7 +51,7 @@ class WorkspaceStudioChecks {
 			var before=tree.getBounds(new ashui.layout.Node(editors[0]));
 			until(() -> Lambda.exists(bench.codeActionsPart.codeActions.list(), item -> item.action.kind == "preview"),"Source has no Preview code action");
 			check(bench.extensionsPart.studioFor(file)==null,"Requesting code actions eagerly started its preview");
-			click('.rayde-code-action[title="Preview Extension"]');until(() -> bench.extensionsPart.studioFor(file)!=null&&bench.extensionsPart.studioFor(file).hasView(),"Preview code action did not mount the Sheet");
+			click('.ui-code-action');until(() -> bench.extensionsPart.studioFor(file)!=null&&bench.extensionsPart.studioFor(file).hasView(),"Inline Preview code action did not mount the Sheet");
 			var studio=bench.extensionsPart.studioFor(file);
 			var after=tree.getBounds(new ashui.layout.Node(Css.query(tree,bench.node.id,".rayde-code-editor")[0]));
 			check(Math.abs(before.width-after.width)<.1 && Css.query(tree,bench.node.id,"#rayde-studio-columns").length==0,"Preview sheet resized the source editor");

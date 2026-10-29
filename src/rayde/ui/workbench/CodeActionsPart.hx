@@ -7,6 +7,7 @@ import ashui.components.ContextMenu.ContextMenuTrigger;
 import ashui.components.Button;
 import ashui.components.DropdownMenu;
 import ashui.components.CodeEditor;
+import ashui.components.code.CodeAnnotations.CodeLineActions;
 import ashui.components.code.CodeEditorState;
 import ashui.components.CodeView;
 import ashui.components.Icon;
@@ -147,33 +148,26 @@ class CodeActionsPart {
 	}
 
 	function watchCodeActions(file:String, editor:CodeEditor):Void {
-		var previous = editor.onGutterClick;
-		editor.onGutterClick = (line, event) -> {
-			if (event.button != null && !event.button.match(Left)) return;
-			var marker = editor.annotations.markerAt(line);
-			if (marker != null && marker.className.split(" ").indexOf("rayde-code-action") >= 0) {
-				var items = [for (i in codeActions.list()) if (i.action.disabled == null && editor.document.lineAt(i.action.range.from) == line) i];
-				if (items.length == 1) executeCodeAction(items[0].key, codeActionVersion);
-				else if (items.length > 1) chooseCodeActions(items);
-			} else if (previous != null) previous(line, event);
-		};
 		new ashui.reactive.Watch(() -> editor.value.get(), _ -> queueCodeActions(file, editor));
-		new ashui.reactive.Watch(() -> wb.active.get() == file, on -> { if (on) queueCodeActions(file,editor); else editor.markers("code-actions",[]); });
+		new ashui.reactive.Watch(() -> wb.active.get() == file, on -> { if (on) queueCodeActions(file,editor); else editor.actions("code-actions",[]); });
 		new ashui.reactive.Watch(() -> [for (p in wb.problems.get()) if (p.file == file) p], _ -> queueCodeActions(file, editor, codeActionPicker != null && wb.quickOpen.get()), LspProtocol.sameDiagnostics);
 		new ashui.reactive.Watch(() -> codeActionRevision.get(), _ -> {
-			var seen = new Map<Int, Bool>(), marks:Array<ashui.components.code.CodeAnnotations.CodeMarker> = [];
-			for (item in codeActions.list()) if (item.action.disabled == null && codeActions.current(file, codeActionVersion)) {
+			var groups:Array<CodeLineActions> = [], lines = new Map<Int, CodeLineActions>();
+			var version = codeActionVersion;
+			for (item in codeActions.list()) if (wb.active.get() == file && codeActions.current(file, version)) {
 				var line = editor.document.lineAt(item.action.range.from);
-				if (!seen.exists(line)) {
-					seen.set(line,true);
-					var run = item.action.kind == "run" || item.action.kind.startsWith("run.");
-					marks.push({line:line,className:run ? "rayde-code-action rayde-code-action-run" : "rayde-code-action",title:item.action.title,icon:ViewIcons.named(null,item.action.icon) ?? Icons.LIGHTBULB_LINE});
+				var group = lines.get(line);
+				if (group == null) {
+					group = {line:line, actions:[]}; lines.set(line,group); groups.push(group);
 				}
+				var key = item.key;
+				group.actions.push({label:item.action.title,icon:ViewIcons.named(null,item.action.icon) ?? Icons.LIGHTBULB_LINE,
+					disabled:item.action.disabled != null,run:() -> { executeCodeAction(key,version); }});
 			}
-			editor.markers("code-actions", marks);
+			editor.actions("code-actions", groups, true);
 		});
 		Owner.onCleanup(() -> {
-			editor.markers("code-actions", []);
+			editor.actions("code-actions", []);
 			if (codeActionFile != file || codeActionEditor != editor) return;
 			codeActionEditor = null;
 			if (codeActionTimer != null) codeActionTimer.cancel(); codeActionTimer = null;
@@ -238,8 +232,6 @@ class CodeActionsPart {
 		}
 		return choices;
 	}
-
-	function chooseCodeActions(items:Array<ActionItem>):Void { codeActionPicker = null; wb.openPicker("Code actions", actionChoices(items)); }
 
 	public function executeCodeAction(key:String, version:Int):Bool {
 		var file = wb.active.get(), editor = wb.editorOf(file);
