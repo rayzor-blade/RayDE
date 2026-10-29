@@ -32,6 +32,10 @@ test("hosted journal recovery restores a dirty buffer over its saved file and su
  assert.equal((await browser.request("doc.update",{path:"main.hx",update:Buffer.from(Y.encodeStateAsUpdate(peer,vector)).toString("base64")})).ok,true);
  assert.equal((await browser.request("doc.close",{path:"main.hx"})).ok,true);
  assert.equal(await readFile(join(host.root,"main.hx"),"utf8"),"saved 🦊\n");
+ for(const [op,args] of [["fs.rename",{from:"main.hx",to:"moved.hx"}],["fs.remove",{path:"main.hx"}],["fs.write",{path:"main.hx",data:"replacement"}]]){
+  assert.equal((await browser.request(op,args)).code,"buffer-dirty",op+" discarded a closed recovered draft");
+ }
+ assert.equal(await readFile(join(host.root,"main.hx"),"utf8"),"saved 🦊\n");
  browser.socket.close();await host.stop();await host.start("replacement");
  const reopened=await workspace.connect(),again=await reopened.request("doc.open",{path:"main.hx"});
  assert.equal(again.text,"continued unsaved saved 🦊\n");assert.equal(again.dirty,true);

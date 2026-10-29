@@ -40,4 +40,6 @@ Shared text files must be UTF-8 and no larger than 8 MiB. If the session reaches
 
 Close shared documents before moving or deleting their file or containing folder. These operations are refused while shared documents remain open.
 
+Save or reconcile recovered drafts before moving, deleting or replacing their files, even after closing their tabs. If RayDE asks you to reopen an older recovered draft, reopen it before retrying.
+
 For self-hosting, environment settings, protocol details and tests, see the [session contributor reference](contributing/session.md). Account-gateway setup is in [the Cloudflare reference](../web/cloud/README.md).

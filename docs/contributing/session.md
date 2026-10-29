@@ -95,6 +95,8 @@ With `hello.checkpoints = 1`, `doc.save` accepts `checkpoint:true` and returns v
 
 With `hello.bufferedRestore = 1`, the trusted control plane can use `doc.restore {path, checkpoint, mode:"buffer", diskSha256}` after materializing the saved UTF-8 file. Its hash must match. The recovered graph stays in checksummed private state; background flush, last-subscriber release and shutdown leave the saved file unchanged. `doc.open` reports `buffered` and `dirty`, and the browser binding marks restored edits dirty even when browser recovery already has the same text. Recovered buffers continue requiring explicit Save. Save verifies the observed disk baseline and records both sides of an in-progress disk write so interrupted saves can reopen safely; a different disk baseline requires reconciliation. This is not a filesystem compare-and-swap: external writers must be fenced or reconciled before automated restoration. Stable path identities and a complete filesystem manifest remain prerequisites.
 
+Released drafts retain checksummed host-local path bindings. File mutations check them after close or restart, including canonical aliases; dirty or conflicting drafts must be saved or reconciled first. Legacy unbound records are rebound on reopen. This does not supply distributed document IDs.
+
 The hosted gateway reserves restoration for its trusted control plane and stores checkpoints before acknowledging Save. See [saved document recovery](../../web/cloud/README.md#saved-document-recovery) for gateway storage and restore behavior.
 
 ### Unsaved edit journals

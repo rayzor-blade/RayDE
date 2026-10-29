@@ -5,6 +5,7 @@ use crate::{
 };
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     io,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -16,7 +17,10 @@ pub struct DirStore {
     state: PathBuf,
     counter: AtomicU64,
     identity: StoreIdentity,
+    buffers: tokio::sync::Mutex<Option<HashSet<PathBuf>>>,
 }
+
+const MAX_RECOVERY_ENTRIES: usize = 16_384;
 
 fn io_error(error: io::Error) -> SessionError {
     use io::ErrorKind::*;
@@ -74,7 +78,7 @@ impl DirStore {
             authority: crate::cache_identity::persistent_id(&state_root.as_ref().join("authority.id"))?,
             workspace: crate::cache_identity::persistent_id(&state.join("workspace.id"))?,
         };
-        Ok(Self { state, root, identity, counter: AtomicU64::new(0) })
+        Ok(Self { state, root, identity, counter: AtomicU64::new(0), buffers: Default::default() })
     }
 
     pub fn root(&self) -> &Path {
@@ -130,6 +134,169 @@ impl DirStore {
             return Err(io_error(error));
         }
         sync_directory(target.parent().ok_or_else(|| SessionError::new("failed", "The file has no parent."))?).await?;
+        Ok(())
+    }
+
+    async fn buffer_header(path: &Path) -> Result<Option<crate::buffer_state::Baseline>> {
+        use tokio::io::AsyncReadExt;
+        let mut file = tokio::fs::File::open(path).await.map_err(io_error)?;
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(crate::buffer_state::PREFIX as u64)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(io_error)?;
+        if !crate::buffer_state::buffered(&bytes) {
+            return Ok(None);
+        }
+        file.take(crate::buffer_state::MAX_HEADER as u64)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(io_error)?;
+        Ok(crate::buffer_state::header(&bytes)?.map(|(header, _)| header))
+    }
+
+    async fn bounded_read(path: &Path, limit: usize) -> Result<Vec<u8>> {
+        use tokio::io::AsyncReadExt;
+        let mut bytes = Vec::new();
+        tokio::fs::File::open(path)
+            .await
+            .map_err(io_error)?
+            .take(limit as u64 + 1)
+            .read_to_end(&mut bytes)
+            .await
+            .map_err(io_error)?;
+        if bytes.len() > limit {
+            return Err(SessionError::new(
+                "too-large",
+                "The recovery file exceeds its size limit.",
+            ));
+        }
+        Ok(bytes)
+    }
+
+    /// Released buffers remain protected; clean graphs can return to ordinary file-backed recovery.
+    async fn protect_buffers(
+        &self,
+        paths: &[&str],
+        descendants: bool,
+        writing: Option<&[u8]>,
+    ) -> Result<()> {
+        let mut roots = Vec::new();
+        for path in paths {
+            roots.push(PathBuf::from(self.recovery_path(path).await?));
+        }
+        let mut buffers = self.buffers.lock().await;
+        // Private writes maintain this index; inactive graphs need no polling or retained payloads.
+        if buffers.is_none() {
+            let mut found = HashSet::new();
+            match tokio::fs::read_dir(&self.state).await {
+                Ok(mut reader) => {
+                    let mut count = 0;
+                    while let Some(entry) = reader.next_entry().await.map_err(io_error)? {
+                        count += 1;
+                        if count > MAX_RECOVERY_ENTRIES {
+                            return Err(SessionError::new(
+                                "busy",
+                                "The session recovery inventory exceeds its limit.",
+                            ));
+                        }
+                        if entry
+                            .path()
+                            .extension()
+                            .is_none_or(|extension| extension != "ydoc")
+                        {
+                            continue;
+                        }
+                        if !entry.file_type().await.map_err(io_error)?.is_file() {
+                            return Err(SessionError::new(
+                                "bad-buffer-state",
+                                "The session recovery entry is not a regular file.",
+                            ));
+                        }
+                        if Self::buffer_header(&entry.path()).await?.is_some() {
+                            found.insert(entry.path());
+                        }
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+                Err(error) => return Err(io_error(error)),
+            }
+            *buffers = Some(found);
+        }
+        let writing = writing.map(crate::checkpoint::digest);
+        // Validate every affected record before changing any clean sibling's storage format.
+        let mut normalizing = Vec::new();
+        for path in buffers.as_ref().unwrap() {
+            let Some(header) = Self::buffer_header(path).await? else {
+                continue;
+            };
+            let bound = header.path.as_deref().ok_or_else(|| {
+                SessionError::new(
+                    "recovery-binding",
+                    "Reopen recovered drafts before moving, deleting or replacing files.",
+                )
+            })?;
+            let native = if cfg!(windows) { bound.replace('/', "\\") } else { bound.to_owned() };
+            let bound = if Path::new(&native).is_absolute() {
+                PathBuf::from(native)
+            } else {
+                self.root.join(clean(bound)?)
+            };
+            if !bound.starts_with(&self.root) {
+                return Err(SessionError::new(
+                    "recovery-binding",
+                    "The recovered draft belongs to a different workspace path. Reopen it before changing files.",
+                ));
+            }
+            if !roots
+                .iter()
+                .any(|root| bound == *root || descendants && bound.starts_with(root))
+            {
+                continue;
+            }
+            let bytes = Self::bounded_read(
+                path,
+                crate::checkpoint::MAX_BYTES
+                    + crate::buffer_state::MAX_HEADER
+                    + crate::buffer_state::PREFIX,
+            )
+            .await?;
+            let (header, graph) = crate::buffer_state::unpack(&bytes)?.ok_or_else(|| {
+                SessionError::new("bad-buffer-state", "The recovered draft is invalid.")
+            })?;
+            let disk = Self::bounded_read(&bound, crate::session::MAX_READ as usize).await?;
+            if !header.accepts(&crate::checkpoint::digest(&disk)) {
+                return Err(SessionError::new(
+                    "recovery-conflict",
+                    "The saved file changed. Reconcile its recovered draft before changing the file.",
+                ));
+            }
+            if writing.as_deref().is_some_and(|hash| header.saving(hash)) {
+                continue;
+            }
+            if crate::checkpoint::text(graph)?.as_bytes() != disk {
+                return Err(SessionError::new(
+                    "buffer-dirty",
+                    "Save or reconcile the recovered draft before moving, deleting or replacing its file.",
+                ));
+            }
+            normalizing.push(path.clone());
+        }
+        for path in normalizing {
+            let bytes = Self::bounded_read(
+                &path,
+                crate::checkpoint::MAX_BYTES
+                    + crate::buffer_state::MAX_HEADER
+                    + crate::buffer_state::PREFIX,
+            )
+            .await?;
+            let (_, graph) = crate::buffer_state::unpack(&bytes)?.ok_or_else(|| {
+                SessionError::new("bad-buffer-state", "The recovered draft is invalid.")
+            })?;
+            self.replace(&path, graph).await?;
+            buffers.as_mut().unwrap().remove(&path);
+        }
         Ok(())
     }
 }
@@ -238,6 +405,7 @@ impl FileStore for DirStore {
 
     async fn write(&self, path: &str, data: &[u8]) -> Result<()> {
         let absolute = self.inside(path).await?;
+        self.protect_buffers(&[path], false, Some(data)).await?;
         self.replace(&absolute, data).await
     }
 
@@ -251,6 +419,7 @@ impl FileStore for DirStore {
         }
         let absolute = self.inside(path).await?;
         let meta = tokio::fs::symlink_metadata(&absolute).await.map_err(io_error)?;
+        self.protect_buffers(&[path], true, None).await?;
         if meta.is_dir() {
             if recursive { tokio::fs::remove_dir_all(&absolute).await } else { tokio::fs::remove_dir(&absolute).await }
         } else {
@@ -261,6 +430,8 @@ impl FileStore for DirStore {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<()> {
+        if clean(from)?.is_empty() || clean(to)?.is_empty() {return Err(SessionError::new("outside","The workspace itself cannot be moved or replaced."));}
+        self.protect_buffers(&[from, to], true, None).await?;
         let (from, to) = (self.inside(from).await?, self.inside(to).await?);
         if let Some(parent) = to.parent() {
             create_directories(parent).await?;
@@ -308,14 +479,40 @@ impl FileStore for DirStore {
     }
 
     async fn write_state(&self, key: &str, data: &[u8]) -> Result<()> {
+        let mut buffers = self.buffers.lock().await;
+        let path = self.state_file(key);
+        if crate::buffer_state::buffered(data) && buffers.as_ref().is_some_and(|entries|entries.len() >= MAX_RECOVERY_ENTRIES && !entries.contains(&path)) {
+            return Err(SessionError::new("busy","The session recovery inventory exceeds its limit."));
+        }
         private_directories(&self.state).map_err(io_error)?;
-        self.replace(&self.state_file(key), data).await
+        self.replace(&path, data).await?;
+        if let Some(buffers) = buffers.as_mut() {
+            if crate::buffer_state::buffered(data) {buffers.insert(path);} else {buffers.remove(&path);}
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn buffer_index_admission_allows_existing_records_and_releases_capacity() {
+        let workspace = tempfile::tempdir().unwrap(); let private = tempfile::tempdir().unwrap();
+        let store = DirStore::with_state_root(workspace.path(), private.path()).unwrap();
+        let existing = store.state_file("doc:existing.txt");
+        let mut entries:HashSet<_>=(0..MAX_RECOVERY_ENTRIES-1).map(|id|store.state_file(&format!("doc:{id}"))).collect();
+        entries.insert(existing.clone()); *store.buffers.lock().await=Some(entries);
+        let state = crate::buffer_state::pack(&[0,0],&crate::checkpoint::digest(b""),None,&store.recovery_path("existing.txt").await.unwrap()).unwrap();
+        assert_eq!(store.write_state("doc:new.txt",&state).await.unwrap_err().code,"busy");
+        assert!(store.read_state("doc:new.txt").await.unwrap().is_none());
+        store.write_state("doc:existing.txt",&state).await.unwrap();
+        assert_eq!(store.read_state("doc:existing.txt").await.unwrap().unwrap(),state);
+        store.write_state("doc:existing.txt",&[0,0]).await.unwrap();
+        store.write_state("doc:new.txt",&state).await.unwrap();
+        assert_eq!(store.buffers.lock().await.as_ref().unwrap().len(),MAX_RECOVERY_ENTRIES);
+    }
 
     #[tokio::test]
     async fn state_is_private_namespaced_and_survives_reopening() {

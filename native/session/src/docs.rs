@@ -190,6 +190,9 @@ impl<S: FileStore> DocHub<S> {
         let mut buffered = false;
         if let Some(saved) = self.store.read_state(&format!("doc:{path}")).await? {
             let state = if let Some((baseline,state)) = crate::buffer_state::unpack(&saved)? {
+                if let Some(binding) = baseline.path.as_deref() {
+                    if binding != self.store.recovery_path(path).await? {return Err(Self::disk_conflict());}
+                }
                 if !baseline.accepts(&crate::checkpoint::digest(disk.as_bytes())) {
                     return Err(Self::disk_conflict());
                 }
@@ -204,7 +207,7 @@ impl<S: FileStore> DocHub<S> {
         // The file may have changed while the session was away: its text wins, as an edit on top of the saved history.
         if !buffered { apply_diff(&doc, &text, &disk, DISK); }
         let state = state_of(&doc);
-        let state = if buffered {crate::buffer_state::pack(&state,&crate::checkpoint::digest(disk.as_bytes()),None)?} else {state};
+        let state = if buffered {crate::buffer_state::pack(&state,&crate::checkpoint::digest(disk.as_bytes()),None,&self.store.recovery_path(path).await?)?} else {state};
         self.store.write_state(&format!("doc:{path}"), &state).await?;
 
         let subscribers: Mutex<HashMap<String, Send_>> = Mutex::new(HashMap::new());
@@ -285,7 +288,7 @@ impl<S: FileStore> DocHub<S> {
         let _saving = open.saving.lock().await;
         let state = state_of(&open.doc);
         let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
-        let state = crate::buffer_state::pack(&state, &baseline, None)?;
+        let state = crate::buffer_state::pack(&state, &baseline, None, &self.store.recovery_path(path).await?)?;
         self.store.write_state(&format!("doc:{path}"), &state).await
     }
 
@@ -317,7 +320,7 @@ impl<S: FileStore> DocHub<S> {
     async fn persist(&self, path: &str, open: &OpenDoc, state: &[u8], saving: Option<&str>) -> Result<()> {
         if !open.buffered {return self.store.write_state(&format!("doc:{path}"),state).await;}
         let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
-        let state = crate::buffer_state::pack(state,&baseline,saving)?;
+        let state = crate::buffer_state::pack(state,&baseline,saving,&self.store.recovery_path(path).await?)?;
         self.store.write_state(&format!("doc:{path}"),&state).await
     }
 
@@ -350,7 +353,7 @@ impl<S: FileStore> DocHub<S> {
         if changed {
             if open.buffered || state.len() <= crate::checkpoint::MAX_BYTES {
                 let baseline = crate::checkpoint::digest(open.last_disk.lock().unwrap().as_bytes());
-                let intent = crate::buffer_state::pack(&state, &baseline, Some(&crate::checkpoint::digest(text.as_bytes())))?;
+                let intent = crate::buffer_state::pack(&state, &baseline, Some(&crate::checkpoint::digest(text.as_bytes())), &self.store.recovery_path(path).await?)?;
                 self.store.write_state(&format!("doc:{path}"), &intent).await?;
             }
             self.store.write(path, text.as_bytes()).await?;
@@ -383,7 +386,7 @@ impl<S: FileStore> DocHub<S> {
         let disk = self.store.read(path).await?;
         let disk_text = std::str::from_utf8(&disk).map_err(|_|Self::disk_conflict())?;
         if crate::checkpoint::digest(&disk) != disk_sha256 {return Err(Self::disk_conflict());}
-        self.store.write_state(&format!("doc:{path}"),&crate::buffer_state::pack(&state,disk_sha256,None)?).await?;
+        self.store.write_state(&format!("doc:{path}"),&crate::buffer_state::pack(&state,disk_sha256,None,&self.store.recovery_path(path).await?)?).await?;
         Ok((entry.mtime,text != disk_text))
     }
 
