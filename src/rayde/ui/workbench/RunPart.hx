@@ -242,7 +242,7 @@ class RunPart {
 
 	/** Saves what is edited, then builds the project and runs it. */
 	public function run():Void {
-		if(previewBuilding())return;
+		if(previewBuilding() || runner.state=="building")return;
 		if (wb.props.empty == true || !runner.canRun() && !ExtensionsPart.isExtension(wb.active.get())) return;
 		// Run is Continue while the extension is stopped.
 		var d = wb.debugPart.debugger();
@@ -254,6 +254,7 @@ class RunPart {
 	}
 
 	function runSaved():Void {
+		if(previewBuilding() || runner.state=="building")return;
 		if (wb.extension != null || ExtensionsPart.isExtension(wb.active.get())) {
 			(wb.extension != null ? wb.extensionsPart.extensionStudio() : wb.extensionsPart.studioOf(wb.active.get())).reload();
 			wb.panelsPart.showPanel("extension");
@@ -326,23 +327,28 @@ class RunPart {
 		return view;
 	}
 
-	/** Project actions in the title bar; Stop replaces Run while a job is active. */
+	/** Project actions stay in place while builds report progress and Stop is available. */
 	function runControls(state:String):Element {
 		var runnable = runner!=null && runner.canRun();
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
-		var active = state == "preview-building" || state == "building" || state == "running";
+		var building = state == "preview-building" || state == "building", active = building || state == "running";
+		var buildLabel = building ? (state == "preview-building" ? "Building app preview" : "Building project") : "Build project";
 		var shortcut = wb.keymapPart.bindings.label("buildproject");
 		var runShortcut = wb.keymapPart.bindings.label("run");
 		var controls = <div id="rayde-run-controls" class="flex items-center gap-1" onPointerDown={e -> e.stopPropagation()}>
-			<if {canBuild()}><tooltip label={"Build project" + (shortcut == null ? "" : " (" + shortcut + ")")} side="bottom">
-				<button id="rayde-build-action" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> buildProject()}><icon document={Icons.HAMMER_LINE} class="size-4"/></button>
+			<if {active}><tooltip label="Stop" side="bottom"><button id="rayde-stop" variant={Outline} size={Icon} class="rayde-toolbar-action text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-4"/></button></tooltip></if>
+			<if {canBuild()}><tooltip label={buildLabel + (building || shortcut == null ? "" : " (" + shortcut + ")")} side="bottom">
+				<button id="rayde-build-action" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> buildProject()}>
+					<if {building}><spinner id="rayde-build-spinner" size={Sm}/><else><icon document={Icons.HAMMER_LINE} class="size-4"/></if>
+				</button>
 			</tooltip></if>
-			<if {active}><tooltip label="Stop" side="bottom"><button id="rayde-stop" variant={Outline} size={Icon} class="rayde-toolbar-action text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-4"/></button></tooltip>
-			<else><if {runnable}><tooltip label={"Run project" + (runShortcut == null ? "" : " (" + runShortcut + ")")} side="bottom"><button id="rayde-run" variant={Outline} size={Icon} class="rayde-toolbar-action" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-4"/></button></tooltip></if></if>
+			<if {runnable}><tooltip label={"Run project" + (runShortcut == null ? "" : " (" + runShortcut + ")")} side="bottom"><button id="rayde-run" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-4"/></button></tooltip></if>
 		</div>;
-		for (action in [{id:"rayde-build-action",label:"Build project"},{id:"rayde-run",label:"Run project"},{id:"rayde-stop",label:"Stop"}])
-			for (node in ashui.css.Css.query(controls.tree,controls.node.id,"#" + action.id))
-				ashui.css.Identity.of(controls.tree,node).setAttribute("aria-label",action.label);
+		for (action in [{id:"rayde-build-action",label:buildLabel},{id:"rayde-run",label:"Run project"},{id:"rayde-stop",label:"Stop"}])
+			for (node in ashui.css.Css.query(controls.tree,controls.node.id,"#" + action.id)) {
+				var identity=ashui.css.Identity.of(controls.tree,node).setAttribute("aria-label",action.label);
+				if(action.id=="rayde-build-action")identity.setAttribute("aria-busy",building ? "true" : "false");
+			}
 		return controls;
 	}
 

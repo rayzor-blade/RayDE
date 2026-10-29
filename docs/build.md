@@ -2,7 +2,7 @@
 
 **Build** compiles the project. **Run** builds and launches it.
 
-Both icon buttons are at the top-right of the app; hover for their names and shortcuts. **Stop** replaces Run while a job is active; progress and results appear in the bottom status bar.
+Both icon buttons are at the top-right of the app; hover for their names and shortcuts. During builds, Build shows a spinner and Run is disabled. **Stop** appears beside them while a job is active; progress and results appear in the bottom status bar.
 
 | Action | Toolbar | Shortcut | Menu / command center |
 | --- | --- | --- | --- |

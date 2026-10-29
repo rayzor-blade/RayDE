@@ -274,7 +274,7 @@ class ShellPart {
 
 	/** Matching end widths keep the project centered across window-control styles. */
 	function barEnd(style:String, leftEnd:Bool):Element {
-		var controlsLeft = WindowControls.onLeft(style), width = 88 + (controlsLeft ? 0 : WindowControls.width(style));
+		var controlsLeft = WindowControls.onLeft(style), width = 112 + (controlsLeft ? 0 : WindowControls.width(style));
 		var end = <div class="rayde-bar-end flex items-center shrink-0" width={width}>
 			<if {!leftEnd}><for {state in [wb.runPart.statusState()]}>${wb.runPart.runControls(state)}</for></if>
 			<if {controlsLeft == leftEnd}><window-controls style={style} chrome={wb.chrome}/></if>

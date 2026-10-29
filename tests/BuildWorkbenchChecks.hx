@@ -73,11 +73,20 @@ class BuildWorkbenchChecks {
 			check(nodes("#rayde-build").length == 1 && nodes("#rayde-build-action").length == 1,"Build toolbar conflicts with the Build Settings surface");
 			bench.closeFile(Workbench.SETTINGS); settle();
 			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
+			var idleBuild=box("#rayde-build-action"), idleRun=box("#rayde-run");
 			click("#rayde-build-action");
 			check(bench.runPart.runState.get() == "building", "Build did not publish background progress: " + bench.runPart.runState.get() + "\n" + bench.runPart.runner.console);
 			settle(1);
 			check(nodes("#rayde-stop").length == 1, "Build did not expose Stop");
+			check(nodes("#rayde-build-action #rayde-build-spinner").length==1,"Build did not replace its hammer with a spinner");
+			check(nodes("#rayde-run").length==1 && nodes("#rayde-run:disabled").length==1,"Build hid or left Run enabled");
+			check(Math.abs(box("#rayde-build-action").x-idleBuild.x)<1 && Math.abs(box("#rayde-run").x-idleRun.x)<1,"Active controls shifted Build or Run");
+			var stopBox=box("#rayde-stop"), pill=box("#rayde-project");
+			check(stopBox.x>=pill.x+pill.width && stopBox.x+stopBox.width<=box("#rayde-build-action").x,"Stop overlaps project search or Build");
+			Snapshot.capture('build-toolbar-${dark ? "dark" : "light"}-busy',tree,bench.node,1100,760);
+			click("#rayde-run"); bench.runCommand("run");
 			until(() -> !bench.runPart.runner.active());
+			check(nodes("#rayde-build-spinner, #rayde-stop").length==0 && nodes("#rayde-run:disabled").length==0,"Build completion retained busy controls");
 			check(bench.runPart.runState.get() == "built" && bench.runPart.runner.exitCode == 0 && sys.FileSystem.exists(project + "/bin/app.js"), "Toolbar Build did not compile the declared target");
 			check(sys.io.File.getContent(file) == good && bench.dirty.get().length == 0, "Build did not save edited buffers first");
 			check(bench.runPart.runner.console.indexOf("DO_NOT_RUN") < 0 && !compiler.running(), "Build ran the program or started an idle compiler server");
@@ -86,9 +95,12 @@ class BuildWorkbenchChecks {
 			bench.documentsPart.buffer(file).set("class Main { static function main() { var broken:Int = 'text'; } }\n"); bench.dirty.set([file]);
 			bench.runCommand("buildproject"); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runState.get() == "failed" && bench.problems.get().length > 0 && bench.panelsPart.bottom.get() == "problems", "Failed build did not surface its diagnostic");
+			check(nodes("#rayde-build-spinner, #rayde-stop").length==0 && nodes("#rayde-run:disabled").length==0,"Failed build retained busy controls");
 			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
 			click("#rayde-build-action"); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runState.get() == "built" && bench.problems.get().length == 0, "Successful rebuild retained the previous build diagnostic");
+			click("#rayde-build-action"); settle(1); click("#rayde-stop"); settle();
+			check(bench.runPart.runState.get()=="idle" && nodes("#rayde-build-spinner, #rayde-stop").length==0 && nodes("#rayde-run:disabled").length==0,"Cancelled build retained busy controls");
 		} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? ""); throw error; }
 		stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? "");
 	}
