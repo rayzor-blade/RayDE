@@ -605,7 +605,7 @@ class ExplorerPart {
 
 	function refreshFileIndex():Void {
 		if (wb.props.empty == true) return;
-		fileIndex.refresh([wb.props.display.cwd]);
+		fileIndex.refresh(FileIndex.directories(wb.props.display.cwd,wb.props.display.args),wb.props.display.cwd);
 		if (fileIndexScheduled || wb.gone) return;
 		fileIndexScheduled = true;
 		ashui.animation.AnimationScheduler.main.after(.016, pollFileIndex);
@@ -627,11 +627,16 @@ class ExplorerPart {
 		return fileIndex.paths;
 	}
 
+	function filesLimited():Bool {
+		fileIndexRevision.get();
+		return fileIndex.limited;
+	}
+
 	/** What is in `dir`, folders first, then Haxe files, then the rest, each by name. */
 	function explorerEntries(dir:String):Array<rayde.ui.ExplorerTree.ExplorerEntry> {
 		var names = try Fs.readDirectory(dir) catch (_:Dynamic) [];
 		var directories = new Map<String, Bool>();
-		for (name in names) directories.set(name, Fs.isDirectory(haxe.io.Path.join([dir, name])));
+		names = [for (name in names) try { directories.set(name, Fs.isDirectory(haxe.io.Path.join([dir, name]))); name; } catch (_:Dynamic) continue];
 		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;
 		names.sort((a, b) -> { var order = rank(a) - rank(b); return order == 0 ? Reflect.compare(a.toLowerCase(), b.toLowerCase()) : order; });
 		var entry = projectEntry(), out:Array<rayde.ui.ExplorerTree.ExplorerEntry> = [];

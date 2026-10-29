@@ -20,6 +20,12 @@ await mkdir(join(fixture,'.haxelib'),{recursive:true});
 for(const name of await readdir(installed))await symlink(join(installed,name),join(fixture,'.haxelib',name));
 await mkdir(join(fixture,'.rayde'),{recursive:true});await writeFile(join(fixture,'.rayde/settings.json'),JSON.stringify({extensions:{disabled:['rayzor','git','markdown','jam']}}));
 await cp(join(fixture,'README.md'),join(fixture,'src/Guide.md'));
+await mkdir(join(fixture,'.config'),{recursive:true});await writeFile(join(fixture,'.config/demo.conf'),'enabled=true\n');
+if(!appMode){
+ const dependency=join(privateRoot,'dependency');await mkdir(dependency);await writeFile(join(dependency,'external-only-file.txt'),'dependency\n');
+ await writeFile(join(fixture,'build.hxml'),await readFile(join(fixture,'build.hxml'),'utf8')+'\n-cp '+dependency+'\n');
+ await symlink(dependency,join(fixture,'linked-dependency'));
+}
 if(javascript){
  await mkdir(join(fixture,'public'),{recursive:true});
  await writeFile(join(fixture,'build.hxml'),'-cp src\n-main Main\n--js bin/app.js\n');
@@ -54,7 +60,7 @@ function output(event){
 const session=spawn(resolve(process.env.RAYDE_TEST_SESSION??join(root,'native/session/target/debug/rayde-session')),['--root',fixture,'--state-root',join(privateRoot,'state'),'--env-file',join(privateRoot,'environment.json'),'--web',web,'--port','0','--token','builtin-preview-fixture-32-characters','--preview-project','build.hxml','--exec',...(javascript?[]:['--preview-tools',join(root,'bin/preview-tools')]),'--extension-host',join(root,'bin/rayde-extension-host'),'--extensions',join(root,'extensions')],{stdio:['ignore','pipe','pipe'],env:{...process.env,HAXELIB_PATH:join(process.env.HOME,'.rayde-session/demos/pocket-studio/.haxelib'),PATH:join(root,'../ash/target/release')+':'+join(root,'../rayzor/target/release')+':'+process.env.PATH,RAYZOR_STD_PATH:join(root,'../rayzor/compiler/haxe-std')}});
 let browser,page;
 const report={ok:false};const pause=ms=>new Promise(r=>setTimeout(r,ms));
-async function until(check,label,timeout=60000){const end=Date.now()+timeout;while(!check()){
+async function until(check,label,timeout=60000){const end=Date.now()+timeout;while(!await check()){
  const failure=logs.find(line=>/PAGE ERROR|RayDE stopped:|uncaught exception/.test(line));if(failure)throw Error(failure);
  if(Date.now()>end)throw Error('Timed out: '+label);await pause(50);
 }}
@@ -75,7 +81,9 @@ try{
  });
  page.on('pageerror',error=>logs.push('PAGE ERROR '+error.stack));
  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
- await page.goto(url);await page.waitForFunction(()=>document.querySelector('#demo-state').hasAttribute('data-live'),{timeout:120000});
+ await page.goto(url);
+ await until(()=>page.$eval('#demo-state',state=>state.hasAttribute('data-live')),'landing editor',120000);
+ console.log('Landing editor ready');
  const frame=await (await page.$('#editor')).contentFrame();
  assert.equal(new URL(page.url()).search,'');assert.equal(new URL(frame.url()).search,'');assert.equal(new URL(frame.url()).hash,'');
  const preset=await page.evaluate(()=>JSON.parse(localStorage.getItem('rayde.workspaceConnection.v1')));
@@ -83,6 +91,31 @@ try{
  await frame.evaluate(()=>document.querySelector('#screen').focus());
  async function chord(key){await page.keyboard.down('Meta');await page.keyboard.press(key);await page.keyboard.up('Meta');}
  async function choose(query){await chord('p');await pause(500);await page.keyboard.sendCharacter(query);await pause(500);await page.keyboard.press('Enter');await pause(500);}
+ async function workspaceWrite(path,data){
+  await page.evaluate(({path,data})=>new Promise((resolve,reject)=>{
+   const connection=JSON.parse(localStorage.getItem('rayde.workspaceConnection.v1')),socket=new WebSocket(connection.endpoint);
+   const done=error=>{clearTimeout(timer);socket.close();error?reject(error):resolve();};
+   const timer=setTimeout(()=>done(Error('Workspace write timed out')),10000);
+   socket.onerror=()=>done(Error('Workspace write connection failed'));
+   socket.onopen=()=>socket.send(JSON.stringify({id:1,op:'hello',token:connection.token}));
+   socket.onmessage=event=>{
+    const reply=JSON.parse(event.data);if(reply.id!==1&&reply.id!==2)return;
+    if(!reply.ok){done(Error(reply.message));return;}
+    if(reply.id===1)socket.send(JSON.stringify({id:2,op:'fs.write',path,data}));else done();
+   };
+  }),{path,data});
+ }
+ if(!appMode){
+  for(const [query,path] of [['README.md','README.md'],['demo.conf','.config/demo.conf'],['tasks.json','data/tasks.json']]){
+   const before=requests.length;await choose(query);
+   await until(()=>requests.slice(before).some(r=>r.op==='view.open'&&r.path===path),query+' through Quick Open');
+   console.log('Quick Open:',path);
+  }
+  const before=requests.length;await choose('external-only-file.txt');await pause(500);
+  assert.equal(requests.slice(before).some(r=>r.op==='view.open'),false,'Quick Open included an external dependency');
+  await page.keyboard.press('Escape');
+  report.workspaceQuickOpen=report.inaccessibleEntryTolerated=true;
+ }
  let doneCount=2;
  const tasks=JSON.parse(await readFile(join(fixture,'data/tasks.json'),'utf8'));
  const hostMessages = () => messages.filter(message => message.t === 'error');
@@ -99,7 +132,7 @@ try{
   await (await page.$('#editor')).screenshot({path:join(shots,file+'.png')});
   tasks[0].lane=tasks[0].lane==='Done'?'In progress':'Done';
   doneCount=tasks.filter(task=>task.lane==='Done').length;
-  await writeFile(join(fixture,'data/tasks.json'),JSON.stringify(tasks));
+  await workspaceWrite('data/tasks.json',JSON.stringify(tasks));
   const clicked=messages.length, editor=await page.$('#editor');
   await editor.scrollIntoView();const bounds=await editor.boundingBox();
   await page.mouse.click(bounds.x+bounds.width-248,bounds.y+428);
@@ -108,6 +141,7 @@ try{
   await page.mouse.click(box.x+box.width-157,box.y+64);
   await until(()=>messages.slice(reload).some(m=>m.t==='log'&&m.message===`Pocket Tools: 8 tasks, ${doneCount} done`),file+' reload');
   report[file]=true;
+  console.log('RayScript preview:',file);
  }
  assert.deepEqual(hostMessages(),[]);
  if(appMode){

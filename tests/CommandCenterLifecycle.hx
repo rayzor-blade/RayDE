@@ -17,13 +17,14 @@ class CommandCenterLifecycle {
 		rayde.ui.Style.use();
 		var tree = new LayoutTree(), stop:Void->Void = null;
 		var opened = Signal.make(false), request = Signal.make(({text:"", serial:0}:CenterRequest));
-		var paths = Signal.make([for (i in 0...429) '/fixture/src/File$i.hx']);
+		var paths = Signal.make([for (i in 0...429) '/fixture/src/File$i.hx']), limited = Signal.make(false);
 		var scans = 0, chosen = "", line = 0, center:CommandCenter = null;
 		var root = Owner.root(tree, cleanup -> {
 			stop = cleanup;
 			var anchor = new ashui.ui.Div({width:400,height:36},[new ashui.ui.Text("Fixture project")]);
 			center = new CommandCenter({opened:opened,request:request,anchor:anchor,root:"/fixture",
 				files:() -> { scans++; return paths.get(); },
+				filesLimited:() -> limited.get(),
 				actions:[{id:"test",label:"Test action",icon:rayde.ui.Icons.HAXE,run:() -> chosen="action"}],
 				tasks:() -> [{id:"task",label:"Build fixture",icon:rayde.ui.Icons.HAXE,run:() -> chosen="task"}],
 				onOpenFile:path -> chosen=path,onLine:value -> line=value});
@@ -49,6 +50,11 @@ class CommandCenterLifecycle {
 		var base=identities(), baseTexts=texts(), hooks=ashui.input.Pointer.hooks.length;
 		check("closed palette enumerated files or built rows",scans==0 && rows()==0);
 		open(""); check("open palette did not bound its mounted catalog",rows()<=13 && rows()>0 && scans==1);
+		limited.set(true); settle();
+		check("truncated catalog has no feedback",Css.query(tree,(@:privateAccess center.panel).node.id,"#rayde-command-file-limit").length==1);
+		ashui.core.render.Snapshot.capture('palette-${dark ? "dark" : "light"}-limited',tree,root.node,800,500);
+		limited.set(false); settle();
+		check("completed catalog retained truncation feedback",Css.query(tree,(@:privateAccess center.panel).node.id,"#rayde-command-file-limit").length==0);
 		input().value.set("File428"); settle();
 		check("search omitted an unmounted file",rows()==1 && Css.query(tree,(@:privateAccess center.panel).node.id,"#center-file-src-File428-hx").length==1);
 		input().value.set("no such file"); settle();
@@ -80,6 +86,11 @@ class CommandCenterLifecycle {
 		check("pending catalog query should have no results",rows()==0);
 		paths.set(paths.get().concat(["/fixture/src/AddedLater.hx"])); settle();
 		check("catalog completion reset the filter or input focus",rows()==1 && input().value.get()=="AddedLater" && ashui.input.Focus.of(tree).node.id==input().node.id);
+		paths.set(paths.get().concat(["/fixture/README.md"])); input().value.set("README"); settle();
+		var icons=Css.query(tree,(@:privateAccess center.panel).node.id,"#center-file-README-md .ui-icon");
+		check("Markdown row did not render its file icon",icons.length==1);
+		var svg = @:privateAccess ashui.ui.Svg.intrinsic.get(Identity.of(tree,icons[0]));
+		check("Markdown row uses the wrong file icon",svg != null && svg.document==rayde.ui.FileIcons.of("README.md"));
 		opened.set(false); settle();
 		open(""); opened.set(false); settle(2); opened.set(true); settle();
 		check("rapid reopen lost focus or rows",rows()<=13 && rows()>0 && ashui.input.Focus.of(tree).node.id==input().node.id);

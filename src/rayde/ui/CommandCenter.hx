@@ -39,6 +39,7 @@ typedef CommandCenterProps = {
 	/** A reactive snapshot of project files, most recently opened first. */
 	files:Void->Array<String>,
 	?refreshFiles:Void->Void,
+	?filesLimited:Void->Bool,
 	/** The folder the listed paths are shown relative to. */
 	root:String,
 	actions:Array<CenterAction>,
@@ -176,13 +177,14 @@ class CommandCenter extends Component<CommandCenterProps> {
 			${list}
 		</div>
 		<div class="rayde-cc-footer flex items-center gap-4 px-4">
-			<if {m == "pick"}><text class="text-xs text-text-tertiary">Enter to choose</text>
+			<if {m == "files" && props.filesLimited != null && props.filesLimited()}><text id="rayde-command-file-limit" class="text-xs text-warning">File list limited</text>
+			<else><if {m == "pick"}><text class="text-xs text-text-tertiary">Enter to choose</text>
 			<else>
 				<text class="text-xs text-text-tertiary">Enter to open</text>
 				<text class="text-xs text-text-tertiary">&gt; for commands</text>
 				<text class="text-xs text-text-tertiary">: for a line</text>
 				<text class="text-xs text-text-tertiary">task for tasks</text>
-			</if>
+			</if></if>
 		</div>
 		</div>;
 		var field = ashui.ui.Input.at(element.tree, Css.query(element.tree, element.node.id, "#rayde-command-input")[0]);
@@ -210,7 +212,7 @@ class CommandCenter extends Component<CommandCenterProps> {
 	function fileChoice(path:String):Choice {
 		var name = haxe.io.Path.withoutDirectory(path), relative = shown(path);
 		return {id:"center-file-" + fileIds.replace(relative, "-"), value:path, label:name, detail:haxe.io.Path.directory(relative),
-			icon:Icons.HAXE, shortcut:"", search:(path + " " + name + " " + relative).toLowerCase()};
+			icon:FileIcons.of(path), shortcut:"", search:(path + " " + name + " " + relative).toLowerCase()};
 	}
 
 	function choiceRow(row:Choice, matching:Signal<Array<Choice>>, selected:Signal<Int>):Element {

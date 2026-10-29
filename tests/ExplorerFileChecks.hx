@@ -8,6 +8,15 @@ import rayde.ui.FileIcons;
 import rayde.ui.Icons;
 import rayde.ui.Workbench;
 
+private class InaccessibleFiles extends rayde.workspace.LocalWorkspace {
+	final denied:String;
+	public function new(denied:String) { super(); this.denied = denied; }
+	override public function isDirectory(path:String):Bool {
+		if (path == denied) throw "The path leaves the workspace.";
+		return super.isDirectory(path);
+	}
+}
+
 @:access(rayde.ui.Workbench)
 @:access(rayde.ui.workbench.CodeActionsPart)
 @:access(rayde.ui.workbench.DebugPart)
@@ -37,12 +46,16 @@ class ExplorerFileChecks {
 		}
 		sys.io.File.saveContent(unrelated, "Unrelated file");
 		sys.FileSystem.createDirectory(root + "/src");
+		sys.FileSystem.createDirectory(root + "/.git");
 		sys.FileSystem.createDirectory(root + "/.config");
 		sys.FileSystem.createDirectory(root + "/empty-extensions");
 		Sys.putEnv("RAYDE_EXTENSIONS", root + "/empty-extensions");
 		var files = ["z.HX", "a.py", "b.ts", "config.json", "rayzor.toml", "settings.yml", ".env", "Dockerfile", "unknown.custom", "README", "page.html", "theme.css"];
 		for (name in files) sys.io.File.saveContent(root + "/src/" + name, "// " + name);
 		sys.io.File.saveContent(root + "/.config/tool.conf", "enabled=true");
+		sys.io.File.saveContent(root + "/README.md", "# Workspace\n");
+		sys.FileSystem.createDirectory(root + "/extensions/tools/ext");
+		sys.io.File.saveContent(root + "/extensions/tools/ext/main.rays", "trace('tools');");
 		sys.io.File.saveContent(root + "/build.hxml", "-cp src\n-cp ../" + haxe.io.Path.withoutDirectory(dependency) + "\n-lib fixture-dependency\n");
 		var haxelib = root + "/haxelib-fixture";
 		sys.io.File.saveContent(haxelib, '#!/bin/sh\ncase "$1" in\nlist) echo "fixture-dependency: [dev:fixture]";;\npath) echo "$library";;\nesac\n');
@@ -69,6 +82,20 @@ class ExplorerFileChecks {
 				refused(() -> services.writeFile(root + "/linked-library/new.md", "escaped"));
 				if (sys.FileSystem.exists(library + "/new.md")) throw "Extension wrote through a directory symlink";
 			}
+			bench.explorerPart.refreshFileIndex();
+			var indexed = haxe.Timer.stamp() + 8;
+			while (bench.explorerPart.fileIndex.busy() && haxe.Timer.stamp() < indexed) { settle(); Sys.sleep(.01); }
+			bench.explorerPart.pollFileIndex();
+			var catalog = bench.explorerPart.projectFiles();
+			for (file in ["README.md",".config/tool.conf","extensions/tools/ext/main.rays","build.hxml"])
+				if (catalog.indexOf(root + "/" + file) < 0) throw "Quick Open omitted " + file;
+			if (!StringTools.startsWith(catalog[0],root + "/src/")) throw "Quick Open lost source-folder priority";
+			for (file in catalog) if (StringTools.startsWith(file,dependency) || StringTools.startsWith(file,root + "/linked-library/")) throw "Quick Open catalogued an external dependency";
+			var provider = rayde.workspace.Fs.current;
+			rayde.workspace.Fs.current = new InaccessibleFiles(root + "/README.md");
+			var readable = try bench.explorerPart.explorerEntries(root) catch (error:Dynamic) { rayde.workspace.Fs.current = provider; throw error; }
+			rayde.workspace.Fs.current = provider;
+			if (readable.length == 0 || Lambda.exists(readable,entry -> entry.path == root + "/README.md")) throw "Explorer did not tolerate an inaccessible entry";
 			function click(selector:String):Void {
 				var found = Css.query(tree, bench.node.id, selector);
 				if (found.length != 1) throw "Missing dependency row: " + selector;

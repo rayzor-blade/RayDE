@@ -29,7 +29,7 @@ class GitIgnore {
 		searched = true;
 		var dir = root;
 		while (true) {
-			if (Fs.exists(dir + "/.git")) return repository = dir;
+			try { if (Fs.exists(dir + "/.git")) return repository = dir; } catch (_:Dynamic) { return null; }
 			var up = Path.directory(dir);
 			if (up == dir || up == "") return null;
 			dir = up;

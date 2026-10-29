@@ -8,6 +8,8 @@ The tree mounts only the rows in view, with a few above and below, from a flat l
 
 The Explorer lists every file type, including dotfiles, with folders first and Haxe files before other files. Configuration files and other languages open in the editor; supported images open in the previewer. Explorer and tab icons use Remix and a bundled MIT-licensed Devicon language subset; unknown types use the file-code icon.
 
+Quick Open builds a path snapshot on a worker, scanning declared source folders before the workspace root. It excludes Git-ignored entries, internal cache folders and directory links outside the workspace. Traversal stops at 50,000 entries or 128 directory levels; a truncated catalog reports its limit in the palette footer. Only changed snapshots update the view, and superseded scans are cancelled. Remote mounts stop repository discovery at their filesystem boundary.
+
 ## Git ignore rules
 
 Files and folders that git ignores are muted in the tree, as is everything inside an ignored folder. The rules come from the repository's `.git/info/exclude` and the `.gitignore` of each folder above the entry, the last matching pattern deciding, with `!` negation, anchored and directory-only patterns, `*`, `?`, `[...]` and `**`; a file inside an ignored folder cannot be re-included. The `.git` folder is always muted. Whether a file is tracked, and global excludes, are not considered. Outside a repository nothing is muted. An edited `.gitignore` applies to rows built after the edit.

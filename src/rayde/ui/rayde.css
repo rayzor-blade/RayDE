@@ -119,6 +119,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 .rayde-cc-footer { height: 34px; border-top: 1px solid var(--border); }
 .rayde-cc-label, input.rayde-cc-field { color: var(--rayde-glass-text); }
 .rayde-cc-detail, .rayde-cc-footer text, .rayde-cc-search, .rayde-cc-empty, .rayde-cc-field .text-text-tertiary { color: var(--rayde-glass-muted); }
+.rayde-cc-footer .text-warning { color: var(--warning); }
 @media (prefers-color-scheme: light) {
 	.rayde-glass { --rayde-glass-text: #1f2937; --rayde-glass-muted: #475569; }
 }
