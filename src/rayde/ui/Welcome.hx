@@ -45,14 +45,14 @@ typedef WelcomeProps = {
 class Welcome extends Component<WelcomeProps> {
 	function render():Element {
 		var mac = rayde.Platform.shortcutsMac();
-		return <div id="rayde-welcome" class="rayde-welcome flex flex-col flex-1 min-h-0 items-center overflow-auto">
-			<div class="flex flex-col gap-7 px-10 py-6 max-w-full my-auto shrink-0" width={900}>
+		return <div id="rayde-welcome" class="rayde-welcome flex flex-col flex-1 min-h-0 min-w-0 items-center overflow-auto">
+			<div class="rayde-welcome-content flex flex-col gap-7 my-auto shrink-0 min-w-0">
 				<div class="flex flex-col gap-3">
 					<for {dark in [darkScheme()]}>${wordmark(dark)}</for>
 					<text class="text-sm text-text-secondary">Haxe Integrated Development Environment</text>
 				</div>
-				<div class="flex gap-12">
-					<div class="flex flex-col gap-7 flex-1 min-w-0">
+				<div class="flex flex-wrap gap-8">
+					<div class="rayde-welcome-start flex flex-col gap-7 min-w-0">
 						<div class="flex flex-col gap-2">
 							<text class="rayde-section">Start</text>
 							<div class="flex flex-col gap-1">
@@ -70,7 +70,7 @@ class Welcome extends Component<WelcomeProps> {
 							<for {list in [props.recent.get()]}>${recent(list)}</for>
 						</div></if>
 					</div>
-					<div class="flex flex-col gap-2 shrink-0" width={310}>
+					<div class="rayde-welcome-info flex flex-col gap-2 min-w-0">
 						<if {props.empty == true}>
 							<text class="rayde-section">Recent workspaces</text>
 							<if {props.projects.length == 0}><text class="text-sm text-text-tertiary px-2 py-1">Projects and folders you open appear here.</text>
@@ -99,18 +99,21 @@ class Welcome extends Component<WelcomeProps> {
 	}
 
 	/** The wordmark for the scheme, at the size the page gives its heading. */
-	function wordmark(dark:Bool):Element
-		return new ashui.ui.Svg(Icons.wordmark(dark), {width: 232, height: 70});
+	function wordmark(dark:Bool):Element {
+		var mark = new ashui.ui.Svg(Icons.wordmark(dark), {width: 232, height: 70});
+		ashui.css.Identity.of(mark.tree,mark.node.id).addClasses(["rayde-welcome-wordmark"]);
+		return mark;
+	}
 
 	/** One way to start: its icon, what it does, and the keys that do it too. */
 	function action(id:String, icon:ashui.svg.SvgDocument, label:String, description:String, keys:Array<String>, run:Void->Void):Element
-		return <div id={id} class="rayde-action flex items-center gap-3 px-2 cursor-pointer" height={48} onClick={_ -> run()}>
+		return <div id={id} class="rayde-action flex items-center gap-3 px-2 py-2 cursor-pointer" minHeight={52} onClick={_ -> run()}>
 			<div class="rayde-tile flex items-center justify-center shrink-0" width={36} height={36}><icon document={icon} class="size-4"/></div>
 			<div class="flex flex-col flex-1 min-w-0">
 				<text class="text-sm">${label}</text>
 				<text class="text-xs text-text-tertiary">${description}</text>
 			</div>
-			<div class="flex items-center gap-1">{[for (k in keys) key(k)]}</div>
+			<div class="flex items-center gap-1 shrink-0">{[for (k in keys) key(k)]}</div>
 		</div>;
 
 	function key(k:String):Element
@@ -126,8 +129,8 @@ class Welcome extends Component<WelcomeProps> {
 		var root = haxe.io.Path.addTrailingSlash(props.root), relative = StringTools.startsWith(path, root) ? path.substr(root.length) : path;
 		return <div id={"welcome-recent-" + ~/[^A-Za-z0-9]+/g.replace(relative, "-")} class="rayde-action flex items-center gap-3 px-2 cursor-pointer" height={36} onClick={_ -> props.onOpen(path)}>
 			<icon document={FileIcons.of(path)} class="size-4 shrink-0"/>
-			<text class="text-sm shrink-0">${haxe.io.Path.withoutDirectory(path)}</text>
-			<text class="text-xs text-text-tertiary">${haxe.io.Path.directory(relative)}</text>
+			<text class="rayde-welcome-truncate text-sm min-w-0" wrap={false}>${haxe.io.Path.withoutDirectory(path)}</text>
+			<text class="rayde-welcome-truncate text-xs text-text-tertiary flex-1 min-w-0" wrap={false}>${haxe.io.Path.directory(relative)}</text>
 		</div>;
 	}
 
@@ -146,7 +149,7 @@ class Welcome extends Component<WelcomeProps> {
 		return <div class="rayde-summary flex flex-col gap-4 p-4">
 			<div class="flex items-center gap-3">
 				<div class="rayde-tile flex items-center justify-center shrink-0" width={36} height={36}><icon document={Icons.workspaceFolder()} class="size-4"/></div>
-				<div class="flex flex-col min-w-0">
+				<div class="flex flex-col flex-1 min-w-0">
 					<text class="text-sm font-medium">${props.name}</text>
 					<text class="text-xs text-text-tertiary">${shortPath(props.root)}</text>
 				</div>
@@ -166,9 +169,9 @@ class Welcome extends Component<WelcomeProps> {
 	}
 
 	function fact(label:String, value:String):Element
-		return <div class="flex items-center justify-between gap-4">
-			<text class="text-xs text-text-tertiary">${label}</text>
-			<text class="text-sm">${value}</text>
+		return <div class="flex items-start justify-between gap-4">
+			<text class="text-xs text-text-tertiary shrink-0" wrap={false}>${label}</text>
+			<text class="text-sm flex-1 min-w-0 text-right">${value}</text>
 		</div>;
 
 	function problems(list:Array<Diagnostic>):Element {

@@ -8,8 +8,9 @@ import {createRequire} from 'node:module';
 import {resolve,join,dirname} from 'node:path';
 const root=resolve(import.meta.dirname,'../..');
 const javascript=process.env.RAYDE_TEST_JAVASCRIPT==='1',appMode=javascript||process.env.RAYDE_TEST_APP==='1';
+const welcomeMode=process.env.RAYDE_TEST_WELCOME==='1';
 const puppeteer=createRequire(join(root,'web/session/package.json'))('puppeteer-core');
-const shots=join(root,'bin/web/pocket-demo-browser-shots');await mkdir(shots,{recursive:true});
+const shots=join(root,welcomeMode?'bin/web/welcome-layout-shots':'bin/web/pocket-demo-browser-shots');await mkdir(shots,{recursive:true});
 const fixture=await mkdtemp(join(root,'bin/published-demo/landing-'));
 const privateRoot=await mkdtemp(join(tmpdir(),'rayde-builtins-'));
 const web=join(privateRoot,'web');await mkdir(join(web,'dist'),{recursive:true});
@@ -105,6 +106,24 @@ try{
    };
   }),{path,data});
  }
+ if(welcomeMode){
+  for(const query of ['>Join All Editor Groups','>Close Tab','>Close Tab','>Toggle Explorer'])await choose(query);
+  const editor=await page.$('#editor');
+  for(const [width,height] of [[1240,700],[800,600],[800,400],[1240,700]]){
+   await editor.evaluate((element,{width,height})=>{element.style.width=width+'px';element.style.height=height+'px';element.style.maxWidth='none';element.style.maxHeight='none';},{width,height});
+   await editor.scrollIntoView();await pause(800);
+   const canvas=await frame.$eval('#screen',element=>({width:element.clientWidth,height:element.clientHeight}));
+   assert.equal(canvas.width,width);assert.equal(canvas.height,height);
+   await editor.screenshot({path:join(shots,`welcome-${width}-${height}.png`)});
+   if(height===400){
+    const box=await editor.boundingBox();await page.mouse.move(box.x+width-100,box.y+250);await page.mouse.wheel({deltaY:1100});await pause(500);
+    await editor.screenshot({path:join(shots,'welcome-scrolled.png')});await page.mouse.wheel({deltaY:-10000});await pause(300);
+   }
+  }
+  const before=requests.length;await frame.evaluate(()=>document.querySelector('#screen').focus());await choose('Main.hx');
+  await until(()=>requests.slice(before).some(request=>request.op==='view.open'&&request.path==='src/Main.hx'),'open source after Welcome resize');
+  report.welcomeResize=report.welcomeNavigation=true;
+ }else{
  if(!appMode){
   for(const [query,path] of [['README.md','README.md'],['demo.conf','.config/demo.conf'],['tasks.json','data/tasks.json']]){
    const before=requests.length;await choose(query);
@@ -217,6 +236,7 @@ try{
   await frame.evaluate(()=>document.querySelector('#screen').focus());await choose('BoardApp.hx');
   await frame.waitForFunction(()=>!document.querySelector('iframe[data-rayde-app-preview]'),{timeout:15000});
   report.appPreview=true;
+ }
  }
  report.ok=true;console.log(JSON.stringify(report));
 }finally{

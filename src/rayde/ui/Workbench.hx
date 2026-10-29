@@ -904,6 +904,7 @@ class Workbench extends Component<WorkbenchProps> {
 	}
 
 	function runtime():String {
+		if (props.empty == true || props.display.project != null && props.display.project.kind == "folder") return "";
 		buildRevision.get();
 		runPart.runnerRevision.get();
 		if (props.display.project != null && props.display.project.runtime == "caribou") return "caribou";
