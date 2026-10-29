@@ -176,7 +176,7 @@ class LanguagesPart {
 		var activity = Computed.make(() -> {
 			languageActivityRevision.get();
 			var current = languageServers.status(wb.active.get());
-			return current == null || current.id != server.id ? null : current.activity != null ? current.activity : current.indexing ? "indexing " + haxe.io.Path.withoutDirectory(wb.active.get()) : null;
+			return current == null || current.id != server.id ? null : current.activity != null ? current.activity : current.indexing ? "indexing" : null;
 		});
 		var indexing = Computed.make(() -> activity.get() != null);
 		var status = Computed.make(() -> activity.get() ?? (server.state == "idle" ? "not started" : server.state));

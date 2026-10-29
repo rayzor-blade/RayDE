@@ -341,10 +341,9 @@ class LspClient {
 			if (!workspace) { var waiting = indexing(file); doc.analyzed = doc.version; if (waiting) onDocumentActivity(file); }
 			return;
 		}
-		var subject:String = Std.isOfType(params.subject, String) && params.subject != "" ? params.subject : file == null ? "workspace" : haxe.io.Path.withoutDirectory(file);
 		var phase = params.phase == "scanning" ? "scanning" : method == "rayzor/analysisStatus" ? "checking" : "indexing";
 		var count = Std.isOfType(params.completed, Int) && params.completed >= 0 ? ' (${params.completed}' + (Std.isOfType(params.total, Int) && params.total > 0 ? '/${params.total}' : "") + ")" : "";
-		setProgress(key, phase + " " + subject + count);
+		setProgress(key, phase + count);
 	}
 
 	function configuration(section:Null<String>):Dynamic {

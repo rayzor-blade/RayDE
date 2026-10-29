@@ -88,16 +88,16 @@ class Snapshots {
 				if(!bench.languagesPart.languageServers.status(file).indexing || Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon[data-indexing]").length != 1)
 					throw "The Rayzor icon should animate while the active file is indexing";
 				hover("#rayde-lsp-status"); settle(40);
-				if(!Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — indexing Main.hx")) throw "Indexing tooltip did not name the active file";
+				if(!Lambda.exists(Css.query(bench.tree, bench.node.id, ".ui-tooltip text"), id -> ashui.ui.Text.at(id).text() == "Rayzor — indexing")) throw "Indexing tooltip did not show activity";
 				var indexingIcon = ashui.css.Identity.of(bench.tree, Css.query(bench.tree, bench.node.id, "#rayde-lsp-status .rayde-lsp-icon")[0]);
 				if(!ashui.css.Animations.active(indexingIcon)) throw "Indexing did not start the logo animation";
 				shot("server-indexing");
 				var indexingControl = Css.query(bench.tree, bench.node.id, "#rayde-lsp-status")[0];
 				var reported = false;
 				client.request("test/notify", {notifications:[{method:"rayzor/indexProgress", params:{uri:LspProtocol.uri(file), version:client.version(file), phase:"types", subject:"rayde.ui.Workbench", completed:128, total:512}}]}, _ -> reported = true);
-				until(() -> reported && ashui.ui.Text.at(Css.query(bench.tree, bench.node.id, "#rayde-lsp-label")[0]).text() == "Rayzor · indexing rayde.ui.Workbench (128/512)", "qualified class in the bottom status bar");
+				until(() -> reported && ashui.ui.Text.at(Css.query(bench.tree, bench.node.id, "#rayde-lsp-label")[0]).text() == "Rayzor · indexing (128/512)", "indexing counts in the bottom status bar");
 				if(Css.query(bench.tree, bench.node.id, "#rayde-lsp-status")[0] != indexingControl) throw "Indexing progress rebuilt the status controls";
-				shot("server-indexing-subject");
+				shot("server-indexing-counts");
 				client.request("test/notify", {notifications:[{method:"rayzor/analysisStatus", params:{uri:LspProtocol.uri(file), version:client.version(file), state:"ready"}}]}, _ -> {});
 				var analyzed = false;
 				client.request("test/diagnostics", {}, _ -> analyzed = true);
