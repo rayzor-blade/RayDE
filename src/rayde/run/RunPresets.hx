@@ -11,6 +11,7 @@ class RunPresets {
 			case "ash" | "ashui" if (target == "hl"):
 				value.runner = "ash";
 				value.flags = preview ? [] : ["--preset", "application"];
+				if (preview && framework == "ashui") value.compilerFlags = ["-dce", "full"];
 			case "heaps" | "tink" if (target == "js"):
 				value.runner = "browser";
 				value.mode = "browser";

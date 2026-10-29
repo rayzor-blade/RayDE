@@ -35,6 +35,11 @@ def workspace_environment(directory):
         values['HAXELIB_PATH'] = str(local)
     return values
 
+def demo_build(contents):
+    template = (ROOT / 'site/demo/build.hxml').read_text()
+    previous = template.replace('-dce full\n', '', 1)
+    return template if contents == previous else contents
+
 def main():
     def stop(_signal, _frame):
         raise KeyboardInterrupt
@@ -46,6 +51,7 @@ def main():
     mode.add_argument('--demo', action='store_true', help='connect the default editable Pocket Studio preview')
     mode.add_argument('--offline', action='store_true', help='serve the browser-only sample without workspace tools')
     parser.add_argument('--prepare-only', action='store_true', help='prepare and verify the persistent demo LSP cache, without serving or opening an editor')
+    parser.add_argument('--debug-session', action='store_true', help='use an unoptimized session build for debugging')
     args = parser.parse_args()
     if args.prepare_only and (args.workspace or args.offline):
         parser.error('--prepare-only prepares the managed Pocket Studio demo')
@@ -53,9 +59,10 @@ def main():
         parser.error('--port must be between 0 and 65535')
     if not (ROOT / 'site/dist/rayde.wasm').is_file():
         parser.error('Build the editor first: bash scripts/build-site.sh')
-    binary = ROOT / 'native/session/target/debug/rayde-session'
+    build_profile = 'debug' if args.debug_session else 'release'
+    binary = ROOT / ('native/session/target/' + build_profile + '/rayde-session')
     if not binary.is_file():
-        subprocess.run(['cargo', 'build', '--manifest-path', str(ROOT / 'native/session/Cargo.toml')], check=True)
+        subprocess.run(['cargo', 'build', '--locked', '--manifest-path', str(ROOT / 'native/session/Cargo.toml'), *([] if args.debug_session else ['--release'])], check=True)
     if not args.workspace and not args.offline:
         demo = pathlib.Path.home() / '.rayde-session/demos/pocket-studio'
         if not demo.exists():
@@ -85,6 +92,7 @@ def main():
         for name in ['ashui','ashui-components','ashui-icons']:
             for version in ['0.2.0','0.2.1']:
                 contents = contents.replace('-L '+name+':'+version+'\n','-L '+name+':0.2.2\n')
+        contents = demo_build(contents)
         if contents != build.read_text():
             build.write_text(contents)
         manifest = demo / 'haxelib.json'

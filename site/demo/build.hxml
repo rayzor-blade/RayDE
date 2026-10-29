@@ -4,4 +4,5 @@
 -L ashui-icons:0.2.2
 -D ashui_css=styles/app.css
 -main Main
+-dce full
 -hl bin/pocket-studio.hl

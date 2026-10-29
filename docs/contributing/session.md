@@ -5,8 +5,8 @@ The Rust crate `native/session` serves one workspace directory over a WebSocket.
 ## Starting a session
 
 ```sh
-cargo build --manifest-path native/session/Cargo.toml
-native/session/target/debug/rayde-session --root path/to/workspace --exec
+cargo build --release --manifest-path native/session/Cargo.toml
+native/session/target/release/rayde-session --root path/to/workspace --exec
 ```
 
 The server prints an address and token. To serve the small browser client, build it with `(cd web/session && npm install && npm run build)` and pass `--web web/session/dist`. Node packages build and test artifacts; the session service runs in Rust.
@@ -20,10 +20,12 @@ The [MSB runner](../../native/runner/README.md) provisions isolated Linux guests
 Build with `scripts/build-web.sh`; see [browser build requirements](building.md#browser-build). It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm` and `channel-agent.mjs`. `ASH_CHANNEL_ROOT` selects the checkout, `ASH_CHANNEL_WEB` its side module, and `WEB_LIBS` the window/GPU libraries. Use matching Ash and window libraries with future-aware browser idle waits. Run `npm ci` in `web/session` before bundling the page agent.
 
 ```sh
-native/session/target/debug/rayde-session --root path/to/workspace --exec \
+native/session/target/release/rayde-session --root path/to/workspace --exec \
   --web bin/web/rayde --extension-host "$PWD/bin/rayde-extension-host" \
   --extensions "$PWD/extensions"
 ```
+
+The landing launcher (`scripts/serve-site.py`) uses the optimized session build too. Pass `--debug-session` when debugging the Rust service; use a release build for latency measurements.
 
 Open the printed HTTP address with:
 

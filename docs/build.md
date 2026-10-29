@@ -24,7 +24,7 @@ For HashLink, Automatic uses Ash on Apple Silicon and `hl` elsewhere. Ash and As
 
 **Browser Preview** uses the same planner and target settings, with browser build flags and an HTML entry. After the first frame, the preview tab uses the app's window title and follows later title changes. An unchanged preview reuses successful compiler output and the finished bundle. Framework web builds can specify their output directory. Browser previews require an execution-enabled workspace session and the relevant compiler tooling.
 
-Ash preview defaults use `-O3 --codegen-opt-level 0`: optimized LLVM IR with faster machine code generation. Edit **Build / AOT arguments** to choose another optimization profile; `--air-opt-level` independently controls AIR optimization.
+The Ashui browser preset uses `-dce full` in **Compiler arguments** to remove unused Haxe code before compiling bytecode. Ash preview defaults use `-O3 --codegen-opt-level 0`: optimized LLVM IR with faster machine code generation. Edit **Build / AOT arguments** to choose another optimization profile; `--air-opt-level` independently controls AIR optimization.
 
 Text fields save on Enter. Settings live in `.rayde/settings.json`; starter templates can configure them automatically. Folder workspaces can use a custom framework build command.
 

@@ -53,6 +53,9 @@ class RunConfigurationChecks {
 			&& browserPlan.postBuild.args[browserPlan.postBuild.args.indexOf("--codegen-opt-level") + 1] == "0",
 			"Ash preview did not keep LLVM optimization with faster codegen");
 		check(browserPlan.compile.args.indexOf("--codegen-opt-level") < 0, "Ash optimization flags reached the Haxe compiler");
+		check(browserPlan.compile.args[browserPlan.compile.args.indexOf("-dce") + 1] == "full", "Ashui preview did not eliminate unused Haxe code");
+		var noDce = RunConfigurations.from({framework:"ashui", previews:{hl:{compilerFlags:[]}}}, "hl", true);
+		check(noDce.compilerFlags.length == 0, "Ashui preview replaced explicit compiler flags");
 		var explicitProfile = RunConfigurations.from({previews: {hl: {buildFlags: ["-Oz", "--target", "wasm32-wasip1-threads"]}}}, "hl", true);
 		check(explicitProfile.buildFlags.indexOf("-Oz") >= 0 && explicitProfile.buildFlags.indexOf("--codegen-opt-level") < 0,
 			"Preview defaults replaced an explicit optimization choice");
