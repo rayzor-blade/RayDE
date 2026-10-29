@@ -342,7 +342,7 @@ class ShellPart {
 
 	/** Views down the left edge of the side panel; the Explorer is the one there is, and its icon folds the Explorer away and brings it back. */
 	function activityBar():Element
-		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={Workbench.ACTIVITY}>
+		return <div id="rayde-activity" class="flex flex-col items-center shrink-0 gap-1 py-2" width={Workbench.ACTIVITY - 2}>
 			<for {entry in wb.contributions.activityItems("top")}>${activityItem(entry)}</for>
 			<div class="flex-1"/>
 			<for {entry in wb.contributions.activityItems("bottom")}>${activityItem(entry)}</for>

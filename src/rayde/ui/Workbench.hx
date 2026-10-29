@@ -150,7 +150,7 @@ class Workbench extends Component<WorkbenchProps> {
 	public final editorPart:EditorPart;
 	public final documentsPart:DocumentsPart;
 
-	/** The activity bar's width, and the Explorer's beside it: the side panel holds both. */
+	/** Collapsed sidebar width, including its card borders; the Explorer adds its own width. */
 	static inline var ACTIVITY = 48.;
 
 	static inline var EXPLORER_WIDTH = 260.;
