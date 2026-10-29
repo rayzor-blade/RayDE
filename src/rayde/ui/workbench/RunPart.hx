@@ -326,17 +326,31 @@ class RunPart {
 		return view;
 	}
 
-	/** Build and Run share progress and Stop, with separate actions while idle. */
-	function runStatus(state:String):Element {
+	/** Project actions in the title bar; Stop replaces Run while a job is active. */
+	function runControls(state:String):Element {
 		var runnable = runner!=null && runner.canRun();
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
-		var preview = state == "preview-building";
-		var active = preview || state == "building" || state == "running";
+		var active = state == "preview-building" || state == "building" || state == "running";
 		var shortcut = wb.keymapPart.bindings.label("buildproject");
-		return <div class="flex items-center gap-2">
-			<if {canBuild()}><tooltip label={"Build project" + (shortcut == null ? "" : " (" + shortcut + ")")} side="top">
-				<button id="rayde-build" variant={Ghost} size={Sm} class="rayde-status-item action" disabled={active} onClick={_ -> buildProject()}><icon document={Icons.HAMMER_LINE} class="size-3.5"/>Build</button>
+		var runShortcut = wb.keymapPart.bindings.label("run");
+		var controls = <div id="rayde-run-controls" class="flex items-center gap-1" onPointerDown={e -> e.stopPropagation()}>
+			<if {canBuild()}><tooltip label={"Build project" + (shortcut == null ? "" : " (" + shortcut + ")")} side="bottom">
+				<button id="rayde-build-action" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> buildProject()}><icon document={Icons.HAMMER_LINE} class="size-4"/></button>
 			</tooltip></if>
+			<if {active}><tooltip label="Stop" side="bottom"><button id="rayde-stop" variant={Outline} size={Icon} class="rayde-toolbar-action text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-4"/></button></tooltip>
+			<else><if {runnable}><tooltip label={"Run project" + (runShortcut == null ? "" : " (" + runShortcut + ")")} side="bottom"><button id="rayde-run" variant={Outline} size={Icon} class="rayde-toolbar-action" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-4"/></button></tooltip></if></if>
+		</div>;
+		for (action in [{id:"rayde-build-action",label:"Build project"},{id:"rayde-run",label:"Run project"},{id:"rayde-stop",label:"Stop"}])
+			for (node in ashui.css.Css.query(controls.tree,controls.node.id,"#" + action.id))
+				ashui.css.Identity.of(controls.tree,node).setAttribute("aria-label",action.label);
+		return controls;
+	}
+
+	/** Build progress and results remain visible in the status bar. */
+	function runStatus(state:String):Element {
+		if (wb.props.empty == true) return <div/>;
+		var preview = state == "preview-building";
+		return <div class="flex items-center gap-2">
 			<if {preview}><tooltip label="Building app preview · Click for Build output" side="top">
 				<button id="rayde-preview-building" variant={Ghost} size={Sm} class="rayde-status-item action" onClick={_ -> wb.panelsPart.showPanel("console")}><spinner size={Sm}/><text>${appPreview.phase.get()+" · "+appPreview.elapsed.get()+"s"}</text></button>
 			</tooltip><else><if {state == "building"}><div class="flex items-center gap-1.5"><spinner size={Sm}/><text class="text-text-secondary">Building</text></div></if></if>
@@ -347,8 +361,6 @@ class RunPart {
 			<if {state == "preview-ready"}><text class="text-success">Preview ready</text></if>
 			<if {state == "preview-failed"}><button variant={Ghost} size={Sm} class="rayde-status-item text-error" onClick={_ -> wb.panelsPart.showPanel("console")}>Preview build failed</button></if>
 			<if {state == "preview-cancelled"}><text class="text-text-secondary">Build cancelled</text></if>
-			<if {active}><div id="rayde-stop" class="rayde-status-item action flex text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-3.5"/><text>Stop</text></div>
-			<else><if {runnable}><div id="rayde-run" class="rayde-status-item action flex" onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-3.5"/><text>Run</text></div></if></if>
 		</div>;
 	}
 }

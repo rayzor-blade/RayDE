@@ -130,6 +130,11 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .rayde-pill:hover { color: var(--text-primary); border-color: var(--border-hover); }
 #rayde .rayde-pill-icon { color: var(--text-tertiary); }
 #rayde .rayde-pill-hint { color: var(--text-tertiary); font-family: var(--font-mono); }
+#rayde .rayde-project-search { max-width: 420px; }
+#rayde .rayde-pill { width: 100%; }
+#rayde .rayde-toolbar-action { width: 28px; height: 28px; min-height: 0; padding: 0; }
+#rayde .rayde-bar-end[data-side="right"] { justify-content: flex-end; gap: 8px; }
+#rayde .rayde-bar-end[data-side="right"][data-controls="left"] { padding-right: 12px; }
 
 /* Activity bar */
 #rayde #rayde-activity .ui-tooltip-trigger { align-self: center; flex-shrink: 0; }
@@ -203,7 +208,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .rayde-status { color: var(--text-secondary); font-size: var(--text-xs); }
 #rayde .rayde-status-item { align-items: center; gap: 4px; padding: 0 6px; border-radius: var(--radius-md); corner-shape: squircle; height: 20px; }
 #rayde .rayde-status-item.action { cursor: pointer; }
-#rayde #rayde-build { min-height: 0; font-size: var(--text-xs); font-weight: 400; color: var(--text-secondary); }
+#rayde #rayde-build-action { min-height: 0; font-size: var(--text-xs); font-weight: 400; color: var(--text-secondary); }
 #rayde .rayde-status-detail { color: var(--text-secondary); }
 #rayde .rayde-status-item.action:hover { background: var(--accent-subtle); color: var(--text-primary); }
 

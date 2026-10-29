@@ -42,7 +42,8 @@ class BuildWorkbenchChecks {
 		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), dark ? Dark : Light); rayde.ui.Style.use();
 		var tree = new LayoutTree(), compiler = new CompilerServer(), stop:Void->Void = null;
 		var bench = Owner.root(tree, cleanup -> { stop = cleanup; return new Workbench({display:Display.ofProject(compiler, entry), name:"sample"}); });
-		function settle(frames = 8):Void for (_ in 0...frames) { Offscreen.advance(.03); Css.setViewport(1100, 760); Css.update(); tree.flush(); tree.computeLayout(bench.node, 1100, 760); }
+		var width = 1100;
+		function settle(frames = 8):Void for (_ in 0...frames) { Offscreen.advance(.03); Css.setViewport(width, 760); Css.update(); tree.flush(); tree.computeLayout(bench.node, width, 760); }
 		function nodes(selector:String) return Css.query(tree, bench.node.id, selector);
 		function box(selector:String) { var found = nodes(selector); check(found.length == 1, "Missing " + selector); return tree.getScrolledBounds(new ashui.layout.Node(found[0])); }
 		function click(selector:String):Void { var b = box(selector); ashui.input.Pointer.move(tree, b.x + b.width / 2, b.y + b.height / 2); ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); }
@@ -53,13 +54,26 @@ class BuildWorkbenchChecks {
 		}
 		try {
 			bench.openProject(); settle();
-			check(nodes("#rayde-build").length == 1 && nodes("#rayde-run").length == 1, "Build and Run are not separate controls");
+			check(nodes("#rayde-build-action").length == 1 && nodes("#rayde-run").length == 1, "Build and Run are not separate controls");
 			check(Lambda.exists(bench.commandList, c -> c.id == "buildproject") && Lambda.exists(bench.commandList, c -> c.id == "build"), "Build replaced Build Settings");
 			check(bench.keymapPart.bindings.commandFor(rayde.keys.Chord.parse("mod+shift+b", Sys.systemName() == "Mac")) == "buildproject", "Default Build shortcut is missing");
-			var build = box("#rayde-build"), bar = box("#rayde-status-bar");
-			check(build.y >= bar.y && build.y + build.height <= bar.y + bar.height, "Build button exceeds the toolbar");
+			var windowStyle = bench.windowStyle.get();
+			for (style in ["macos","icon","windows","gnome","kde"]) for (size in [800,1100]) {
+				bench.windowStyle.set(style); width = size; settle();
+				var build = box("#rayde-build-action"), run = box("#rayde-run"), bar = box("#rayde-bar"), pill = box("#rayde-project"), controls = box("#rayde-window-controls");
+				check(build.y >= bar.y && build.y + build.height <= bar.y + bar.height && run.y >= bar.y && run.y + run.height <= bar.y + bar.height,"Build/Run exceed the title bar: " + style);
+				check(build.x >= bar.x + bar.width / 2 && run.x >= build.x + build.width && run.x + run.width <= bar.x + bar.width,"Build/Run are not at the top-right: " + style);
+				check(pill.x + pill.width <= build.x && Math.abs(pill.x + pill.width / 2 - (bar.x + bar.width / 2)) < 1,"Project search overlaps actions or lost centering: " + style);
+				check(rayde.ui.WindowControls.onLeft(style) ? controls.x + controls.width <= pill.x : run.x + run.width <= controls.x,"Run overlaps window controls: " + style);
+				check(nodes("#rayde-status-bar #rayde-build-action, #rayde-status-bar #rayde-run").length == 0,"Bottom bar retained duplicate actions");
+				if (size == 800) Snapshot.capture('build-title-${style}-${dark ? "dark" : "light"}',tree,bench.node,width,760);
+			}
+			bench.windowStyle.set(windowStyle); width = 1100; settle();
+			bench.openBuild(); until(() -> nodes("#rayde-build-main").length == 1);
+			check(nodes("#rayde-build").length == 1 && nodes("#rayde-build-action").length == 1,"Build toolbar conflicts with the Build Settings surface");
+			bench.closeFile(Workbench.SETTINGS); settle();
 			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
-			click("#rayde-build");
+			click("#rayde-build-action");
 			check(bench.runPart.runState.get() == "building", "Build did not publish background progress: " + bench.runPart.runState.get() + "\n" + bench.runPart.runner.console);
 			settle(1);
 			check(nodes("#rayde-stop").length == 1, "Build did not expose Stop");
@@ -73,7 +87,7 @@ class BuildWorkbenchChecks {
 			bench.runCommand("buildproject"); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runState.get() == "failed" && bench.problems.get().length > 0 && bench.panelsPart.bottom.get() == "problems", "Failed build did not surface its diagnostic");
 			bench.documentsPart.buffer(file).set(good); bench.dirty.set([file]);
-			click("#rayde-build"); until(() -> !bench.runPart.runner.active());
+			click("#rayde-build-action"); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runState.get() == "built" && bench.problems.get().length == 0, "Successful rebuild retained the previous build diagnostic");
 		} catch (error:Dynamic) { stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? ""); throw error; }
 		stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS", previous ?? "");

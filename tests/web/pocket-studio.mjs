@@ -147,7 +147,11 @@ try{
  if(appMode){
   console.log('Building the app preview through the workspace session');
   await page.keyboard.press('Escape');await choose('BoardApp.hx');
-  const firstBuild=Date.now();await choose('>Preview App');
+  const firstBuild=Date.now();
+  if(javascript){
+   const bounds=await (await page.$('#editor')).boundingBox();
+   await page.mouse.click(bounds.x+bounds.width-26,bounds.y+20);report.topRightRun=true;
+  }else await choose('>Preview App');
   await until(()=>requests.some(r=>r.op==='preview.prepare'),'preview preparation',30000);
   await (await page.$('#editor')).screenshot({path:join(shots,'app-building.png')});
   await until(()=>requests.some(r=>r.op==='proc.spawn'&&r.args?.includes(javascript?'--js':'wasm32-wasip1-threads')),'app compiler',180000);

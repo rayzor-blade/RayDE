@@ -258,25 +258,31 @@ class ShellPart {
 	/** The project in a pill in the middle, which opens the command center, and the window's controls at one end; the bar moves the window. */
 	function titleBar():Element {
 		var hint = rayde.Platform.shortcutsMac() ? "⌘P" : "Ctrl+P";
-		wb.pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" width={420} height={26} onPointerDown={e -> e.stopPropagation()} onClick={_ -> if (wb.quickOpen.get()) wb.quickOpen.set(false) else wb.openCenter()}>
+		wb.pill = <div id="rayde-project" class="rayde-pill flex items-center gap-2 px-3 cursor-pointer" height={26} onPointerDown={e -> e.stopPropagation()} onClick={_ -> if (wb.quickOpen.get()) wb.quickOpen.set(false) else wb.openCenter()}>
 			<icon document={Icons.workspaceFolder()} class="rayde-pill-icon size-3.5"/>
 			<text class="text-xs flex-1">${wb.props.name}</text>
 			<text class="rayde-pill-hint text-xs">${hint}</text>
 		</div>;
 		return <div id="rayde-bar" class="flex items-center shrink-0" height={40} onPointerDown={barPress}>
 			<for {style in [wb.windowStyle.get()]}>${barEnd(style, true)}</for>
-			<div class="flex-1"/>
-			<tooltip label={"Search files and commands in " + wb.props.display.cwd} side="bottom">{wb.pill}</tooltip>
-			<div class="flex-1"/>
+			<div class="flex flex-1 min-w-0 justify-center">
+				<tooltip class="rayde-project-search flex-1 min-w-0" label={"Search files and commands in " + wb.props.display.cwd} side="bottom">{wb.pill}</tooltip>
+			</div>
 			<for {style in [wb.windowStyle.get()]}>${barEnd(style, false)}</for>
 		</div>;
 	}
 
-	/** One end of the bar: the controls where the style puts them, and on the other end a space of the same width, so the pill stays in the middle. */
+	/** Matching end widths keep the project centered across window-control styles. */
 	function barEnd(style:String, leftEnd:Bool):Element {
-		if (WindowControls.onLeft(style) == leftEnd)
-			return <window-controls style={style} chrome={wb.chrome}/>;
-		return <div class="shrink-0" width={WindowControls.width(style)}/>;
+		var controlsLeft = WindowControls.onLeft(style), width = 88 + (controlsLeft ? 0 : WindowControls.width(style));
+		var end = <div class="rayde-bar-end flex items-center shrink-0" width={width}>
+			<if {!leftEnd}><for {state in [wb.runPart.statusState()]}>${wb.runPart.runControls(state)}</for></if>
+			<if {controlsLeft == leftEnd}><window-controls style={style} chrome={wb.chrome}/></if>
+		</div>;
+		var identity = ashui.css.Identity.of(end.tree,end.node.id);
+		identity.setAttribute("data-side",leftEnd ? "left" : "right");
+		identity.setAttribute("data-controls",controlsLeft ? "left" : "right");
+		return end;
 	}
 
 	/** A press on the bar: a double click maximizes the window, and anything else on it moves the window. */
