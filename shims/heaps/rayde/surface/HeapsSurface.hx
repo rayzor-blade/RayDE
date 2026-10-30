@@ -27,7 +27,10 @@ class HeapsSurface {
 	/** Starts streaming `app`'s scene at `width` by `height`. Returns the link, for its `deflate` option. */
 	public static function attach(app:hxd.App, width:Int, height:Int):SurfaceLink {
 		SurfaceLink.redirectTrace();
-		hxd.Window.getInstance().resize(width, height);
+		var window = hxd.Window.getInstance();
+		window.resize(width, height);
+		// The picture is read back from a texture, so the app needs no visible window.
+		if (Sys.getEnv("SURFACE_SHOW_WINDOW") != "1") @:privateAccess window.window.visible = false;
 		app.s2d.scaleMode = Fixed(width, height, 1);
 		var link = new SurfaceLink(width, height), surface = new HeapsSurface(app, link);
 		link.start();
