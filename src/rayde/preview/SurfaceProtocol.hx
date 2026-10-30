@@ -38,6 +38,17 @@ class SurfaceProtocol {
 	public static inline var POINTER_MOVE = 3;
 	public static inline var KEY_DOWN = 4;
 	public static inline var KEY_UP = 5;
+	/** Typed text: `a` is the code point. Wheel: `a` and `b` are the horizontal and vertical delta in tenths of a pixel. Focus: `a` is 1 gained, 0 lost. */
+	public static inline var TEXT = 6;
+	public static inline var WHEEL = 7;
+	public static inline var FOCUS = 8;
+
+	/** Bits of `c` on key input: repeat, then the held modifiers. */
+	public static inline var REPEAT = 1;
+	public static inline var SHIFT = 2;
+	public static inline var CONTROL = 4;
+	public static inline var ALT = 8;
+	public static inline var META = 16;
 
 	/** The largest record accepted, in bytes. */
 	public static inline var MAX_RECORD = 64 * 1024 * 1024;
