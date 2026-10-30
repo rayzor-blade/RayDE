@@ -517,7 +517,7 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde-menubar { margin: 0 8px 4px; }
 #rayde-menubar > .ui-menubar { align-self: stretch; border: 0; border-radius: 0; padding: 0; background: transparent; gap: 0; }
 #rayde-menubar .ui-menubar-trigger { padding: 3px 10px; font-size: var(--text-xs); }
-.rayde-code-editor { padding-left: 6px; }
+.rayde-code-editor { padding-left: 0; }
 
 #rayde .rayde-jam-icon[data-idle] { color: var(--text-secondary); }
 #rayde-jam-panel { overflow: hidden; border-left: 1px solid var(--border); }
