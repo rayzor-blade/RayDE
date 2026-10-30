@@ -15,7 +15,8 @@ const url=new URL(values.url),timeout=Number(values.timeout)*1000;
 assert.ok(url.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(url.hostname)&&!url.username&&!url.password&&!url.search&&!url.hash,'Use a loopback demo URL without credentials or query parameters');
 assert.ok(Number.isFinite(timeout)&&timeout>=1000&&timeout<=600000,'Timeout must be between 1 and 600 seconds');
 const expected=await realpath(values.workspace);
-const puppeteer=createRequire(resolve(root,'web/session/package.json'))('puppeteer-core');
+const require=createRequire(resolve(root,'web/session/package.json'));
+const puppeteer=require('puppeteer-core'),{WebSocket}=require('ws');
 let executablePath=values.chrome??process.env.CHROME;
 if(!executablePath)for(const candidate of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/chromium','/usr/bin/chromium-browser','/usr/bin/google-chrome']){
  try{await access(candidate,constants.X_OK);executablePath=candidate;break;}catch{}
@@ -39,7 +40,7 @@ function observe(client){
   const key=event.requestId+':'+JSON.stringify(reply.id),request=pending.get(key);if(!request)return;pending.delete(key);
   if(reply.ok!==true){stopped=reply.message??'Preview request failed';return;}
   if(request.op==='hello'&&reply.root)roots.add(reply.root);
-  if(request.op==='preview.prepare'){prepares.push(reply);console.log('Preview cache: '+reply.cached+(reply.cacheNote?' ('+reply.cacheNote+')':''));}
+  if(request.op==='preview.prepare'){prepares.push({...reply,recipe:request.recipe});console.log('Preview cache: '+reply.cached+(reply.cacheNote?' ('+reply.cacheNote+')':''));}
   if(request.op==='preview.cache'&&request.stage==='wasm')published.push(reply);
   if(request.op==='preview.open')opened.push(reply);
  });
@@ -78,8 +79,27 @@ try{
  assert.ok(prepares.length===1,'Expected one preview build');
  assert.ok(prepares[0].cached==='wasm'||published.some(reply=>reply.cached===true),'The completed WASM build was not cached');
  const preparedMilliseconds=Date.now()-first,previousCompiles=compiles.length,next=Date.now();
- await preview();await until(()=>opened.length===2,'the cached preview');
- assert.equal(prepares.at(-1).cached,'wasm','The verification build missed the full WASM cache');
+ const connection=await page.evaluate(()=>JSON.parse(localStorage.getItem('rayde.workspaceConnection.v1')));
+ assert.equal(new URL(connection.endpoint).origin,url.origin.replace('http:','ws:'),'The cache probe must use the same session host');
+ const socket=new WebSocket(connection.endpoint,{headers:{Origin:url.origin}}),waiting=new Map();let serial=0,probe=null;
+ socket.on('message',bytes=>{const reply=JSON.parse(bytes.toString()),done=waiting.get(reply.id);if(done){waiting.delete(reply.id);done(null,reply);}});
+ const failed=error=>{for(const done of waiting.values())done(error);waiting.clear();};
+ socket.on('error',failed);socket.on('close',()=>failed(Error('Cache probe disconnected')));
+ function request(op,data={}){return new Promise((resolve,reject)=>{
+  const id=++serial,timer=setTimeout(()=>{waiting.delete(id);reject(Error('Cache probe timed out: '+op));},timeout);
+  waiting.set(id,(error,reply)=>{clearTimeout(timer);if(error)reject(error);else if(reply.ok!==true)reject(Error(reply.message??'Cache probe failed'));else resolve(reply);});
+  socket.send(JSON.stringify({...data,id,op}));
+ });}
+ try{
+  await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Cache probe connection timed out')),timeout);socket.once('open',()=>{clearTimeout(timer);resolve();});socket.once('error',error=>{clearTimeout(timer);reject(error);});});
+  assert.equal((await request('hello',{token:connection.token})).root,expected,'The cache probe reached another workspace');
+  probe=await request('preview.prepare',{recipe:prepares[0].recipe});
+  assert.equal(probe.cached,'wasm','The verification request missed the full WASM cache');
+  console.log('Preview cache: '+probe.cached);
+ }finally{
+  if(probe)await request('preview.discard',{path:probe.path}).catch(()=>{});
+  socket.terminate();
+ }
  assert.equal(compiles.length,previousCompiles,'A compiler ran during the cached verification');
  console.log(JSON.stringify({cached:'wasm',preparationCache:prepares[0].cached,preparationCompiles:previousCompiles,preparedMilliseconds,verifiedMilliseconds:Date.now()-next,verificationCompiles:compiles.length-previousCompiles}));
 }catch(error){console.error('Preview preparation failed: '+error.message);process.exitCode=1;}
