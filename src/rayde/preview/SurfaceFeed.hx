@@ -2,6 +2,10 @@ package rayde.preview;
 
 import ashui.types.PixelSurface;
 import haxe.io.Bytes;
+import rayde.preview.SurfaceProtocol.SurfaceFrame;
+
+/** A record read and decoded without touching the feed, so the work can happen outside whatever lock guards it. */
+typedef Prepared = {kind:Int, ?size:{width:Int, height:Int}, ?frame:SurfaceFrame, ?pixels:Bytes, ?text:String};
 
 /**
  * Turns a producer's records into the picture to show. Frames are blitted into one shadow image and the changed rectangle is the union of
@@ -28,11 +32,31 @@ class SurfaceFeed {
 	public function dirty():Bool
 		return x1 > x0 && y1 > y0;
 
+	/** Parses and inflates a record. Pure: safe to call off the thread that owns the feed. Null for a kind it does not know. */
+	public static function prepare(kind:Int, payload:Bytes):Null<Prepared>
+		return switch kind {
+			case SurfaceProtocol.HELLO: {kind: kind, size: SurfaceProtocol.parseHello(payload)};
+			case SurfaceProtocol.FRAME:
+				var frame = SurfaceProtocol.parseFrame(payload);
+				{kind: kind, frame: frame, pixels: SurfaceProtocol.pixels(frame)};
+			case SurfaceProtocol.LOG: {kind: kind, text: payload.toString()};
+			case SurfaceProtocol.EXIT: {kind: kind};
+			case _: null;
+		};
+
 	/** Applies one record from the producer. Returns false for a kind it does not know. */
 	public function apply(kind:Int, payload:Bytes):Bool {
-		switch kind {
+		var record = prepare(kind, payload);
+		if (record == null) return false;
+		commit(record);
+		return true;
+	}
+
+	/** Applies a prepared record: only copies, so it is short. */
+	public function commit(record:Prepared):Void {
+		switch record.kind {
 			case SurfaceProtocol.HELLO:
-				var size = SurfaceProtocol.parseHello(payload);
+				var size = record.size;
 				if (size.width < 1 || size.height < 1) throw "The app announced an empty surface.";
 				width = size.width;
 				height = size.height;
@@ -40,9 +64,9 @@ class SurfaceFeed {
 				x0 = y0 = x1 = y1 = 0;
 			case SurfaceProtocol.FRAME:
 				if (shadow == null) throw "A frame arrived before the app announced its size.";
-				var frame = SurfaceProtocol.parseFrame(payload);
+				var frame = record.frame, pixels = record.pixels;
 				if (frame.x + frame.width > width || frame.y + frame.height > height) throw "A frame lies outside the surface.";
-				var pixels = SurfaceProtocol.pixels(frame), row = frame.width * 4;
+				var row = frame.width * 4;
 				if (pixels.length < row * frame.height) throw "A frame is shorter than its rectangle.";
 				for (r in 0...frame.height) shadow.blit(((frame.y + r) * width + frame.x) * 4, pixels, r * row, row);
 				cover(frame.x, frame.y, frame.x + frame.width, frame.y + frame.height);
@@ -50,13 +74,11 @@ class SurfaceFeed {
 				appliedInput = frame.input;
 				frames++;
 			case SurfaceProtocol.LOG:
-				log.push(payload.toString());
+				log.push(record.text);
 			case SurfaceProtocol.EXIT:
 				exited = true;
 			case _:
-				return false;
 		}
-		return true;
 	}
 
 	/** Writes the changed rectangle into `surface`, which must be the size the app announced. Returns whether anything was written. */

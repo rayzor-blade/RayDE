@@ -3,9 +3,59 @@ import rayde.preview.SurfaceProtocol;
 import sys.thread.Mutex;
 import sys.thread.Thread;
 
+/** What the render thread hands the sender: the newest picture and the last input applied before it. Older unsent pictures are replaced. */
+private class Slot {
+	final lock = new Mutex();
+	final ready = new sys.thread.Lock();
+	var pending:Null<Bytes>;
+	var input = 0;
+	final spare:Array<Bytes> = [];
+	public var dropped = 0;
+
+	public function new() {}
+
+	/** A buffer to read pixels into: a recycled one when there is one. */
+	public function buffer(size:Int):Bytes {
+		lock.acquire();
+		var b = spare.pop();
+		lock.release();
+		return b != null && b.length == size ? b : Bytes.alloc(size);
+	}
+
+	/** Publishes a picture; an unsent one it replaces is recycled and counted as dropped. */
+	public function put(b:Bytes, applied:Int):Void {
+		lock.acquire();
+		var old = pending;
+		pending = b;
+		input = applied;
+		if (old != null) { spare.push(old); dropped++; }
+		lock.release();
+		if (old == null) ready.release();
+	}
+
+	public function give(b:Bytes):Void {
+		lock.acquire();
+		spare.push(b);
+		lock.release();
+	}
+
+	/** Blocks until a picture is waiting. */
+	public function take():{pixels:Bytes, input:Int} {
+		ready.wait();
+		lock.acquire();
+		var r = {pixels: pending, input: input};
+		pending = null;
+		lock.release();
+		return r;
+	}
+}
+
 /**
  * A real Heaps app as a surface producer: it draws an h2d scene into an offscreen texture each frame, reads the pixels back, sends the
  * rectangle that differs from the last frame, and applies the pointer presses it is sent. Arguments: width height frames.
+ * Rendering never waits for the pipe: the render thread reads the picture back into a pooled buffer and publishes it to a latest-wins slot, and
+ * a sender thread diffs it against the last picture it sent, writes the changed rectangle and recycles the buffer. Set SURFACE_STATS=1 for
+ * per-stage timings on stderr.
  * Heaps writes traces to stdout, so they are sent to stderr before anything else runs.
  */
 class HeapsProducer extends hxd.App {
@@ -16,13 +66,18 @@ class HeapsProducer extends hxd.App {
 	static final lock = new Mutex();
 
 	var target:h3d.mat.Texture;
-	var previous:Null<Bytes>;
+	final slot = new Slot();
+	final stats = Sys.getEnv("SURFACE_STATS") == "1";
+	var captureMs = 0.;
+	var renderMs = 0.;
+	var sentFrames = 0;
+	var diffMs = 0.;
+	var writeMs = 0.;
 	var ball:h2d.Graphics;
 	var markers:h2d.Object;
 	var surface:h2d.Interactive;
 	var applied = 0;
-	var seq = 0;
-	var sent = 0;
+	var rendered = 0;
 	var time = 0.;
 
 	override function init() {
@@ -59,9 +114,20 @@ class HeapsProducer extends hxd.App {
 			} catch (_:Dynamic) {}
 		});
 		SurfaceProtocol.writeTo(Sys.stdout(), SurfaceProtocol.hello(width, height));
+		Thread.create(() -> try send() catch (e:Dynamic) {
+			Sys.stderr().writeString('sender failed: $e\n${haxe.CallStack.toString(haxe.CallStack.exceptionStack())}\n');
+			Sys.exit(1);
+		});
 	}
 
 	override function update(dt:Float) {
+		try frame(dt) catch (e:Dynamic) {
+			Sys.stderr().writeString('producer failed: $e\n${haxe.CallStack.toString(haxe.CallStack.exceptionStack())}\n');
+			Sys.exit(1);
+		}
+	}
+
+	function frame(dt:Float):Void {
 		time += dt;
 		lock.acquire();
 		var inputs = pending;
@@ -79,29 +145,58 @@ class HeapsProducer extends hxd.App {
 		ball.x = width / 2 + Math.cos(time * 2) * (width / 3);
 		ball.y = height / 2 + Math.sin(time * 3) * (height / 4);
 
+		var t0 = haxe.Timer.stamp();
 		target.clear(0x20242C, 1);
 		s2d.drawTo(target);
-		var pixels = target.capturePixels();
-		pixels.convert(RGBA);
-		var now = pixels.bytes;
-		var rect = changed(now);
-		if (rect != null) {
-			var data = Bytes.alloc(rect.w * rect.h * 4);
-			for (r in 0...rect.h) data.blit(r * rect.w * 4, now, ((rect.y + r) * width + rect.x) * 4, rect.w * 4);
-			SurfaceProtocol.writeTo(Sys.stdout(), SurfaceProtocol.frame({seq: ++seq, input: applied, x: rect.x, y: rect.y, width: rect.w, height: rect.h, encoding: 0, data: data}));
-			previous = now.sub(0, now.length);
-		}
-		if (++sent >= frames) {
-			SurfaceProtocol.writeTo(Sys.stdout(), SurfaceProtocol.record(SurfaceProtocol.EXIT, Bytes.alloc(0)));
-			Sys.exit(0);
+		var t1 = haxe.Timer.stamp();
+		var pixels = new hxd.Pixels(width, height, slot.buffer(width * height * 4), RGBA);
+		// Reads into a pooled buffer, as Texture.capturePixels does but without allocating a picture each frame.
+		engine.driver.setRenderTarget(target);
+		engine.driver.captureRenderBuffer(pixels);
+		engine.driver.setRenderTarget(null);
+		var t2 = haxe.Timer.stamp();
+		renderMs += t1 - t0;
+		captureMs += t2 - t1;
+		slot.put(pixels.bytes, applied);
+		if (++rendered >= frames) slot.put(null, -1);
+	}
+
+	/** Runs on the sender thread: diffs each picture against the last one sent and writes what changed. */
+	function send():Void {
+		var out = Sys.stdout(), previous:Null<Bytes> = null, seq = 0;
+		while (true) {
+			var next = slot.take();
+			if (next.pixels == null) {
+				SurfaceProtocol.writeTo(out, SurfaceProtocol.record(SurfaceProtocol.EXIT, Bytes.alloc(0)));
+				Sys.exit(0);
+			}
+			var t0 = haxe.Timer.stamp(), now = next.pixels, rect = changed(now, previous);
+			var t1 = haxe.Timer.stamp();
+			if (rect != null) {
+				var data = Bytes.alloc(rect.w * rect.h * 4);
+				for (r in 0...rect.h) data.blit(r * rect.w * 4, now, ((rect.y + r) * width + rect.x) * 4, rect.w * 4);
+				SurfaceProtocol.writeTo(out, SurfaceProtocol.frame({seq: ++seq, input: next.input, x: rect.x, y: rect.y, width: rect.w, height: rect.h, encoding: 0, data: data}));
+				if (previous != null) slot.give(previous);
+				previous = now;
+			} else slot.give(now);
+			var t2 = haxe.Timer.stamp();
+			diffMs += t1 - t0;
+			writeMs += t2 - t1;
+			if (stats && ++sentFrames % 60 == 0)
+				Sys.stderr().writeString('stats: per frame ms render ${fmt(renderMs / rendered)} capture ${fmt(captureMs / rendered)} diff ${fmt(diffMs / sentFrames)} write ${fmt(writeMs / sentFrames)}; rendered $rendered sent $sentFrames dropped ${slot.dropped}\n');
 		}
 	}
 
+	static function fmt(seconds:Float):String
+		return Std.string(Math.round(seconds * 10000) / 10);
+
 	/** The rectangle that differs from the last frame sent, the whole picture for the first, or null when nothing changed. */
-	function changed(now:Bytes):Null<{x:Int, y:Int, w:Int, h:Int}> {
+	static function changed(now:Bytes, previous:Null<Bytes>):Null<{x:Int, y:Int, w:Int, h:Int}> {
 		if (previous == null) return {x: 0, y: 0, w: width, h: height};
 		var x0 = width, y0 = height, x1 = 0, y1 = 0, row = width * 4;
+		var a:hl.Bytes = @:privateAccess now.b, b:hl.Bytes = @:privateAccess previous.b;
 		for (y in 0...height) {
+			if (a.compare(y * row, b, y * row, row) == 0) continue;
 			var base = y * row, first = -1, last = -1;
 			for (x in 0...width) if (now.getInt32(base + x * 4) != previous.getInt32(base + x * 4)) {
 				if (first < 0) first = x;

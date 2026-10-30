@@ -112,8 +112,10 @@ class SurfacePump {
 	function readRecords():Void {
 		try while (true) {
 			var record = SurfaceProtocol.read(program.stdout);
+			var prepared = SurfaceFeed.prepare(record.kind, record.payload);
+			if (prepared == null) continue;
 			lock.acquire();
-			try feed.apply(record.kind, record.payload) catch (error:Dynamic) {
+			try feed.commit(prepared) catch (error:Dynamic) {
 				failure = Std.string(error);
 				lock.release();
 				break;
