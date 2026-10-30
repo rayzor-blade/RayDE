@@ -187,6 +187,10 @@ impl SandboxProvider for Fake {
         Ok(output)
     }
 
+    async fn detach(&self, name: &str, _command: Command) -> Result<()> {
+        self.running(name)
+    }
+
     async fn copy_in(&self, name: &str, host: PathBuf, _guest: &str) -> Result<()> {
         self.running(name)?;
         if std::fs::metadata(&host).is_err() {

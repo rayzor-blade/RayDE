@@ -1,6 +1,6 @@
 # Sandbox provider
 
-`native/sandbox` (`rayde-sandbox`) is the interface a sandbox backend implements for RayDE's runner and for other clients that need sandboxes. It is the common denominator of what `rayde-runner` asks of MSB today, plus the options a GPU session class needs. Nothing calls it yet: the runner still shells out to `msb` directly.
+`native/sandbox` (`rayde-sandbox`) is the interface a sandbox backend implements for RayDE's runner and for other clients that need sandboxes. It is the common denominator of what `rayde-runner` asks of MSB today, plus the options a GPU session class needs. The runner's service code does not call it yet and still shells out to `msb` directly; `rayde_runner::Msb` is the MSB backend for it.
 
 ## What a backend provides
 
@@ -10,7 +10,7 @@
 | Persistent workspace and state disks | `create_volume`, `volume`, `remove_volume` |
 | Start from an image or a snapshot | `create(SandboxSpec)`, idempotent for the same spec |
 | Find what a control plane left behind | `get`, `list(labels)`, `ping` |
-| Talk to the session inside | `spawn` (piped stdio, for the bridge), `run` (bounded capture with a deadline), `copy_in` |
+| Talk to the session inside | `spawn` (piped stdio, for the bridge), `run` (bounded capture with a deadline), `detach` (keeps running, no stdio: how the session is started), `copy_in` |
 | Recover | `snapshot`, `verify_snapshot`, create from `Template::Snapshot` |
 | Tear down | `stop`, `remove` (idempotent; owned mounts go, named volumes stay) |
 
@@ -25,12 +25,18 @@ A feature the backend does not advertise answers `Error::Unsupported`. A name in
 | `get`, `list` | `msb status --all --label ... --format json` |
 | `ping` | `msb ping <name>` |
 | `spawn` | `msb exec <name> --quiet --stream -- <command>` with stdin and stdout piped |
+| `detach` | `msb exec <name> --quiet --detach --no-stdin -- <command>` |
 | `run` | `msb exec <name> --quiet --no-stdin -- ...`, output capped at 64 KiB, with a timeout |
 | `copy_in` | `msb copy <host> <name>:<guest>` |
 | volumes | `msb volume create/inspect/list/remove` (disk kind, ext4, a `disk.raw` the runner checks and binds) |
-| `remove` | `msb remove --force --label ... --label ...` |
+| `remove` | `msb remove --force <name>` (the runner removes by label pair) |
+| `snapshot` | `msb snapshot create --sandbox <name> --name <snapshot>` (not yet run) |
 
-Not expressible in MSB 0.7.11: GPU, and a per-sandbox egress allowlist beyond what its network flags give. Its `capabilities()` would say so.
+Not mapped for MSB 0.7.11: GPU (no flag exists) and read-only mounts (option syntax not checked). A per-sandbox egress allowlist is likely possible through its `--net-rule` and `--net-default` flags, whose grammar is not mapped yet, so `Msb` reports it unsupported rather than guess. `create` takes the runner's `--deployment-profile multi-tenant` with `Security::Restricted`. MSB keeps no copy of the spec, so `Msb::create` compares labels only when a sandbox of that name exists.
+
+## The MSB backend
+
+`native/runner/src/msb.rs`. The argument builders and parsers are pure and unit-tested against the flags the runner uses today (a restricted image sandbox, a snapshot restore with a disk mount, status JSON, volume inspect text, exec commands). The conformance test against a real MSB is `#[ignore]`d: on a KVM host with MSB 0.7.11, set `RAYDE_MSB_CONFIG` to a runner config file and run `cargo test msb_conforms -- --ignored`. It creates and removes sandboxes and has not been run yet, so the backend is untested against a live MSB.
 
 ## Other backends
 

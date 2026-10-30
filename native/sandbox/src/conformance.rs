@@ -60,6 +60,8 @@ pub async fn run_all<P: SandboxProvider>(p: &P, prefix: &str) -> std::result::Re
     check(out.status == 0 && out.stdout == b"hi\n", "run captures output")?;
     check(matches!(p.run(&a, command("echo", &["too long"]), 3, Duration::from_secs(5)).await, Err(Error::Invalid(_))), "run refuses output past its limit")?;
     check(matches!(p.run(&a, command("sleep", &["2000"]), 16, Duration::from_millis(50)).await, Err(Error::Timeout)), "run stops at its deadline")?;
+    p.detach(&a, command("sleep", &["10"])).await.map_err(|e| format!("detach: {e:?}"))?;
+    check(matches!(p.detach(&format!("{prefix}-missing"), command("sleep", &["10"])).await, Err(Error::NotFound)), "detach on a missing sandbox is NotFound")?;
     check(matches!(p.copy_in(&a, PathBuf::from("/definitely/not/here"), "/x").await, Err(Error::NotFound)), "copy_in of a missing file is NotFound")?;
 
     // Volumes outlive the sandboxes that mount them; removal is idempotent and refused while mounted.

@@ -1,6 +1,7 @@
 mod checkout;
 mod command;
 mod config;
+mod msb;
 mod registry;
 mod service;
 #[cfg(test)]
@@ -9,6 +10,7 @@ mod tunnel;
 mod toolchain;
 mod volumes;
 pub use config::{Config, LocalRepository, Toolchain};
+pub use msb::Msb;
 pub use service::{Running, start};
 
 use axum::{

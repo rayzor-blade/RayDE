@@ -20,6 +20,7 @@ futures-util = "0.3"
 reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 tar = "0.4"
 rayde-session = { path = "../session", default-features = false }
+rayde-sandbox = { path = "../sandbox" }
 
 [dev-dependencies]
 tempfile = "3"

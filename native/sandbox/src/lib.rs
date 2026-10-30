@@ -83,7 +83,10 @@ pub struct Gpu {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Source {
     Volume(String),
+    /// A host directory.
     Host(PathBuf),
+    /// A host disk image file, mounted as a block device (the runner binds its workspace and state disks this way).
+    Disk(PathBuf),
     /// Private to the sandbox, removed with it.
     Owned,
 }
@@ -183,6 +186,8 @@ pub trait SandboxProvider: Send + Sync {
     fn spawn(&self, name: &str, command: Command) -> impl Future<Output = Result<Process>> + Send;
     /// A command run to completion; `Invalid` when its output passes `limit` bytes, `Timeout` when it passes `within`.
     fn run(&self, name: &str, command: Command, limit: usize, within: Duration) -> impl Future<Output = Result<Output>> + Send;
+    /// Starts a command that keeps running after the call returns, with no stdio (the runner starts the session this way). Returns once it has started.
+    fn detach(&self, name: &str, command: Command) -> impl Future<Output = Result<()>> + Send;
     fn copy_in(&self, name: &str, host: PathBuf, guest: &str) -> impl Future<Output = Result<()>> + Send;
 
     /// `Unsupported` unless `capabilities().snapshots`.

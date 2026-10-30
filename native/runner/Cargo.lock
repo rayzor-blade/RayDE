@@ -966,6 +966,7 @@ dependencies = [
  "futures-util",
  "libc",
  "rand 0.8.8",
+ "rayde-sandbox",
  "rayde-session",
  "reqwest",
  "serde",
@@ -977,6 +978,14 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.28.0",
  "yrs",
+]
+
+[[package]]
+name = "rayde-sandbox"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tokio",
 ]
 
 [[package]]
