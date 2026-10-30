@@ -20,13 +20,13 @@ class SurfaceFeedChecks {
 	}
 
 	/** Runs the synthetic producer when it has been built, as a real app would run, and drives it through the pump. */
-	static function pump(name:String, producer:String, arguments:Array<String>, flags:Array<String>):Void {
+	static function pump(name:String, producer:String, arguments:Array<String>, flags:Array<String>, ?launcher:rayde.workspace.Launcher):Void {
 		var ash = Sys.getEnv("ASH") ?? "ash";
 		if (!sys.FileSystem.exists(producer)) {
 			Sys.println('Surface pump ($name): skipped, $producer is not built');
 			return;
 		}
-		var pump = new rayde.preview.SurfacePump(new rayde.workspace.LocalLauncher().start(ash, flags.concat([producer]).concat(arguments)));
+		var pump = new rayde.preview.SurfacePump((launcher ?? new rayde.workspace.LocalLauncher()).start(ash, flags.concat([producer]).concat(arguments)));
 		var waited = 0;
 		while (!pump.ready() && waited++ < 400) Sys.sleep(.025);
 		check(pump.ready(), "The app never announced its size");
@@ -44,6 +44,41 @@ class SurfaceFeedChecks {
 		pump.stop();
 		pump.stop();
 		Sys.println('Surface pump ($name): ${pump.feed.frames} frames, input applied: ${pump.feed.appliedInput >= 1}');
+	}
+
+	/** The same pump over a real rayde-session, the process that runs beside a hosted workspace: the app's stdio crosses the session's relay. */
+	static function session():Void {
+		var binary = sys.FileSystem.fullPath("native/session/target/debug/rayde-session"), synthetic = sys.FileSystem.fullPath("bin/surface-producer.hl");
+		if (!sys.FileSystem.exists(binary) || !sys.FileSystem.exists(synthetic)) {
+			Sys.println("Surface pump (session): skipped, native/session or the producer is not built");
+			return;
+		}
+		var root = sys.FileSystem.fullPath("bin") + "/surface-session-" + Std.random(0x3fffffff), port = 20000 + Std.random(20000);
+		sys.FileSystem.createDirectory(root);
+		sys.io.File.copy(synthetic, root + "/producer.hl");
+		var server = new sys.io.Process(binary, ["--root", root, "--port", Std.string(port), "--token", "t", "--exec"]), client:Null<rayde.workspace.session.SessionClient> = null;
+		try {
+			for (_ in 0...100) try { client = rayde.workspace.session.SessionClient.connect("127.0.0.1", port, "t"); break; } catch (_:Dynamic) Sys.sleep(.05);
+			check(client != null, "The session did not start");
+			var launcher = new rayde.workspace.session.SessionLauncher(client);
+			pump("synthetic through a session", root + "/producer.hl", ["320", "180", "40", "ui", "0", "60"], ["--preset", "application"], launcher);
+			var heaps = Sys.getEnv("RAYDE_HEAPS_DIR");
+			if (heaps != null) {
+				for (file in sys.FileSystem.readDirectory(heaps)) if (!sys.FileSystem.isDirectory(heaps + "/" + file)) sys.io.File.copy(heaps + "/" + file, root + "/" + file);
+				var here = Sys.getCwd();
+				Sys.setCwd(root);
+				try pump("heaps through a session", root + "/heaps-producer.hl", ["640", "360", "90"], ["--mode", "hybrid"], launcher) catch (e:Dynamic) { Sys.setCwd(here); throw e; }
+				Sys.setCwd(here);
+			}
+		} catch (e:Dynamic) {
+			if (client != null) client.close();
+			server.kill();
+			server.close();
+			throw e;
+		}
+		client.close();
+		server.kill();
+		server.close();
 	}
 
 	static function main():Void {
@@ -88,6 +123,7 @@ class SurfaceFeedChecks {
 			try pump("heaps", heaps + "/heaps-producer.hl", ["640", "360", "90"], ["--mode", "hybrid"]) catch (e:Dynamic) { Sys.setCwd(here); throw e; }
 			Sys.setCwd(here);
 		}
+		session();
 		Sys.println("Surface feed: frames land where they say, a late viewer sees the newest picture, bad frames are refused, pointer mapping follows Contain");
 	}
 }
