@@ -1,0 +1,108 @@
+{
+  "format": 1,
+  "workspace": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+  "generation": 3,
+  "base_generation": 2,
+  "device": "device-1",
+  "taken_at": 1790000000000,
+  "name": "game",
+  "git": {
+    "branch": "main",
+    "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "unborn": false,
+    "index": [
+      {
+        "path": "src/Main.hx",
+        "mode": "100644",
+        "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "stage": 0
+      }
+    ],
+    "deleted": [
+      "old.txt"
+    ],
+    "history": null,
+    "submodules": [],
+    "lfs": false
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "kind": "regular",
+      "origin": "tracked",
+      "size": 7,
+      "hash": "b5ecde8b19faf9b5e0e153be0c8a640be1b6a1d6e02fc69d8569b7289bac7b14",
+      "chunks": [
+        {
+          "hash": "b5ecde8b19faf9b5e0e153be0c8a640be1b6a1d6e02fc69d8569b7289bac7b14",
+          "size": 7
+        }
+      ]
+    },
+    {
+      "path": "current",
+      "kind": "symlink",
+      "origin": "tracked",
+      "size": 7,
+      "hash": "91be6cfb7c9129b9b894067b6f153592c93ef3dfb87451bc3288c0e5df68fd34",
+      "chunks": [],
+      "link": "src/lib"
+    },
+    {
+      "path": "notes.txt",
+      "kind": "regular",
+      "origin": "untracked",
+      "size": 5,
+      "hash": "735c743005694cfcb6405a0d67d7f3e3cfcfa17f697062893b036ef2f79efe1b",
+      "chunks": [
+        {
+          "hash": "735c743005694cfcb6405a0d67d7f3e3cfcfa17f697062893b036ef2f79efe1b",
+          "size": 5
+        }
+      ]
+    },
+    {
+      "path": "src/Main.hx",
+      "kind": "regular",
+      "origin": "tracked",
+      "size": 14,
+      "hash": "120b3a6597dbb526195b51ab28ea69b6486258e8317fe2695fc8263b1d1b932f",
+      "chunks": [
+        {
+          "hash": "120b3a6597dbb526195b51ab28ea69b6486258e8317fe2695fc8263b1d1b932f",
+          "size": 14
+        }
+      ]
+    }
+  ],
+  "buffers": [
+    {
+      "path": "src/Main.hx",
+      "base": "120b3a6597dbb526195b51ab28ea69b6486258e8317fe2695fc8263b1d1b932f",
+      "size": 20,
+      "hash": "e744d4631602fff89ab76d1af546f39e8b2d436049f4f7272cab3a1ccde4b5d3",
+      "chunks": [
+        {
+          "hash": "e744d4631602fff89ab76d1af546f39e8b2d436049f4f7272cab3a1ccde4b5d3",
+          "size": 20
+        }
+      ]
+    }
+  ],
+  "omissions": [
+    {
+      "path": ".env",
+      "reason": "secret"
+    },
+    {
+      "path": "node_modules",
+      "reason": "cache"
+    }
+  ],
+  "totals": {
+    "files": 4,
+    "bytes": 33,
+    "stored_bytes": 46
+  },
+  "checksum": "32b87a4b0962f0741fa9831cbccd2c07e61d3ef6aea1058bd4d22ef9172f21fe"
+}

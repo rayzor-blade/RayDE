@@ -1,0 +1,25 @@
+[package]
+name = "rayde-sync"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+description = "RayDE Cloud Sync: workspace identity, sharing policy, expiry and quota rules, the snapshot manifest, and the desktop engine that scans and chunks a Git working tree."
+
+[lib]
+name = "rayde_sync"
+path = "src/lib.rs"
+
+[features]
+default = ["scan"]
+# The desktop side: reads a working tree and runs `git`. Left out, the crate is pure data and rules and builds for wasm32 for the Worker.
+scan = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
