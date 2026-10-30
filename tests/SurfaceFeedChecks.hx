@@ -20,13 +20,13 @@ class SurfaceFeedChecks {
 	}
 
 	/** Runs the synthetic producer when it has been built, as a real app would run, and drives it through the pump. */
-	static function pump():Void {
-		var producer = sys.FileSystem.fullPath("bin/surface-producer.hl"), ash = Sys.getEnv("ASH") ?? "ash";
+	static function pump(name:String, producer:String, arguments:Array<String>, flags:Array<String>):Void {
+		var ash = Sys.getEnv("ASH") ?? "ash";
 		if (!sys.FileSystem.exists(producer)) {
-			Sys.println("Surface pump: skipped, bin/surface-producer.hl is not built");
+			Sys.println('Surface pump ($name): skipped, $producer is not built');
 			return;
 		}
-		var pump = new rayde.preview.SurfacePump(new rayde.workspace.LocalLauncher().start(ash, ["--preset", "application", producer, "320", "180", "40", "ui", "0", "60"]));
+		var pump = new rayde.preview.SurfacePump(new rayde.workspace.LocalLauncher().start(ash, flags.concat([producer]).concat(arguments)));
 		var waited = 0;
 		while (!pump.ready() && waited++ < 400) Sys.sleep(.025);
 		check(pump.ready(), "The app never announced its size");
@@ -43,6 +43,7 @@ class SurfaceFeedChecks {
 		check(pump.feed.appliedInput >= 1, "The app never applied the input");
 		pump.stop();
 		pump.stop();
+		Sys.println('Surface pump ($name): ${pump.feed.frames} frames, input applied: ${pump.feed.appliedInput >= 1}');
 	}
 
 	static function main():Void {
@@ -78,7 +79,15 @@ class SurfaceFeedChecks {
 		check(m.x == 0 && m.y == 0, "A point left of the picture was not clamped");
 		m = SurfaceView.map(100, 50, 200, 100, 100, 100);
 		check(m.x == 50 && m.y == 50, "Letterboxed centre maps to the picture centre");
-		pump();
+		pump("synthetic", sys.FileSystem.fullPath("bin/surface-producer.hl"), ["320", "180", "40", "ui", "0", "60"], ["--preset", "application"]);
+		// A real Heaps app, when RAYDE_HEAPS_DIR holds its .hl beside the SDL libraries it loads (they are found from the working directory).
+		var heaps = Sys.getEnv("RAYDE_HEAPS_DIR");
+		if (heaps != null) {
+			var here = Sys.getCwd();
+			Sys.setCwd(heaps);
+			try pump("heaps", heaps + "/heaps-producer.hl", ["640", "360", "90"], ["--mode", "hybrid"]) catch (e:Dynamic) { Sys.setCwd(here); throw e; }
+			Sys.setCwd(here);
+		}
 		Sys.println("Surface feed: frames land where they say, a late viewer sees the newest picture, bad frames are refused, pointer mapping follows Contain");
 	}
 }
