@@ -12,6 +12,11 @@ source "$here/scripts/deps.sh"
 ash=${ASH:-$(command -v ash || true)}
 [ -x "$ash" ] || { echo "build-web.sh: put ash on PATH or set ASH" >&2; exit 1; }
 libs=${WEB_LIBS:-$siblings/ashui/tests/bin/web}
+# The window and GPU web builds are cached in ashui's tests/bin/web beside a stamp of the repositories they come from. A cache older than
+# those repositories ships stale window files, so the default directory is refreshed first; this does nothing when it is current.
+if [ -z "${WEB_LIBS:-}" ]; then
+  (cd "$siblings/ashui/tests" && out=bin/web && . wasm/lib.sh && web_libraries) || fail "could not refresh the hlwindow and hlwgpu web builds in ashui/tests/bin/web"
+fi
 for need in hlwindow-web hlwgpu-web; do
   [ -e "$libs/$need" ] || { echo "build-web.sh: $libs/$need is missing; run ashui's tests/wasm/run.sh --no-open once, or set WEB_LIBS" >&2; exit 1; }
 done
