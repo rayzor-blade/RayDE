@@ -1,13 +1,12 @@
 use super::*;
-use crate::msb::Msb;
-use rayde_sandbox::{self as sb, SandboxProvider as _};
+use rayde_sandbox as sb;
 
 pub(crate) fn identity(config: &Config) -> Option<String> {
     config.toolchain.as_ref().map(|toolchain| toolchain.digest.clone())
 }
 
 /// Runs `script` in the guest and returns its output; a nonzero exit is a failure.
-async fn guest(backend: &Msb, sandbox: &str, script: &str, seconds: u64) -> Result<Vec<u8>> {
+async fn guest(backend: &impl sb::SandboxProvider, sandbox: &str, script: &str, seconds: u64) -> Result<Vec<u8>> {
     let command = sb::Command { program: "/bin/sh".into(), args: vec!["-ec".into(), script.into()], env: Default::default() };
     let output = backend.run(sandbox, command, 64 * 1024, std::time::Duration::from_secs(seconds)).await?;
     if output.status != 0 {
@@ -16,7 +15,7 @@ async fn guest(backend: &Msb, sandbox: &str, script: &str, seconds: u64) -> Resu
     Ok(output.stdout)
 }
 
-pub(crate) async fn restore(backend: &Msb, config: &Config, sandbox: &str, labels: sb::Labels, mounts: Vec<sb::Mount>) -> Result<()> {
+pub(crate) async fn restore(backend: &impl sb::SandboxProvider, config: &Config, sandbox: &str, labels: sb::Labels, mounts: Vec<sb::Mount>) -> Result<()> {
     let toolchain = config.toolchain.as_ref().ok_or_else(invalid)?;
     let snapshot = sb::SnapshotRef(toolchain.snapshot.clone());
     backend.verify_snapshot(&snapshot).await?;

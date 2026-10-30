@@ -1,6 +1,6 @@
 # Sandbox provider
 
-`native/sandbox` (`rayde-sandbox`) is the interface a sandbox backend implements for RayDE's runner and for other clients that need sandboxes. It is the common denominator of what `rayde-runner` asks of MSB today, plus the options a GPU session class needs. The runner's service code does not call it yet and still shells out to `msb` directly; `rayde_runner::Msb` is the MSB backend for it.
+`native/sandbox` (`rayde-sandbox`) is the interface a sandbox backend implements for RayDE's runner and for other clients that need sandboxes. It is the common denominator of what `rayde-runner` asks of MSB today, plus the options a GPU session class needs. `rayde-runner` talks to its sandboxes only through it: `rayde_runner::Msb` is the MSB backend, and the service is generic over any backend (`start_with`), so its open, reuse, recovery, isolation and delete flows are tested against the in-memory `Fake` without a VM (`native/runner/tests/service.rs`).
 
 ## What a backend provides
 
@@ -56,7 +56,7 @@ Not mapped: GPU (no flag in 0.7.11) and read-only mounts (option syntax unchecke
 
 - **dynASB** (libkrun, virtio-gpu and Venus): GPU is a capability it can advertise. It has no volumes, no arbitrary process with stdio and no snapshot call today, so a provider on top of it needs those added (see dynASB's Linux bring-up epic).
 - **nan8**: its actor-level `Executor` (deploy, send, subscribe) becomes a client of this interface instead of calling a backend directly.
-- **Fake** (`rayde_sandbox::fake`): in memory, for client tests and for the conformance suite.
+- **Fake** (`rayde_sandbox::fake`): in memory, for client tests and for the conformance suite. `with_program` registers a stand-in for a guest program (the runner's service tests play the session bridge this way).
 
 ## Conformance
 
@@ -64,7 +64,6 @@ Not mapped: GPU (no flag in 0.7.11) and read-only mounts (option syntax unchecke
 
 ## Not decided
 
-- Whether the runner moves onto the trait (a refactor of `command.rs`, `volumes.rs`, `toolchain.rs` and `service.rs`) or the trait first gets a second backend.
 - A dyn-compatible form for clients that choose a backend at runtime. The trait uses `async fn` in traits for now, so it is generic, not boxed.
 - Fork and warm-pool calls: advertised as capabilities, no calls yet.
 - Streaming a GPU session's pictures. That is the surface protocol's job, not this interface's.

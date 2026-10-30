@@ -1,6 +1,5 @@
 use super::*;
-use crate::msb::Msb;
-use rayde_sandbox::{self as sb, SandboxProvider as _};
+use rayde_sandbox as sb;
 use serde::{Deserialize, Serialize};
 
 const WORKSPACE_MIB: u32 = 1024;
@@ -29,14 +28,14 @@ impl Storage {
             .to_vec()
     }
     /// Creates the volumes a new workspace needs, keeping any that exist.
-    pub async fn prepare(&self, backend: &Msb) -> Result<()> {
+    pub async fn prepare(&self, backend: &impl sb::SandboxProvider) -> Result<()> {
         for (name, size_mib) in [(&self.workspace, WORKSPACE_MIB), (&self.state, STATE_MIB)] {
             backend.create_volume(sb::VolumeSpec { name: name.clone(), size_mib }).await?;
         }
         Ok(())
     }
     /// Checks, from inside the guest, that each disk carries this workspace's identity, writing it first when `initialize`.
-    pub async fn bind(&self, backend: &Msb, sandbox: &str, initialize: bool) -> Result<()> {
+    pub async fn bind(&self, backend: &impl sb::SandboxProvider, sandbox: &str, initialize: bool) -> Result<()> {
         let script = "for dir in /workspace /state; do if test -f \"$dir/.rayde-volume\"; then test \"$(cat \"$dir/.rayde-volume\")\" = \"$1\"; else test \"$2\" = initialize; printf '%s\\n' \"$1\" > \"$dir/.rayde-volume\"; fi; done; sync";
         let command = sb::Command {
             program: "/bin/sh".into(),
@@ -49,7 +48,7 @@ impl Storage {
         }
         Ok(())
     }
-    pub async fn remove(&self, backend: &Msb) -> Result<()> {
+    pub async fn remove(&self, backend: &impl sb::SandboxProvider) -> Result<()> {
         for name in [&self.workspace, &self.state] {
             backend.remove_volume(name).await.map_err(|error| match error {
                 sb::Error::Conflict(_) => Failure(StatusCode::CONFLICT, "Workspace disk removal needs reconciliation."),

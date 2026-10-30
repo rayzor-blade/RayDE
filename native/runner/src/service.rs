@@ -12,12 +12,16 @@ use std::{
     time::Duration,
 };
 use crate::msb::Msb;
-use rayde_sandbox::{self as sb, SandboxProvider as _};
+use rayde_sandbox as sb;
 use tokio::sync::{Semaphore, oneshot, watch};
 
-struct Service {
+/// What the service needs of a sandbox backend.
+pub trait Backend: sb::SandboxProvider + 'static {}
+impl<T: sb::SandboxProvider + 'static> Backend for T {}
+
+struct Service<P: Backend> {
     config: Config,
-    backend: Arc<Msb>,
+    backend: Arc<P>,
     secret: String,
     registry: Registry,
     http: reqwest::Client,
@@ -25,13 +29,13 @@ struct Service {
     base: String,
     halt: watch::Sender<bool>,
 }
-pub struct Running {
+pub struct Running<P: Backend = Msb> {
     pub address: SocketAddr,
-    service: Arc<Service>,
+    service: Arc<Service<P>>,
     stop: Option<oneshot::Sender<()>>,
     done: tokio::task::JoinHandle<()>,
 }
-impl Running {
+impl<P: Backend> Running<P> {
     pub async fn shutdown(mut self) {
         self.service.halt.send_replace(true);
         for cell in self.service.registry.records.lock().await.values() {
@@ -65,7 +69,21 @@ impl Running {
         }
     }
 }
+/// Starts the runner on MSB 0.7.11.
 pub async fn start(config: Config) -> Result<Running> {
+    config.validate()?;
+    let backend = Arc::new(Msb::new(config.clone()));
+    if backend.version().await? != "msb 0.7.11" {
+        return Err(Failure(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "The runner requires the tested MSB version.",
+        ));
+    }
+    start_with(config, backend).await
+}
+
+/// Starts the runner on any sandbox backend; tests use the in-memory one.
+pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<Running<P>> {
     config.validate()?;
     {
         use tokio::io::AsyncReadExt;
@@ -124,13 +142,6 @@ pub async fn start(config: Config) -> Result<Running> {
             Err(_) => return Err(unavailable()),
         }
     }
-    let backend = Arc::new(Msb::new(config.clone()));
-    if backend.version().await? != "msb 0.7.11" {
-        return Err(Failure(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "The runner requires the tested MSB version.",
-        ));
-    }
     let owned = backend.list(&sb::Labels::from([("rayde.runner".to_string(), registry.instance.clone())])).await?;
     let records = registry.records.lock().await;
     for item in owned {
@@ -184,9 +195,9 @@ pub async fn start(config: Config) -> Result<Running> {
     });
     let router = Router::new()
         .route("/health", get(|| async { "ready" }))
-        .route("/workspaces/open", post(open))
-        .route("/workspaces/delete", post(delete))
-        .route("/workspaces/:id/session", get(socket))
+        .route("/workspaces/open", post(open::<P>))
+        .route("/workspaces/delete", post(delete::<P>))
+        .route("/workspaces/:id/session", get(socket::<P>))
         .layer(DefaultBodyLimit::max(32 * 1024))
         .with_state(service.clone());
     let (stop, stopped) = oneshot::channel();
@@ -204,7 +215,7 @@ pub async fn start(config: Config) -> Result<Running> {
         done,
     })
 }
-fn authenticate(service: &Service, headers: &HeaderMap) -> Result<()> {
+fn authenticate<P: Backend>(service: &Service<P>, headers: &HeaderMap) -> Result<()> {
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -225,8 +236,8 @@ fn response(value: serde_json::Value) -> Response {
     );
     response
 }
-async fn open(
-    State(service): State<Arc<Service>>,
+async fn open<P: Backend>(
+    State(service): State<Arc<Service<P>>>,
     headers: HeaderMap,
     Json(request): Json<Open>,
 ) -> Result<Response> {
@@ -260,8 +271,8 @@ async fn open(
     };
     Ok(response(result))
 }
-async fn delete(
-    State(service): State<Arc<Service>>,
+async fn delete<P: Backend>(
+    State(service): State<Arc<Service<P>>>,
     headers: HeaderMap,
     Json(request): Json<Delete>,
 ) -> Result<Response> {
@@ -298,7 +309,7 @@ async fn delete(
     service.registry.save(&record).await?;
     cell.closed.send_modify(|generation| *generation += 1);
     service.cleanup(&record).await?;
-    if let Some(storage) = &record.storage {storage.remove(&service.backend).await?;}
+    if let Some(storage) = &record.storage {storage.remove(service.backend.as_ref()).await?;}
     record.phase = "deleted".into();
     record.token = random();
     service.registry.save(&record).await?;
@@ -307,8 +318,8 @@ async fn delete(
     let _ = tokio::fs::remove_dir_all(checkout).await;
     Ok(response(serde_json::json!({"deleted":true})))
 }
-async fn socket(
-    State(service): State<Arc<Service>>,
+async fn socket<P: Backend>(
+    State(service): State<Arc<Service<P>>>,
     RoutePath(id): RoutePath<String>,
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
@@ -339,7 +350,7 @@ async fn socket(
     if record.phase != "ready" {
         return Err(Failure(StatusCode::CONFLICT, "The workspace is not ready."));
     }
-    if tunnel::probe(&service.backend, &record.sandbox, service.config.persistent_disks).await.ok().as_ref() != record.identity.as_ref() {
+    if tunnel::probe(service.backend.as_ref(), &record.sandbox, service.config.persistent_disks).await.ok().as_ref() != record.identity.as_ref() {
         return Err(Failure(StatusCode::SERVICE_UNAVAILABLE, "Workspace compute needs to reconnect."));
     }
     let backend = service.backend.clone();
@@ -356,7 +367,7 @@ async fn socket(
     response.headers_mut().insert("X-RayDE-Generation", record.generation.to_string().parse().map_err(|_| unavailable())?);
     Ok(response)
 }
-impl Service {
+impl<P: Backend> Service<P> {
     /// The labels every sandbox of one workspace carries, and what finds them.
     fn workspace_labels(&self, id: &str) -> sb::Labels {
         sb::Labels::from([("rayde.runner".to_string(), self.registry.instance.clone()), ("rayde.workspace".to_string(), id.to_string())])
@@ -400,7 +411,7 @@ impl Service {
         let command = sb::Command { program: "/opt/rayde-session".into(), args: args.into_iter().map(String::from).collect(), env: Default::default() };
         self.backend.detach(&record.sandbox, command).await?;
         for _ in 0..20 {
-            if let Ok(identity) = tunnel::probe(&self.backend, &record.sandbox, self.config.persistent_disks).await {
+            if let Ok(identity) = tunnel::probe(self.backend.as_ref(), &record.sandbox, self.config.persistent_disks).await {
                 return Ok(identity);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -457,7 +468,7 @@ impl Service {
             return Err(Failure(StatusCode::CONFLICT, "This workspace needs a toolchain migration before reopening."));
         }
         if record.phase == "ready" {
-            let identity = match tunnel::probe(&self.backend, &record.sandbox, self.config.persistent_disks).await {
+            let identity = match tunnel::probe(self.backend.as_ref(), &record.sandbox, self.config.persistent_disks).await {
                 Ok(identity) => Some(identity),
                 Err(_) => {
                     if self.backend.ping(&record.sandbox).await.is_ok() {
@@ -527,7 +538,7 @@ impl Service {
         let _ = tokio::fs::remove_dir_all(checkout).await;
         if let Err(error) = result {
             let cleaned = if self.cleanup(&record).await.is_ok() {
-                if let Some(storage) = &record.storage {storage.remove(&self.backend).await.is_ok()} else {true}
+                if let Some(storage) = &record.storage {storage.remove(self.backend.as_ref()).await.is_ok()} else {true}
             } else {false};
             if cleaned {
                 record.phase = "failed".into();
@@ -581,14 +592,14 @@ impl Service {
         let mounts = match &record.storage {
             Some(storage) => {
                 if initialize {
-                    storage.prepare(&self.backend).await?;
+                    storage.prepare(self.backend.as_ref()).await?;
                 }
                 storage.mounts()
             }
             None => Vec::new(),
         };
         if self.config.toolchain.is_some() {
-            toolchain::restore(&self.backend, &self.config, &record.sandbox, labels, mounts).await?;
+            toolchain::restore(self.backend.as_ref(), &self.config, &record.sandbox, labels, mounts).await?;
         } else {
             let mounts = if record.storage.is_some() {
                 mounts
@@ -611,7 +622,7 @@ impl Service {
                 .await?;
         }
         self.backend.copy_in(&record.sandbox, self.config.session_binary.clone(), "/opt/rayde-session").await?;
-        if let Some(storage) = &record.storage {storage.bind(&self.backend, &record.sandbox, initialize).await?;}
+        if let Some(storage) = &record.storage {storage.bind(self.backend.as_ref(), &record.sandbox, initialize).await?;}
         Ok(())
     }
 

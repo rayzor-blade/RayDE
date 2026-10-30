@@ -1,9 +1,8 @@
 use super::*;
 use crate::{
-    msb::Msb,
     registry::{Cell, Record},
 };
-use rayde_sandbox::{self as sb, SandboxProvider as _};
+use rayde_sandbox as sb;
 use axum::extract::ws::{Message, WebSocket};
 use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -30,7 +29,7 @@ async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| unavailable())
 }
 
-pub(crate) async fn probe(backend: &Msb, sandbox: &str, persistent_disks: bool) -> Result<serde_json::Value> {
+pub(crate) async fn probe(backend: &impl sb::SandboxProvider, sandbox: &str, persistent_disks: bool) -> Result<serde_json::Value> {
     let work = async {
         let sb::Process { stdin: mut input, stdout: mut output, exit } = backend.spawn(sandbox, bridge()).await?;
         input
@@ -69,7 +68,7 @@ pub(crate) fn identity(response: &serde_json::Value) -> Result<serde_json::Value
     Ok(identity.clone())
 }
 
-pub(crate) async fn relay(mut socket: WebSocket, backend: Arc<Msb>, cell: Arc<Cell>, record: Record) {
+pub(crate) async fn relay<P: sb::SandboxProvider + 'static>(mut socket: WebSocket, backend: Arc<P>, cell: Arc<Cell>, record: Record) {
     let mut closed = cell.closed.subscribe();
     let work=async {
         let first=tokio::select! {

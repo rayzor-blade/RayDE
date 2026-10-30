@@ -11,7 +11,7 @@ mod toolchain;
 mod volumes;
 pub use config::{Config, LocalRepository, Toolchain};
 pub use msb::Msb;
-pub use service::{Running, start};
+pub use service::{Backend, Running, start, start_with};
 
 use axum::{
     Json,

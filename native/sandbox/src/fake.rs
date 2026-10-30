@@ -1,9 +1,13 @@
 //! An in-memory backend for the conformance suite and for client tests that need a provider without a VM.
 //! It runs two programs: `cat` echoes stdin to stdout, `echo` prints its arguments; `sleep <ms>` waits.
+//! `with_program` registers a stand-in for a guest program, so a test can play the part of what runs inside a sandbox.
 
 use crate::*;
-use std::{collections::HashMap, sync::Mutex};
-use tokio::io::AsyncWriteExt;
+use std::{collections::HashMap, pin::Pin, sync::Arc, sync::Mutex};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+
+/// A guest program: the sandbox's name, the command, its stdin and its stdout. Its result is the exit status; stdout closes when it ends.
+type Handler = Arc<dyn Fn(String, Command, DuplexStream, DuplexStream) -> Pin<Box<dyn Future<Output = i32> + Send>> + Send + Sync>;
 
 #[derive(Default)]
 struct World {
@@ -15,11 +19,22 @@ struct World {
 pub struct Fake {
     capabilities: Capabilities,
     world: Mutex<World>,
+    programs: HashMap<String, Handler>,
 }
 
 impl Fake {
     pub fn new(capabilities: Capabilities) -> Self {
-        Self { capabilities, world: Mutex::default() }
+        Self { capabilities, world: Mutex::default(), programs: HashMap::new() }
+    }
+
+    /// Runs `handler` whenever a command names `program`, in place of the built-in programs, for both `spawn` and `run`.
+    pub fn with_program<F, Fut>(mut self, program: &str, handler: F) -> Self
+    where
+        F: Fn(String, Command, DuplexStream, DuplexStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = i32> + Send + 'static,
+    {
+        self.programs.insert(program.to_string(), Arc::new(move |name, command, stdin, stdout| Box::pin(handler(name, command, stdin, stdout))));
+        self
     }
 
     fn running(&self, name: &str) -> Result<()> {
@@ -153,6 +168,13 @@ impl SandboxProvider for Fake {
         let (stdin, mut input) = tokio::io::duplex(64 * 1024);
         let (mut output, stdout) = tokio::io::duplex(64 * 1024);
         let (done, exit) = tokio::sync::oneshot::channel();
+        if let Some(handler) = self.programs.get(&command.program).cloned() {
+            let sandbox = name.to_string();
+            tokio::spawn(async move {
+                let _ = done.send(handler(sandbox, command, input, output).await);
+            });
+            return Ok(Process { stdin: Box::new(stdin), stdout: Box::new(stdout), exit });
+        }
         tokio::spawn(async move {
             let status = match command.program.as_str() {
                 "cat" => {
@@ -173,6 +195,23 @@ impl SandboxProvider for Fake {
 
     async fn run(&self, name: &str, command: Command, limit: usize, within: Duration) -> Result<Output> {
         self.running(name)?;
+        if let Some(handler) = self.programs.get(&command.program).cloned() {
+            let (stdin, input) = tokio::io::duplex(64 * 1024);
+            let (output, mut stdout) = tokio::io::duplex(64 * 1024);
+            drop(stdin);
+            let sandbox = name.to_string();
+            let work = async move {
+                let status = tokio::spawn(handler(sandbox, command, input, output));
+                let mut captured = Vec::new();
+                stdout.read_to_end(&mut captured).await.map_err(|_| Error::Unavailable)?;
+                Ok::<_, Error>((status.await.map_err(|_| Error::Unavailable)?, captured))
+            };
+            let (status, captured) = tokio::time::timeout(within, work).await.map_err(|_| Error::Timeout)??;
+            if captured.len() > limit {
+                return Err(Error::Invalid("The output passed its limit.".into()));
+            }
+            return Ok(Output { status, stdout: captured, stderr: Vec::new() });
+        }
         let work = async {
             match command.program.as_str() {
                 "echo" => Ok(Output { status: 0, stdout: format!("{}\n", command.args.join(" ")).into_bytes(), stderr: Vec::new() }),
