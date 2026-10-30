@@ -75,6 +75,7 @@ fn state_of(doc: &Doc) -> Vec<u8> {
 }
 
 pub struct Opened {
+    pub document_id:Option<String>,
     /// What the client lacks, given the state vector it sent.
     pub update: Vec<u8>,
     /// The session's state vector, so the client can send back what the session lacks.
@@ -127,6 +128,12 @@ impl<S: FileStore> DocHub<S> {
             return Err(SessionError::new("document-open", "Close shared documents before moving this file or folder."));
         }
         self.store.rename(from, to).await
+    }
+
+    pub async fn rename_documents(&self,from:&str,to:&str)->Result<crate::store::DocumentMoveReceipt>{
+        let _opening=self.opening.lock().await;
+        if self.conflicts(&[from,to],true,None).await? {return Err(SessionError::new("document-open","Close shared documents before moving this file or folder."));}
+        self.store.rename_documents(from,to).await
     }
 
     /// A direct write becomes a disk-origin edit before its acknowledgement.
@@ -191,7 +198,7 @@ impl<S: FileStore> DocHub<S> {
         if let Some(saved) = self.store.read_state(&format!("doc:{path}")).await? {
             let state = if let Some((baseline,state)) = crate::buffer_state::unpack(&saved)? {
                 if let Some(binding) = baseline.path.as_deref() {
-                    if binding != self.store.recovery_path(path).await? {return Err(Self::disk_conflict());}
+                    if !self.store.matches_recovery_binding(path,binding).await? {return Err(Self::disk_conflict());}
                 }
                 if !baseline.accepts(&crate::checkpoint::digest(disk.as_bytes())) {
                     return Err(Self::disk_conflict());
@@ -236,28 +243,39 @@ impl<S: FileStore> DocHub<S> {
 
     /// Opens `path` for `client`, and returns what it needs to catch up. `update` and later updates go to `send`.
     pub async fn attach(&self, path: &str, client: &str, vector: Option<&[u8]>, send: Send_) -> Result<Opened> {
+        self.attach_identified(path,client,vector,None,send).await
+    }
+
+    /// Checks a returning replica's identity under the same gate as filesystem moves and subscription changes.
+    pub async fn attach_identified(&self, path: &str, client: &str, vector: Option<&[u8]>, expected:Option<&str>, send: Send_) -> Result<Opened> {
         let from = match vector {
             Some(bytes) => StateVector::decode_v1(bytes).map_err(|_| SessionError::new("bad-request", "The state vector is not valid."))?,
             None => StateVector::default(),
         };
         // Registering a subscriber and releasing the last one share the same gate.
         let _opening = self.opening.lock().await;
+        if let Some(id)=expected {
+            if self.store.document_identity(path).await?.as_deref()!=Some(id){return Err(SessionError::new("document-changed","The path belongs to a different document. Preserve local recovery and reopen the file."));}
+        } else if !from.is_empty() && self.store.path_rebound(path).await? {
+            return Err(SessionError::new("identity-required","This path has moved or been replaced. Preserve local recovery and reopen using its document identity."));
+        }
+        if self.conflicts(&[path],false,Some(path)).await? {return Err(SessionError::new("document-open","This file is already shared through another path."));}
         let open = match self.get(path) {
             Some(open) => open,
             None => {
                 if self.open.lock().unwrap().len() >= MAX_DOCUMENTS {
                     return Err(SessionError::new("busy", "This workspace has too many shared documents open. Close a document before opening another."));
                 }
-                let open = self.load(path).await?;
-                self.open.lock().unwrap().insert(path.to_string(), open.clone());
-                open
+                self.load(path).await?
             }
         };
+        let document_id=self.store.document_identity(path).await?;
+        self.open.lock().unwrap().insert(path.to_string(), open.clone());
         open.subscribers.lock().unwrap().insert(client.to_string(), send);
         let txn = open.doc.transact();
         let text = open.text.get_string(&txn);
         let dirty = open.buffered && text != *open.last_disk.lock().unwrap();
-        Ok(Opened { update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty })
+        Ok(Opened { document_id,update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty })
     }
 
     /// Applies a client's update; the other subscribers get it from the document's update event.

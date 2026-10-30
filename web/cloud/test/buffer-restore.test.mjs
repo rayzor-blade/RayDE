@@ -10,6 +10,8 @@ const require=createRequire(new URL("../../session/package.json",import.meta.url
 test("hosted journal recovery restores a dirty buffer over its saved file and survives a second restart",async t=>{
  const host=await setup(t),user=await signin(host.cloud.fetch),workspace=await host.workspace(user),client=await workspace.connect();
  const baseline=await client.request("fs.write",{path:"main.hx",data:"saved 🦊\n"});assert.equal(baseline.ok,true);
+ assert.equal((await client.request("fs.rename",{from:"main.hx",to:"moved.hx",preserveDocuments:true})).code,"unsupported");
+ assert.equal((await client.request("doc.resolve",{documentId:"0".repeat(64)})).code,"unsupported");
  const peer=new Y.Doc();Y.applyUpdate(peer,Buffer.from((await client.request("doc.open",{path:"main.hx"})).update,"base64"));
  assert.equal((await client.request("doc.save",{path:"main.hx"})).ok,true);
  let vector=Y.encodeStateVector(peer);peer.getText("text").insert(0,"unsaved ");
@@ -42,4 +44,41 @@ test("hosted journal recovery restores a dirty buffer over its saved file and su
  assert.equal((await reopened.request("doc.save",{path:"main.hx"})).ok,true);
  assert.equal(await readFile(join(host.root,"main.hx"),"utf8"),again.text);
  assert.equal((await reopened.request("doc.open",{path:"main.hx"})).dirty,false);peer.destroy();
+});
+
+test("legacy durable records bind to native IDs without mixing a recreated file's history",async t=>{
+ const host=await setup(t),user=await signin(host.cloud.fetch),workspace=await host.workspace(user);
+ host.identities(false);
+ const old=await workspace.connect();assert.equal((await old.request("fs.write",{path:"same.hx",data:"original file"})).ok,true);
+ const opened=await old.request("doc.open",{path:"same.hx"}),identity=opened.documentId;
+ const barrier=await old.request("doc.update",{path:"same.hx",update:"AAA="});assert.equal(barrier.ok,true,JSON.stringify(barrier));
+ const saved=await old.request("doc.save",{path:"same.hx"});assert.equal(saved.ok,true,JSON.stringify(saved));
+ const initialJournal=(await workspace.control("journal",{id:barrier.durableUpdate.id})).body;
+ const initialCheckpoint=(await workspace.control("checkpoint",{id:saved.durable.id})).body;
+ assert.equal(initialJournal.manifest.documentId,undefined);assert.equal(initialCheckpoint.manifest.documentId,undefined);
+ await old.request("doc.close",{path:"same.hx"});old.socket.close();host.identities(true);
+ const current=await workspace.connect();assert.equal((await current.request("doc.open",{path:"same.hx"})).documentId,identity);
+ const adopted=await current.request("doc.update",{path:"same.hx",update:"AAA="});assert.equal(adopted.ok,true,JSON.stringify(adopted));
+ assert.equal(adopted.durableUpdate.id,barrier.durableUpdate.id,"legacy graph was copied instead of bound in place");
+ assert.equal((await current.request("doc.save",{path:"same.hx"})).ok,true);
+ const journal=(await workspace.control("journal",{id:adopted.durableUpdate.id})).body;
+ const checkpoint=(await workspace.control("checkpoint",{id:saved.durable.id})).body;
+ assert.equal(journal.manifest.documentId,identity);assert.equal(checkpoint.manifest.documentId,identity);
+ assert.deepEqual(journal.checkpoint,initialJournal.checkpoint);assert.deepEqual(checkpoint.checkpoint,initialCheckpoint.checkpoint);
+ await current.request("doc.close",{path:"same.hx"});assert.equal((await current.request("fs.remove",{path:"same.hx"})).ok,true);
+ assert.equal((await current.request("fs.write",{path:"same.hx",data:"replacement file"})).ok,true);
+ const fresh=await current.request("doc.open",{path:"same.hx"});assert.notEqual(fresh.documentId,identity);
+ assert.equal((await current.request("doc.save",{path:"same.hx",documentId:identity})).code,"document-changed");
+ const updated=await current.request("doc.update",{path:"same.hx",update:"AAA="});assert.equal(updated.ok,true,JSON.stringify(updated));
+ assert.notEqual(updated.durableUpdate.id,barrier.durableUpdate.id);
+ const newSave=await current.request("doc.save",{path:"same.hx"});assert.equal(newSave.ok,true,JSON.stringify(newSave));assert.notEqual(newSave.durable.id,saved.durable.id);
+ const next=(await workspace.control("journal",{id:updated.durableUpdate.id})).body;
+ assert.equal(next.manifest.documentId,fresh.documentId);
+ const peer=new Y.Doc();Y.applyUpdate(peer,Buffer.from(next.checkpoint.update,"base64"));assert.equal(peer.getText("text").toString(),"replacement file");peer.destroy();
+ assert.deepEqual((await workspace.control("journal",{id:barrier.durableUpdate.id})).body.checkpoint,journal.checkpoint,"retired journal was overwritten");
+ assert.deepEqual((await workspace.control("checkpoint",{id:saved.durable.id})).body.checkpoint,checkpoint.checkpoint,"retired checkpoint was overwritten");
+ await current.request("doc.close",{path:"same.hx"});current.socket.close();await host.restartCloud();
+ const restarted=await workspace.connect();assert.equal((await restarted.request("doc.open",{path:"same.hx"})).documentId,fresh.documentId);
+ const repeated=await restarted.request("doc.update",{path:"same.hx",update:"AAA="});assert.equal(repeated.ok,true,JSON.stringify(repeated));assert.equal(repeated.durableUpdate.id,updated.durableUpdate.id);
+ assert.equal((await workspace.control("recovery/plan",{source:journal.manifest.source})).body.automaticRestore,false);
 });

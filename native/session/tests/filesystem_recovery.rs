@@ -184,17 +184,14 @@ async fn retargeting_a_released_draft_alias_does_not_attach_it_to_another_file()
     .await
     .unwrap();
     let before = store.read_state("doc:alias.txt").await.unwrap();
+    let identity = store.document_identity("alias.txt").await.unwrap().unwrap();
     fs::remove_file(root.path().join("alias.txt")).unwrap();
     std::os::unix::fs::symlink("second.txt", root.path().join("alias.txt")).unwrap();
-    assert_eq!(
-        hub.attach("alias.txt", "a", None, Arc::new(|_| {}))
-            .await
-            .err()
-            .unwrap()
-            .code,
-        "recovery-conflict"
-    );
-    assert_eq!(store.read_state("doc:alias.txt").await.unwrap(), before);
+    let reopened=hub.attach("alias.txt", "a", None, Arc::new(|_| {})).await.unwrap();
+    assert_ne!(reopened.document_id.as_deref(),Some(identity.as_str()));
+    assert_eq!(reopened.text,"same saved contents");assert!(!reopened.dirty);
+    assert_eq!(store.read_state("doc:first.txt").await.unwrap(),before);
+    assert!(store.path_rebound("alias.txt").await.unwrap());
     assert_eq!(
         fs::read_to_string(root.path().join("second.txt")).unwrap(),
         "same saved contents"

@@ -19,6 +19,11 @@ pub struct StoreIdentity {
     pub workspace: String,
 }
 
+#[derive(Debug,Clone, Serialize)]
+pub struct DocumentMove {pub id:String,pub from:String,pub to:String}
+#[derive(Debug,Serialize)]
+pub struct DocumentMoveReceipt {pub revision:u64,pub documents:Vec<DocumentMove>}
+
 pub trait FileStore: Send + Sync + 'static {
     /// The workspace's own name, for display.
     fn name(&self) -> String;
@@ -26,10 +31,17 @@ pub trait FileStore: Send + Sync + 'static {
     fn root(&self) -> String;
     /// Opaque persistent identities for recovery caches; never an access credential or display name.
     fn cache_identity(&self) -> Option<StoreIdentity> { None }
+    /// Stable IDs and closed-document moves within this store's recovery namespace.
+    fn document_identities(&self) -> bool { false }
     /// A host-local path key used only to detect aliases during file mutation.
     fn recovery_path(&self, path: &str) -> impl Future<Output = Result<String>> + Send {
         async move { clean(path) }
     }
+    fn document_identity(&self, _path:&str) -> impl Future<Output=Result<Option<String>>>+Send {async {Ok(None)}}
+    fn document_path(&self, _id:&str) -> impl Future<Output=Result<Option<String>>>+Send {async {Ok(None)}}
+    fn path_rebound(&self, _path:&str) -> impl Future<Output=Result<bool>>+Send {async {Ok(false)}}
+    fn matches_recovery_binding(&self,path:&str,binding:&str)->impl Future<Output=Result<bool>>+Send {async move{Ok(self.recovery_path(path).await?==binding)}}
+    fn rename_documents(&self,_from:&str,_to:&str)->impl Future<Output=Result<DocumentMoveReceipt>>+Send {async {Err(SessionError::new("unsupported","This workspace does not support document-preserving moves."))}}
     fn list(&self, path: &str) -> impl Future<Output = Result<Vec<Entry>>> + Send;
     fn stat(&self, path: &str) -> impl Future<Output = Result<Option<Entry>>> + Send;
     fn read(&self, path: &str) -> impl Future<Output = Result<Vec<u8>>> + Send;

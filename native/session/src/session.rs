@@ -237,7 +237,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -276,9 +276,22 @@ impl<S: FileStore> Connection<S> {
             }
             "fs.mkdir" => store.mkdir(text(request, "path")?).await.map(|_| json!({})),
             "fs.remove" => workspace.docs.remove(&clean(text(request, "path")?)?, request.get("recursive").and_then(Value::as_bool).unwrap_or(false)).await.map(|_| json!({})),
-            "fs.rename" => workspace.docs.rename(&clean(text(request, "from")?)?, &clean(text(request, "to")?)?).await.map(|_| json!({})),
+            "fs.rename" => {
+                let from=clean(text(request,"from")?)?;let to=clean(text(request,"to")?)?;
+                if request["preserveDocuments"]==true {return workspace.docs.rename_documents(&from,&to).await.map(|receipt|json!({"documents":receipt.documents,"revision":receipt.revision}));}
+                workspace.docs.rename(&from,&to).await.map(|_|json!({}))
+            },
+            "doc.resolve"=>{
+                let id=text(request,"documentId")?;
+                if !crate::buffer_state::digest(id){return Err(SessionError::new("bad-request","The document identity is invalid."));}
+                Ok(json!({"documentId":id,"path":store.document_path(id).await?}))
+            },
             "doc.open" => {
                 let path = clean(text(request, "path")?)?;
+                let expected=match request.get("documentId") {
+                    Some(value)=>Some(value.as_str().filter(|id|crate::buffer_state::digest(id)).ok_or_else(||SessionError::new("bad-request","The document identity is invalid."))?),
+                    None=>None,
+                };
                 if !self.docs.contains(&path) && self.docs.len() >= MAX_CONNECTION_DOCUMENTS {
                     return Err(SessionError::new("busy", "This connection has too many shared documents open. Close a document before opening another."));
                 }
@@ -289,14 +302,15 @@ impl<S: FileStore> Connection<S> {
                 let out = self.out.clone();
                 let event_path = path.clone();
                 let send = Arc::new(move |update: Vec<u8>| out(json!({"ev": "doc.update", "path": event_path, "update": B64.encode(update)}).to_string()));
-                let opened = workspace.docs.attach(&path, &self.name, vector.as_deref(), send).await?;
+                let opened = workspace.docs.attach_identified(&path, &self.name, vector.as_deref(), expected, send).await?;
                 if !self.docs.contains(&path) {
                     self.docs.push(path);
                 }
-                Ok(json!({"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty}))
+                Ok(json!({"documentId":opened.document_id,"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty}))
             }
             "doc.update" => {
                 let path = clean(text(request, "path")?)?;
+                if let Some(id)=request.get("documentId") {if id.as_str().is_none() || store.document_identity(&path).await?.as_deref()!=id.as_str(){return Err(SessionError::new("document-changed","The path belongs to a different document."));}}
                 if !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before editing it.")); }
                 let update = bytes(request, "update")?;
                 if request["journal"] == true {
@@ -309,6 +323,7 @@ impl<S: FileStore> Connection<S> {
             }
             "doc.save" => {
                 let path = clean(text(request, "path")?)?;
+                if let Some(id)=request.get("documentId") {if id.as_str().is_none() || store.document_identity(&path).await?.as_deref()!=id.as_str(){return Err(SessionError::new("document-changed","The path belongs to a different document."));}}
                 let checkpoint = request["checkpoint"] == true;
                 if checkpoint && !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before saving its checkpoint.")); }
                 let saved = workspace.docs.save(&path,checkpoint).await?;

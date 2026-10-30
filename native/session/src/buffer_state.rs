@@ -70,7 +70,7 @@ pub(crate) fn pack(state: &[u8], disk: &str, saving: Option<&str>, path: &str) -
         return Err(invalid());
     }
     let mut header = Baseline {
-        version: 2,
+        version: if path.starts_with("document:") {3} else {2},
         disk: disk.into(),
         saving: saving.map(String::from),
         graph: checkpoint::digest(state),
@@ -117,8 +117,8 @@ pub(crate) fn header(bytes: &[u8]) -> Result<Option<(Baseline, usize)>> {
     let mut header: Baseline =
         serde_json::from_slice(bytes.get(end..end + size).ok_or_else(invalid)?)
             .map_err(|_| invalid())?;
-    if !matches!(header.version, 1 | 2)
-        || header.version == 2
+    if !matches!(header.version, 1 | 2 | 3)
+        || header.version >= 2
             && header
                 .path
                 .as_deref()
@@ -129,9 +129,10 @@ pub(crate) fn header(bytes: &[u8]) -> Result<Option<(Baseline, usize)>> {
     {
         return Err(invalid());
     }
-    if header.version == 2 && header.binding.as_deref() != Some(header.checksum()?.as_str()) {
+    if header.version >= 2 && header.binding.as_deref() != Some(header.checksum()?.as_str()) {
         return Err(invalid());
     }
+    if header.version==3 && !header.path.as_deref().and_then(|p|p.strip_prefix("document:")).is_some_and(digest){return Err(invalid());}
     if header.version == 1 {
         header.path = None;
     }
@@ -155,4 +156,10 @@ pub(crate) fn unpack(bytes: &[u8]) -> Result<Option<(Baseline, &[u8])>> {
         return Err(invalid());
     }
     Ok(Some((header, state)))
+}
+
+#[cfg(feature="server")]
+pub(crate) fn rebind(bytes:&[u8],id:&str)->Result<Vec<u8>> {
+    let (header,graph)=unpack(bytes)?.ok_or_else(invalid)?;
+    pack(graph,&header.disk,header.saving.as_deref(),&format!("document:{id}"))
 }

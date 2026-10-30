@@ -28,7 +28,7 @@ test('app artifacts stream from compute on an isolated origin and revoke with th
  assert.equal((await rpc('hello')).appPreviews,true);
  const opened=await rpc('preview.open',{path:'.rayde/previews/demo'});assert.equal(opened.ok,true,JSON.stringify(opened));
  const url=new URL(opened.url);assert.equal(url.origin,'http://localhost:8787');assert.ok(!opened.url.includes('compute-secret'));
- const page=await mf.dispatchFetch(opened.url);assert.equal(page.status,200);assert.equal(await page.text(),'<html>App preview</html>');
+ const page=await mf.dispatchFetch(opened.url);assert.equal(page.status,200);assert.equal(await page.text(),'<html>App preview</html>\n<script type="module" data-rayde-preview-metadata src="./rayde-preview-metadata.mjs"></script>\n');
  assert.equal(page.headers.get('cross-origin-embedder-policy'),'require-corp');assert.equal(page.headers.get('cross-origin-resource-policy'),'cross-origin');
  const wasm=await mf.dispatchFetch(new URL('app.wasm',opened.url));assert.equal(wasm.headers.get('content-type'),'application/wasm');assert.deepEqual(Buffer.from(await wasm.arrayBuffer()),bytes);
  for(const path of ['/api/session','/auth/github/start','/'])assert.equal((await mf.dispatchFetch(url.origin+path)).status,404);

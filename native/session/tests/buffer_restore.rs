@@ -310,6 +310,7 @@ struct FaultStore {
     fail_disk: AtomicBool,
 }
 impl FileStore for FaultStore {
+    async fn matches_recovery_binding(&self,p:&str,b:&str)->Result<bool>{self.inner.matches_recovery_binding(p,b).await}
     fn name(&self) -> String {
         self.inner.name()
     }

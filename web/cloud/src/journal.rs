@@ -20,6 +20,12 @@ pub struct Manifest {
     pub id: String,
     path: String,
     source: String,
+    #[serde(
+        default,
+        rename = "documentId",
+        skip_serializing_if = "Option::is_none"
+    )]
+    document_id: Option<String>,
     pub sequence: u64,
     vector: String,
     bytes: usize,
@@ -27,14 +33,6 @@ pub struct Manifest {
     segments: Vec<Segment>,
     last: String,
     updated: u64,
-}
-fn context(path: &str, source: &str) -> AppResult<(String, String)> {
-    let path =
-        rayde_session::store::clean(path).map_err(|_| bad(400, "The journal path is invalid."))?;
-    if path.is_empty() || path.len() > 4096 || !workspace_id(source) {
-        return Err(bad(400, "The journal context is invalid."));
-    }
-    Ok((hash(&json!([source, path]).to_string()), path))
 }
 fn unavailable() -> Failure {
     bad(
@@ -54,10 +52,11 @@ impl Manifest {
             return Err(unavailable());
         }
         checkpoint::decode_vector(&self.vector).map_err(|_| unavailable())?;
-        if context(&self.path, &self.source)
+        if crate::checkpoints::record_id(&self.path, &self.source, self.document_id.as_deref())
             .map_err(|_| unavailable())?
             .0
             != self.id
+            && crate::checkpoints::record_id(&self.path, &self.source, None)?.0 != self.id
         {
             return Err(unavailable());
         }
@@ -106,9 +105,16 @@ impl Checkpoints {
         Ok(updates)
     }
 
-    pub async fn journal_vector(&self, path: &str, source: &str) -> AppResult<String> {
-        let (id, _) = context(path, source)?;
+    pub async fn journal_vector(
+        &self,
+        path: &str,
+        source: &str,
+        document: Option<&str>,
+    ) -> AppResult<String> {
         let _guard = self.gate.lock().await;
+        let (id, _) =
+            crate::checkpoints::record_key(&self.storage, "journal", path, source, document)
+                .await?;
         match self
             .storage
             .get::<Manifest>(&format!("journal:{id}"))
@@ -116,7 +122,12 @@ impl Checkpoints {
         {
             Some(record) => {
                 record.validate()?;
-                if record.id != id {
+                if record.id != id
+                    || record
+                        .document_id
+                        .as_deref()
+                        .is_some_and(|id| Some(id) != document)
+                {
                     return Err(unavailable());
                 }
                 Ok(record.vector)
@@ -131,16 +142,24 @@ impl Checkpoints {
         source: &str,
         expected: &str,
         delta: Delta,
+        document: Option<&str>,
     ) -> AppResult<Manifest> {
-        let (id, path) = context(path, source)?;
         let mut bytes = checkpoint::unpack_delta(&delta)
             .map_err(|_| bad(422, "The workspace returned an invalid recovery delta."))?;
         let _guard = self.gate.lock().await;
+        let (id, path) =
+            crate::checkpoints::record_key(&self.storage, "journal", path, source, document)
+                .await?;
         let key = format!("journal:{id}");
         let old = self.storage.get::<Manifest>(&key).await?;
         if let Some(record) = &old {
             record.validate()?;
-            if record.id != id {
+            if record.id != id
+                || record
+                    .document_id
+                    .as_deref()
+                    .is_some_and(|id| Some(id) != document)
+            {
                 return Err(unavailable());
             }
         }
@@ -155,20 +174,20 @@ impl Checkpoints {
         }
         if let Some(old) = &old {
             if old.last == delta.sha256 && old.vector == delta.vector {
-                put(
+                let mut old = old.clone();
+                old.document_id = document.map(str::to_owned);
+                let mut values = crate::recovery::confirm(
                     &self.storage,
-                    crate::recovery::confirm(
-                        &self.storage,
-                        source,
-                        &path,
-                        "journal",
-                        &id,
-                        format!("{}:{}", old.sequence, old.last),
-                    )
-                    .await?,
+                    source,
+                    &path,
+                    "journal",
+                    &id,
+                    format!("{}:{}", old.sequence, old.last),
                 )
                 .await?;
-                return Ok(old.clone());
+                values.insert(key, json!(&old));
+                put(&self.storage, values).await?;
+                return Ok(old);
             }
         }
         let compact = old.as_ref().is_none_or(|record| {
@@ -219,6 +238,7 @@ impl Checkpoints {
             id: id.clone(),
             path,
             source: source.into(),
+            document_id: document.map(str::to_owned),
             sequence: old
                 .as_ref()
                 .map_or(Ok(1), |r| r.sequence.checked_add(1).ok_or_else(unavailable))?,

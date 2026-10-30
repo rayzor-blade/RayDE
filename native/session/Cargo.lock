@@ -1065,6 +1065,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-tungstenite 0.28.0",
+ "windows-sys 0.61.2",
  "yrs",
 ]
 

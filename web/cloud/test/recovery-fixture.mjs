@@ -24,13 +24,13 @@ function rpc(socket){
 export async function setup(t,settings={}){
  const base=await mkdtemp(join(tmpdir(),"rayde-restore-catalog-")),nativePort=await port(),root=join(base,"workspace");
  const {mkdir}=await import("node:fs/promises");await mkdir(root);
- let native,cloud,blocked=null,observer=null;const delayed=[],sockets=new Set(),held=new Set();
+ let native,cloud,blocked=null,observer=null,legacyIdentity=false;const delayed=[],sockets=new Set(),held=new Set();
  const proxy=new WebSocketServer({host:"127.0.0.1",port:0});await once(proxy,"listening");
  proxy.on("connection",client=>{
   const upstream=new WebSocket(`ws://127.0.0.1:${nativePort}/session`,{headers:{Origin:origin}}),pending=[];sockets.add(client);sockets.add(upstream);
   client.on("message",data=>{const text=data.toString(),request=JSON.parse(text);if(request.op==="fs.write"&&request.path===blocked)held.add(JSON.stringify(request.id));const send=()=>{if(upstream.readyState===WebSocket.OPEN)upstream.send(text);else pending.push(text);};if(observer&&request.op==="fs.write")Promise.resolve().then(()=>observer(request)).then(send,()=>client.close());else send();});
   upstream.on("open",()=>{for(const value of pending)upstream.send(value);pending.length=0;});
-  upstream.on("message",data=>{const text=data.toString(),reply=JSON.parse(text),send=()=>{if(client.readyState===WebSocket.OPEN)client.send(text);};if(held.delete(JSON.stringify(reply.id)))delayed.push(send);else send();});
+  upstream.on("message",data=>{const reply=JSON.parse(data.toString());if(legacyIdentity&&reply.protocol!=null)reply.documentIdentities=0;const text=JSON.stringify(reply),send=()=>{if(client.readyState===WebSocket.OPEN)client.send(text);};if(held.delete(JSON.stringify(reply.id)))delayed.push(send);else send();});
   for(const [socket,other]of[[client,upstream],[upstream,client]]){socket.on("error",()=>{});socket.on("close",()=>{sockets.delete(socket);if(other.readyState===WebSocket.OPEN)other.close();});}
  });
  const endpoint=`ws://127.0.0.1:${proxy.address().port}/session`,persist=join(base,"objects");
@@ -44,10 +44,10 @@ export async function setup(t,settings={}){
   const opening=await(await cloud.fetch("/api/workspaces/open",{method:"POST",headers:user.headers,body:'{"repository":111}'})).json(),path="/api/workspaces/"+opening.id;
   await until(async()=> (await(await cloud.fetch(path,{headers:user.headers})).json()).status==="ready");
   const control=async(op,body={})=>{const ns=await cloud.mf.getDurableObjectNamespace("WORKSPACES"),response=await ns.get(ns.idFromName(opening.id)).fetch("https://internal/"+op,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({owner:user.session.user.id,...body})});return {status:response.status,body:await response.json()};};
-  const connect=async()=>{const response=await cloud.fetch(path+"/socket",{headers:{...user.headers,Upgrade:"websocket"}});assert.equal(response.status,101);const socket=response.webSocket;socket.accept();const request=rpc(socket),hello=await request("hello");assert.equal(hello.fileMutations,1);return {socket,request};};
+  const connect=async()=>{const response=await cloud.fetch(path+"/socket",{headers:{...user.headers,Upgrade:"websocket"}});assert.equal(response.status,101);const socket=response.webSocket;socket.accept();const request=rpc(socket),hello=await request("hello");assert.equal(hello.fileMutations,1);assert.equal(hello.documentIdentities,0);assert.equal(hello.closedDocumentMoves,0);return {socket,request};};
   return{path,control,connect};
  }
- return{root,get cloud(){return cloud;},workspace,direct,start,stop,restartCloud,observeWrites(callback){observer=callback;},block(path){blocked=path;},release(){blocked=null;for(const send of delayed.splice(0))send();},get delayed(){return delayed.length;}};
+ return{root,get cloud(){return cloud;},workspace,direct,start,stop,restartCloud,identities(enabled){legacyIdentity=!enabled;},observeWrites(callback){observer=callback;},block(path){blocked=path;},release(){blocked=null;for(const send of delayed.splice(0))send();},get delayed(){return delayed.length;}};
 }
 export async function seed(client,workspace,path,data){
  assert.equal((await client.request("fs.write",{path,data})).ok,true);

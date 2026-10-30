@@ -67,11 +67,11 @@ payload: {login, id, exp}
 | Area | Requests | Contract |
 | --- | --- | --- |
 | Files | `fs.list`, `fs.stat`, `fs.read`, `fs.write`, `fs.mkdir`, `fs.remove`, `fs.rename` | Workspace-relative paths; traversal and symlinks leaving the root are refused. |
-| Documents | `doc.open`, `doc.update`, `doc.save`, `doc.close` | Yjs/Yrs state vectors and updates synchronize shared text. Updates require an open subscription. |
+| Documents | `doc.open`, `doc.update`, `doc.save`, `doc.close`, native `doc.resolve` | Yjs/Yrs state vectors and updates synchronize shared text. Updates require an open subscription. |
 
 `doc.open` requires an existing UTF-8 file. Create files explicitly with `fs.write`; missing-path probes create neither files nor recovery records. Reopening a subscription consumes no additional slot. Clients may share an existing document even when the workspace has reached its distinct-document limit.
 
-The host writes settled edits to disk and incorporates outside file edits into the shared document. Moving a file or folder containing an open CRDT document, including an open destination, is refused. Supporting shared renames requires stable document identities and coordinated path changes.
+The host writes settled edits to disk and incorporates outside file edits into the shared document. Moving a file or folder containing an open CRDT document, including an open destination, is refused. Native clients can explicitly move released drafts as described below; live shared renames still require coordinated path changes.
 
 ### Browser bindings and Save
 
@@ -95,7 +95,17 @@ With `hello.checkpoints = 1`, `doc.save` accepts `checkpoint:true` and returns v
 
 With `hello.bufferedRestore = 1`, the trusted control plane can use `doc.restore {path, checkpoint, mode:"buffer", diskSha256}` after materializing the saved UTF-8 file. Its hash must match. The recovered graph stays in checksummed private state; background flush, last-subscriber release and shutdown leave the saved file unchanged. `doc.open` reports `buffered` and `dirty`, and the browser binding marks restored edits dirty even when browser recovery already has the same text. Recovered buffers continue requiring explicit Save. Save verifies the observed disk baseline and records both sides of an in-progress disk write so interrupted saves can reopen safely; a different disk baseline requires reconciliation. This is not a filesystem compare-and-swap: external writers must be fenced or reconciled before automated restoration. Stable path identities and a complete filesystem manifest remain prerequisites.
 
-Released drafts retain checksummed host-local path bindings. File mutations check them after close or restart, including canonical aliases; dirty or conflicting drafts must be saved or reconciled first. Legacy unbound records are rebound on reopen. This does not supply distributed document IDs.
+Released drafts retain checksummed document bindings. Ordinary file mutations check them after close or restart, including canonical aliases; dirty or conflicting drafts must be saved or reconciled first. Legacy unbound records are rebound on reopen.
+
+### Native document identities and closed moves
+
+Native directory sessions advertise `hello.documentIdentities = 1` and `closedDocumentMoves = 1`. `doc.open` returns an opaque `documentId`. Returning replicas supply that ID with Open, Update and Save; Open checks it under the same gate as filesystem mutations. An old path recreated as another file receives another ID. A nonempty legacy state vector cannot reopen a moved or rebound path without its ID. Missing-file probes create no document state.
+
+After closing subscriptions, `fs.rename {from, to, preserveDocuments:true}` moves saved files while retaining released dirty graphs and their disk baselines. Its receipt contains a catalog `revision` and `documents: [{id, from, to}]`. `doc.resolve {documentId}` returns its current relative `path`, or null for a retired or unknown ID. Canonical aliases share an ID and cannot simultaneously materialize competing graphs. A final symlink is refused for draft-preserving moves; ordinary symlink moves leave the target's identity intact.
+
+Private `documents.json` and `document-mutation.json` use checksummed, atomic writes. An intent precedes each bound move or deletion; restart verifies filesystem object identities before completing or rolling back the catalog transition. Ambiguous outcomes remain fenced without overwriting files or recovery data. Existing legacy graph files are adopted in place. Multiple legacy alias graphs require reconciliation, with both copies preserved. The catalog retains metadata rather than loaded CRDT graphs and is bounded to 16,384 identities and 8 MiB. Retired graphs remain private; explicit discard and reclamation are separate work.
+
+These IDs belong to one native recovery namespace and its single compute authority. They are not access credentials or portable cross-host IDs. The hosted gateway internally binds durable journals and checkpoints to compute-confirmed IDs, retaining older records when a path is recreated. Browser replica/history migration, coordinated hosted moves, cross-host identity import, external-writer reconciliation and compute leases remain outstanding. The hosted gateway advertises both capabilities as unavailable and refuses `doc.resolve` and draft-preserving moves until that integration is complete; automatic restore remains disabled.
 
 The hosted gateway reserves restoration for its trusted control plane and stores checkpoints before acknowledging Save. See [saved document recovery](../../web/cloud/README.md#saved-document-recovery) for gateway storage and restore behavior.
 

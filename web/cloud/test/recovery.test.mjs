@@ -35,10 +35,10 @@ test("restore catalog excludes overwritten, moved, deleted and uncertain documen
  assert.ok((await plan()).invalidated.some(row=>row.document.path==="src/b.hx"),"recreating a directory cannot revive its older child snapshots");
  await seed(a,workspace,"src/a.hx","reborn");state=await plan();assert.ok(state.documents.some(row=>row.path==="src/a.hx"));assert.ok(state.invalidated.some(row=>row.document.path==="src/b.hx"));
  await seed(a,workspace,"history.hx","history");const saved=await a.request("doc.save",{path:"history.hx"});assert.equal(saved.ok,true,JSON.stringify(saved));
- const beforeImport=await plan(),snapshot=(await workspace.control("checkpoint",{id:saved.durable.id})).body.checkpoint;
+ const beforeImport=await plan(),savedRecord=(await workspace.control("checkpoint",{id:saved.durable.id})).body,snapshot=savedRecord.checkpoint;
  const doc=new Y.Doc();Y.applyUpdate(doc,Buffer.from(snapshot.update,"base64"));const vector=Y.encodeStateVector(doc);doc.getText("text").delete(0,1);
  const bytes=Buffer.from(Y.encodeStateAsUpdate(doc)),checkpoint={version:1,update:bytes.toString("base64"),sha256:createHash("sha256").update(bytes).digest("hex")};
- assert.equal((await workspace.control("checkpoint/import",{path:"history.hx",source,checkpoint})).status,200);
+ assert.equal((await workspace.control("checkpoint/import",{path:"history.hx",source,documentId:savedRecord.manifest.documentId,checkpoint})).status,200);
  state=await plan();assert.ok(state.invalidated.some(row=>row.document.path==="history.hx"&&row.outcome==="unconfirmed-record-change"));
  assert.equal((await workspace.control("recovery/plan",{source,revision:beforeImport.revision})).status,409);
  assert.equal((await a.request("doc.save",{path:"history.hx"})).ok,false,"Save cannot promote an imported deletion missing in compute, even with the same vector");

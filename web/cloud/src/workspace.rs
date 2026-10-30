@@ -42,6 +42,9 @@ struct Pending {
     checkpoints: bool,
     journals: bool,
     file_mutations: bool,
+    identities: bool,
+    document_requests: BTreeMap<String,(String,bool)>,
+    documents: BTreeMap<String,String>,
     serial: u64,
     requests: BTreeMap<String, futures_channel::oneshot::Sender<Value>>,
 }
@@ -130,23 +133,25 @@ async fn compute(backend: &WebSocket, pending: &Rc<RefCell<Pending>>, mut reques
 
 async fn forward_update(
     gate: Rc<futures_util::lock::Mutex<()>>, checkpoints: Rc<crate::checkpoints::Checkpoints>,
-    backend: WebSocket, pending: Rc<RefCell<Pending>>, id: Value, path: String, update: String, expires: u64,
+    backend: WebSocket, pending: Rc<RefCell<Pending>>, id: Value, path: String, update: String, document:Option<String>, expires: u64,
 ) -> Value {
     let Ok(_guard) = deadline(gate.lock(),20).await else { return update_failure(id,"The recovery queue is busy. Reconnect before retrying."); };
     if expires < now() { return update_failure(id,"Sign in again before synchronizing edits."); }
     let source = pending.borrow().source.clone().filter(|_|pending.borrow().journals);
     let Some(source) = source else { return update_failure(id,"Update or reconnect the workspace host before synchronizing durable edits."); };
-    let vector = match checkpoints.journal_vector(&path,&source).await {
+    let vector = match checkpoints.journal_vector(&path,&source,document.as_deref()).await {
         Ok(vector)=>vector, Err(error)=>return update_failure(id,&error.message),
     };
-    let mut reply = match compute(&backend,&pending,json!({"op":"doc.update","path":path,"update":update,"journal":true,"vector":vector})).await {
+    let mut request=json!({"op":"doc.update","path":path,"update":update,"journal":true,"vector":vector});
+    if let Some(document)=&document {request["documentId"]=json!(document);}
+    let mut reply = match compute(&backend,&pending,request).await {
         Ok(reply)=>reply, Err(message)=>return update_failure(id,message),
     };
     reply["id"] = id.clone();
     if reply["ok"] != true { return reply; }
     let delta = serde_json::from_value(reply.as_object_mut().and_then(|reply|reply.remove("journal")).unwrap_or(Value::Null));
     let stored = match delta {
-        Ok(delta)=>checkpoints.journal_append(&path,&source,&vector,delta).await,
+        Ok(delta)=>checkpoints.journal_append(&path,&source,&vector,delta,document.as_deref()).await,
         Err(_)=>Err(bad(502,"The workspace host returned no valid recovery delta.")),
     };
     match stored {
@@ -162,6 +167,7 @@ async fn forward_save(
     pending: Rc<RefCell<Pending>>,
     id: Value,
     path: String,
+    document:Option<String>,
     expires: u64,
 ) -> Value {
     let Ok(_guard) = deadline(gate.lock(), 20).await else {
@@ -187,14 +193,16 @@ async fn forward_save(
             "Update or reconnect the workspace host before saving durable recovery.",
         );
     };
-    let mut reply = match compute(&backend,&pending,json!({"op":"doc.save","path":path,"checkpoint":true})).await {
+    let mut request=json!({"op":"doc.save","path":path,"checkpoint":true});
+    if let Some(document)=&document {request["documentId"]=json!(document);}
+    let mut reply = match compute(&backend,&pending,request).await {
         Ok(reply)=>reply, Err(message)=>return save_failure(id,message),
     };
     reply["id"] = id.clone();
     if reply["ok"] != true { return reply; }
     let checkpoint = serde_json::from_value(reply.as_object_mut().and_then(|reply|reply.remove("checkpoint")).unwrap_or(Value::Null));
     let stored = match checkpoint {
-        Ok(checkpoint)=>checkpoints.save(&path,&source,checkpoint,true).await,
+        Ok(checkpoint)=>checkpoints.save_identified(&path,&source,checkpoint,true,document.as_deref()).await,
         Err(_)=>Err(bad(502,"The workspace host returned no valid checkpoint.")),
     };
     match stored {
@@ -275,6 +283,21 @@ impl DurableObject for WorkspaceSession {
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
         }
+        if data["op"]=="doc.resolve" || data["op"]=="fs.rename" && data["preserveDocuments"]==true {
+            return ws.send(&json!({"id":data["id"],"ok":false,"code":"unsupported","message":"Document-preserving moves require hosted identity recovery support."}));
+        }
+        if handshakes.borrow().document_requests.contains_key(&data["id"].to_string()) {
+            return ws.send(&json!({"id":data["id"],"ok":false,"code":"busy","message":"The document request ID is already in use."}));
+        }
+        if matches!(data["op"].as_str(),Some("doc.open"|"doc.close")) {
+            if let Some(path)=data["path"].as_str().and_then(|p|rayde_session::store::clean(p).ok()).filter(|p|!p.is_empty()&&p.len()<=4096) {
+                let mut pending=handshakes.borrow_mut();
+                if pending.document_requests.len()>=64 || pending.documents.len()>=512 && !pending.documents.contains_key(&path) {
+                    return ws.send(&json!({"id":data["id"],"ok":false,"code":"busy","message":"Too many document requests are open."}));
+                }
+                pending.document_requests.insert(data["id"].to_string(),(path,data["op"]=="doc.open"));
+            }
+        }
         if data["op"]=="preview.open" {
             let mut pending=handshakes.borrow_mut();
             if preview_origin(&self.env).is_none() || pending.preview_opens.len()>=8 {
@@ -297,6 +320,13 @@ impl DurableObject for WorkspaceSession {
             let filesystem_request=if filesystem {match crate::recovery::normalize(std::mem::take(&mut data)) {Ok(request)=>Some(request),Err(error)=>return ws.send(&filesystem_failure(id,&error.message))}} else {None};
             let update = if editing { data["update"].as_str().map(str::to_owned) } else { None };
             let size = if filesystem {message.len()} else {update.as_ref().map_or(0,String::len)};
+            let document=path.as_ref().and_then(|path|handshakes.borrow().documents.get(path).cloned());
+            if !filesystem && handshakes.borrow().identities && document.is_none() {
+                return ws.send(&json!({"id":id,"ok":false,"code":"not-open","message":"Reopen the document before synchronizing its recovery."}));
+            }
+            if !filesystem && data.get("documentId").is_some_and(|id|id.as_str()!=document.as_deref()) {
+                return ws.send(&json!({"id":id,"ok":false,"code":"document-changed","message":"The path belongs to a different document."}));
+            }
             if filesystem && size > rayde_session::session::MAX_MESSAGE-1024 {return ws.send(&filesystem_failure(id,"The file request exceeds the recovery queue limit."));}
             if editing && (update.is_none() || size > rayde_session::checkpoint::MAX_BYTES.div_ceil(3)*4) {
                 return ws.send(&update_failure(id,"The document update exceeds the recovery size limit."));
@@ -323,9 +353,9 @@ impl DurableObject for WorkspaceSession {
                 } else if filesystem {
                     forward_filesystem(gate,checkpoints,backend,handshakes,id,filesystem_request.unwrap(),expires).await
                 } else if editing {
-                    forward_update(gate,checkpoints,backend,handshakes,id,path.unwrap(),update.unwrap(),expires).await
+                    forward_update(gate,checkpoints,backend,handshakes,id,path.unwrap(),update.unwrap(),document,expires).await
                 } else {
-                    forward_save(gate,checkpoints,backend,handshakes,id,path.unwrap(),expires).await
+                    forward_save(gate,checkpoints,backend,handshakes,id,path.unwrap(),document,expires).await
                 };
                 let _ = ws.send(&reply);
                 drop(admission);
@@ -509,7 +539,7 @@ impl WorkspaceSession {
                     .map_err(|_| bad(400, "The checkpoint is invalid."))?;
                 json!(
                     self.checkpoints
-                        .save(text(&data, "path")?, text(&data, "source")?, checkpoint,false)
+                        .save_identified(text(&data, "path")?, text(&data, "source")?, checkpoint,false,data.get("documentId").map(|value|value.as_str().ok_or_else(||bad(400,"The document identity is invalid."))).transpose()?)
                         .await?
                 )
             } else {
@@ -620,6 +650,16 @@ impl WorkspaceSession {
                                         }
                                         // Late checkpoint replies are internal payloads, including after a Save timeout.
                                         if reply.get("checkpoint").is_some() || reply.get("journal").is_some() || reply["id"].is_array() {continue;}
+                                        let document_request=handshakes.borrow_mut().document_requests.remove(&reply["id"].to_string());
+                                        if let Some((path,opening))=document_request {
+                                            if reply["ok"]==true {
+                                                if opening {
+                                                    if let Some(id)=reply["documentId"].as_str().filter(|id|handshakes.borrow().identities && crate::checkpoints::document_id(id)) {
+                                                        handshakes.borrow_mut().documents.insert(path,id.into());
+                                                    }
+                                                } else {handshakes.borrow_mut().documents.remove(&path);}
+                                            }
+                                        }
                                         if handshakes.borrow_mut().preview_opens.remove(&reply["id"].to_string()) && reply["ok"]==true {
                                             if let (Some(origin),Some(id))=(&preview_origin,reply["preview"].as_str().filter(|id|opaque(id))) {
                                                 let id=id.to_owned();
@@ -644,9 +684,12 @@ impl WorkspaceSession {
                                                 pending.checkpoints = reply["checkpoints"]==1;
                                                 pending.journals = reply["journals"]==1;
                                                 pending.file_mutations = reply["fileMutations"]==1;
+                                                pending.identities = reply["documentIdentities"]==1;
                                             }
                                             reply["durableCheckpoints"] = json!(valid && reply["checkpoints"]==1);
                                             reply["durableUpdates"] = json!(valid && reply["journals"]==1);
+                                            reply["documentIdentities"] = json!(0);
+                                            reply["closedDocumentMoves"] = json!(0);
                                             reply["appPreviews"]=json!(reply["appPreviews"]==true && preview_origin.is_some());
                                             reply["cacheIdentity"] = if valid {
                                                 json!({

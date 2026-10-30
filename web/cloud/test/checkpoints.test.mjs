@@ -65,12 +65,12 @@ test("hosted Save commits chunked recovery before acknowledgement and survives o
  await ready(async()=> (await client.request("doc.open",{path:"main.hx"})).text===shorter);
  const second=await client.request("doc.save",{path:"main.hx"});assert.equal(second.ok,true);assert.equal(second.durable.id,first.durable.id);
  assert.notEqual(second.durable.sha256,first.durable.sha256);
- const replay=await control("checkpoint/import",{path:"main.hx",source:saved.body.manifest.source,checkpoint:saved.body.checkpoint});
+ const replay=await control("checkpoint/import",{path:"main.hx",source:saved.body.manifest.source,documentId:saved.body.manifest.documentId,checkpoint:saved.body.checkpoint});
  assert.equal(replay.status,200);assert.equal(replay.body.sha256,second.durable.sha256,"an older snapshot cannot undo newer deletions");
  const current=await control("checkpoint",{id:first.durable.id});
  assert.equal(current.body.manifest.chunks,1);
  const corrupt={...current.body.checkpoint,sha256:"corrupt"};
- assert.equal((await control("checkpoint/import",{path:"main.hx",source:saved.body.manifest.source,checkpoint:corrupt})).status,422);
+ assert.equal((await control("checkpoint/import",{path:"main.hx",source:saved.body.manifest.source,documentId:saved.body.manifest.documentId,checkpoint:corrupt})).status,422);
  assert.equal((await control("checkpoint",{id:first.durable.id})).body.manifest.sha256,second.durable.sha256);
  client.socket.close();await stop();await cloud.mf.dispose();
  await rm(root,{recursive:true});await rm(join(base,"state"),{recursive:true});

@@ -15,11 +15,80 @@ pub struct Manifest {
     pub id: String,
     pub path: String,
     pub source: String,
+    #[serde(
+        default,
+        rename = "documentId",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub document_id: Option<String>,
     pub sha256: String,
     pub bytes: usize,
     pub chunks: usize,
     pub allocated: usize,
     pub saved: u64,
+}
+
+pub(crate) fn document_id(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+pub(crate) fn record_id(
+    path: &str,
+    source: &str,
+    document: Option<&str>,
+) -> AppResult<(String, String)> {
+    let path =
+        rayde_session::store::clean(path).map_err(|_| bad(400, "The recovery path is invalid."))?;
+    if path.is_empty()
+        || path.len() > 4096
+        || !workspace_id(source)
+        || document.is_some_and(|id| !document_id(id))
+    {
+        return Err(bad(400, "The recovery context is invalid."));
+    }
+    let id = hash(
+        &match document {
+            Some(id) => json!([source, path, id]),
+            None => json!([source, path]),
+        }
+        .to_string(),
+    );
+    Ok((id, path))
+}
+
+// An unbound legacy record is adopted only after compute proves it contains its acknowledged history.
+pub(crate) async fn record_key(
+    storage: &Storage,
+    kind: &str,
+    path: &str,
+    source: &str,
+    document: Option<&str>,
+) -> AppResult<(String, String)> {
+    let (id, path) = record_id(path, source, document)?;
+    if document.is_some()
+        && storage
+            .get::<Value>(&format!("{kind}:{id}"))
+            .await?
+            .is_none()
+    {
+        let (legacy, _) = record_id(&path, source, None)?;
+        if let Some(old) = storage.get::<Value>(&format!("{kind}:{legacy}")).await? {
+            if old["id"] != legacy
+                || old["path"] != path
+                || old["source"] != source
+                || !old["documentId"].is_null()
+                    && old["documentId"].as_str().is_none_or(|id| !document_id(id))
+            {
+                return Err(bad(503, "The legacy recovery binding is invalid."));
+            }
+            if old["documentId"].is_null() || old["documentId"].as_str() == document {
+                return Ok((legacy, path));
+            }
+        }
+    }
+    Ok((id, path))
 }
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct Index {
@@ -136,6 +205,13 @@ impl Checkpoints {
 
     async fn bytes(&self, manifest: &Manifest) -> AppResult<Vec<u8>> {
         if manifest.version != 1
+            || (record_id(
+                &manifest.path,
+                &manifest.source,
+                manifest.document_id.as_deref(),
+            )?
+            .0 != manifest.id
+                && record_id(&manifest.path, &manifest.source, None)?.0 != manifest.id)
             || manifest.bytes > checkpoint::MAX_BYTES
             || manifest.chunks != manifest.bytes.div_ceil(CHUNK)
             || manifest.allocated < manifest.chunks
@@ -167,12 +243,13 @@ impl Checkpoints {
         Ok(bytes)
     }
 
-    pub async fn save(
+    pub async fn save_identified(
         &self,
         path: &str,
         source: &str,
         next: Checkpoint,
         confirmed: bool,
+        document: Option<&str>,
     ) -> AppResult<Manifest> {
         let path = rayde_session::store::clean(path)
             .map_err(|_| bad(400, "The checkpoint path is invalid."))?;
@@ -190,9 +267,23 @@ impl Checkpoints {
         };
         let native_digest = confirmed.then(|| checkpoint::digest(&candidate));
         let _guard = self.gate.lock().await;
-        let id = hash(&json!([source, path]).to_string());
+        let (id, _) = record_key(&self.storage, "checkpoint", &path, source, document).await?;
         let key = format!("checkpoint:{id}");
         let old = self.storage.get::<Manifest>(&key).await?;
+        if old.as_ref().is_some_and(|old| {
+            old.id != id
+                || old.path != path
+                || old.source != source
+                || old
+                    .document_id
+                    .as_deref()
+                    .is_some_and(|id| Some(id) != document)
+        }) {
+            return Err(bad(
+                409,
+                "The checkpoint belongs to another document identity.",
+            ));
+        }
         let bytes = match &old {
             Some(old) => {
                 checkpoint::merge(&self.bytes(old).await?, &candidate).map_err(|error| {
@@ -214,22 +305,22 @@ impl Checkpoints {
         }
         if let Some(old) = &old {
             if old.sha256 == digest {
+                let mut old = old.clone();
+                old.document_id = document.map(str::to_owned);
                 if confirmed {
-                    put(
+                    let mut values = crate::recovery::confirm(
                         &self.storage,
-                        crate::recovery::confirm(
-                            &self.storage,
-                            source,
-                            &path,
-                            "checkpoint",
-                            &id,
-                            old.sha256.clone(),
-                        )
-                        .await?,
+                        source,
+                        &path,
+                        "checkpoint",
+                        &id,
+                        old.sha256.clone(),
                     )
                     .await?;
+                    values.insert(key, json!(&old));
+                    put(&self.storage, values).await?;
                 }
-                return Ok(old.clone());
+                return Ok(old);
             }
         }
         let mut values = reserve(
@@ -246,6 +337,7 @@ impl Checkpoints {
             id: id.clone(),
             path,
             source: source.into(),
+            document_id: document.map(str::to_owned),
             sha256: digest,
             bytes: bytes.len(),
             chunks,
@@ -301,6 +393,9 @@ impl Checkpoints {
             .get::<Manifest>(&format!("checkpoint:{id}"))
             .await?
             .ok_or_else(|| bad(404, "Checkpoint not found."))?;
+        if manifest.id != id {
+            return Err(bad(503, "The saved checkpoint binding is invalid."));
+        }
         let bytes = self.bytes(&manifest).await?;
         let checkpoint =
             checkpoint::pack(&bytes).map_err(|_| bad(503, "The saved checkpoint is invalid."))?;
