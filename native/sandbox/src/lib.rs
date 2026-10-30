@@ -32,6 +32,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub persistent_volumes: bool,
+    /// The smallest volume the backend can format, in MiB; 0 when there is no minimum.
+    pub min_volume_mib: u32,
     pub snapshots: bool,
     /// Copy-on-write fork of a running sandbox.
     pub fork: bool,
@@ -193,4 +195,6 @@ pub trait SandboxProvider: Send + Sync {
     /// `Unsupported` unless `capabilities().snapshots`.
     fn snapshot(&self, name: &str) -> impl Future<Output = Result<SnapshotRef>> + Send;
     fn verify_snapshot(&self, snapshot: &SnapshotRef) -> impl Future<Output = Result<()>> + Send;
+    /// Idempotent.
+    fn remove_snapshot(&self, snapshot: &SnapshotRef) -> impl Future<Output = Result<()>> + Send;
 }

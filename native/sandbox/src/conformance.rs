@@ -65,10 +65,12 @@ pub async fn run_all<P: SandboxProvider>(p: &P, prefix: &str) -> std::result::Re
     check(matches!(p.copy_in(&a, PathBuf::from("/definitely/not/here"), "/x").await, Err(Error::NotFound)), "copy_in of a missing file is NotFound")?;
 
     // Volumes outlive the sandboxes that mount them; removal is idempotent and refused while mounted.
+    let (size, larger) = (caps.min_volume_mib.max(64), caps.min_volume_mib.max(64) * 2);
     if caps.persistent_volumes {
-        let made = p.create_volume(VolumeSpec { name: vol.clone(), size_mib: 64 }).await.map_err(|e| format!("volume: {e:?}"))?;
-        check(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: 64 }).await == Ok(made.clone()), "Creating a volume twice is idempotent")?;
-        check(matches!(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: 128 }).await, Err(Error::Conflict(_))), "A volume of another size under a used name is a conflict")?;
+        check(caps.min_volume_mib == 0 || matches!(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: caps.min_volume_mib - 1 }).await, Err(Error::Invalid(_))), "A volume under the minimum is invalid")?;
+        let made = p.create_volume(VolumeSpec { name: vol.clone(), size_mib: size }).await.map_err(|e| format!("volume: {e:?}"))?;
+        check(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: size }).await == Ok(made.clone()), "Creating a volume twice is idempotent")?;
+        check(matches!(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: larger }).await, Err(Error::Conflict(_))), "A volume of another size under a used name is a conflict")?;
         let mount = Mount { source: Source::Volume(vol.clone()), destination: "/workspace".into(), read_only: false };
         p.create(spec(&b, vec![mount])).await.map_err(|e| format!("create with volume: {e:?}"))?;
         check(matches!(p.remove_volume(&vol).await, Err(Error::Conflict(_))), "A mounted volume cannot be removed")?;
@@ -78,7 +80,7 @@ pub async fn run_all<P: SandboxProvider>(p: &P, prefix: &str) -> std::result::Re
         p.remove_volume(&vol).await.map_err(|e| format!("remove_volume again: {e:?}"))?;
         check(p.volume(&vol).await == Ok(None), "A removed volume is gone")?;
     } else {
-        check(matches!(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: 64 }).await, Err(Error::Unsupported(_))), "Volumes answer Unsupported when not advertised")?;
+        check(matches!(p.create_volume(VolumeSpec { name: vol.clone(), size_mib: size }).await, Err(Error::Unsupported(_))), "Volumes answer Unsupported when not advertised")?;
     }
 
     // Features a backend does not advertise are refused, not ignored.
@@ -96,9 +98,12 @@ pub async fn run_all<P: SandboxProvider>(p: &P, prefix: &str) -> std::result::Re
         let snapshot = p.snapshot(&a).await.map_err(|e| format!("snapshot: {e:?}"))?;
         p.verify_snapshot(&snapshot).await.map_err(|e| format!("verify: {e:?}"))?;
         let mut restored = spec(&b, vec![]);
-        restored.template = Template::Snapshot(snapshot);
+        restored.template = Template::Snapshot(snapshot.clone());
         p.create(restored).await.map_err(|e| format!("restore: {e:?}"))?;
         p.remove(&b).await.map_err(|e| format!("remove: {e:?}"))?;
+        p.remove_snapshot(&snapshot).await.map_err(|e| format!("remove_snapshot: {e:?}"))?;
+        p.remove_snapshot(&snapshot).await.map_err(|e| format!("remove_snapshot again: {e:?}"))?;
+        check(matches!(p.verify_snapshot(&snapshot).await, Err(Error::NotFound)), "A removed snapshot no longer verifies")?;
     } else {
         check(matches!(p.snapshot(&a).await, Err(Error::Unsupported(_))), "Snapshots answer Unsupported when not advertised")?;
     }

@@ -1,12 +1,17 @@
 use rayde_sandbox::{conformance, fake::Fake, Capabilities, Error, Network, SandboxProvider};
 
 fn full() -> Capabilities {
-    Capabilities { persistent_volumes: true, snapshots: true, fork: false, gpu: true, network_allowlist: true, warm_pool: false, max_sandboxes: 0 }
+    Capabilities { persistent_volumes: true, min_volume_mib: 0, snapshots: true, fork: false, gpu: true, network_allowlist: true, warm_pool: false, max_sandboxes: 0 }
 }
 
 #[tokio::test]
 async fn the_fake_with_every_feature_conforms() {
     conformance::run_all(&Fake::new(full()), "full").await.unwrap();
+}
+
+#[tokio::test]
+async fn the_fake_with_a_minimum_volume_size_conforms() {
+    conformance::run_all(&Fake::new(Capabilities { min_volume_mib: 96, ..full() }), "min").await.unwrap();
 }
 
 #[tokio::test]

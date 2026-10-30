@@ -30,13 +30,25 @@ A feature the backend does not advertise answers `Error::Unsupported`. A name in
 | `copy_in` | `msb copy <host> <name>:<guest>` |
 | volumes | `msb volume create/inspect/list/remove` (disk kind, ext4, a `disk.raw` the runner checks and binds) |
 | `remove` | `msb remove --force <name>` (the runner removes by label pair) |
-| `snapshot` | `msb snapshot create --sandbox <name> --name <snapshot>` (not yet run) |
+| `snapshot` | `msb snapshot create --sandbox <name> --name <snapshot>`; the reference is `<name>:<snapshot>` |
+| `remove_snapshot` | `msb snapshot remove <reference>` |
 
-Not mapped for MSB 0.7.11: GPU (no flag exists) and read-only mounts (option syntax not checked). A per-sandbox egress allowlist is likely possible through its `--net-rule` and `--net-default` flags, whose grammar is not mapped yet, so `Msb` reports it unsupported rather than guess. `create` takes the runner's `--deployment-profile multi-tenant` with `Security::Restricted`. MSB keeps no copy of the spec, so `Msb::create` compares labels only when a sandbox of that name exists.
+`create` takes the runner's `--deployment-profile multi-tenant` with `Security::Restricted`. What MSB 0.7.11 cannot express, and what the live run changed, is under The MSB backend below.
 
 ## The MSB backend
 
-`native/runner/src/msb.rs`. The argument builders and parsers are pure and unit-tested against the flags the runner uses today (a restricted image sandbox, a snapshot restore with a disk mount, status JSON, volume inspect text, exec commands). The conformance test against a real MSB is `#[ignore]`d: on a KVM host with MSB 0.7.11, set `RAYDE_MSB_CONFIG` to a runner config file and run `cargo test msb_conforms -- --ignored`. It creates and removes sandboxes and has not been run yet, so the backend is untested against a live MSB.
+`native/runner/src/msb.rs`. The argument builders and parsers are pure and unit-tested against the flags the runner uses today. The conformance suite also passes against a live MSB 0.7.11 on the Linux/KVM NUC (twice in a row, leaving no sandboxes, volumes or snapshots behind). To run it on a KVM host, set `RAYDE_MSB_CONFIG` to a runner config file and run `cargo test --lib msb_conforms -- --ignored --nocapture`; `RAYDE_MSB_TRACE=1` prints each `msb` command that failed. It creates and removes sandboxes labelled `owner=conformance`.
+
+What the live run taught the backend (each was wrong in the first draft):
+
+- A disk volume must be at least 68 MiB to format (67 fails); advertised as `min_volume_mib`.
+- Mounting a named disk volume needs `kind=disk,size=<N>M`, so `create` looks up each volume's size first.
+- `msb status` has no labels, only name, state, cpus and memory; labels come from `msb inspect --format json`, from `active_config` when running and `config` when stopped.
+- A snapshot is named `<sandbox>:<name>` and every snapshot command takes that whole reference. Snapshots chain within a group, so removing one with children or the group head is refused (reported as `Conflict`). Snapshots can be taken while the sandbox runs.
+- A command on a sandbox that does not exist fails like any other failure, so the backend checks first and answers `NotFound`.
+- `msb volume list` prints "No volumes found." on stdout with exit 0.
+
+Not mapped: GPU (no flag in 0.7.11), read-only mounts (option syntax unchecked), and an egress allowlist (likely possible through `--net-rule` and `--net-default`; `msb inspect` shows the policy as `default_egress` and `rules`). MSB keeps no copy of the spec, so `Msb::create` judges "the same spec" by labels, cpus and memory.
 
 ## Other backends
 

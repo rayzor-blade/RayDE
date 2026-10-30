@@ -44,8 +44,8 @@ impl SandboxProvider for Fake {
         if !self.capabilities.persistent_volumes {
             return Err(Error::Unsupported("persistent volumes"));
         }
-        if spec.name.is_empty() || spec.size_mib == 0 {
-            return Err(Error::Invalid("A volume needs a name and a size.".into()));
+        if spec.name.is_empty() || spec.size_mib == 0 || spec.size_mib < self.capabilities.min_volume_mib {
+            return Err(Error::Invalid("A volume needs a name and a size the backend can format.".into()));
         }
         let mut world = self.world.lock().unwrap();
         if let Some(existing) = world.volumes.get(&spec.name) {
@@ -210,6 +210,11 @@ impl SandboxProvider for Fake {
         let made = format!("snap-{name}-{}", world.snapshots.len());
         world.snapshots.push(made.clone());
         Ok(SnapshotRef(made))
+    }
+
+    async fn remove_snapshot(&self, snapshot: &SnapshotRef) -> Result<()> {
+        self.world.lock().unwrap().snapshots.retain(|s| *s != snapshot.0);
+        Ok(())
     }
 
     async fn verify_snapshot(&self, snapshot: &SnapshotRef) -> Result<()> {
