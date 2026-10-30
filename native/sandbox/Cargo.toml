@@ -1,0 +1,19 @@
+[package]
+name = "rayde-sandbox"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+description = "The sandbox-provider interface under RayDE's runner: create from a template, volumes, spawn with stdio, snapshot and restore, capabilities. Backends implement it; the conformance suite checks them."
+
+[lib]
+name = "rayde_sandbox"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["io-util", "sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "sync", "time"] }
