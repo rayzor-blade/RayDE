@@ -103,6 +103,10 @@ class RunPart {
 
 	public var runner(default, null):Null<Runner>;
 	public var appPreview(default, null):Null<rayde.run.AppPreviewBuild>;
+	public var surfacePreview(default, null):Null<rayde.preview.SurfacePump>;
+	public final surfaceRevision = Signal.make(0);
+	/** Shell command line of a headless app that speaks the surface protocol on its stdio, run from RAYDE_SURFACE_DIR (or the project folder). */
+	var surfaceCommand = "";
 	final previewRevision = Signal.make(0);
 
 	function previewBuilding():Bool {
@@ -146,6 +150,29 @@ class RunPart {
 			appPreview.start(wb.props.display.server.haxe,wb.props.display.args,wb.props.display.cwd,force,wb.props.display.project!=null&&wb.props.display.project.runtime=="rayzor" ? "rayzor" : "haxe",wb.props.display.project==null ? wb.props.display.hxml : wb.props.display.project.file);
 			wb.openFile(Workbench.APP_PREVIEW);
 		});
+	}
+
+	/** Starts `command` (a shell command line) as a headless app and presents its surface in a tab. */
+	public function previewSurface(command:String, ?dir:String):Void {
+		closeSurfacePreview();
+		surfaceCommand = command;
+		var folder = dir != null ? dir : wb.props.display.cwd;
+		try {
+			var program = new rayde.workspace.LocalLauncher().start("/bin/sh", ["-c", "cd '" + folder.split("'").join("'\\''") + "' && exec " + command]);
+			surfacePreview = new rayde.preview.SurfacePump(program);
+		} catch (error:Dynamic) {wb.say("Could not start the app: " + error);return;}
+		surfaceRevision.set(surfaceRevision.get() + 1);
+		wb.openFile(Workbench.SURFACE_PREVIEW);
+	}
+
+	public function restartSurfacePreview():Void {
+		if (surfaceCommand != "") previewSurface(surfaceCommand);
+	}
+
+	public function closeSurfacePreview():Void {
+		if (surfacePreview != null) surfacePreview.stop();
+		surfacePreview = null;
+		surfaceRevision.set(surfaceRevision.get() + 1);
 	}
 
 	public function closeAppPreview():Void {

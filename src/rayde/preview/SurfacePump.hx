@@ -65,6 +65,13 @@ class SurfacePump {
 		}
 	}
 
+	/** Makes the whole picture count as changed, for a new surface that has not been drawn yet. */
+	public function invalidate():Void {
+		lock.acquire();
+		feed.invalidate();
+		lock.release();
+	}
+
 	/** Lines the app wrote to its log or stderr since the last call. */
 	public function takeLog():Array<String> {
 		lock.acquire();

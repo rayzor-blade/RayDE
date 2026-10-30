@@ -197,7 +197,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || file == THEME_TAB || file == APP_PREVIEW || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || file == APP_PREVIEW || file == SURFACE_PREVIEW || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -235,6 +235,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	static inline var DIFF_TAB = "@history-diff:";
 	static inline var APP_PREVIEW = "@app-preview";
+	static inline var SURFACE_PREVIEW = "@surface-preview";
 
 	static inline var HISTORY_TAB = "@local-history:";
 
@@ -531,6 +532,7 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
 	public function closeFile(file:String):Void {
 		if (file == APP_PREVIEW) runPart.closeAppPreview();
+		if (file == SURFACE_PREVIEW) runPart.closeSurfacePreview();
 		var wasActive = active.get() == file;
 		if (languagesPart.diagnosticJobs != null) languagesPart.diagnosticJobs.cancel(file);
 		var files = open.get(), at = files.indexOf(file);

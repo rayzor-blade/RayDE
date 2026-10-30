@@ -79,6 +79,7 @@ class HeapsProducer extends hxd.App {
 		ball.x = width / 2 + Math.cos(time * 2) * (width / 3);
 		ball.y = height / 2 + Math.sin(time * 3) * (height / 4);
 
+		target.clear(0x20242C, 1);
 		s2d.drawTo(target);
 		var pixels = target.capturePixels();
 		pixels.convert(RGBA);

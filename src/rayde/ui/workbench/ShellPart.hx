@@ -107,6 +107,11 @@ class ShellPart {
 			{id: "findnext", label: "Find Next", icon: Icons.ARROW_DOWN_LINE, run: () -> wb.editorFindNext()},
 			{id: "findprevious", label: "Find Previous", icon: Icons.ARROW_UP_LINE, run: () -> wb.editorFindNext(true)},
 			{id: "run", label: "Run", icon: Icons.PLAY_FILL, run: wb.runPart.run},
+			{id: "previewsurface", label: "Preview Surface App", icon: Icons.EYE_LINE, run: () -> {
+				var command = Sys.getEnv("RAYDE_SURFACE_APP");
+				if (command == null || command == "") wb.say("Set RAYDE_SURFACE_APP to the command of a headless app that speaks the surface protocol.");
+				else wb.runPart.previewSurface(command, Sys.getEnv("RAYDE_SURFACE_DIR"));
+			}},
 			#if wasm
 			{id:"previewapp",label:"Preview App",icon:Icons.EYE_LINE,run:wb.runPart.previewApp},
 			{id:"rebuildapppreview",label:"Rebuild App Preview from Scratch",icon:Icons.RESTART_LINE,run:wb.runPart.forcePreviewApp},
