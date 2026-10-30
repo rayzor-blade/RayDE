@@ -37,7 +37,7 @@ A feature the backend does not advertise answers `Error::Unsupported`. A name in
 
 ## The MSB backend
 
-`native/runner/src/msb.rs`. The argument builders and parsers are pure and unit-tested against the flags the runner uses today. The conformance suite also passes against a live MSB 0.7.11 on the Linux/KVM NUC (twice in a row, leaving no sandboxes, volumes or snapshots behind). To run it on a KVM host, set `RAYDE_MSB_CONFIG` to a runner config file and run `cargo test --lib msb_conforms -- --ignored --nocapture`; `RAYDE_MSB_TRACE=1` prints each `msb` command that failed. It creates and removes sandboxes labelled `owner=conformance`.
+`native/runner/src/msb.rs`. The argument builders and parsers are pure and unit-tested against the flags the runner uses today. The conformance suite also passes against a live MSB 0.7.11 on the Linux/KVM NUC (twice in a row, leaving no sandboxes, volumes or snapshots behind). To run it on a KVM host, set `RAYDE_MSB_CONFIG` to a runner config file and run `cargo test --lib msb_conforms -- --ignored --nocapture`; `RAYDE_MSB_TRACE=1` prints each `msb` command that failed. `cargo test --lib msb_ -- --ignored --test-threads=1` runs it together with `msb_allowlist_blocks_other_hosts`, which also needs internet access. They create and remove sandboxes labelled `owner=conformance`.
 
 What the live run taught the backend (each was wrong in the first draft):
 
@@ -48,7 +48,9 @@ What the live run taught the backend (each was wrong in the first draft):
 - A command on a sandbox that does not exist fails like any other failure, so the backend checks first and answers `NotFound`.
 - `msb volume list` prints "No volumes found." on stdout with exit 0.
 
-Not mapped: GPU (no flag in 0.7.11), read-only mounts (option syntax unchecked), and an egress allowlist (likely possible through `--net-rule` and `--net-default`; `msb inspect` shows the policy as `default_egress` and `rules`). MSB keeps no copy of the spec, so `Msb::create` judges "the same spec" by labels, cpus and memory.
+Egress allowlist: `Network::Allow(hosts)` is `--no-net` (deny by default) plus one `--net-rule allow@<host>` per entry, where a host is a name, `*.suffix`, IP or CIDR; entries with characters that could start another rule token are refused as `Invalid`. Checked live: the allowed name connects on 443, any other name fails to resolve (the gateway answers NXDOMAIN) and a raw IP is blocked. The rule applies to all ports and protocols of that host.
+
+Not mapped: GPU (no flag in 0.7.11) and read-only mounts (option syntax unchecked). MSB keeps no copy of the spec, so `Msb::create` judges "the same spec" by labels, cpus and memory.
 
 ## Other backends
 

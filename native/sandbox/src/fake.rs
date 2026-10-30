@@ -77,8 +77,13 @@ impl SandboxProvider for Fake {
         if spec.gpu.is_some() && !self.capabilities.gpu {
             return Err(Error::Unsupported("gpu"));
         }
-        if matches!(spec.network, Network::Allow(_)) && !self.capabilities.network_allowlist {
-            return Err(Error::Unsupported("network allowlist"));
+        if let Network::Allow(hosts) = &spec.network {
+            if !self.capabilities.network_allowlist {
+                return Err(Error::Unsupported("network allowlist"));
+            }
+            if hosts.iter().any(|h| h.is_empty() || h.contains(|c: char| c == ',' || c == '@' || c.is_whitespace())) {
+                return Err(Error::Invalid("An allowlist entry is not a host.".into()));
+            }
         }
         let mut world = self.world.lock().unwrap();
         if let Template::Snapshot(snapshot) = &spec.template {

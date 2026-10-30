@@ -93,6 +93,14 @@ pub async fn run_all<P: SandboxProvider>(p: &P, prefix: &str) -> std::result::Re
         let mut net = spec(&b, vec![]);
         net.network = Network::Allow(vec!["api.example.com".into()]);
         check(matches!(p.create(net).await, Err(Error::Unsupported(_))), "An allowlist answers Unsupported when not advertised")?;
+    } else {
+        let mut bad = spec(&b, vec![]);
+        bad.network = Network::Allow(vec!["a.example.com,allow@b.example.com".into()]);
+        check(matches!(p.create(bad).await, Err(Error::Invalid(_))), "An allowlist entry that is not a host is invalid")?;
+        let mut net = spec(&b, vec![]);
+        net.network = Network::Allow(vec!["api.example.com".into(), "*.models.example.org".into()]);
+        p.create(net).await.map_err(|e| format!("create with an allowlist: {e:?}"))?;
+        p.remove(&b).await.map_err(|e| format!("remove: {e:?}"))?;
     }
     if caps.snapshots {
         let snapshot = p.snapshot(&a).await.map_err(|e| format!("snapshot: {e:?}"))?;

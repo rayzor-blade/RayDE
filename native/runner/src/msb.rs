@@ -81,8 +81,13 @@ fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<St
     match &spec.network {
         sb::Network::None => args.push("--no-net".into()),
         sb::Network::Open => {}
-        // MSB has per-sandbox network rules (--net-rule, --net-default); their grammar is not mapped here yet.
-        sb::Network::Allow(_) => return Err(sb::Error::Unsupported("network allowlist")),
+        // `--no-net` denies everything by default; each `allow@<target>` rule then opens one destination, and the gateway resolves only those names.
+        sb::Network::Allow(hosts) => {
+            args.push("--no-net".into());
+            for host in hosts {
+                args.extend(["--net-rule".into(), format!("allow@{}", allow_target(host)?)]);
+            }
+        }
     }
     for (key, value) in &spec.labels {
         args.extend(["--label".into(), format!("{key}={value}")]);
@@ -106,6 +111,16 @@ fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<St
         }
     }
     Ok(args)
+}
+
+/// A host, `*.suffix`, IP or CIDR for one `--net-rule` token. Anything that could start another token or rule is refused.
+fn allow_target(host: &str) -> sb::Result<&str> {
+    let host = host.trim();
+    let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '*' | ':' | '/');
+    if host.is_empty() || host.len() > 253 || !host.chars().all(allowed) {
+        return Err(sb::Error::Invalid(format!("Not a host MSB can allow: {host:?}")));
+    }
+    Ok(host)
 }
 
 /// The arguments of `msb create` or `msb snapshot restore` for a spec. A restore cannot carry labels, so they follow in `modify`.
@@ -200,7 +215,7 @@ pub(crate) fn exec_args(name: &str, command: &sb::Command, flags: &[&str]) -> Ve
 
 impl sb::SandboxProvider for Msb {
     fn capabilities(&self) -> sb::Capabilities {
-        sb::Capabilities { persistent_volumes: true, min_volume_mib: MIN_VOLUME_MIB, snapshots: true, fork: false, gpu: false, network_allowlist: false, warm_pool: false, max_sandboxes: self.config.max_workspaces as u32 }
+        sb::Capabilities { persistent_volumes: true, min_volume_mib: MIN_VOLUME_MIB, snapshots: true, fork: false, gpu: false, network_allowlist: true, warm_pool: false, max_sandboxes: self.config.max_workspaces as u32 }
     }
 
     async fn create_volume(&self, spec: sb::VolumeSpec) -> sb::Result<sb::VolumeInfo> {
@@ -415,6 +430,25 @@ mod tests {
     }
 
     #[test]
+    fn an_allowlist_is_deny_by_default_plus_one_rule_per_host() {
+        let mut allow = spec();
+        allow.network = sb::Network::Allow(vec!["api.example.com".into(), "*.models.example.org".into(), "10.0.0.0/8".into()]);
+        let args = create_args(&allow, &sizes()).unwrap().join(" ");
+        assert!(args.contains("--no-net --label") || args.contains("--no-net --net-rule"), "{args}");
+        assert!(args.contains("--net-rule allow@api.example.com --net-rule allow@*.models.example.org --net-rule allow@10.0.0.0/8"), "{args}");
+        assert_eq!(args.matches("--no-net").count(), 1);
+    }
+
+    #[test]
+    fn a_host_that_could_add_rule_tokens_is_refused() {
+        for bad in ["", "a.com,deny@b.com", "a.com deny@b.com", "a@b.com", "a.com;rm", "a.com:tcp:443=x"] {
+            let mut allow = spec();
+            allow.network = sb::Network::Allow(vec![bad.into()]);
+            assert!(matches!(create_args(&allow, &sizes()), Err(sb::Error::Invalid(_))), "{bad:?}");
+        }
+    }
+
+    #[test]
     fn a_named_volume_the_caller_did_not_size_is_not_found() {
         assert_eq!(create_args(&spec(), &Default::default()), Err(sb::Error::NotFound));
     }
@@ -424,9 +458,6 @@ mod tests {
         let mut gpu = spec();
         gpu.gpu = Some(sb::Gpu { memory_mib: 1024, api: sb::GpuApi::Vulkan });
         assert_eq!(create_args(&gpu, &sizes()), Err(sb::Error::Unsupported("gpu")));
-        let mut allow = spec();
-        allow.network = sb::Network::Allow(vec!["api.example.com".into()]);
-        assert_eq!(create_args(&allow, &sizes()), Err(sb::Error::Unsupported("network allowlist")));
         let mut readonly = spec();
         readonly.mounts[0].read_only = true;
         assert_eq!(create_args(&readonly, &sizes()), Err(sb::Error::Unsupported("read-only mounts")));
@@ -469,5 +500,36 @@ mod tests {
         let config: Config = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let prefix = format!("conf{}", std::process::id());
         sb::conformance::run_all(&Msb::new(config), &prefix).await.unwrap();
+    }
+
+    /// Against a real MSB with internet access: only the allowed host is reachable, by name or through its resolved address.
+    #[tokio::test]
+    #[ignore = "needs a host with MSB and internet access; creates and removes a sandbox"]
+    async fn msb_allowlist_blocks_other_hosts() {
+        use sb::SandboxProvider;
+        let path = std::env::var("RAYDE_MSB_CONFIG").expect("RAYDE_MSB_CONFIG");
+        let config: Config = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let msb = Msb::new(config);
+        let name = format!("conf{}-net", std::process::id());
+        let mut spec = spec();
+        spec.name = name.clone();
+        spec.mounts = vec![];
+        spec.labels = sb::Labels::from([("owner".to_string(), "conformance".to_string())]);
+        spec.network = sb::Network::Allow(vec!["example.com".into()]);
+        msb.create(spec).await.unwrap();
+        let probe = |script: &str| sb::Command { program: "/bin/sh".into(), args: vec!["-c".into(), script.into()], env: Default::default() };
+        let status = |script: &'static str| {
+            let (msb, name) = (&msb, name.clone());
+            async move { msb.run(&name, probe(script), 4096, Duration::from_secs(20)).await.map(|o| o.status) }
+        };
+        let results = (
+            status("nc -z -w 5 example.com 443").await,
+            status("nc -z -w 5 cloudflare.com 443").await,
+            status("nc -z -w 5 1.1.1.1 443").await,
+        );
+        msb.remove(&name).await.unwrap();
+        assert_eq!(results.0, Ok(0), "the allowed host must connect");
+        assert_ne!(results.1, Ok(0), "a name that is not allowed must not connect");
+        assert_ne!(results.2, Ok(0), "an address that is not allowed must not connect");
     }
 }
