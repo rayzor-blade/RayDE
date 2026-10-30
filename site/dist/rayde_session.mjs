@@ -40,7 +40,7 @@ function readConnection(storage2) {
 // src/preset.js
 function samplePreset(value) {
   if (!value || value.version !== 1 || typeof value.name !== "string" || value.name.length > 128 || !Array.isArray(value.entries) || value.entries.length > 256) throw new Error("Invalid sample workspace.");
-  const safe = (path) => typeof path === "string" && path.startsWith("/work/") && path.split("/").slice(1).every((part) => part && part !== "." && part !== ".." && !part.includes("\\") && !part.includes("\0"));
+  const safe = (path2) => typeof path2 === "string" && path2.startsWith("/work/") && path2.split("/").slice(1).every((part) => part && part !== "." && part !== ".." && !part.includes("\\") && !part.includes("\0"));
   if (!safe(value.root) || !safe("/work/" + value.project) || !("/work/" + value.project).startsWith(value.root + "/")) throw new Error("Invalid sample workspace path.");
   let bytes = 0;
   const paths = /* @__PURE__ */ new Set();
@@ -79,14 +79,14 @@ var Accounts = class {
     this.installUrl = null;
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location2?.href ?? "http://localhost").hostname);
   }
-  async api(path, body) {
-    const response = await this.fetch(path, {
+  async api(path2, body) {
+    const response = await this.fetch(path2, {
       credentials: "same-origin",
       method: body === void 0 ? "GET" : "POST",
       headers: body === void 0 ? {} : { "Content-Type": "application/json", "X-RayDE-CSRF": this.csrf ?? "" },
       ...body === void 0 ? {} : { body: JSON.stringify(body) }
     });
-    if (response.status === 401 && path === "/api/session") return { user: null };
+    if (response.status === 401 && path2 === "/api/session") return { user: null };
     if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Connect this editor to the workspace service to sign in.");
     const reply = await response.json();
     if (!response.ok) throw new Error(reply.message ?? "The workspace request failed.");
@@ -1267,8 +1267,8 @@ var ValidationError = class {
    * @param {string} has
    * @param {string?} message
    */
-  extend(path, expected, has, message = null) {
-    this._rerrs.push({ path, expected, has, message });
+  extend(path2, expected, has, message = null) {
+    this._rerrs.push({ path: path2, expected, has, message });
   }
   toString() {
     const s = [];
@@ -4635,10 +4635,10 @@ var YEvent = class {
   }
 };
 var getPathTo = (parent, child) => {
-  const path = [];
+  const path2 = [];
   while (child._item !== null && child !== parent) {
     if (child._item.parentSub !== null) {
-      path.unshift(child._item.parentSub);
+      path2.unshift(child._item.parentSub);
     } else {
       let i = 0;
       let c = (
@@ -4651,12 +4651,12 @@ var getPathTo = (parent, child) => {
         }
         c = c.right;
       }
-      path.unshift(i);
+      path2.unshift(i);
     }
     child = /** @type {AbstractType<any>} */
     child._item.parent;
   }
-  return path;
+  return path2;
 };
 var warnPrematureAccess = () => {
   warn("Invalid access: Add Yjs type to a document before reading data.");
@@ -9230,7 +9230,7 @@ var LEGACY = "rayde:binding";
 var MAX_GRAPH = 4 * 1024 * 1024;
 var MAX_INPUT = 64 * 1024 * 1024;
 var validDocumentId = (value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
-var legacyName = (workspace, path) => `rayde:v2:${JSON.stringify([workspace, path])}`;
+var legacyName = (workspace, path2) => `rayde:v2:${JSON.stringify([workspace, path2])}`;
 var recoveryName = (workspace, id2) => {
   if (!validDocumentId(id2)) throw failure("The workspace returned an invalid document identity.");
   return `rayde:v3:${JSON.stringify([workspace, id2])}`;
@@ -9238,9 +9238,9 @@ var recoveryName = (workspace, id2) => {
 function failure(message) {
   return Object.assign(new Error(message), { code: "recovery-failed" });
 }
-function pathKey(path) {
-  if (typeof path !== "string" || !path || path.length > 4096 || path.includes("\0") || path.includes("\\") || path.split("/").includes("..")) throw failure("The recovery path is invalid.");
-  return path;
+function pathKey(path2) {
+  if (typeof path2 !== "string" || !path2 || path2.length > 4096 || path2.includes("\0") || path2.includes("\\") || path2.split("/").includes("..")) throw failure("The recovery path is invalid.");
+  return path2;
 }
 function openDatabase(name, create7) {
   return new Promise((resolve, reject) => {
@@ -9260,10 +9260,10 @@ var RecoveryDirectory = class {
   async database() {
     return this.opening ??= openDatabase("rayde-document-bindings-v1", true);
   }
-  async get(workspace, path) {
+  async get(workspace, path2) {
     const db = await this.database();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("bindings", "readonly"), request = tx.objectStore("bindings").get([workspace, pathKey(path)]);
+      const tx = db.transaction("bindings", "readonly"), request = tx.objectStore("bindings").get([workspace, pathKey(path2)]);
       tx.oncomplete = () => {
         const value = request.result;
         if (value !== void 0 && (value.version !== 1 || !validDocumentId(value.id))) reject(failure("The browser recovery binding is invalid."));
@@ -9272,12 +9272,12 @@ var RecoveryDirectory = class {
       tx.onerror = tx.onabort = () => reject(tx.error ?? failure("Could not read the browser recovery binding."));
     });
   }
-  async put(workspace, path, id2) {
+  async put(workspace, path2, id2) {
     recoveryName(workspace, id2);
-    pathKey(path);
+    pathKey(path2);
     const db = await this.database();
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("bindings", "readwrite"), store = tx.objectStore("bindings"), key = [workspace, path];
+      const tx = db.transaction("bindings", "readwrite"), store = tx.objectStore("bindings"), key = [workspace, path2];
       let error;
       const previous = store.get(key);
       previous.onsuccess = () => {
@@ -9443,6 +9443,104 @@ async function markLegacy(source, id2) {
   }
 }
 
+// src/moves.js
+var under = (path2, root) => path2 === root || path2.startsWith(root + "/");
+function path(value) {
+  if (typeof value !== "string" || !value || value.length > 4096 || /[\\\0]/.test(value) || value.split("/").some((part) => !part || part === "." || part === ".."))
+    throw new Error("Choose a path inside this workspace.");
+  return value;
+}
+var paused = () => Object.assign(new Error("The move could not be confirmed. Reopen this workspace before continuing; document recovery is kept in this browser."), { code: "document-changed" });
+function receipt(reply, from2, to, plans) {
+  if (!Number.isSafeInteger(reply.revision) || reply.revision < 0 || !Array.isArray(reply.documents) || reply.documents.length > 16384) throw paused();
+  const ids = /* @__PURE__ */ new Map(), targets = /* @__PURE__ */ new Set();
+  for (const row of reply.documents) {
+    if (!validDocumentId(row.id) || ids.has(row.id) || !under(path(row.from), from2) || path(row.to) !== to + row.from.slice(from2.length) || targets.has(row.to)) throw paused();
+    ids.set(row.id, row);
+    targets.add(row.to);
+  }
+  for (const plan of plans) {
+    const row = ids.get(plan.doc.documentId);
+    if (!row || row.from !== plan.from || row.to !== plan.to) throw paused();
+  }
+}
+async function moveDocuments(client, from2, to) {
+  from2 = path(from2);
+  to = path(to);
+  if (from2 === to) return { documents: [] };
+  if (under(to, from2)) throw new Error("A folder cannot be moved into itself.");
+  if (!client.ready || client.authenticating || client.invalidated) throw new Error("Reconnect before moving workspace files.");
+  const generation = client.generation, workspace = client.workspace;
+  const current = () => {
+    if (!client.ready || client.generation !== generation || client.workspace !== workspace || client.invalidated) throw paused();
+  };
+  await Promise.all([...client.docs.values()].filter((doc2) => under(doc2.path, from2) || under(doc2.path, to)).map((doc2) => doc2.started));
+  current();
+  const plans = [...client.docs.values()].filter((doc2) => !doc2.closed && under(doc2.path, from2)).map((doc2) => ({ doc: doc2, from: doc2.path, to: to + doc2.path.slice(from2.length) }));
+  for (const doc2 of client.docs.values()) if (!doc2.closed && under(doc2.path, to) && !plans.some((plan) => plan.doc === doc2))
+    throw new Error("Close destination documents before moving this path.");
+  for (const { doc: doc2 } of plans) {
+    doc2.guard();
+    if (!validDocumentId(doc2.documentId)) throw paused();
+  }
+  const released = [];
+  let attempted = false, committed = false;
+  const resume = async (items) => {
+    for (const { doc: doc2 } of items) if (!doc2.closed && !doc2.blocked) {
+      doc2.relocating = false;
+      try {
+        await doc2.sync(true);
+      } catch (error) {
+        if (client.ready && !doc2.blocked) doc2.fence(Object.assign(new Error("Document sync paused after moving: " + error.message), { code: "recovery-failed" }));
+      }
+    }
+  };
+  try {
+    for (const { doc: doc2 } of plans) doc2.relocating = true;
+    for (const { doc: doc2 } of plans) if (!doc2.closed) {
+      await Promise.all([...doc2.saves]);
+      await Promise.all([...doc2.pending]);
+      await doc2.sync(true);
+      if (doc2.unsent) throw new Error("Wait for document synchronization before moving this path.");
+      await doc2.checkpoint();
+    }
+    current();
+    for (const plan of plans) if (!plan.doc.closed) {
+      plan.doc.suspended = true;
+      released.push(plan);
+      await client.request("doc.close", { path: plan.from });
+    }
+    current();
+    attempted = true;
+    const reply = await client.request("fs.rename", { from: from2, to, preserveDocuments: true });
+    current();
+    receipt(reply, from2, to, plans);
+    for (const plan of plans) if (client.docs.get(plan.from) === plan.doc) client.docs.delete(plan.from);
+    for (const plan of plans) if (!plan.doc.closed) {
+      plan.doc.path = plan.to;
+      client.docs.set(plan.to, plan.doc);
+    }
+    committed = true;
+    await resume(plans);
+    return reply;
+  } catch (error) {
+    let unchanged = !attempted;
+    if (attempted && client.ready && !client.invalidated && client.generation === generation) {
+      try {
+        const resolved = await Promise.all(released.map(async (plan) => (await client.request("doc.resolve", { documentId: plan.doc.documentId })).path === plan.from));
+        unchanged = resolved.length > 0 && resolved.every(Boolean);
+      } catch {
+        unchanged = false;
+      }
+    }
+    if (!unchanged || committed) for (const { doc: doc2 } of plans) doc2.fence(paused());
+    else await resume(plans);
+    throw error;
+  } finally {
+    for (const { doc: doc2 } of plans) doc2.relocating = false;
+  }
+}
+
 // src/client.js
 function cacheNamespace(address, identity) {
   if (identity?.version !== 1 || ![identity.authority, identity.workspace, identity.principal].every((value) => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\u0000-\u001f]/.test(value))) return null;
@@ -9470,9 +9568,9 @@ var SessionError = class extends Error {
   }
 };
 var Doc2 = class {
-  constructor(client, path) {
+  constructor(client, path2) {
     this.client = client;
-    this.path = path;
+    this.path = path2;
     this.workspace = client.workspace;
     this.ydoc = new Doc();
     this.text = this.ydoc.getText("text");
@@ -9487,6 +9585,7 @@ var Doc2 = class {
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = /* @__PURE__ */ new Set();
+    this.saves = /* @__PURE__ */ new Set();
     this.localVersion = 0;
     this.acknowledgedVersion = 0;
     this.ydoc.on("update", (update, origin) => {
@@ -9583,7 +9682,9 @@ var Doc2 = class {
     return () => this.listeners.delete(listener);
   }
   /** The handshake: tell the session what the page has, take what it has, and send what it lacks. */
-  sync() {
+  sync(duringMove = false) {
+    if (this.client.relocation && !duringMove) return this.client.relocation.catch(() => {
+    }).then(() => this.sync());
     if (this.syncing) return this.syncing;
     const work = this.synchronize();
     this.syncing = work;
@@ -9626,7 +9727,7 @@ var Doc2 = class {
       const missing = encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
       this.failed = false;
       this.suspended = false;
-      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
+      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing, true);
       else if (this.inflight === 0) this.unsent = false;
       this.listeners.forEach((listener) => listener("synced"));
     } catch (error) {
@@ -9698,8 +9799,8 @@ var Doc2 = class {
     this.suspended = true;
     this.client.emit?.("document-error", { path: this.path, documentId: this.documentId, code: error.code, message: error.message });
   }
-  send(update) {
-    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked) return Promise.resolve();
+  send(update, duringMove = false) {
+    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked || this.relocating && !duringMove) return Promise.resolve();
     const work = this.transmit(update, this.localVersion);
     this.pending.add(work);
     work.finally(() => this.pending.delete(work));
@@ -9717,13 +9818,23 @@ var Doc2 = class {
       if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) this.unsent = false;
     }
   }
-  async save() {
+  save() {
+    if (this.client.authentication) return this.client.authentication.then(() => this.save());
+    if (this.client.relocation) return this.client.relocation.catch(() => {
+    }).then(() => this.save());
+    const work = this.saveNow();
+    this.saves.add(work);
+    const clear = () => this.saves.delete(work);
+    work.then(clear, clear);
+    return work;
+  }
+  async saveNow() {
     this.guard();
     if (this.started) await this.started;
     await Promise.all([...this.pending]);
     if (this.syncing) await this.syncing;
     if (this.closed) throw new Error("The shared document is closed.");
-    if (this.unsent) await this.sync();
+    if (this.unsent) await this.sync(true);
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
     this.guard();
     try {
@@ -9949,6 +10060,8 @@ var SessionClient = class {
     this.emit("auth-required", { login: url });
   }
   login(credential) {
+    if (this.relocation) return this.relocation.catch(() => {
+    }).then(() => this.login(credential));
     if (this.authenticating) return Promise.reject(new Error("Sign-in is already in progress."));
     const work = this.authenticate(credential);
     this.authentication = work;
@@ -9991,17 +10104,21 @@ var SessionClient = class {
     })));
     return this.identity;
   }
-  async openDoc(path) {
-    if (this.authentication) await this.authentication;
+  async openDoc(path2) {
+    while (this.authentication || this.relocation) {
+      if (this.authentication) await this.authentication;
+      else await this.relocation.catch(() => {
+      });
+    }
     if (this.invalidated) throw this.invalidated;
-    let doc2 = this.docs.get(path);
+    let doc2 = this.docs.get(path2);
     if (doc2?.closed) {
       await doc2.close();
-      return this.openDoc(path);
+      return this.openDoc(path2);
     }
     if (!doc2) {
-      doc2 = new Doc2(this, path);
-      this.docs.set(path, doc2);
+      doc2 = new Doc2(this, path2);
+      this.docs.set(path2, doc2);
       doc2.started = doc2.start();
     }
     try {
@@ -10012,26 +10129,39 @@ var SessionClient = class {
     }
     return doc2;
   }
-  list(path = "") {
-    return this.request("fs.list", { path }).then((r) => r.entries);
+  list(path2 = "") {
+    return this.request("fs.list", { path: path2 }).then((r) => r.entries);
   }
-  stat(path) {
-    return this.request("fs.stat", { path }).then((r) => r.entry);
+  stat(path2) {
+    return this.request("fs.stat", { path: path2 }).then((r) => r.entry);
   }
-  read(path) {
-    return this.request("fs.read", { path }).then((r) => r.data);
+  read(path2) {
+    return this.request("fs.read", { path: path2 }).then((r) => r.data);
   }
-  write(path, data) {
-    return this.request("fs.write", { path, data });
+  write(path2, data) {
+    return this.request("fs.write", { path: path2, data });
   }
-  mkdir(path) {
-    return this.request("fs.mkdir", { path });
+  mkdir(path2) {
+    return this.request("fs.mkdir", { path: path2 });
   }
-  remove(path, recursive = false) {
-    return this.request("fs.remove", { path, recursive });
+  remove(path2, recursive = false) {
+    return this.request("fs.remove", { path: path2, recursive });
+  }
+  get documentMoves() {
+    return this.hello?.documentIdentities === 1 && this.hello?.closedDocumentMoves === 1;
   }
   rename(from2, to) {
-    return this.request("fs.rename", { from: from2, to });
+    if (this.authentication) return this.authentication.then(() => this.rename(from2, to));
+    if (!this.documentMoves) return this.request("fs.rename", { from: from2, to });
+    const previous = this.relocation;
+    const work = (previous ?? Promise.resolve()).catch(() => {
+    }).then(() => moveDocuments(this, from2, to));
+    this.relocation = work;
+    const clear = () => {
+      if (this.relocation === work) this.relocation = null;
+    };
+    work.then(clear, clear);
+    return work;
   }
   /** Runs a program in the session; output arrives as `proc.out` and `proc.exit` events. */
   spawn(command, args2 = [], cwd = "") {
@@ -10184,8 +10314,8 @@ var EditorDocuments = class {
         this.emit({ ev: "view.error", handle: view.handle, code: "workspace-changed", message });
       }
     });
-    this.unsubscribeDocument = client.on?.("document-error", ({ path, code, message }) => {
-      for (const view of this.documents.values()) if (view.doc.path === path) {
+    this.unsubscribeDocument = client.on?.("document-error", ({ path: path2, code, message }) => {
+      for (const view of this.documents.values()) if (view.doc.path === path2) {
         view.ready = false;
         this.emit({ ev: "view.error", handle: view.handle, code, message });
       }
@@ -10193,9 +10323,12 @@ var EditorDocuments = class {
   }
   request(op, request) {
     const handle = request.handle;
+    const relocation = this.relocation;
     if (typeof handle !== "string" || handle.length > 1024) return Promise.reject(new Error("Invalid editor handle."));
     const work = (this.queues.get(handle) ?? Promise.resolve()).catch(() => {
     }).then(async () => {
+      if (relocation) await relocation.catch(() => {
+      });
       if (this.closed) throw new Error("The editor session is closed.");
       if (this.failure && op !== "view.close") throw new Error(this.failure);
       if (op === "view.open") {
@@ -10242,6 +10375,22 @@ var EditorDocuments = class {
     };
     work.then(cleanup, cleanup);
     return op === "view.save" ? work.then((reply) => reply.saved) : work;
+  }
+  rename(from2, to) {
+    const previous = this.relocation, queued = [...this.queues.values()];
+    const work = Promise.all([previous, ...queued].map((promise) => Promise.resolve(promise).catch(() => {
+    }))).then(async () => {
+      if (this.closed || this.failure) throw new Error(this.failure ?? "The editor session is closed.");
+      const reply = await this.client.rename(from2, to);
+      if (!this.closed && from2 !== to) this.emit({ ev: "workspace.moved", from: from2, to });
+      return reply;
+    });
+    this.relocation = work;
+    const clear = () => {
+      if (this.relocation === work) this.relocation = null;
+    };
+    work.then(clear, clear);
+    return work;
   }
   close() {
     this.closed = true;
@@ -11950,8 +12099,8 @@ var start = (ask) => serve(ask, {
       previews?.reset();
       answer({ ev: "session.disconnected", generation: client.generation, code: "workspace-changed", message });
     });
-    client?.on("connected", () => answer({ ev: "session.connected", generation: client.generation }));
-    const localPath = (path) => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
+    client?.on("connected", () => answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves }));
+    const localPath = (path2) => typeof path2 === "string" && (path2 === "/home/web" || path2.startsWith("/home/web/") || !client && demo && (path2 === "/work" || path2.startsWith("/work/"))) && !path2.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -11964,11 +12113,12 @@ var start = (ask) => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
+          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
           else if (request.op.startsWith("view.") && documents) {
             reply = { result: await documents.request(request.op, request) };
             if (request.id === void 0) return;
-          } else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
+          } else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from, request.to);
+          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
           else if (request.op === "page.markdown") reply = { result: documentation(request.source) };
           else if (request.op === "page.preview") {
             if (!previews) throw new Error("Connect an app preview session first.");

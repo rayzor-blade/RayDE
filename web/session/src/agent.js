@@ -64,7 +64,7 @@ export const start = ask => serve(ask, {
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => {previews?.reset();answer({ ev: "session.disconnected", generation:client.generation });});
     client?.on("context-changed", ({message}) => {previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
-    client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation }));
+    client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves }));
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -78,11 +78,12 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, documentMoves:!!documents && client.documentMoves, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
           else if (request.op.startsWith("view.") && documents) {
             reply = {result:await documents.request(request.op, request)};
             if (request.id === undefined) return;
           }
+          else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from,request.to);
           else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
           else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
           else if (request.op === "page.preview") {

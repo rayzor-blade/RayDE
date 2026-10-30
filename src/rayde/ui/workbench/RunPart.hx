@@ -197,10 +197,11 @@ class RunPart {
 	function saveFiles(files:Array<String>, ?after:Void->Void):Void {
 		if (saving) { wb.say("Saving changes…"); return; }
 		saving = true;
+		var pending = [for (file in files) {file:file,buffer:wb.documentsPart.buffers.get(file)}];
 		function next():Void {
 			if (wb.gone) { saving = false; return; }
-			var file = files.shift();
-			if (file == null) {
+			var item = pending.shift();
+			if (item == null) {
 				saving = false;
 				if (after != null) {
 					if (wb.dirty.get().length > 0) wb.say("Files changed while saving. Save again before continuing.");
@@ -208,11 +209,18 @@ class RunPart {
 				}
 				return;
 			}
+			var file = item.file;
+			if (item.buffer != null) {
+				var current:Null<String> = null;
+				for (path => buffer in wb.documentsPart.buffers) if (buffer == item.buffer) { current = path; break; }
+				if (current == null) { saving = false; wb.say("A file closed while saving. Save the remaining files again."); return; }
+				file = current;
+			}
 			try {
-				if (wb.documentsPart.sessionDocs != null && wb.documentsPart.sessionDocs.save(file, (error, text) -> {
+				if (wb.documentsPart.sessionDocs != null && wb.documentsPart.sessionDocs.save(file, (error, text, savedFile) -> {
 					if (wb.gone) return;
-					if (error != null) { saving = false; wb.say(haxe.io.Path.withoutDirectory(file) + ": " + error); return; }
-					try { fileSaved(file,text); next(); } catch (failure:Dynamic) { saving = false; wb.say(Std.string(failure)); }
+					if (error != null) { saving = false; wb.say(haxe.io.Path.withoutDirectory(savedFile) + ": " + error); return; }
+					try { fileSaved(savedFile,text); next(); } catch (failure:Dynamic) { saving = false; wb.say(Std.string(failure)); }
 				})) return;
 				var text = wb.documentsPart.buffer(file).get();
 				Fs.saveContent(file,text); fileSaved(file,text); next();

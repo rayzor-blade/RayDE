@@ -28,6 +28,7 @@ class SessionClient {
 	public var embedded(default, null) = false;
 	public var repositories(default, null) = false;
 	public var documentBridge(default, null) = false;
+	public var documentMoves(default, null) = false;
 	public var storageKey(default, null):Null<String>;
 	public var project(default, null):Null<String>;
 	public var extensionHost(default, null):Null<String>;
@@ -75,6 +76,7 @@ class SessionClient {
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
+			client.documentMoves = client.documentBridge && hello.documentMoves == true;
 			client.embedded = hello.embedded == true;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
 			if (Std.isOfType(hello.readRoots,Array)) for (source in (hello.readRoots:Array<Dynamic>))
@@ -169,6 +171,7 @@ class SessionClient {
 				online = false;
 			} else if (message.ev == "session.connected") {
 				if (Std.isOfType(message.generation,Int)) generation = message.generation;
+				if (Std.isOfType(message.documentMoves,Bool)) documentMoves = documentBridge && message.documentMoves == true;
 				online = true;
 			}
 			if (message.id != null) {

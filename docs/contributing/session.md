@@ -109,7 +109,9 @@ These IDs belong to one native recovery namespace and its single compute authori
 
 Workspace-scoped `rayde:v2` path caches migrate only after Open accepts their state vector or bound identity. The identity graph and its source links commit before a legacy migration receipt is written. Legacy graph bytes stay intact, and linked, identity-matching late updates can be recovered after a move. Cache replay does not publish edits before this verification and storage barrier. Retired/replaced path caches remain separate. Unscoped older caches are never merged automatically.
 
-A closed native document reopened at its moved path recovers the same browser graph. Live editor/path retargeting, personal history migration, coordinated hosted moves, cross-host identity import, external-writer reconciliation and compute leases remain outstanding. The hosted gateway advertises document identities, lookup and closed moves as unavailable and refuses `doc.lookup`, `doc.resolve` and draft-preserving moves until that integration is complete; automatic restore remains disabled.
+A closed native document reopened at its moved path recovers the same browser graph. For an initiating browser with native identity/move support, the page advertises `documentMoves:true`. Explorer rename, cut/paste and drag/drop serialize through the editor bridge: prior transactions and saves drain, browser recovery is checkpointed, transport subscriptions close, and native `preserveDocuments` rename returns an identity receipt. The page validates that receipt, retargets its existing replicas, and reopens by expected ID. The Haxe workbench remaps the same editor states and handles, preserving selections and per-author undo; its existing confirmed-move history remapping also runs. Requests arriving during the move wait behind it. A single `workspace.moved {from,to}` event queues each confirmed workbench remap; initiating callbacks do not remap a second time. Projection callbacks wait until all path owners have moved. Overflow or a failed UI transition pauses sync and offers Reopen Workspace.
+
+A refused move resolves released identities before resuming their original paths. Unconfirmed outcomes pause the affected replicas with their recovery retained. Another client's active subscription still prevents a move. Cross-client live coordination, stable-ID personal history, coordinated hosted moves, cross-host identity import, external-writer reconciliation and compute leases remain outstanding. The hosted gateway advertises document identities, lookup and closed moves as unavailable and refuses `doc.lookup`, `doc.resolve` and draft-preserving moves until that integration is complete; automatic restore remains disabled.
 
 The hosted gateway reserves restoration for its trusted control plane and stores checkpoints before acknowledging Save. See [saved document recovery](../../web/cloud/README.md#saved-document-recovery) for gateway storage and restore behavior.
 
@@ -215,6 +217,7 @@ Build the session and extension-host binaries before full-editor checks. Browser
 | `cargo test --manifest-path native/session/Cargo.toml` | Native protocol over real sockets. |
 | `(cd web/session && npm test)` | Browser client, equal-name workspace replacement, account-scoped drafts and legacy cache isolation. |
 | `node tests/web/session.mjs --dir bin/web/rayde` | Open/edit/Save, large replies and extension service calls; uses `tests/fixtures/browser-session`. |
+| `node tests/web/moves.mjs bin/web/rayde` | Explorer rename with split panes, retained bindings, pre-move undo and Save. |
 | `node tests/web/collaboration.mjs bin/web/rayde` | Two full editors with separate storage: edits, undo, Save, restart, reload and replacement-state fencing. |
 | `node tests/web/extensions.mjs bin/web/rayde` | First previews, interactive updates, menu/command reload, error containment and refresh. |
 | `node tests/web/lsp.mjs bin/web/rayde` | Real hosted Rayzor: semantic hover, Markdown, live diagnostics and sustained connection-loss recovery. |
@@ -224,7 +227,7 @@ The LSP browser check needs Rayzor; `RAYDE_RAYZOR_LSP` and `RAYZOR_STD_PATH` sel
 Haxe checks cover the bridge and workbench behavior:
 
 - `SessionAsyncChecks`: concurrent replies, deadlines, early process output and disconnect under Ash.
-- `SessionEditorChecks`: asynchronous readiness, stale projections, undo, Save failures and binding cleanup.
+- `SessionEditorChecks`: asynchronous readiness, stale projections, undo, Save failures, confirmed path remapping and binding cleanup.
 - `ExtensionOutputChecks`: stack locations and malformed isolated output.
 - `SessionLspChecks`, `SessionLspQueueChecks`, `SessionLspReconnectChecks`: framed LSP, bounded queues, cancellation, idle wakeups, offline recovery and stale handles.
 

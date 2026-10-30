@@ -482,7 +482,15 @@ class ExplorerPart {
 		});
 
 	/** A file or folder was renamed: the tabs, buffers and edits under it follow it to the new path. */
-	function moveTabs(from:String, to:String):Void {
+	function moveTabs(from:String, to:String, confirmed = false):Void {
+		if (from == to) return;
+		if (!confirmed && wb.documentsPart.sessionDocs != null && rayde.workspace.PageHost.session.documentMoves) return;
+		var resume:Void->Void = wb.documentsPart.sessionDocs == null ? () -> {} : wb.documentsPart.sessionDocs.hold(from);
+		try remapTabs(from,to) catch (error:Dynamic) { resume(); throw error; }
+		resume();
+	}
+
+	function remapTabs(from:String,to:String):Void {
 		wb.documentsPart.closeComparisonsUnder(from);
 		wb.documentsPart.localHistory.move(from, to);
 		for (entry in wb.documentsPart.historyTabs) if (entry.file == from || entry.file.startsWith(haxe.io.Path.addTrailingSlash(from))) entry.file = to + entry.file.substr(from.length);
@@ -495,6 +503,10 @@ class ExplorerPart {
 		for (old => now in FileOps.moved([for (k in wb.documentsPart.buffers.keys()) k], from, to)) {
 			wb.documentsPart.buffers.set(now, wb.documentsPart.buffers.get(old));
 			wb.documentsPart.buffers.remove(old);
+		}
+		for (old => now in FileOps.moved([for (k in wb.documentsPart.initialDisk.keys()) k], from, to)) {
+			wb.documentsPart.initialDisk.set(now,wb.documentsPart.initialDisk.get(old));
+			wb.documentsPart.initialDisk.remove(old);
 		}
 		for (old => now in FileOps.moved([for (k in wb.documentsPart.documents.keys()) k], from, to)) {
 			wb.documentsPart.documents.set(now, wb.documentsPart.documents.get(old));
@@ -510,6 +522,7 @@ class ExplorerPart {
 		}
 		var remap = (f:String) -> moved.exists(f) ? moved.get(f) : f;
 		var front = wb.active.get();
+		if (wb.documentsPart.sessionDocs != null) wb.documentsPart.sessionDocs.remap(from,to);
 		wb.editorPart.groups.remap(remap);
 		wb.open.set([for (f in wb.open.get()) remap(f)]);
 		wb.dirty.set([for (f in wb.dirty.get()) FileOps.moved([f], from, to).exists(f) ? FileOps.moved([f], from, to).get(f) : f]);

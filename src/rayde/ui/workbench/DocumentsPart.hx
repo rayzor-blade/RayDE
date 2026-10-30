@@ -107,6 +107,9 @@ class DocumentsPart {
 	final initialDisk = new Map<String, String>();
 	var sessionDocs:Null<rayde.workspace.session.EditorDocuments>;
 	var reopening:Null<ash.Future<Dynamic>>;
+	final sessionMoves:Array<{from:String,to:String}> = [];
+	var applyingSessionMove = false;
+	var sessionMovesPaused = false;
 
 	function setupSession():Void {
 		var client = rayde.workspace.PageHost.session;
@@ -125,15 +128,41 @@ class DocumentsPart {
 		});
 		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
 		wb.contributions.onFrame(sessionDocs.frame);
+		wb.contributions.onFrame(receiveSessionMoves);
+		wb.contributions.onClose(client.subscribe(event -> {
+			if (event.ev != "workspace.moved" || sessionMovesPaused) return;
+			if (!Std.isOfType(event.from,String) || !Std.isOfType(event.to,String) || sessionMoves.length >= 1024) {
+				sessionMovesPaused = true; sessionMoves.resize(0);
+				var message = "Workspace moves could not be applied. Reopen this workspace; document recovery is kept in this browser.";
+				sessionDocs.pause(message); sessionWarning(message); return;
+			}
+			sessionMoves.push({from:haxe.io.Path.join([client.root,event.from]),to:haxe.io.Path.join([client.root,event.to])});
+		}));
 		wb.contributions.onFrame(receiveReopen);
 		wb.contributions.onClose(sessionDocs.close);
 		wb.contributions.onEdited(sessionDocs.acceptBuffer);
 		wb.contributions.refuses((path, doing) -> {
+			if (doing == "renaming" && client.documentMoves) return null;
 			for (file in documents.keys()) if (sessionDocs.owns(file) && FileOps.inside(path,file)) return "Close shared documents before " + doing + " this path.";
 			return null;
 		});
 		wb.contributions.status({id:"workspace.document", place:"right", order:1, build:() ->
 			<if {sessionDocs.message(wb.active.get()) != ""}><text class="text-xs text-text-secondary px-2">${sessionDocs.message(wb.active.get())}</text></if>});
+	}
+
+	function receiveSessionMoves():Void {
+		if (applyingSessionMove || sessionMovesPaused || sessionMoves.length == 0 || wb.gone) return;
+		applyingSessionMove = true;
+		var move = sessionMoves.shift();
+		try {
+			wb.explorerPart.moveTabs(move.from,move.to,true);
+			wb.explorerPart.refreshExplorer();
+		} catch (error:Dynamic) {
+			sessionMovesPaused = true; sessionMoves.resize(0);
+			var message = "Could not update moved document views: " + Std.string(error);
+			sessionDocs.pause(message); sessionWarning(message);
+		}
+		applyingSessionMove = false;
 	}
 
 	function sessionWarning(message:String):Void

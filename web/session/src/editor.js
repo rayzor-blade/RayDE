@@ -138,8 +138,10 @@ export class EditorDocuments {
 
   request(op, request) {
     const handle = request.handle;
+    const relocation = this.relocation;
     if (typeof handle !== "string" || handle.length > 1024) return Promise.reject(new Error("Invalid editor handle."));
     const work = (this.queues.get(handle) ?? Promise.resolve()).catch(() => {}).then(async () => {
+      if (relocation) await relocation.catch(()=>{});
       if (this.closed) throw new Error("The editor session is closed.");
       if (this.failure && op !== "view.close") throw new Error(this.failure);
       if (op === "view.open") {
@@ -170,6 +172,19 @@ export class EditorDocuments {
     const cleanup = () => { if (this.queues.get(handle) === work) this.queues.delete(handle); };
     work.then(cleanup, cleanup);
     return op === "view.save" ? work.then(reply => reply.saved) : work;
+  }
+
+  rename(from,to) {
+    const previous = this.relocation, queued = [...this.queues.values()];
+    const work = Promise.all([previous,...queued].map(promise=>Promise.resolve(promise).catch(()=>{}))).then(async()=>{
+      if (this.closed || this.failure) throw new Error(this.failure ?? "The editor session is closed.");
+      const reply = await this.client.rename(from,to);
+      if (!this.closed && from !== to) this.emit({ev:"workspace.moved",from,to});
+      return reply;
+    });
+    this.relocation = work;
+    const clear = () => { if (this.relocation === work) this.relocation = null; };
+    work.then(clear,clear); return work;
   }
 
   close() {

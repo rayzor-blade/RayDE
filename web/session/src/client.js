@@ -4,6 +4,7 @@
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {RecoveryDirectory, validDocumentId, legacyName, recoveryName, readLegacy, recoveryHeader, checkpointRecovery, markLegacy} from "./recovery.js";
+import {moveDocuments} from "./moves.js";
 
 export function cacheNamespace(address, identity) {
   if (identity?.version !== 1 || ![identity.authority,identity.workspace,identity.principal].every(value =>
@@ -54,6 +55,7 @@ export class Doc {
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = new Set();
+    this.saves = new Set();
     this.localVersion = 0;
     this.acknowledgedVersion = 0;
     this.ydoc.on("update", (update, origin) => {
@@ -152,7 +154,8 @@ export class Doc {
   }
 
   /** The handshake: tell the session what the page has, take what it has, and send what it lacks. */
-  sync() {
+  sync(duringMove = false) {
+    if (this.client.relocation && !duringMove) return this.client.relocation.catch(()=>{}).then(()=>this.sync());
     if (this.syncing) return this.syncing;
     const work = this.synchronize();
     this.syncing = work;
@@ -192,7 +195,7 @@ export class Doc {
       this.guard();
       const missing = Y.encodeStateAsUpdate(this.ydoc,b64.decode(reply.vector));
       this.failed = false; this.suspended = false;
-      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
+      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing,true);
       else if (this.inflight === 0) this.unsent = false;
       this.listeners.forEach(listener => listener("synced"));
     } catch (error) {
@@ -264,8 +267,8 @@ export class Doc {
     this.client.emit?.("document-error",{path:this.path,documentId:this.documentId,code:error.code,message:error.message});
   }
 
-  send(update) {
-    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked) return Promise.resolve();
+  send(update, duringMove = false) {
+    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked || this.relocating && !duringMove) return Promise.resolve();
     const work = this.transmit(update, this.localVersion);
     this.pending.add(work);
     work.finally(() => this.pending.delete(work));
@@ -287,14 +290,22 @@ export class Doc {
     }
   }
 
-  async save() {
+  save() {
+    if (this.client.authentication) return this.client.authentication.then(()=>this.save());
+    if (this.client.relocation) return this.client.relocation.catch(()=>{}).then(()=>this.save());
+    const work = this.saveNow(); this.saves.add(work);
+    const clear = () => this.saves.delete(work); work.then(clear,clear);
+    return work;
+  }
+
+  async saveNow() {
     this.guard();
     if (this.started) await this.started;
     // Edits queued before Save must reach the session before its file is flushed.
     await Promise.all([...this.pending]);
     if (this.syncing) await this.syncing;
     if (this.closed) throw new Error("The shared document is closed.");
-    if (this.unsent) await this.sync();
+    if (this.unsent) await this.sync(true);
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
     this.guard();
     try { return await this.client.request("doc.save", { path: this.path, ...(this.documentId ? {documentId:this.documentId} : {}) }); }
@@ -488,6 +499,7 @@ export class SessionClient {
   }
 
   login(credential) {
+    if (this.relocation) return this.relocation.catch(()=>{}).then(()=>this.login(credential));
     if (this.authenticating) return Promise.reject(new Error("Sign-in is already in progress."));
     const work = this.authenticate(credential);
     this.authentication = work;
@@ -522,7 +534,10 @@ export class SessionClient {
   }
 
   async openDoc(path) {
-    if (this.authentication) await this.authentication;
+    while (this.authentication || this.relocation) {
+      if (this.authentication) await this.authentication;
+      else await this.relocation.catch(()=>{});
+    }
     if (this.invalidated) throw this.invalidated;
     let doc = this.docs.get(path);
     if (doc?.closed) { await doc.close(); return this.openDoc(path); }
@@ -542,7 +557,16 @@ export class SessionClient {
   write(path, data) { return this.request("fs.write", { path, data }); }
   mkdir(path) { return this.request("fs.mkdir", { path }); }
   remove(path, recursive = false) { return this.request("fs.remove", { path, recursive }); }
-  rename(from, to) { return this.request("fs.rename", { from, to }); }
+  get documentMoves() { return this.hello?.documentIdentities === 1 && this.hello?.closedDocumentMoves === 1; }
+  rename(from,to) {
+    if (this.authentication) return this.authentication.then(()=>this.rename(from,to));
+    if (!this.documentMoves) return this.request("fs.rename",{from,to});
+    const previous = this.relocation;
+    const work = (previous ?? Promise.resolve()).catch(()=>{}).then(()=>moveDocuments(this,from,to));
+    this.relocation = work;
+    const clear = () => { if (this.relocation === work) this.relocation = null; };
+    work.then(clear,clear); return work;
+  }
 
   /** Runs a program in the session; output arrives as `proc.out` and `proc.exit` events. */
   spawn(command, args = [], cwd = "") { return this.request("proc.spawn", { command, args, cwd }).then((r) => r.pid); }

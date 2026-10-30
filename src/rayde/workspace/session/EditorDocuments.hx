@@ -45,19 +45,36 @@ class EditorDocuments {
 
 	public function attach(file:String, state:CodeEditorState, disk:String):Void {
 		if (bindings.exists(file)) return;
-		bindings.set(file, new EditorBinding(client, prefix + next++, file, state, disk, local -> changed(file, local), failed,
-			() -> selection(file), () -> composing(file)));
+		var binding:EditorBinding = null;
+		binding = new EditorBinding(client, prefix + next++, file, state, disk, local -> changed(binding.file, local), failed,
+			() -> selection(binding.file), () -> composing(binding.file));
+		bindings.set(file,binding);
 		revision.set(revision.get() + 1);
 	}
+	/** The page keeps the same handle and undo owner after its confirmed filesystem move. */
+	public function remap(from:String,to:String):Void {
+		var moved = rayde.files.FileOps.moved([for (file in bindings.keys()) file],from,to);
+		var retained = [for (old => next in moved) {file:next,binding:bindings.get(old)}];
+		for (old in moved.keys()) bindings.remove(old);
+		for (entry in retained) { entry.binding.file = entry.file; bindings.set(entry.file,entry.binding); }
+		if (retained.length > 0) revision.set(revision.get() + 1);
+	}
 	public function owns(file:String):Bool return bindings.exists(file);
-	public function readOnly(file:String):Bool { revision.get(); var binding = bindings.get(file); return binding != null && binding.blocked.get(); }
+	public function readOnly(file:String):Bool { revision.get(); var binding = bindings.get(file); return binding != null && (binding.blocked.get() || binding.moving.get()); }
+	/** Hold projection callbacks until the workbench has remapped every path-based owner. */
+	public function hold(from:String):Void->Void {
+		var held = [for (file => binding in bindings) if (rayde.files.FileOps.inside(from,file)) binding];
+		for (binding in held) { binding.acceptBuffer(); binding.moving.set(true); }
+		return () -> { for (binding in held) { binding.moving.set(false); binding.acceptBuffer(); } };
+	}
 	public function message(file:String):String {
 		revision.get(); var binding = bindings.get(file);
-		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept in browser" : "";
+		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.moving.get() ? "Moving document…" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept in browser" : "";
 	}
 	public function acceptBuffer(file:String):Void { var binding = bindings.get(file); if (binding != null) binding.acceptBuffer(); }
+	public function pause(message:String):Void for (binding in bindings) binding.fail(message,false);
 	public function frame():Void for (binding in bindings) binding.frame();
-	public function save(file:String, done:(Null<String>, String)->Void):Bool {
+	public function save(file:String, done:(Null<String>, String, String)->Void):Bool {
 		var binding = bindings.get(file); if (binding == null) return false;
 		binding.save(done);
 		return true;
@@ -70,10 +87,11 @@ private class EditorBinding {
 	public final handle:String;
 	public final blocked = Signal.make(true);
 	public final failure = Signal.make("");
+	public final moving = Signal.make(false);
 	public var remote:Dynamic;
 	final client:SessionClient;
 	final state:CodeEditorState;
-	final file:String;
+	public var file:String;
 	var disk:String;
 	var initial:String;
 	final changed:Bool->Void;
@@ -81,7 +99,7 @@ private class EditorBinding {
 	final selection:Void->CodeSelection;
 	final composing:Void->Bool;
 	var pending:Null<ash.Future<Dynamic>>;
-	var saving:Null<{future:ash.Future<Dynamic>, text:String, done:(Null<String>, String)->Void}>;
+	var saving:Null<{future:ash.Future<Dynamic>, text:String, done:(Null<String>, String, String)->Void}>;
 	var opening = true;
 	var closed = false;
 	var broken = false;
@@ -106,22 +124,23 @@ private class EditorBinding {
 		try client.notify(op, params) catch (error:Dynamic) fail(Std.string(error));
 	}
 	function transaction(edit:CodeTransaction):Void {
+		if (moving.get()) throw "Wait for this document to finish moving.";
 		if (blocked.get() || edit.before != known) { fail("The shared document changed before this edit could be applied."); throw "Wait for document synchronization."; }
 		known = edit.after;
 		notify("view.edit", {epoch:epoch, serial:++serial, parts:edit.parts});
 	}
 	public function acceptBuffer():Void {
-		if (closed || broken || state.value.get() == known) return;
+		if (closed || broken || moving.get() || state.value.get() == known) return;
 		var next = state.value.get(), position = selection();
 		transaction({before:known, after:next, parts:CodeHistory.difference(known,next), selection:position, next:position});
 	}
 	function undo(redo:Bool):Void {
-		if (blocked.get() || closed) return;
+		if (blocked.get() || moving.get() || closed) return;
 		acceptBuffer(); blocked.set(true);
 		pending = client.requestAsync("view.undo", {handle:handle, epoch:epoch, serial:++serial, redo:redo});
 	}
-	public function save(done:(Null<String>, String)->Void):Void {
-		if (blocked.get()) throw "Wait for this document to finish synchronizing before saving.";
+	public function save(done:(Null<String>, String, String)->Void):Void {
+		if (blocked.get() || moving.get()) throw "Wait for this document to finish synchronizing before saving.";
 		if (saving != null) throw "This document is already being saved.";
 		acceptBuffer();
 		saving = {future:client.requestAsync("view.save", {handle:handle}), text:known, done:done};
@@ -129,7 +148,7 @@ private class EditorBinding {
 	public function fail(message:String, report = true):Void {
 		if (closed || broken) return;
 		broken = true; failure.set(message); blocked.set(true);
-		if (saving != null) { var completed = saving; saving = null; completed.done(message,completed.text); }
+		if (saving != null) { var completed = saving; saving = null; completed.done(message,completed.text,file); }
 		if (report) failed(haxe.io.Path.withoutDirectory(file) + ": " + message);
 	}
 	function apply(message:Dynamic):Void {
@@ -147,12 +166,12 @@ private class EditorBinding {
 		state.applyRemote(known, {caret:moved(position.caret), anchor:moved(position.anchor)});
 	}
 	public function frame():Void {
-		if (closed || broken) return;
+		if (closed || broken || moving.get()) return;
 		if (saving != null && saving.future.isReady()) {
 			var completed = saving; saving = null;
 			var error:Null<String> = null;
 			try completed.future.await() catch (failure:Dynamic) error = Std.string(failure);
-			completed.done(error,completed.text);
+			completed.done(error,completed.text,file);
 			if (closed) return;
 		}
 		if (pending != null) {

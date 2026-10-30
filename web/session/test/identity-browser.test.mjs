@@ -231,3 +231,62 @@ test('sign-in never copies account-only recovery back into the viewer cache',{sk
   assert.equal(cached,'alpha');
  }finally{await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
 });
+
+test('native live directory moves preserve replicas, local undo, cached drafts and later saves',{skip:!existsSync(chrome)},async()=>{
+ const f=fixture(),port=await freePort(),stop=await start(f.a,port,f.state);let page;
+ try{
+  page=await pageAt(port);
+  await page.evaluate(async()=>{const client=window.demo.client;await client.mkdir('src');await client.rename('a.txt','src/a.txt');await client.write('src/b.txt','beta');});
+  const result=await page.evaluate(async()=>{
+   const {Y,SessionClient}=await import('/session-client.js'),client=new SessionClient({url:window.demo.client.options.url,token:'test'});
+   await client.connect();const doc=await client.openDoc('src/a.txt'),other=await client.openDoc('src/b.txt');
+   const undo=new Y.UndoManager(doc.text,{trackedOrigins:new Set(['editor']),captureTimeout:0}),id=doc.documentId;
+   doc.ydoc.transact(()=>doc.text.insert(doc.text.length,' + local'),'editor');
+   await client.rename('src','destination');
+   const same=client.docs.get('destination/a.txt')===doc&&client.docs.get('destination/b.txt')===other;
+   undo.undo();const undone=doc.text.toString();undo.redo();await doc.save();await doc.checkpoint();
+   const result={same,id,after:doc.documentId,path:doc.path,undone,text:doc.text.toString()};
+   undo.destroy();await doc.close();await other.close();client.close();return result;
+  });
+  assert.equal(result.same,true);assert.equal(result.id,result.after);assert.equal(result.path,'destination/a.txt');assert.equal(result.undone,'alpha');
+  assert.equal(result.text,'alpha + local');assert.equal(readFileSync(join(f.a,'destination/a.txt'),'utf8'),'alpha + local');
+  await page.evaluate(async()=>{await window.demo.client.mkdir('src');await window.demo.client.write('src/a.txt','new source');await window.demo.openFile('src/a.txt');});
+  assert.equal(await text(page),'new source');
+  await page.evaluate(()=>window.demo.openFile('destination/a.txt'));assert.equal(await text(page),'alpha + local');
+ }finally{await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
+});
+
+test('another native subscriber refuses a live move without losing queued edits or the original binding',{skip:!existsSync(chrome)},async()=>{
+ const f=fixture(),port=await freePort(),stop=await start(f.a,port,f.state);let page,peer;
+ try{
+  page=await pageAt(port);peer=await pageAt(port);await open(page);await open(peer);
+  await assert.rejects(page.evaluate(()=>window.demo.client.rename('a.txt','moved.txt')),/Close shared documents/);
+  assert(await page.evaluate(()=>window.demo.client.docs.get('a.txt')===window.demo.doc&&!window.demo.doc.blocked));
+  await page.focus('#editor');await page.keyboard.press('End');await page.keyboard.type(' + kept');
+  await until(()=>readFileSync(join(f.a,'a.txt'),'utf8')==='alpha + kept','typing after refused move');
+  assert.equal(existsSync(join(f.a,'moved.txt')),false);await until(async()=>await text(peer)==='alpha + kept','peer projection');
+  await peer.evaluate(()=>window.demo.doc.close());
+  await page.evaluate(()=>window.demo.client.rename('a.txt','moved.txt'));
+  assert.equal(await page.evaluate(()=>window.demo.doc.path),'moved.txt');assert.equal(await text(page),'alpha + kept');
+ }finally{await page?.close().catch(()=>{});await peer?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
+});
+
+test('a live move retains a recovered dirty graph over its saved disk baseline until explicit Save',{skip:!existsSync(chrome)},async()=>{
+ const f=fixture(),port=await freePort(),stop=await start(f.a,port,f.state);let page;
+ try{
+  page=await pageAt(port);
+  const result=await page.evaluate(async()=>{
+   const {Y,SessionClient}=await import('/session-client.js'),client=new SessionClient({url:window.demo.client.options.url,token:'test'});
+   await client.connect();const original=await client.openDoc('a.txt'),draft=new Y.Doc();Y.applyUpdate(draft,Y.encodeStateAsUpdate(original.ydoc));
+   draft.getText('text').insert(5,' + unsaved');const update=Y.encodeStateAsUpdate(draft),baseline=new TextEncoder().encode('alpha');
+   const hash=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+   const checkpoint={version:1,update:btoa(String.fromCharCode(...update)),sha256:await hash(update)},diskSha256=await hash(baseline);
+   await original.close();draft.destroy();await client.request('doc.restore',{path:'a.txt',mode:'buffer',checkpoint,diskSha256});
+   const doc=await client.openDoc('a.txt'),id=doc.documentId;await client.rename('a.txt','moved.txt');
+   const saved=await client.read('moved.txt'),result={id,after:doc.documentId,dirty:doc.restoredDirty,text:doc.text.toString(),saved};
+   await doc.save();await doc.close();client.close();return result;
+  });
+  assert.equal(result.id,result.after);assert.equal(result.dirty,true);assert.equal(result.text,'alpha + unsaved');assert.equal(result.saved,'alpha');
+  assert.equal(readFileSync(join(f.a,'moved.txt'),'utf8'),'alpha + unsaved');
+ }finally{await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
+});
