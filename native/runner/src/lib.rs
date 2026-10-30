@@ -37,6 +37,16 @@ impl From<std::io::Error> for Failure {
         unavailable()
     }
 }
+impl From<rayde_sandbox::Error> for Failure {
+    fn from(error: rayde_sandbox::Error) -> Self {
+        use rayde_sandbox::Error;
+        match error {
+            Error::Conflict(_) => Failure(StatusCode::CONFLICT, "Workspace compute state needs reconciliation."),
+            Error::Invalid(_) => invalid(),
+            Error::NotFound | Error::Unsupported(_) | Error::Unavailable | Error::Timeout => unavailable(),
+        }
+    }
+}
 fn unavailable() -> Failure {
     Failure(
         StatusCode::SERVICE_UNAVAILABLE,

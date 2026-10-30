@@ -11,10 +11,13 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
+use crate::msb::Msb;
+use rayde_sandbox::{self as sb, SandboxProvider as _};
 use tokio::sync::{Semaphore, oneshot, watch};
 
 struct Service {
     config: Config,
+    backend: Arc<Msb>,
     secret: String,
     registry: Registry,
     http: reqwest::Client,
@@ -121,28 +124,20 @@ pub async fn start(config: Config) -> Result<Running> {
             Err(_) => return Err(unavailable()),
         }
     }
-    let version = command::call(&config, ["--version"], 5).await?;
-    if String::from_utf8_lossy(&version).trim() != "msb 0.7.11" {
+    let backend = Arc::new(Msb::new(config.clone()));
+    if backend.version().await? != "msb 0.7.11" {
         return Err(Failure(
             StatusCode::SERVICE_UNAVAILABLE,
             "The runner requires the tested MSB version.",
         ));
     }
-    let label = format!("rayde.runner={}", registry.instance);
-    let inventory = command::call(
-        &config,
-        ["status", "--all", "--label", &label, "--format", "json"],
-        5,
-    )
-    .await?;
-    let inventory: Vec<serde_json::Value> =
-        serde_json::from_slice(&inventory).map_err(|_| unavailable())?;
+    let owned = backend.list(&sb::Labels::from([("rayde.runner".to_string(), registry.instance.clone())])).await?;
     let records = registry.records.lock().await;
-    for item in inventory {
+    for item in owned {
         if !records.values().any(|cell| {
             cell.record
                 .try_lock()
-                .is_ok_and(|record| Some(record.sandbox.as_str()) == item["name"].as_str())
+                .is_ok_and(|record| record.sandbox == item.name)
         }) {
             return Err(Failure(
                 StatusCode::CONFLICT,
@@ -178,6 +173,7 @@ pub async fn start(config: Config) -> Result<Running> {
         .map_err(|_| unavailable())?;
     let (halt, _) = watch::channel(false);
     let service = Arc::new(Service {
+        backend,
         config,
         secret,
         registry,
@@ -302,7 +298,7 @@ async fn delete(
     service.registry.save(&record).await?;
     cell.closed.send_modify(|generation| *generation += 1);
     service.cleanup(&record).await?;
-    if let Some(storage) = &record.storage {storage.remove(&service.config).await?;}
+    if let Some(storage) = &record.storage {storage.remove(&service.backend).await?;}
     record.phase = "deleted".into();
     record.token = random();
     service.registry.save(&record).await?;
@@ -343,17 +339,17 @@ async fn socket(
     if record.phase != "ready" {
         return Err(Failure(StatusCode::CONFLICT, "The workspace is not ready."));
     }
-    if tunnel::probe(&service.config, &record.sandbox).await.ok().as_ref() != record.identity.as_ref() {
+    if tunnel::probe(&service.backend, &record.sandbox, service.config.persistent_disks).await.ok().as_ref() != record.identity.as_ref() {
         return Err(Failure(StatusCode::SERVICE_UNAVAILABLE, "Workspace compute needs to reconnect."));
     }
-    let config = service.config.clone();
+    let backend = service.backend.clone();
     let relay_record = record.clone();
     let mut response = upgrade
         .max_message_size(rayde_session::session::MAX_MESSAGE)
         .max_frame_size(rayde_session::session::MAX_MESSAGE)
         .on_upgrade(move |socket| async move {
             let _permit = permit;
-            tunnel::relay(socket, config, cell, relay_record).await;
+            tunnel::relay(socket, backend, cell, relay_record).await;
         })
         .into_response();
     response.headers_mut().insert("X-RayDE-Token", record.token.parse().map_err(|_| unavailable())?);
@@ -361,83 +357,50 @@ async fn socket(
     Ok(response)
 }
 impl Service {
-    async fn inventory(&self, id: Option<&str>) -> Result<Vec<serde_json::Value>> {
-        let mut args = vec![
-            "status".to_owned(),
-            "--all".into(),
-            "--format".into(),
-            "json".into(),
-        ];
-        if let Some(id) = id {
-            args.extend([
-                "--label".into(),
-                format!("rayde.runner={}", self.registry.instance),
-                "--label".into(),
-                format!("rayde.workspace={id}"),
-            ]);
-        }
-        let bytes = command::call(&self.config, args, 5).await?;
-        serde_json::from_slice(&bytes).map_err(|_| unavailable())
+    /// The labels every sandbox of one workspace carries, and what finds them.
+    fn workspace_labels(&self, id: &str) -> sb::Labels {
+        sb::Labels::from([("rayde.runner".to_string(), self.registry.instance.clone()), ("rayde.workspace".to_string(), id.to_string())])
     }
     async fn cleanup(&self, record: &Record) -> Result<()> {
-        let inventory = self.inventory(Some(&record.id)).await?;
-        let expected =
-            |items: &[serde_json::Value]| items.iter().any(|item| item["name"] == record.sandbox);
-        if expected(&self.inventory(None).await?) && !expected(&inventory) {
+        let owned = self.backend.list(&self.workspace_labels(&record.id)).await?;
+        let ours = owned.iter().any(|item| item.name == record.sandbox);
+        let anywhere = self.backend.get(&record.sandbox).await?.is_some();
+        if anywhere && !ours {
             return Err(Failure(
                 StatusCode::CONFLICT,
                 "Unverified sandbox needs reconciliation.",
             ));
         }
-        if inventory.is_empty() {
+        if owned.is_empty() {
             return Ok(());
         }
-        for item in inventory {
-            let name = item["name"].as_str().ok_or_else(unavailable)?;
-            if item["status"] != "Stopped"
-                && command::call(&self.config, ["ping", name], 5)
-                    .await
-                    .is_err()
-            {
+        for item in &owned {
+            if item.state != sb::State::Stopped && self.backend.ping(&item.name).await.is_err() {
                 return Err(Failure(
                     StatusCode::CONFLICT,
                     "Sandbox runtime ownership needs reconciliation.",
                 ));
             }
         }
-        let runner = format!("rayde.runner={}", self.registry.instance);
-        let workspace = format!("rayde.workspace={}", record.id);
-        command::call(
-            &self.config,
-            [
-                "remove", "--force", "--label", &runner, "--label", &workspace,
-            ],
-            30,
-        )
-        .await?;
-        if !self.inventory(Some(&record.id)).await?.is_empty()
-            || expected(&self.inventory(None).await?)
-        {
+        for item in &owned {
+            self.backend.remove(&item.name).await?;
+        }
+        if !self.backend.list(&self.workspace_labels(&record.id)).await?.is_empty() || self.backend.get(&record.sandbox).await?.is_some() {
             return Err(unavailable());
         }
         Ok(())
     }
     async fn launch_session(&self, record: &Record) -> Result<serde_json::Value> {
         let mut args = vec![
-            "exec", &record.sandbox, "--detach", "--no-stdin", "--",
-            "/opt/rayde-session", "--root", "/workspace/project", "--state-root", "/state",
+            "--root", "/workspace/project", "--state-root", "/state",
             "--host", "127.0.0.1", "--port", "7070", "--raw-port", "7071",
             "--token", tunnel::GUEST_TOKEN, "--exec",
         ];
         args.extend(toolchain::session_args(&self.config));
-        command::call(
-            &self.config,
-            args,
-            10,
-        )
-        .await?;
+        let command = sb::Command { program: "/opt/rayde-session".into(), args: args.into_iter().map(String::from).collect(), env: Default::default() };
+        self.backend.detach(&record.sandbox, command).await?;
         for _ in 0..20 {
-            if let Ok(identity) = tunnel::probe(&self.config, &record.sandbox).await {
+            if let Ok(identity) = tunnel::probe(&self.backend, &record.sandbox, self.config.persistent_disks).await {
                 return Ok(identity);
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -494,13 +457,10 @@ impl Service {
             return Err(Failure(StatusCode::CONFLICT, "This workspace needs a toolchain migration before reopening."));
         }
         if record.phase == "ready" {
-            let identity = match tunnel::probe(&self.config, &record.sandbox).await {
+            let identity = match tunnel::probe(&self.backend, &record.sandbox, self.config.persistent_disks).await {
                 Ok(identity) => Some(identity),
                 Err(_) => {
-                    if command::call(&self.config, ["ping", &record.sandbox], 5)
-                        .await
-                        .is_ok()
-                    {
+                    if self.backend.ping(&record.sandbox).await.is_ok() {
                         self.launch_session(&record).await.ok()
                     } else {
                         None
@@ -567,7 +527,7 @@ impl Service {
         let _ = tokio::fs::remove_dir_all(checkout).await;
         if let Err(error) = result {
             let cleaned = if self.cleanup(&record).await.is_ok() {
-                if let Some(storage) = &record.storage {storage.remove(&self.config).await.is_ok()} else {true}
+                if let Some(storage) = &record.storage {storage.remove(&self.backend).await.is_ok()} else {true}
             } else {false};
             if cleaned {
                 record.phase = "failed".into();
@@ -612,44 +572,46 @@ impl Service {
             }
         }
         self.boot(record, true).await?;
-        let destination = format!("{}:/workspace/project", record.sandbox);
-        command::call(
-            &self.config,
-            [
-                std::ffi::OsString::from("copy"),
-                project.into_os_string(),
-                destination.into(),
-            ],
-            30,
-        )
-        .await?;
+        self.backend.copy_in(&record.sandbox, project, "/workspace/project").await?;
         record.identity = Some(self.launch_session(record).await?);
         Ok(())
     }
     async fn boot(&self, record: &Record, initialize: bool) -> Result<()> {
-        let mounts = if let Some(storage) = &record.storage {
-            Some(if initialize {storage.prepare(&self.config).await?} else {storage.mounts(&self.config).await?})
-        } else {None};
-        let cpus = self.config.cpus.to_string();
-        let memory = format!("{}M", self.config.memory_mib);
-        let lifetime = format!("{}s", self.config.max_duration_seconds);
-        let runner = format!("rayde.runner={}", self.registry.instance);
-        let workspace = format!("rayde.workspace={}", record.id);
+        let labels = self.workspace_labels(&record.id);
+        let mounts = match &record.storage {
+            Some(storage) => {
+                if initialize {
+                    storage.prepare(&self.backend).await?;
+                }
+                storage.mounts()
+            }
+            None => Vec::new(),
+        };
         if self.config.toolchain.is_some() {
-            toolchain::restore(&self.config, &record.sandbox, &runner, &workspace, mounts.as_ref()).await?;
-            let destination = format!("{}:/opt/rayde-session", record.sandbox);
-            command::call(&self.config, [std::ffi::OsString::from("copy"), self.config.session_binary.clone().into_os_string(), destination.into()], 15).await?;
+            toolchain::restore(&self.backend, &self.config, &record.sandbox, labels, mounts).await?;
         } else {
-            let mut args = vec!["create".to_owned(), self.config.image.clone(), "--name".into(), record.sandbox.clone(),
-                "--cpus".into(), cpus, "--memory".into(), memory, "--security".into(), "restricted".into(),
-                "--deployment-profile".into(), "multi-tenant".into(), "--no-net".into(),
-                "--copy-file".into(), format!("{}:/opt/rayde-session", self.config.session_binary.display()),
-                "--label".into(), runner, "--label".into(), workspace, "--max-duration".into(), lifetime];
-            if let Some(storage) = &record.storage {args.extend(storage.create_args());}
-            else {args.extend(["--mount-owned".into(), "/workspace".into(), "--mount-owned".into(), "/state".into()]);}
-            command::call(&self.config, args, 45).await?;
+            let mounts = if record.storage.is_some() {
+                mounts
+            } else {
+                ["/workspace", "/state"].map(|destination| sb::Mount { source: sb::Source::Owned, destination: destination.into(), read_only: false }).to_vec()
+            };
+            self.backend
+                .create(sb::SandboxSpec {
+                    name: record.sandbox.clone(),
+                    template: sb::Template::Image(self.config.image.clone()),
+                    cpus: self.config.cpus as u32,
+                    memory_mib: self.config.memory_mib,
+                    security: sb::Security::Restricted,
+                    network: sb::Network::None,
+                    gpu: None,
+                    labels,
+                    mounts,
+                    max_duration: Some(Duration::from_secs(self.config.max_duration_seconds)),
+                })
+                .await?;
         }
-        if let Some(storage) = &record.storage {storage.bind(&self.config, &record.sandbox, initialize).await?;}
+        self.backend.copy_in(&record.sandbox, self.config.session_binary.clone(), "/opt/rayde-session").await?;
+        if let Some(storage) = &record.storage {storage.bind(&self.backend, &record.sandbox, initialize).await?;}
         Ok(())
     }
 

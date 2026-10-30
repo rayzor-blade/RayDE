@@ -1,29 +1,44 @@
 use super::*;
+use crate::msb::Msb;
+use rayde_sandbox::{self as sb, SandboxProvider as _};
 
 pub(crate) fn identity(config: &Config) -> Option<String> {
     config.toolchain.as_ref().map(|toolchain| toolchain.digest.clone())
 }
 
-pub(crate) async fn restore(config: &Config, sandbox: &str, runner: &str, workspace: &str, mounts: Option<&crate::volumes::Mounts>) -> Result<()> {
+/// Runs `script` in the guest and returns its output; a nonzero exit is a failure.
+async fn guest(backend: &Msb, sandbox: &str, script: &str, seconds: u64) -> Result<Vec<u8>> {
+    let command = sb::Command { program: "/bin/sh".into(), args: vec!["-ec".into(), script.into()], env: Default::default() };
+    let output = backend.run(sandbox, command, 64 * 1024, std::time::Duration::from_secs(seconds)).await?;
+    if output.status != 0 {
+        return Err(unavailable());
+    }
+    Ok(output.stdout)
+}
+
+pub(crate) async fn restore(backend: &Msb, config: &Config, sandbox: &str, labels: sb::Labels, mounts: Vec<sb::Mount>) -> Result<()> {
     let toolchain = config.toolchain.as_ref().ok_or_else(invalid)?;
-    command::call(config, ["snapshot", "verify", &toolchain.snapshot], 30).await?;
-    let mut args = vec!["snapshot".to_owned(), "restore".into(), toolchain.snapshot.clone(), "--name".into(), sandbox.into(),
-        "--cpus".into(), config.cpus.to_string(), "--memory".into(), format!("{}M", config.memory_mib),
-        "--security".into(), "restricted".into(), "--no-net".into(), "--max-duration".into(), format!("{}s", config.max_duration_seconds)];
-    if let Some(mounts) = mounts {args.extend(["--mount-disk".into(), format!("{}:/workspace", mounts.workspace.display()), "--mount-disk".into(), format!("{}:/state", mounts.state.display())]);}
-    command::call(config, args, 45).await?;
-    command::call(config, ["modify", sandbox, "--label", runner, "--label", workspace], 5).await?;
-    let digest = command::call(config, [
-        "exec", sandbox, "--quiet", "--no-stdin", "--", "/bin/sh", "-ec",
-        "cd /opt/rayde; sha256sum -c SHA256SUMS >/dev/null; sha256sum toolchain.json",
-    ], 30).await?;
+    let snapshot = sb::SnapshotRef(toolchain.snapshot.clone());
+    backend.verify_snapshot(&snapshot).await?;
+    backend
+        .create(sb::SandboxSpec {
+            name: sandbox.into(),
+            template: sb::Template::Snapshot(snapshot),
+            cpus: config.cpus as u32,
+            memory_mib: config.memory_mib,
+            security: sb::Security::Restricted,
+            network: sb::Network::None,
+            gpu: None,
+            labels,
+            mounts,
+            max_duration: Some(std::time::Duration::from_secs(config.max_duration_seconds)),
+        })
+        .await?;
+    let digest = guest(backend, sandbox, "cd /opt/rayde; sha256sum -c SHA256SUMS >/dev/null; sha256sum toolchain.json", 30).await?;
     if String::from_utf8_lossy(&digest).split_whitespace().next() != Some(&toolchain.digest) {
         return Err(Failure(StatusCode::CONFLICT, "The guest toolchain identity does not match its configuration."));
     }
-    command::call(config, [
-        "exec", sandbox, "--quiet", "--no-stdin", "--", "/bin/sh", "-ec",
-        "export LD_LIBRARY_PATH=/opt/rayde/lib; /opt/rayde/bin/haxe --version; /opt/rayde/bin/ash --version; /opt/rayde/bin/rayzor --version; test -f /opt/rayde/haxe-std/StdTypes.hx; test -f /opt/rayde/environment.json; test -x /opt/rayde/bin/rayde-extension-host; test -f /opt/rayde/extensions/git/git.rayext; test -f /opt/rayde/extensions/markdown/markdown.rayext; test -f /opt/rayde/extensions/rayzor/rayzor.rayext",
-    ], 15).await?;
+    guest(backend, sandbox, "export LD_LIBRARY_PATH=/opt/rayde/lib; /opt/rayde/bin/haxe --version; /opt/rayde/bin/ash --version; /opt/rayde/bin/rayzor --version; test -f /opt/rayde/haxe-std/StdTypes.hx; test -f /opt/rayde/environment.json; test -x /opt/rayde/bin/rayde-extension-host; test -f /opt/rayde/extensions/git/git.rayext; test -f /opt/rayde/extensions/markdown/markdown.rayext; test -f /opt/rayde/extensions/rayzor/rayzor.rayext", 15).await?;
     Ok(())
 }
 

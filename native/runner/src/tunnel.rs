@@ -1,34 +1,24 @@
 use super::*;
 use crate::{
-    command::Process,
+    msb::Msb,
     registry::{Cell, Record},
 };
+use rayde_sandbox::{self as sb, SandboxProvider as _};
 use axum::extract::ws::{Message, WebSocket};
-use std::{process::Stdio, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 // Guest-local transport authentication is separate from the credential held by the gateway.
 pub(crate) const GUEST_TOKEN: &str = "rayde-local-transport";
 const MAX_MESSAGE: usize = rayde_session::session::MAX_MESSAGE;
 
-fn bridge(config: &Config, sandbox: &str) -> tokio::process::Command {
-    let mut command = command::msb(config);
-    command
-        .args([
-            "exec",
-            sandbox,
-            "--quiet",
-            "--stream",
-            "--",
-            "/opt/rayde-session",
-            "bridge",
-            "--port",
-            "7071",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    command
+/// The guest program that carries the session's framed stream on its stdio.
+fn bridge() -> sb::Command {
+    sb::Command {
+        program: "/opt/rayde-session".into(),
+        args: ["bridge", "--port", "7071"].map(String::from).to_vec(),
+        env: Default::default(),
+    }
 }
 async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     let length = reader.read_u32().await? as usize;
@@ -40,11 +30,9 @@ async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| unavailable())
 }
 
-pub(crate) async fn probe(config: &Config, sandbox: &str) -> Result<serde_json::Value> {
+pub(crate) async fn probe(backend: &Msb, sandbox: &str, persistent_disks: bool) -> Result<serde_json::Value> {
     let work = async {
-        let mut process = Process::new(bridge(config, sandbox))?;
-        let mut input = process.child.stdin.take().ok_or_else(unavailable)?;
-        let mut output = process.child.stdout.take().ok_or_else(unavailable)?;
+        let sb::Process { stdin: mut input, stdout: mut output, exit } = backend.spawn(sandbox, bridge()).await?;
         input
             .write_all(&rayde_session::framing::frame(
                 &serde_json::json!({"id":1,"op":"hello","token":GUEST_TOKEN}).to_string(),
@@ -53,11 +41,13 @@ pub(crate) async fn probe(config: &Config, sandbox: &str) -> Result<serde_json::
         let response: serde_json::Value =
             serde_json::from_str(&read_frame(&mut output).await?).map_err(|_| unavailable())?;
         drop(input);
-        process.finish().await?;
+        if exit.await != Ok(0) {
+            return Err(unavailable());
+        }
         if response["ok"] != true || response["root"] != "/workspace/project" {
             return Err(unavailable());
         }
-        if config.persistent_disks && response["privateJournals"] != 1 {return Err(unavailable());}
+        if persistent_disks && response["privateJournals"] != 1 {return Err(unavailable());}
         identity(&response)
     };
     tokio::time::timeout(Duration::from_secs(5), work)
@@ -79,7 +69,7 @@ pub(crate) fn identity(response: &serde_json::Value) -> Result<serde_json::Value
     Ok(identity.clone())
 }
 
-pub(crate) async fn relay(mut socket: WebSocket, config: Config, cell: Arc<Cell>, record: Record) {
+pub(crate) async fn relay(mut socket: WebSocket, backend: Arc<Msb>, cell: Arc<Cell>, record: Record) {
     let mut closed = cell.closed.subscribe();
     let work=async {
         let first=tokio::select! {
@@ -95,9 +85,7 @@ pub(crate) async fn relay(mut socket: WebSocket, config: Config, cell: Arc<Cell>
             if current.phase!="ready"||!matches_secret(&current.token,&record.token) {return Err(unavailable());}
         }
         hello["token"]=serde_json::json!(GUEST_TOKEN);
-        let mut process=Process::new(bridge(&config,&record.sandbox))?;
-        let mut input=process.child.stdin.take().ok_or_else(unavailable)?;
-        let mut output=process.child.stdout.take().ok_or_else(unavailable)?;
+        let sb::Process { stdin: mut input, stdout: mut output, exit } = backend.spawn(&record.sandbox, bridge()).await?;
         let mut frames=rayde_session::framing::Frames::default();let mut buffer=vec![0u8;64*1024];let mut first_response=true;
         let conversation=async {
             input.write_all(&rayde_session::framing::frame(&hello.to_string())).await?;
@@ -129,7 +117,8 @@ pub(crate) async fn relay(mut socket: WebSocket, config: Config, cell: Arc<Cell>
         };
         tokio::select! {_=closed.changed()=>{},_=conversation=>{}}
         drop(input);drop(output);
-        let _=tokio::time::timeout(Duration::from_secs(2),process.finish()).await;
+        // Dropping the exit receiver ends the process, so a bridge that does not leave within two seconds is killed.
+        let _=tokio::time::timeout(Duration::from_secs(2),exit).await;
         Ok::<(),Failure>(())
     }.await;
     let _ = work;

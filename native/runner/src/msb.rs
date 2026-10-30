@@ -21,6 +21,11 @@ impl Msb {
         Self { config }
     }
 
+    /// `msb --version`, trimmed: the runner refuses an MSB it has not been tested with.
+    pub async fn version(&self) -> sb::Result<String> {
+        Ok(String::from_utf8_lossy(&self.call(vec!["--version".into()], 5).await?).trim().to_owned())
+    }
+
     async fn call(&self, args: Vec<String>, seconds: u64) -> sb::Result<Vec<u8>> {
         let shown = std::env::var_os("RAYDE_MSB_TRACE").map(|_| args.join(" "));
         let result = command::call(&self.config, args, seconds).await.map_err(|_| sb::Error::Unavailable);
@@ -68,14 +73,20 @@ impl Msb {
     }
 }
 
-/// `volumes` holds the size of each named volume the spec mounts: MSB wants `kind=disk,size=` on every mount of one.
-fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<String, u32>) -> sb::Result<Vec<String>> {
+/// `volumes` holds each named volume the spec mounts: `msb create` wants `kind=disk,size=` on a mount of one, and `msb snapshot restore`
+/// takes the volume's disk file with `--mount-disk`. A restore has no `--deployment-profile`, `--label` or named, owned and directory mounts.
+fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<String, sb::VolumeInfo>, restore: bool) -> sb::Result<Vec<String>> {
     if spec.gpu.is_some() {
         return Err(sb::Error::Unsupported("gpu"));
     }
     let mut args = vec!["--name".into(), spec.name.clone(), "--cpus".into(), spec.cpus.to_string(), "--memory".into(), format!("{}M", spec.memory_mib)];
     match spec.security {
-        sb::Security::Restricted => args.extend(["--security".into(), "restricted".into(), "--deployment-profile".into(), "multi-tenant".into()]),
+        sb::Security::Restricted => {
+            args.extend(["--security".into(), "restricted".into()]);
+            if !restore {
+                args.extend(["--deployment-profile".into(), "multi-tenant".into()]);
+            }
+        }
         sb::Security::Standard => {}
     }
     match &spec.network {
@@ -89,8 +100,10 @@ fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<St
             }
         }
     }
-    for (key, value) in &spec.labels {
-        args.extend(["--label".into(), format!("{key}={value}")]);
+    if !restore {
+        for (key, value) in &spec.labels {
+            args.extend(["--label".into(), format!("{key}={value}")]);
+        }
     }
     if let Some(limit) = spec.max_duration {
         args.extend(["--max-duration".into(), format!("{}s", limit.as_secs())]);
@@ -102,11 +115,17 @@ fn sandbox_flags(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<St
         let destination = &mount.destination;
         match &mount.source {
             sb::Source::Volume(name) => {
-                let size = volumes.get(name).ok_or(sb::Error::NotFound)?;
-                args.extend(["--mount-named".into(), format!("{name}:{destination}:kind=disk,size={size}M")]);
+                let volume = volumes.get(name).ok_or(sb::Error::NotFound)?;
+                if restore {
+                    let path = volume.path.as_ref().ok_or(sb::Error::Unsupported("restoring with a volume that has no disk file"))?;
+                    args.extend(["--mount-disk".into(), format!("{}:{destination}", path.display())]);
+                } else {
+                    args.extend(["--mount-named".into(), format!("{name}:{destination}:kind=disk,size={}M", volume.size_mib)]);
+                }
             }
-            sb::Source::Host(path) => args.extend(["--mount-dir".into(), format!("{}:{destination}", path.display())]),
             sb::Source::Disk(path) => args.extend(["--mount-disk".into(), format!("{}:{destination}", path.display())]),
+            sb::Source::Host(_) | sb::Source::Owned if restore => return Err(sb::Error::Unsupported("this mount on a snapshot restore")),
+            sb::Source::Host(path) => args.extend(["--mount-dir".into(), format!("{}:{destination}", path.display())]),
             sb::Source::Owned => args.extend(["--mount-owned".into(), destination.clone()]),
         }
     }
@@ -124,23 +143,10 @@ fn allow_target(host: &str) -> sb::Result<&str> {
 }
 
 /// The arguments of `msb create` or `msb snapshot restore` for a spec. A restore cannot carry labels, so they follow in `modify`.
-pub(crate) fn create_args(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<String, u32>) -> sb::Result<Vec<String>> {
-    let flags = sandbox_flags(spec, volumes)?;
+pub(crate) fn create_args(spec: &sb::SandboxSpec, volumes: &std::collections::BTreeMap<String, sb::VolumeInfo>) -> sb::Result<Vec<String>> {
     Ok(match &spec.template {
-        sb::Template::Image(image) => [vec!["create".to_owned(), image.clone()], flags].concat(),
-        sb::Template::Snapshot(snapshot) => {
-            // `snapshot restore` takes the sizing, network and mounts; the labels follow in `modify`, and the profile flags are create-only.
-            let mut kept = Vec::new();
-            let mut flags = flags.into_iter();
-            while let Some(flag) = flags.next() {
-                if matches!(flag.as_str(), "--label" | "--security" | "--deployment-profile") {
-                    flags.next();
-                } else {
-                    kept.push(flag);
-                }
-            }
-            [vec!["snapshot".to_owned(), "restore".into(), snapshot.0.clone()], kept].concat()
-        }
+        sb::Template::Image(image) => [vec!["create".to_owned(), image.clone()], sandbox_flags(spec, volumes, false)?].concat(),
+        sb::Template::Snapshot(snapshot) => [vec!["snapshot".to_owned(), "restore".into(), snapshot.0.clone()], sandbox_flags(spec, volumes, true)?].concat(),
     })
 }
 
@@ -182,7 +188,7 @@ pub(crate) fn parse_inspect(bytes: &[u8]) -> sb::Result<sb::Labels> {
 
 pub(crate) fn parse_volume(name: &str, text: &str) -> Option<sb::VolumeInfo> {
     let field = |key: &str| text.lines().find_map(|line| line.strip_prefix(key).map(str::trim));
-    if field("Name:") != Some(name) || field("Kind:") != Some("disk") {
+    if field("Name:") != Some(name) || field("Kind:") != Some("disk") || field("Filesystem:") != Some("ext4") {
         return None;
     }
     let size_mib = field("Capacity:").and_then(parse_size).unwrap_or(0);
@@ -235,13 +241,25 @@ impl sb::SandboxProvider for Msb {
             return Ok(None);
         }
         let bytes = self.call(vec!["volume".into(), "inspect".into(), name.into()], 5).await?;
-        parse_volume(name, &String::from_utf8_lossy(&bytes)).map(Some).ok_or_else(|| sb::Error::Conflict("The volume is not a disk volume.".into()))
+        let volume = parse_volume(name, &String::from_utf8_lossy(&bytes)).ok_or_else(|| sb::Error::Conflict("The volume is not an ext4 disk volume.".into()))?;
+        // The disk file is what a restore binds, so it must be the one MSB keeps for this volume: `<volumes>/<name>/disk.raw`, a regular file.
+        let path = volume.path.as_ref().ok_or(sb::Error::Unavailable)?;
+        let shaped = path.is_absolute()
+            && path.file_name().and_then(|n| n.to_str()) == Some("disk.raw")
+            && path.parent().and_then(|p| p.file_name()).and_then(|n| n.to_str()) == Some(name);
+        let regular = tokio::fs::symlink_metadata(path).await.is_ok_and(|m| m.file_type().is_file());
+        if !shaped || !regular {
+            return Err(sb::Error::Conflict("The volume's disk file needs reconciliation.".into()));
+        }
+        Ok(Some(volume))
     }
 
     async fn remove_volume(&self, name: &str) -> sb::Result<()> {
         if !self.volume_names().await?.iter().any(|n| n == name) {
             return Ok(());
         }
+        // Only a volume that is what it claims to be is removed; one that fails the check needs a person.
+        self.volume(name).await?;
         let removed = self.call(vec!["volume".into(), "remove".into(), name.into()], 15).await;
         if self.volume_names().await?.iter().any(|n| n == name) {
             return Err(if removed.is_err() { sb::Error::Conflict("The volume could not be removed; a sandbox may still mount it.".into()) } else { sb::Error::Unavailable });
@@ -257,7 +275,7 @@ impl sb::SandboxProvider for Msb {
         for mount in &spec.mounts {
             if let sb::Source::Volume(name) = &mount.source {
                 let found = self.volume(name).await?.ok_or(sb::Error::NotFound)?;
-                volumes.insert(name.clone(), found.size_mib);
+                volumes.insert(name.clone(), found);
             }
         }
         let args = create_args(&spec, &volumes)?;
@@ -394,8 +412,8 @@ impl sb::SandboxProvider for Msb {
 mod tests {
     use super::*;
 
-    fn sizes() -> std::collections::BTreeMap<String, u32> {
-        [("w-work".to_string(), 1024)].into()
+    fn sizes() -> std::collections::BTreeMap<String, sb::VolumeInfo> {
+        [("w-work".to_string(), sb::VolumeInfo { name: "w-work".into(), size_mib: 1024, path: Some("/v/w-work/disk.raw".into()) })].into()
     }
 
     fn spec() -> sb::SandboxSpec {
@@ -425,7 +443,7 @@ mod tests {
         restored.template = sb::Template::Snapshot(sb::SnapshotRef("toolchain".into()));
         restored.mounts = vec![sb::Mount { source: sb::Source::Disk("/v/work/disk.raw".into()), destination: "/workspace".into(), read_only: false }];
         let args = create_args(&restored, &sizes()).unwrap().join(" ");
-        assert_eq!(args, "snapshot restore toolchain --name rayde-x-1 --cpus 1 --memory 512M --no-net --max-duration 3600s --mount-disk /v/work/disk.raw:/workspace");
+        assert_eq!(args, "snapshot restore toolchain --name rayde-x-1 --cpus 1 --memory 512M --security restricted --no-net --max-duration 3600s --mount-disk /v/work/disk.raw:/workspace");
         assert_eq!(label_args(&restored).join(" "), "modify rayde-x-1 --label rayde.runner=r1 --label rayde.workspace=w1");
     }
 
@@ -451,6 +469,18 @@ mod tests {
     #[test]
     fn a_named_volume_the_caller_did_not_size_is_not_found() {
         assert_eq!(create_args(&spec(), &Default::default()), Err(sb::Error::NotFound));
+    }
+
+    #[test]
+    fn a_restore_mounts_a_named_volume_by_its_disk_file_and_refuses_mounts_it_cannot_take() {
+        let mut restored = spec();
+        restored.template = sb::Template::Snapshot(sb::SnapshotRef("toolchain".into()));
+        restored.mounts = vec![sb::Mount { source: sb::Source::Volume("w-work".into()), destination: "/workspace".into(), read_only: false }];
+        let args = create_args(&restored, &sizes()).unwrap().join(" ");
+        assert!(args.ends_with("--mount-disk /v/w-work/disk.raw:/workspace"), "{args}");
+        assert!(!args.contains("--deployment-profile") && !args.contains("--label") && !args.contains("--mount-named"), "{args}");
+        restored.mounts[0].source = sb::Source::Owned;
+        assert_eq!(create_args(&restored, &sizes()), Err(sb::Error::Unsupported("this mount on a snapshot restore")));
     }
 
     #[test]
