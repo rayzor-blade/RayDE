@@ -20,11 +20,12 @@ class AppPreviewBuildChecks {
 		var previous=rayde.workspace.Procs.current;
 		rayde.workspace.Procs.current=new SessionLauncher(client);
 		var published="",build=new AppPreviewBuild(client,text -> published=text);
-		function until(done:Void->Bool):Void {
+		function until(done:Void->Bool,?target:AppPreviewBuild):Void {
+			var preview=target ?? build;
 			var end=haxe.Timer.stamp()+5;
 			while(!done() && haxe.Timer.stamp()<end){
-				if(build.timer!=null)build.timer.cancel();
-				client.pump(0);build.poll();Sys.sleep(.005);
+				if(preview.timer!=null)preview.timer.cancel();
+				client.pump(0);preview.poll();Sys.sleep(.005);
 			}
 			check(done(),"Build did not settle: "+build.state.get()+" "+build.error.get()+"\n"+published);
 		}
@@ -57,9 +58,36 @@ class AppPreviewBuildChecks {
 			build.stop();
 			until(() -> !build.worker.busy());
 			check(build.state.get()=="cancelled" && wire.killed,"Stop did not cancel the compiler");
+			wire.cached="wasm";wire.hold=false;build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
+			var current=build.artifact.get(),count=wire.spawns;
+			for (_ in 0...3) {
+				wire.connection(false);until(() -> build.state.get()=="reconnecting");
+				check(build.artifact.get()==current && build.error.get()=="","disconnect discarded a loaded preview or reported a compiler failure");
+				wire.connection(true);until(() -> build.state.get()=="ready");
+				check(wire.spawns==count,"reconnect spawned compilers for an unchanged preview");
+				check(build.artifact.get()!=current,"reconnect did not acquire a new connection-owned artifact");
+				current=build.artifact.get();
+			}
+			wire.cached="miss";wire.hold=true;build.start("haxe",[],"/work");until(() -> published.indexOf("compiler output")>=0);
+			wire.connection(false);until(() -> build.state.get()=="reconnecting");
+			count=wire.spawns;wire.cached="wasm";wire.hold=false;wire.connection(true);until(() -> build.state.get()=="ready");
+			check(wire.spawns==count && build.error.get()=="","cancelled compiler results overwrote reconnect recovery");
+			wire.connection(false);until(() -> build.state.get()=="reconnecting");build.stop();
+			var prepared=wire.prepared;wire.connection(true);client.pump(.1);build.poll();
+			check(build.state.get()=="cancelled" && wire.prepared==prepared,"Stop allowed reconnect to restart cancelled work");
+			build.start("haxe",[],"/work");until(() -> build.state.get()=="ready");
+			wire.connection(false,"workspace-changed");until(() -> build.state.get()=="failed");
+			check(build.artifact.get()==null && build.error.get()=="Workspace changed.","replacement workspace retained the old preview");
+			prepared=wire.prepared;wire.connection(true);client.pump(.1);build.poll();
+			build.start("haxe",[],"/work");
+			check(wire.prepared==prepared && build.state.get()=="failed","a changed workspace recovered an old build configuration");
+			var abandoned=new AppPreviewBuild(client);abandoned.start("haxe",[],"/work");until(() -> abandoned.state.get()=="ready",abandoned);
+			wire.connection(false);until(() -> abandoned.state.get()=="reconnecting",abandoned);abandoned.dispose();
+			prepared=wire.prepared;wire.connection(true);client.pump(.1);abandoned.poll();
+			check(wire.prepared==prepared && abandoned.artifact.get()==null,"closing the preview resurrected it on reconnect");
 		} catch(error:Dynamic){build.dispose();client.close();rayde.workspace.Procs.current=previous;throw error;}
 		build.dispose();client.close();rayde.workspace.Procs.current=previous;
-		Sys.println("App preview builds: live output, phases, bytecode/WASM reuse, forced build, failure and Stop passed");
+		Sys.println("App preview builds: live output, phases, bytecode/WASM reuse, forced build, failure, reconnect recovery, context fencing and Stop passed");
 	}
 }
 
@@ -67,6 +95,9 @@ private class PreviewChannel implements Channel {
 	final incoming=new sys.thread.Deque<String>();
 	var pid=0;
 	public var spawns=0;
+	public var prepared=0;
+	var generation=0;
+	var opened=0;
 	public var command="";
 	public var cached="miss";
 	public var hold=true;
@@ -75,13 +106,14 @@ private class PreviewChannel implements Channel {
 	public function new() {}
 	function reply(value:Dynamic):Void incoming.add(haxe.Json.stringify(value));
 	public function title(preview:String,title:String):Void reply({ev:"preview.title",preview:preview,title:title});
+	public function connection(online:Bool,?code:String):Void { if(!online)generation++;reply({ev:online?"session.connected":"session.disconnected",generation:generation,code:code,message:code=="workspace-changed"?"Workspace changed.":null}); }
 	public function exit(code:Int):Void {hold=false;reply({ev:"proc.exit",pid:pid,code:code});}
 	public function sendText(text:String):Void {
 		var request:Dynamic=haxe.Json.parse(text),answer:Dynamic={id:request.id,ok:true};
 		switch(request.op:String){
 			case "hello":answer.root="/work";answer.exec=true;
-			case "preview.prepare":answer.directory="/work/.rayde/previews/test";answer.support="/support";answer.path=".rayde/previews/test";answer.cached=request.force==true ? "miss" : cached;
-			case "preview.open":answer.preview="capability";answer.url="http://localhost:1/preview";
+			case "preview.prepare":prepared++;answer.directory="/work/.rayde/previews/test";answer.support="/support";answer.path=".rayde/previews/test";answer.cached=request.force==true ? "miss" : cached;
+			case "preview.open":answer.preview=opened++==0 ? "capability" : "capability-"+opened;answer.url="http://localhost:1/preview";
 			case "proc.spawn":
 				spawns++;command=request.command;
 				answer.pid=++pid;

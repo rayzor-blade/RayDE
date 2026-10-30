@@ -8,7 +8,7 @@ Regenerate the editor, including its browser agents and native side modules, fro
 bash scripts/build-site.sh
 ```
 
-See [browser build prerequisites](../docs/contributing/building.md#browser-build). `dist/` is generated output; edit the sources or pinned dependency, then rebuild. Worker and dynamic-agent paths resolve beside their host module rather than beside the landing document. The frame isolates editor focus, keyboard handling and styles from the marketing page.
+See [browser build prerequisites](../docs/contributing/building.md#browser-build). `dist/` is generated output; edit the sources or pinned dependency, then rebuild. Worker and dynamic-agent paths resolve beside their host module rather than beside the landing document. The frame isolates editor focus, keyboard handling and styles from the marketing page. The running development server reads rebuilt browser assets on demand; reload the editor to load them. Restart the service when its native executable or launch configuration changes.
 
 For local preview on a chosen port, the Rust session can serve both the site and its socket:
 

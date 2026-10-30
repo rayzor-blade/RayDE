@@ -107,7 +107,7 @@ class RunPart {
 
 	function previewBuilding():Bool {
 		previewRevision.get();
-		return appPreview!=null && appPreview.state.get()=="building";
+		return appPreview!=null && (appPreview.state.get()=="building" || appPreview.state.get()=="reconnecting");
 	}
 
 	function statusState():String {
@@ -340,8 +340,8 @@ class RunPart {
 	function runControls(state:String):Element {
 		var runnable = runner!=null && runner.canRun();
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
-		var building = state == "preview-building" || state == "building", active = building || state == "running";
-		var buildLabel = building ? (state == "preview-building" ? "Building app preview" : "Building project") : "Build project";
+		var building = state == "preview-building" || state == "preview-reconnecting" || state == "building", active = building || state == "running";
+		var buildLabel = state == "preview-reconnecting" ? "Reconnecting preview" : building ? (state == "preview-building" ? "Building app preview" : "Building project") : "Build project";
 		var shortcut = wb.keymapPart.bindings.label("buildproject");
 		var runShortcut = wb.keymapPart.bindings.label("run");
 		var controls = <div id="rayde-run-controls" class="flex items-center gap-1" onPointerDown={e -> e.stopPropagation()}>
@@ -374,6 +374,7 @@ class RunPart {
 			<if {state == "built"}><text id="rayde-status" class="text-text-tertiary">Build succeeded</text></if>
 			<if {state == "failed"}><text id="rayde-status" class="text-error">Build failed</text></if>
 			<if {state == "preview-ready"}><text class="text-success">Preview ready</text></if>
+			<if {state == "preview-reconnecting"}><text class="text-text-secondary">Reconnecting preview…</text></if>
 			<if {state == "preview-failed"}><button variant={Ghost} size={Sm} class="rayde-status-item text-error" onClick={_ -> wb.panelsPart.showPanel("console")}>Preview build failed</button></if>
 			<if {state == "preview-cancelled"}><text class="text-text-secondary">Build cancelled</text></if>
 		</div>;

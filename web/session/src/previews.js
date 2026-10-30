@@ -1,11 +1,12 @@
 // App frames have their own origin; only scoped workspace file calls cross back to the editor.
 export class AppPreviews {
   constructor(client,screen=document.querySelector('#screen'),emit=()=>{}) {
-    this.client=client;this.screen=screen;this.emit=emit;this.descriptors=new Map();this.surfaces=new Map();this.pending=new Set();this.pendingBytes=0;
+    this.client=client;this.screen=screen;this.emit=emit;this.descriptors=new Map();this.surfaces=new Map();this.pending=new Set();this.pendingBytes=0;this.connected=client.ready!==false;
     this.receive=event=>void this.files(event);addEventListener('message',this.receive);
     this.resize=()=>this.layout();addEventListener('resize',this.resize);addEventListener('scroll',this.resize,true);
   }
   register(value) {
+    if(!this.connected)throw Error('The workspace disconnected before the preview opened.');
     const url=new URL(value.url);
     if(!/^[a-f0-9]{64}$/.test(value.preview)||url.origin===location.origin||!['https:','http:'].includes(url.protocol))throw Error('The app preview needs an isolated origin.');
     if(url.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('The app preview requires HTTPS.');
@@ -63,6 +64,10 @@ export class AppPreviews {
   }
   remove(id){const surface=this.surfaces.get(id);surface?.iframe.remove();this.surfaces.delete(id);}
   unregister(preview){for(const [id,surface] of this.surfaces)if(surface.preview===preview)this.remove(id);this.descriptors.delete(preview);}
+  connection(connected){
+    this.connected=connected;
+    if(!connected)for(const id of this.descriptors.keys())if(![...this.surfaces.values()].some(surface=>surface.preview===id))this.descriptors.delete(id);
+  }
   reset(){for(const id of [...this.surfaces.keys()])this.remove(id);this.descriptors.clear();}
   async files(event) {
     if(!['rayde-preview-files','rayde-preview-title'].includes(event.data?.type))return;
@@ -77,6 +82,7 @@ export class AppPreviews {
     let reply;
     const ticket={bytes:typeof request.data==='string'?request.data.length:0};
     try {
+      if(!this.connected)throw Error('The workspace is reconnecting. Try again when connected.');
       if(this.pending.size>=32||this.pendingBytes+ticket.bytes>16*1024*1024)throw Error('The preview filesystem queue is full.');this.pending.add(ticket);this.pendingBytes+=ticket.bytes;
       if(request.op==='preview.fs.hello')reply={root:this.client.hello.root};
       else {

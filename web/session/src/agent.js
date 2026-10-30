@@ -62,9 +62,9 @@ export const start = ask => serve(ask, {
     const documents = client ? new EditorDocuments(client, answer) : null;
     const previews = client ? new AppPreviews(client,undefined,answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
-    client?.on("disconnected", () => {previews?.reset();answer({ ev: "session.disconnected", generation:client.generation });});
-    client?.on("context-changed", ({message}) => {previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
-    client?.on("connected", () => answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves }));
+    client?.on("disconnected", () => {previews?.connection(false);answer({ ev: "session.disconnected", generation:client.generation });});
+    client?.on("context-changed", ({message}) => {previews?.connection(false);previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
+    client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves });});
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -128,9 +128,9 @@ export const start = ask => serve(ask, {
             return;
           } else if (client) {
             const { id, op, ...params } = request;
-            reply = await client.forward(op, params);
+            try { reply = await client.forward(op, params); }
+            finally { if (op === "preview.close") previews.unregister(params.preview); }
             if (op === "preview.open") previews.register(reply);
-            if (op === "preview.close") previews.unregister(params.preview);
           } else throw new Error("No workspace session is connected.");
           answer({ ...reply, id: request.id, ok: true });
         } catch (error) {

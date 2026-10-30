@@ -11875,6 +11875,7 @@ var AppPreviews = class {
     this.surfaces = /* @__PURE__ */ new Map();
     this.pending = /* @__PURE__ */ new Set();
     this.pendingBytes = 0;
+    this.connected = client.ready !== false;
     this.receive = (event) => void this.files(event);
     addEventListener("message", this.receive);
     this.resize = () => this.layout();
@@ -11882,6 +11883,7 @@ var AppPreviews = class {
     addEventListener("scroll", this.resize, true);
   }
   register(value) {
+    if (!this.connected) throw Error("The workspace disconnected before the preview opened.");
     const url = new URL(value.url);
     if (!/^[a-f0-9]{64}$/.test(value.preview) || url.origin === location.origin || !["https:", "http:"].includes(url.protocol)) throw Error("The app preview needs an isolated origin.");
     if (url.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) throw Error("The app preview requires HTTPS.");
@@ -11970,6 +11972,12 @@ var AppPreviews = class {
     for (const [id2, surface] of this.surfaces) if (surface.preview === preview) this.remove(id2);
     this.descriptors.delete(preview);
   }
+  connection(connected) {
+    this.connected = connected;
+    if (!connected) {
+      for (const id2 of this.descriptors.keys()) if (![...this.surfaces.values()].some((surface) => surface.preview === id2)) this.descriptors.delete(id2);
+    }
+  }
   reset() {
     for (const id2 of [...this.surfaces.keys()]) this.remove(id2);
     this.descriptors.clear();
@@ -11993,6 +12001,7 @@ var AppPreviews = class {
     let reply;
     const ticket = { bytes: typeof request.data === "string" ? request.data.length : 0 };
     try {
+      if (!this.connected) throw Error("The workspace is reconnecting. Try again when connected.");
       if (this.pending.size >= 32 || this.pendingBytes + ticket.bytes > 16 * 1024 * 1024) throw Error("The preview filesystem queue is full.");
       this.pending.add(ticket);
       this.pendingBytes += ticket.bytes;
@@ -12092,14 +12101,18 @@ var start = (ask) => serve(ask, {
     const previews = client ? new AppPreviews(client, void 0, answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
     client?.on("disconnected", () => {
-      previews?.reset();
+      previews?.connection(false);
       answer({ ev: "session.disconnected", generation: client.generation });
     });
     client?.on("context-changed", ({ message }) => {
+      previews?.connection(false);
       previews?.reset();
       answer({ ev: "session.disconnected", generation: client.generation, code: "workspace-changed", message });
     });
-    client?.on("connected", () => answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves }));
+    client?.on("connected", () => {
+      previews?.connection(true);
+      answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves });
+    });
     const localPath = (path2) => typeof path2 === "string" && (path2 === "/home/web" || path2.startsWith("/home/web/") || !client && demo && (path2 === "/work" || path2.startsWith("/work/"))) && !path2.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -12163,9 +12176,12 @@ var start = (ask) => serve(ask, {
             return;
           } else if (client) {
             const { id: id2, op, ...params2 } = request;
-            reply = await client.forward(op, params2);
+            try {
+              reply = await client.forward(op, params2);
+            } finally {
+              if (op === "preview.close") previews.unregister(params2.preview);
+            }
             if (op === "preview.open") previews.register(reply);
-            if (op === "preview.close") previews.unregister(params2.preview);
           } else throw new Error("No workspace session is connected.");
           answer({ ...reply, id: request.id, ok: true });
         } catch (error) {

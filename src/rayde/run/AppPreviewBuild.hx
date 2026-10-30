@@ -6,6 +6,7 @@ import rayde.workspace.session.SessionLauncher;
 import ashui.reactive.Signal;
 
 private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress, force:Bool, family:String, manifest:Null<String>};
+private typedef Configuration = {compiler:String,args:Array<String>,cwd:String,family:String,manifest:Null<String>};
 typedef AppArtifact = {preview:String, url:String, path:String, ?arguments:Array<String>};
 
 /** One supervised browser build per window. Compiler work and output readers stay off the UI thread. */
@@ -26,29 +27,49 @@ class AppPreviewBuild {
 	final worker = new Worker<Build,{artifact:AppArtifact,output:String}>(build, () -> ashui.core.Work.notify());
 	var timer:Null<ashui.animation.AnimationScheduler.Timer>;
 	var gone = false;
+	var reconnecting = false;
+	var contextLost = false;
+	var configuration:Null<Configuration>;
 	public function new(client:SessionClient, ?publish:String->Void) {
 		this.client=client;
 		this.publish=publish;
 		unsubscribe=client.subscribe(event -> {
-            if(event.ev=="preview.title" && !gone && state.get()=="ready"){
+            if(gone)return;
+            if(event.ev=="preview.title"){
                 var current=artifact.get();
                 if(current!=null && event.preview==current.preview && Std.isOfType(event.title,String))title.set((event.title:String).substr(0,256));
                 return;
             }
-			if(event.ev!="session.disconnected" || gone)return;
-			worker.cancel("app");artifact.set(null);state.set("failed");error.set("The session disconnected. Rebuild the preview after reconnecting.");
-			if(progress!=null)progress.append(error.get()+"\n");
+			if(event.ev=="session.connected") {
+				if(reconnecting && configuration!=null && !contextLost) {
+					var saved=configuration;reconnecting=false;
+					start(saved.compiler,saved.args,saved.cwd,false,saved.family,saved.manifest);
+				}
+				return;
+			}
+			if(event.ev!="session.disconnected")return;
+			if(event.code=="workspace-changed") {
+				contextLost=true;reconnecting=false;configuration=null;worker.cancel("app");
+				if(timer!=null)timer.cancel();
+				artifact.set(null);state.set("failed");error.set(event.message ?? "The workspace changed. Reopen it before previewing.");return;
+			}
+			if(state.get()!="building" && state.get()!="ready" && !reconnecting)return;
+			reconnecting=true;worker.cancel("app");if(timer!=null)timer.cancel();
+			state.set("reconnecting");error.set("");phase.set("Waiting for workspace connection");
+			if(progress!=null){progress.append("Workspace disconnected; the preview will recover after reconnecting.\n");output.set(progress.snapshot().output);if(publish!=null)publish(output.get());}
 		});
 	}
 	public function start(compiler:String,args:Array<String>,cwd:String,force=false,family="haxe",?manifest:String):Void {
-		if (state.get() == "building") return;
+		if (gone || contextLost || state.get() == "building") return;
 		if(timer!=null)timer.cancel();
-		state.set("building");title.set("");error.set("");output.set("");phase.set("Preparing preview");elapsed.set(0);
+		reconnecting=false;configuration={compiler:compiler,args:args.copy(),cwd:cwd,family:family,manifest:manifest};
+		state.set("building");if(artifact.get()==null)title.set("");error.set("");output.set("");phase.set("Preparing preview");elapsed.set(0);
 		started=haxe.Timer.stamp();seen=-1;progress=new BuildProgress();
 		worker.submit("app",{client:client,compiler:compiler,args:args.copy(),cwd:cwd,progress:progress,force:force,family:family,manifest:manifest});poll();
 	}
 	public function stop():Void {
-		if(state.get()!="building")return;
+		if(state.get()!="building" && state.get()!="reconnecting")return;
+		reconnecting=false;
 		worker.cancel("app");state.set("cancelled");phase.set("Build cancelled");
 		progress.append("Preview build cancelled.\n");
 	}
@@ -73,11 +94,10 @@ class AppPreviewBuild {
 		if (worker.busy()) timer=ashui.animation.AnimationScheduler.main.after(.05,poll);
 	}
 	function release(value:AppArtifact):Void {
-		if(!client.isOnline())return;
 		client.requestAsync("preview.close",{preview:value.preview}).then(_ -> client.requestAsync("preview.discard",{path:value.path}),_ -> {});
 	}
 	public function dispose():Void {
-		gone=true;unsubscribe();if(timer!=null)timer.cancel();worker.dispose();
+		gone=true;reconnecting=false;configuration=null;unsubscribe();if(timer!=null)timer.cancel();worker.dispose();
 		var previous=artifact.get();if(previous!=null)release(previous);artifact.set(null);
 	}
 	public static function compilerArgs(args:Array<String>,support:String,output:String):Array<String>

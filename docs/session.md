@@ -28,7 +28,7 @@ Hiding Terminal leaves commands running. Losing the session connection closes it
 
 ## Reconnecting and recovery
 
-Reconnecting to the same workspace restores document synchronization. Active extensions and language servers restart as needed; a language server you explicitly stopped stays stopped.
+Reconnecting to the same workspace restores document synchronization. Active extensions and language servers restart as needed; a language server you explicitly stopped stays stopped. A loaded app preview stays visible during an interruption and recovers automatically after reconnecting. Recovery can reload the app.
 
 If the workspace or signed-in account changes, RayDE pauses the old editor bindings and shows a warning. Choose **Reopen Workspace** to preserve local recovery data and reload the current workspace. If storage fails, the page stays open and reports the problem. Previous recovery data is kept separately from the new workspace.
 

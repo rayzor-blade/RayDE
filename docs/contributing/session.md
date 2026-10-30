@@ -217,6 +217,7 @@ Build the session and extension-host binaries before full-editor checks. Browser
 | `cargo test --manifest-path native/session/Cargo.toml` | Native protocol over real sockets. |
 | `(cd web/session && npm test)` | Browser client, equal-name workspace replacement, account-scoped drafts and legacy cache isolation. |
 | `node tests/web/session.mjs --dir bin/web/rayde` | Open/edit/Save, large replies and extension service calls; uses `tests/fixtures/browser-session`. |
+| `node tests/web/preview-reconnect.mjs bin/web/rayde` | Loaded preview continuity, repeated cached reconnects and replacement-workspace fencing. |
 | `node tests/web/moves.mjs bin/web/rayde` | Explorer rename with split panes, retained bindings, pre-move undo and Save. |
 | `node tests/web/collaboration.mjs bin/web/rayde` | Two full editors with separate storage: edits, undo, Save, restart, reload and replacement-state fencing. |
 | `node tests/web/extensions.mjs bin/web/rayde` | First previews, interactive updates, menu/command reload, error containment and refresh. |
@@ -250,6 +251,6 @@ rayde-session --root /path/to/project --exec --preview-tools /path/to/RayDE/bin/
 
 The tooling supplies a preview-only filesystem adapter and browser channel; the project's HXML and dependencies stay intact. The app frame can read and write workspace files through the editor's session client. Private host paths and process/account RPC are refused. Hosted writes use the existing durable file-operation queue.
 
-Native sessions serve artifacts on a separate loopback port. Hosted sessions stream bounded artifact chunks through their Durable Object. Set `PREVIEW_ORIGIN` to a dedicated HTTPS origin, separate from `APP_ORIGIN`, routing to the same Worker. This origin serves preview artifacts only. Local development derives a separate hostname from `APP_ORIGIN`. Artifact capabilities expire with the connection; apps receive no account or workspace token.
+Native sessions serve artifacts on a separate loopback port. Hosted sessions stream bounded artifact chunks through their Durable Object. Set `PREVIEW_ORIGIN` to a dedicated HTTPS origin, separate from `APP_ORIGIN`, routing to the same Worker. This origin serves preview artifacts only. Local development derives a separate hostname from `APP_ORIGIN`. Artifact capabilities expire with the connection; apps receive no account or workspace token. Ordinary disconnections retain an already-loaded iframe while its workspace file calls fail promptly. The same verified workspace reconnecting reruns the saved Run Configuration with normal cache validation and replaces the old artifact. Closing or cancelling prevents recovery; a context change drops frames and fences the old configuration. Descriptor cleanup also runs when native Close reports that its old capability is already revoked.
 
 For an MSB image, pass `--preview-tools /path/to/staged/tools` to `scripts/prepare-toolchain.py`. Its generated toolchain configuration enables the session's preview tooling. Existing templates remain usable without app previews. Rebuild the template to install changed tooling; its files are covered by the image integrity manifest.

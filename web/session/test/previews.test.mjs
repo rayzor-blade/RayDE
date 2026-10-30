@@ -55,6 +55,24 @@ test('app preview bridges reject unscoped calls and bound queued writes; removin
  assert.equal((await ask({id:1,op:'fs.read',path:'data/tasks.json'})).ok,true);
  for(const [index,request]of[{op:'fs.read',path:'/etc/passwd'},{op:'fs.read',path:'../private'},{op:'fs.read',path:'.rayde/settings.json'},{op:'proc.spawn',command:'sh'}].entries())assert.equal((await ask({id:index+2,...request})).ok,false);
  assert.deepEqual(await page.evaluate(()=>calls),[{op:'fs.read',params:{path:'data/tasks.json',encoding:'utf8'}}]);
+ await page.evaluate(()=>{previews.connection(false);});
+ assert.equal(await page.evaluate(()=>document.querySelector('iframe').contentWindow===originalFrame),true,'a transient disconnect removes neither frame nor runtime');
+ const beforeOffline=await page.evaluate(()=>calls.length);
+ const disconnected=await ask({id:100,op:'fs.read',path:'data/tasks.json'});
+ assert.equal(disconnected.ok,false);assert.match(disconnected.message,/reconnecting/);
+ assert.equal(await page.evaluate(()=>calls.length),beforeOffline,'offline requests cannot reach a replacement connection');
+ await page.evaluate(()=>{previews.connection(true);});
+ assert.equal((await ask({id:101,op:'fs.read',path:'data/tasks.json'})).ok,true);
+ assert.equal(await page.evaluate(()=>document.querySelector('iframe').contentWindow===originalFrame),true);
+ await page.evaluate(()=>{calls.pop();});
+ // Cancelled build replies have no mounted surface; they cannot consume the descriptor budget on every reconnect.
+ await page.evaluate(url=>{
+  for(let i=1;i<=12;i++){
+   const preview=i.toString(16).padStart(64,'0');previews.register({preview,url});
+   previews.connection(false);previews.connection(true);
+  }
+ },url);
+ assert.equal(await page.evaluate(()=>previews.descriptors.size),1);
  await page.evaluate(()=>{hold=true;});
  await app.evaluate(()=>{void ask({id:10,op:'fs.write',path:'one.txt',data:'x'.repeat(11*1024*1024)});});
  await page.waitForFunction(()=>calls.length===2);
