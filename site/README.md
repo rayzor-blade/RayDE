@@ -34,6 +34,14 @@ python3 scripts/serve-site.py --prepare-only
 
 This prepares the initial Main.hx and BoardApp.hx tabs using the real LSP with the extension's analysis budget and the session host's environment, then starts a fresh LSP process to verify disk-cache reuse. Indexes remain in `~/.rayde-session/demos/pocket-studio/.rayzor/blade/editor`. Keep that workspace and cache volume across session restarts; caches depend on canonical paths, source/configuration, macro inputs and the Rayzor build, so copying them into public static assets is insufficient. Preparation is never invoked by normal serving, page loads or browser refresh. Changed inputs are revalidated by Rayzor. `scripts/warm-rayzor.py` can prepare additional source files explicitly.
 
+With the local demo server running, prepare its app preview before opening it to visitors:
+
+```sh
+node scripts/warm-preview.mjs --url http://127.0.0.1:8731/
+```
+
+This uses an isolated headless Chrome profile to run **Preview App** through the editor's Run Configuration, then verifies another request reuses the full WASM cache without launching either compiler. It leaves the cache in the managed workspace's `.rayde/preview-cache/`; closing the preparation browser releases its temporary preview. Install the development dependencies in `web/session` and set `CHROME` if Chrome/Chromium is not in a usual location. Preparation is separate from serving and page loads. Rewarm after source, library, toolchain or host environment changes; copied cache files are still validated against those inputs.
+
 The sample is packaged with `scripts/package-demo.py`. Its namespaced browser seed adds missing files atomically and preserves existing file contents. Regeneration never overwrites a visitor’s edits. Editor state (`.rayde/`), dependencies and caches are excluded from the package and ignored by the demo's Git repository.
 
 The loopback bootstrap rejects cross-origin browser requests and non-loopback Host headers, and refuses public listeners. It is disabled on ordinary sessions and account-gateway deployments. A public live demo still needs authenticated compute provisioning; a static site alone has no extension processes. Local Jam remains a desktop feature pending its browser/session transport.
