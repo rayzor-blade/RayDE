@@ -196,12 +196,16 @@ async fn protocol_exposes_moves_and_rejects_stale_identity_replay_into_a_recreat
     let mut client = support::Client::hello(&server).await;
     let capabilities = client.request(json!({"op":"hello","token":"secret"})).await;
     assert_eq!(capabilities["documentIdentities"], 1);
+    assert_eq!(capabilities["documentLookup"], 1);
+    assert_eq!(client.request(json!({"op":"doc.lookup","path":"missing.txt"})).await["code"], "not-found");
+    assert!(client.request(json!({"op":"doc.lookup","path":"main.txt"})).await["documentId"].is_null());
     assert_eq!(capabilities["closedDocumentMoves"], 1);
     let peer = support::Peer::new();
     let opened = client
         .request(json!({"op":"doc.open","path":"main.txt"}))
         .await;
     let id = opened["documentId"].as_str().unwrap().to_owned();
+    assert_eq!(client.request(json!({"op":"doc.lookup","path":"main.txt"})).await["documentId"], id);
     peer.apply(opened["update"].as_str().unwrap());
     client
         .request(json!({"op":"doc.close","path":"main.txt"}))

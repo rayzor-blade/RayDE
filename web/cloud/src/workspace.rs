@@ -283,7 +283,7 @@ impl DurableObject for WorkspaceSession {
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
         }
-        if data["op"]=="doc.resolve" || data["op"]=="fs.rename" && data["preserveDocuments"]==true {
+        if matches!(data["op"].as_str(),Some("doc.resolve"|"doc.lookup")) || data["op"]=="fs.rename" && data["preserveDocuments"]==true {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"unsupported","message":"Document-preserving moves require hosted identity recovery support."}));
         }
         if handshakes.borrow().document_requests.contains_key(&data["id"].to_string()) {
@@ -689,6 +689,7 @@ impl WorkspaceSession {
                                             reply["durableCheckpoints"] = json!(valid && reply["checkpoints"]==1);
                                             reply["durableUpdates"] = json!(valid && reply["journals"]==1);
                                             reply["documentIdentities"] = json!(0);
+                                            reply["documentLookup"] = json!(0);
                                             reply["closedDocumentMoves"] = json!(0);
                                             reply["appPreviews"]=json!(reply["appPreviews"]==true && preview_origin.is_some());
                                             reply["cacheIdentity"] = if valid {

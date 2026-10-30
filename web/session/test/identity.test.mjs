@@ -86,3 +86,45 @@ test('editor projections become read-only on replacement and release their event
  assert.equal(ydoc.getText('text').toString(),'old workspace');
  await views.request('view.close',{handle:'a'});views.close();assert.equal(callbacks.size,0);ydoc.destroy();
 });
+
+test('closing during identity lookup cancels opening before subscription or identity ownership',async()=>{
+ const client=new SessionClient({url:'ws://server/session',persist:false}),calls=[];
+ client.ready=true;client.hello={documentIdentities:1,documentLookup:1};
+ let finishLookup;client.request=async(op)=>{calls.push(op);if(op==='doc.lookup')return new Promise(resolve=>{finishLookup=resolve;});return {};};
+ const opening=client.openDoc('file.txt'),rejected=assert.rejects(opening,/closed/);
+ await client.docs.get('file.txt').close();finishLookup({documentId:'a'.repeat(64)});await rejected;
+ assert.equal(calls.includes('doc.open'),false);assert.equal(client.docs.size,0);assert.equal(client.documentIds.size,0);
+});
+
+test('identity downgrade fences one projection without disabling another document',async()=>{
+ const client=new SessionClient({url:'ws://server/session',persist:false}),events=[];
+ client.ready=true;client.hello={documentIdentities:1,documentLookup:1};
+ const server=new Y.Doc();server.getText('text').insert(0,'original');
+ const b64=bytes=>Buffer.from(bytes).toString('base64'),ids={'a.txt':'a'.repeat(64),'b.txt':'b'.repeat(64)};
+ client.request=async(op,params)=>op==='doc.lookup'?{documentId:ids[params.path]}:op==='doc.open'?{documentId:ids[params.path],update:b64(Y.encodeStateAsUpdate(server)),vector:b64(Y.encodeStateVector(server))}:{};
+ const views=new EditorDocuments(client,event=>events.push(event));
+ await views.request('view.open',{handle:'a',path:'a.txt'});await views.request('view.ready',{handle:'a'});
+ await views.request('view.open',{handle:'b',path:'b.txt'});await views.request('view.ready',{handle:'b'});
+ client.hello.documentIdentities=0;
+ await assert.rejects(client.docs.get('a.txt').sync(),/no longer verifies/);
+ assert.equal(events.at(-1).handle,'a');assert.equal(events.at(-1).code,'document-changed');
+ await assert.rejects(views.request('view.ready',{handle:'a'}),/no longer verifies/);
+ await assert.rejects(views.request('view.edit',{handle:'a',epoch:0,serial:1,parts:[{from:0,removed:'',inserted:'wrong'}]}),/no longer verifies/);
+ assert.equal(views.documents.get('b').ready,true);
+ assert.equal(views.documents.get('a').shadow.getText('text').toString(),'original');
+ client.ready=false;views.close();await Promise.all([...client.docs.values()].map(doc=>doc.close()));server.destroy();
+ assert.equal(client.documentIds.size,0);
+});
+
+test('failed account recovery migration fences the authenticated connection before resuming documents',async()=>{
+ const client=new SessionClient({url:'ws://server/session',persist:false});
+ client.ready=true;client.socket={close(){}};client.hello={};client.cacheIdentity=identity('one','viewer');
+ client.workspace=cacheNamespace(client.options.url,client.cacheIdentity);client.cacheable=true;
+ client.rawRequest=async()=>({login:'alice',id:1,cacheIdentity:identity('one','account:1')});
+ let synced=0;
+ client.docs.set('a',{workspace:client.workspace,started:Promise.resolve(),moveRecovery:async()=>{throw Error('storage unavailable');},sync:async()=>{synced++;}});
+ await assert.rejects(client.login('credential'),/storage unavailable/);
+ assert.equal(client.invalidated.code,'workspace-changed');assert.equal(client.ready,false);assert.equal(synced,0);
+ await assert.rejects(client.request('doc.update',{}),/workspace or account changed/);
+ client.docs.clear();client.close();
+});

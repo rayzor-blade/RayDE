@@ -9,6 +9,7 @@ function content(record){const doc=new Y.Doc();Y.applyUpdate(doc,Buffer.from(rec
 
 test("restore catalog excludes overwritten, moved, deleted and uncertain documents across restart",async t=>{
  const host=await setup(t),user=await signin(host.cloud.fetch),workspace=await host.workspace(user),a=await workspace.connect();
+ assert.equal((await a.request("doc.lookup",{path:"src/a.hx"})).code,"unsupported");
  const first=await seed(a,workspace,"src/a.hx","one");await seed(a,workspace,"src/b.hx","two");await seed(a,workspace,"src-other/c.hx","three");
  const source=first.manifest.source,plan=async(body={})=>{const response=await workspace.control("recovery/plan",{source,...body});assert.equal(response.status,200,JSON.stringify(response.body));return response.body;};
  let state=await plan();assert.equal(state.documents.length,3);assert.equal(state.automaticRestore,false);assert.equal(state.scope,"confirmed-document-heads");

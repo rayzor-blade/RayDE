@@ -128,6 +128,12 @@ export class EditorDocuments {
         this.emit({ev:"view.error",handle:view.handle,code:"workspace-changed",message});
       }
     });
+    this.unsubscribeDocument = client.on?.("document-error", ({path,code,message}) => {
+      for (const view of this.documents.values()) if (view.doc.path === path) {
+        view.ready = false;
+        this.emit({ev:"view.error",handle:view.handle,code,message});
+      }
+    });
   }
 
   request(op, request) {
@@ -149,6 +155,7 @@ export class EditorDocuments {
       }
       const view = this.documents.get(handle);
       if (!view) { if (op === "view.close") return {}; throw new Error("The shared document is closed."); }
+      if (view.doc.blocked && op !== "view.close") throw view.doc.blocked;
       if (op === "view.ready") { view.ready = true; view.offerRemote(); }
       else if (op === "view.edit") view.local(request);
       else if (op === "view.ack") view.acknowledge(request);
@@ -168,6 +175,7 @@ export class EditorDocuments {
   close() {
     this.closed = true;
     this.unsubscribe?.();
+    this.unsubscribeDocument?.();
     for (const view of this.documents.values()) { view.dispose(); void view.doc.close(); }
     this.documents.clear();
   }

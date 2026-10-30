@@ -6962,13 +6962,13 @@ var YXmlFragment = class _YXmlFragment extends AbstractType {
    *
    * @public
    */
-  toDOM(_document = document, hooks = {}, binding) {
+  toDOM(_document = document, hooks = {}, binding2) {
     const fragment = _document.createDocumentFragment();
-    if (binding !== void 0) {
-      binding._createAssociation(fragment, this);
+    if (binding2 !== void 0) {
+      binding2._createAssociation(fragment, this);
     }
     typeListForEach(this, (xmlType) => {
-      fragment.insertBefore(xmlType.toDOM(_document, hooks, binding), null);
+      fragment.insertBefore(xmlType.toDOM(_document, hooks, binding2), null);
     });
     return fragment;
   }
@@ -7294,7 +7294,7 @@ var YXmlElement = class _YXmlElement extends YXmlFragment {
    *
    * @public
    */
-  toDOM(_document = document, hooks = {}, binding) {
+  toDOM(_document = document, hooks = {}, binding2) {
     const dom = _document.createElement(this.nodeName);
     const attrs = this.getAttributes();
     for (const key in attrs) {
@@ -7304,10 +7304,10 @@ var YXmlElement = class _YXmlElement extends YXmlFragment {
       }
     }
     typeListForEach(this, (yxml) => {
-      dom.appendChild(yxml.toDOM(_document, hooks, binding));
+      dom.appendChild(yxml.toDOM(_document, hooks, binding2));
     });
-    if (binding !== void 0) {
-      binding._createAssociation(dom, this);
+    if (binding2 !== void 0) {
+      binding2._createAssociation(dom, this);
     }
     return dom;
   }
@@ -7389,7 +7389,7 @@ var YXmlHook = class _YXmlHook extends YMap {
    *
    * @public
    */
-  toDOM(_document = document, hooks = {}, binding) {
+  toDOM(_document = document, hooks = {}, binding2) {
     const hook = hooks[this.hookName];
     let dom;
     if (hook !== void 0) {
@@ -7398,8 +7398,8 @@ var YXmlHook = class _YXmlHook extends YMap {
       dom = document.createElement(this.hookName);
     }
     dom.setAttribute("data-yjs-hook", this.hookName);
-    if (binding !== void 0) {
-      binding._createAssociation(dom, this);
+    if (binding2 !== void 0) {
+      binding2._createAssociation(dom, this);
     }
     return dom;
   }
@@ -7470,10 +7470,10 @@ var YXmlText = class _YXmlText extends YText {
    *
    * @public
    */
-  toDOM(_document = document, hooks, binding) {
+  toDOM(_document = document, hooks, binding2) {
     const dom = _document.createTextNode(this.toString());
-    if (binding !== void 0) {
-      binding._createAssociation(dom, this);
+    if (binding2 !== void 0) {
+      binding2._createAssociation(dom, this);
     }
     return dom;
   }
@@ -9224,6 +9224,225 @@ var IndexeddbPersistence = class extends Observable {
   }
 };
 
+// src/recovery.js
+var HEADER = "rayde:identity";
+var LEGACY = "rayde:binding";
+var MAX_GRAPH = 4 * 1024 * 1024;
+var MAX_INPUT = 64 * 1024 * 1024;
+var validDocumentId = (value) => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+var legacyName = (workspace, path) => `rayde:v2:${JSON.stringify([workspace, path])}`;
+var recoveryName = (workspace, id2) => {
+  if (!validDocumentId(id2)) throw failure("The workspace returned an invalid document identity.");
+  return `rayde:v3:${JSON.stringify([workspace, id2])}`;
+};
+function failure(message) {
+  return Object.assign(new Error(message), { code: "recovery-failed" });
+}
+function pathKey(path) {
+  if (typeof path !== "string" || !path || path.length > 4096 || path.includes("\0") || path.includes("\\") || path.split("/").includes("..")) throw failure("The recovery path is invalid.");
+  return path;
+}
+function openDatabase(name, create7) {
+  return new Promise((resolve, reject) => {
+    let missing = false;
+    const request = indexedDB.open(name);
+    request.onupgradeneeded = () => {
+      if (!create7) {
+        missing = true;
+        request.transaction.abort();
+      } else request.result.createObjectStore("bindings");
+    };
+    request.onerror = () => missing ? resolve(null) : reject(request.error ?? failure("Could not open browser recovery."));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+var RecoveryDirectory = class {
+  async database() {
+    return this.opening ??= openDatabase("rayde-document-bindings-v1", true);
+  }
+  async get(workspace, path) {
+    const db = await this.database();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("bindings", "readonly"), request = tx.objectStore("bindings").get([workspace, pathKey(path)]);
+      tx.oncomplete = () => {
+        const value = request.result;
+        if (value !== void 0 && (value.version !== 1 || !validDocumentId(value.id))) reject(failure("The browser recovery binding is invalid."));
+        else resolve(value?.id ?? null);
+      };
+      tx.onerror = tx.onabort = () => reject(tx.error ?? failure("Could not read the browser recovery binding."));
+    });
+  }
+  async put(workspace, path, id2) {
+    recoveryName(workspace, id2);
+    pathKey(path);
+    const db = await this.database();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("bindings", "readwrite"), store = tx.objectStore("bindings"), key = [workspace, path];
+      let error;
+      const previous = store.get(key);
+      previous.onsuccess = () => {
+        if (previous.result !== void 0) {
+          if (previous.result.version !== 1 || !validDocumentId(previous.result.id)) {
+            error = failure("The browser recovery binding is invalid.");
+            tx.abort();
+            return;
+          }
+          store.put({ version: 1, id: id2 }, key);
+          return;
+        }
+        const count2 = store.count(IDBKeyRange.bound([workspace], [workspace, []], false, true));
+        count2.onsuccess = () => {
+          if (count2.result >= 16384) {
+            error = failure("The workspace browser recovery binding limit was reached.");
+            tx.abort();
+          } else store.put({ version: 1, id: id2 }, key);
+        };
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(error ?? tx.error ?? failure("Could not preserve the browser recovery binding."));
+    });
+  }
+  close() {
+    const opening = this.opening;
+    this.opening = null;
+    void opening?.then((db) => db.close(), () => {
+    });
+  }
+};
+function sourceName(name, workspace) {
+  try {
+    const value = JSON.parse(name.slice("rayde:v2:".length));
+    return name.startsWith("rayde:v2:") && Array.isArray(value) && value.length === 2 && value[0] === workspace && !!pathKey(value[1]);
+  } catch {
+    return false;
+  }
+}
+function sources(names, workspace) {
+  if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !sourceName(name, workspace))) throw failure("The legacy recovery links are invalid.");
+  const result = [...new Set(names)];
+  if (result.length > 16) throw failure("The legacy recovery link limit was reached.");
+  return result;
+}
+function binding(value) {
+  if (value !== void 0 && (value.version !== 1 || !validDocumentId(value.id) || !Number.isSafeInteger(value.copied) || value.copied < 0)) throw failure("The legacy recovery binding is invalid.");
+  return value ?? null;
+}
+async function readLegacy(name, load = false) {
+  const db = await openDatabase(name, false);
+  if (!db) return null;
+  const doc2 = load ? new Doc() : null;
+  try {
+    if (!db.objectStoreNames.contains("updates") || !db.objectStoreNames.contains("custom")) throw failure("The legacy recovery store is invalid.");
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(["updates", "custom"], "readonly"), meta = tx.objectStore("custom").get(LEGACY);
+      let last2 = 0, bytes = 0, count2 = 0, error;
+      const cursor = load ? tx.objectStore("updates").openCursor() : tx.objectStore("updates").openKeyCursor(null, "prev");
+      cursor.onsuccess = () => {
+        const entry2 = cursor.result;
+        if (!entry2) return;
+        try {
+          if (!Number.isSafeInteger(entry2.key) || entry2.key < 1) throw failure("The legacy recovery sequence is invalid.");
+          last2 = Math.max(last2, entry2.key);
+          if (load) {
+            const update = entry2.value instanceof ArrayBuffer ? new Uint8Array(entry2.value) : entry2.value;
+            if (!(update instanceof Uint8Array) || (bytes += update.byteLength) > MAX_INPUT || ++count2 > 2e4) throw failure("The legacy recovery exceeds its migration limit.");
+            applyUpdate(doc2, update);
+            entry2.continue();
+          }
+        } catch (caught) {
+          error = caught;
+          tx.abort();
+        }
+      };
+      tx.oncomplete = () => {
+        try {
+          const result = { name, last: last2, binding: binding(meta.result) };
+          if (doc2) {
+            if (doc2.store.pendingStructs || doc2.store.pendingDs) throw failure("The legacy recovery is incomplete.");
+            result.update = encodeStateAsUpdate(doc2);
+            result.vector = encodeStateVector(doc2);
+            if (result.update.length > MAX_GRAPH) throw failure("The legacy graph exceeds its migration limit.");
+          }
+          resolve(result);
+        } catch (error2) {
+          reject(error2);
+        }
+      };
+      tx.onerror = tx.onabort = () => reject(error ?? tx.error ?? failure("Could not read legacy browser recovery."));
+    });
+  } finally {
+    doc2?.destroy();
+    db.close();
+  }
+}
+async function recoveryHeader(workspace, id2) {
+  const db = await openDatabase(recoveryName(workspace, id2), false);
+  if (!db) return null;
+  let header;
+  try {
+    header = await new Promise((resolve, reject) => {
+      const tx = db.transaction("custom", "readonly"), request = tx.objectStore("custom").get(HEADER);
+      tx.oncomplete = () => resolve(request.result);
+      tx.onerror = tx.onabort = () => reject(tx.error ?? failure("Could not read browser recovery."));
+    });
+  } finally {
+    db.close();
+  }
+  if (header === void 0) return null;
+  if (header.version !== 1 || header.workspace !== workspace || header.id !== id2) throw failure("The document recovery identity does not match.");
+  sources(header.sources, workspace);
+  return header;
+}
+function checkpointRecovery(persistence, doc2, workspace, id2, names = [], snapshot = false) {
+  names = sources(names, workspace);
+  return new Promise((resolve, reject) => {
+    const tx = persistence.db.transaction(["updates", "custom"], "readwrite"), store = tx.objectStore("custom"), previous = store.get(HEADER);
+    let error;
+    previous.onsuccess = () => {
+      try {
+        const old = previous.result;
+        if (old && (old.version !== 1 || old.workspace !== workspace || old.id !== id2)) throw failure("The document recovery identity does not match.");
+        const linked = sources([...old?.sources ?? [], ...names], workspace);
+        if (snapshot || !old) {
+          const update = encodeStateAsUpdate(doc2);
+          if (update.length > MAX_GRAPH) throw failure("The document exceeds the browser recovery limit.");
+          tx.objectStore("updates").add(update);
+        }
+        store.put({ version: 1, workspace, id: id2, sources: linked }, HEADER);
+      } catch (caught) {
+        error = caught;
+        tx.abort();
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(error ?? tx.error ?? failure("Could not preserve identity-bound browser recovery."));
+  });
+}
+async function markLegacy(source, id2) {
+  const db = await openDatabase(source.name, false);
+  if (!db) return;
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("custom", "readwrite"), store = tx.objectStore("custom"), request = store.get(LEGACY);
+      let error;
+      request.onsuccess = () => {
+        try {
+          const old = binding(request.result);
+          if (old?.id !== source.binding?.id && old?.id !== id2) return;
+          store.put({ version: 1, id: id2, copied: Math.max(old?.copied ?? 0, source.last) }, LEGACY);
+        } catch (caught) {
+          error = caught;
+          tx.abort();
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(error ?? tx.error ?? failure("Could not finish the browser recovery migration."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 // src/client.js
 function cacheNamespace(address, identity) {
   if (identity?.version !== 1 || ![identity.authority, identity.workspace, identity.principal].every((value) => typeof value === "string" && value.length > 0 && value.length <= 512 && !/[\u0000-\u001f]/.test(value))) return null;
@@ -9263,6 +9482,10 @@ var Doc2 = class {
     this.failed = false;
     this.listeners = /* @__PURE__ */ new Set();
     this.persistence = null;
+    this.persistences = /* @__PURE__ */ new Set();
+    this.documentId = null;
+    this.suspended = false;
+    this.abort = new AbortController();
     this.pending = /* @__PURE__ */ new Set();
     this.localVersion = 0;
     this.acknowledgedVersion = 0;
@@ -9273,35 +9496,87 @@ var Doc2 = class {
       void this.send(update);
     });
   }
-  /** Waits for what the page kept of this document, then catches up with the session. */
-  async start() {
-    await this.recover();
-    await this.sync();
+  /** Recovery is loaded while network publication is suspended. */
+  start() {
+    return this.sync();
   }
-  async recover() {
-    if (this.client.options.persist !== false && this.client.cacheable && typeof indexedDB !== "undefined") {
-      this.persistence = new IndexeddbPersistence(`rayde:v2:${JSON.stringify([this.workspace, this.path])}`, this.ydoc);
-      await this.persistence.whenSynced;
+  get persistent() {
+    return this.client.options?.persist !== false && this.client.cacheable && typeof indexedDB !== "undefined";
+  }
+  guard() {
+    if (this.closed) throw new Error("The shared document is closed.");
+    if (this.blocked) throw this.blocked;
+    if (this.client.invalidated) throw this.client.invalidated;
+  }
+  identify(id2) {
+    this.guard();
+    if (!validDocumentId(id2)) throw Object.assign(new Error("The workspace returned an invalid document identity."), { code: "recovery-failed" });
+    if (this.documentId && this.documentId !== id2) throw Object.assign(new Error("The path belongs to a different document. Reopen it to continue; its previous edits are kept in this browser."), { code: "document-changed" });
+    const owner = this.client.documentIds?.get(id2);
+    if (owner && owner !== this) throw Object.assign(new Error("This document already has an editor binding through another path."), { code: "document-open" });
+    this.documentId = id2;
+    this.client.documentIds?.set(id2, this);
+  }
+  async recover(name) {
+    if (!this.persistent || this.persistence?.name === name) return;
+    this.guard();
+    const persistence = new IndexeddbPersistence(name, this.ydoc);
+    this.persistences.add(persistence);
+    await new Promise((resolve, reject) => {
+      const finish = (error) => {
+        clearTimeout(timer);
+        this.abort.signal.removeEventListener("abort", cancel);
+        error ? reject(error) : resolve();
+      };
+      const cancel = () => finish(new Error("The shared document is closed."));
+      const timer = setTimeout(() => finish(Object.assign(new Error("Browser document recovery did not open in time."), { code: "recovery-failed" })), 3e4);
+      this.abort.signal.addEventListener("abort", cancel, { once: true });
+      persistence.whenSynced.then(() => finish(), finish);
+      persistence._db.catch(finish);
+    });
+    this.guard();
+    this.persistence = persistence;
+  }
+  async releaseOtherRecovery() {
+    for (const persistence of this.persistences) if (persistence !== this.persistence) {
+      await persistence.destroy();
+      this.persistences.delete(persistence);
     }
   }
   async moveRecovery() {
-    await this.persistence?.destroy();
+    this.suspended = true;
+    if (this.closed) return;
+    await this.checkpointGraph();
+    await Promise.all([...this.persistences].map((store) => store.destroy()));
+    this.persistences.clear();
     this.persistence = null;
     this.workspace = this.client.workspace;
-    if (!this.closed) await this.recover();
+    if (this.documentId) {
+      await this.recover(recoveryName(this.workspace, this.documentId));
+      if (this.persistence) {
+        await checkpointRecovery(this.persistence, this.ydoc, this.workspace, this.documentId, [], true);
+        await this.client.recoveryDirectory.put(this.workspace, this.path, this.documentId);
+      }
+    } else {
+      await this.recover(legacyName(this.workspace, this.path));
+      await this.checkpointGraph();
+    }
+    await this.releaseOtherRecovery();
+  }
+  async checkpointGraph() {
+    const persistence = this.persistence;
+    if (!persistence || this.closed) return;
+    await new Promise((resolve, reject) => {
+      const tx = persistence.db.transaction("updates", "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("Could not preserve document recovery."));
+      tx.objectStore("updates").add(encodeStateAsUpdate(this.ydoc));
+    });
   }
   async checkpoint() {
     await this.started?.catch(() => {
     });
-    const persistence = this.persistence;
-    if (!persistence || this.closed) return;
-    await persistence.whenSynced;
-    await new Promise((resolve, reject) => {
-      const transaction = persistence.db.transaction("updates", "readwrite");
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error("Could not preserve document recovery."));
-      transaction.objectStore("updates").add(encodeStateAsUpdate(this.ydoc));
-    });
+    await this.checkpointGraph();
   }
   onChange(listener) {
     this.listeners.add(listener);
@@ -9319,19 +9594,112 @@ var Doc2 = class {
     return work;
   }
   async synchronize() {
-    if (this.closed || !this.client.ready) return;
-    const reply = await this.client.request("doc.open", { path: this.path, vector: b64.encode(encodeStateVector(this.ydoc)) });
     if (this.closed) return;
+    this.guard();
+    this.suspended = true;
+    try {
+      if (this.documentId && this.client.hello?.documentIdentities !== 1) throw Object.assign(new Error("The workspace no longer verifies document identities. Reopen it before continuing."), { code: "document-changed" });
+      if (!this.client.ready) {
+        if (!this.persistence && this.persistent) {
+          const id2 = await this.client.recoveryDirectory.get(this.workspace, this.path);
+          this.guard();
+          if (id2) {
+            if (!await recoveryHeader(this.workspace, id2)) throw Object.assign(new Error("The document's verified recovery is unavailable. Reconnect before opening it."), { code: "recovery-failed" });
+            this.identify(id2);
+            await this.recover(recoveryName(this.workspace, id2));
+          } else if (await readLegacy(legacyName(this.workspace, this.path))) await this.recover(legacyName(this.workspace, this.path));
+        }
+        if (!this.persistence && encodeStateVector(this.ydoc).length <= 1) throw new Error("Reconnect before opening a document without browser recovery.");
+        return;
+      }
+      let reply;
+      if (this.client.hello?.documentIdentities === 1) reply = await this.synchronizeIdentity();
+      else {
+        await this.recover(legacyName(this.workspace, this.path));
+        this.guard();
+        reply = await this.open();
+        this.identityHint = validDocumentId(reply.documentId) ? reply.documentId : null;
+        this.applyReply(reply);
+        await this.releaseOtherRecovery();
+      }
+      this.guard();
+      const missing = encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
+      this.failed = false;
+      this.suspended = false;
+      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
+      else if (this.inflight === 0) this.unsent = false;
+      this.listeners.forEach((listener) => listener("synced"));
+    } catch (error) {
+      this.fence(error);
+      throw error;
+    }
+  }
+  open(vector = encodeStateVector(this.ydoc), expected = this.documentId) {
+    this.guard();
+    return this.client.request("doc.open", { path: this.path, vector: b64.encode(vector), ...expected ? { documentId: expected } : {} });
+  }
+  applyReply(reply) {
+    this.guard();
+    if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
     applyUpdate(this.ydoc, b64.decode(reply.update), "session");
-    const missing = encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
-    this.failed = false;
-    if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
-    else if (this.inflight === 0) this.unsent = false;
-    this.listeners.forEach((listener) => listener("synced"));
+  }
+  async synchronizeIdentity() {
+    const name = legacyName(this.workspace, this.path);
+    const legacy = this.persistent ? await readLegacy(name) : null;
+    let reply, proven = null;
+    if (!this.documentId) {
+      if (legacy?.last && !legacy.binding || encodeStateVector(this.ydoc).length > 1) {
+        if (legacy?.last && !legacy.binding) proven = await readLegacy(name, true);
+        reply = await this.open(proven?.vector ?? encodeStateVector(this.ydoc), proven?.binding?.id ?? this.identityHint);
+      } else {
+        this.guard();
+        const lookup = this.client.hello.documentLookup === 1 ? await this.client.request("doc.lookup", { path: this.path }) : null;
+        if (lookup?.documentId) this.identify(lookup.documentId);
+        else reply = await this.open(new Uint8Array([0]));
+      }
+      this.guard();
+      if (reply) this.identify(reply.documentId);
+    }
+    const id2 = this.documentId;
+    const header = this.persistent ? await recoveryHeader(this.workspace, id2) : null;
+    await this.recover(recoveryName(this.workspace, id2));
+    const migrated = [];
+    if (proven) {
+      applyUpdate(this.ydoc, proven.update, "recovery");
+      migrated.push(proven);
+    }
+    const names = /* @__PURE__ */ new Set([name, ...header?.sources ?? []]);
+    for (const sourceName2 of names) {
+      if (proven?.name === sourceName2) continue;
+      const source = sourceName2 === name ? legacy : await readLegacy(sourceName2);
+      if (source?.binding?.id !== id2 || header && source.last <= source.binding.copied) continue;
+      const loaded = await readLegacy(sourceName2, true);
+      if (!loaded || loaded.binding?.id !== id2) continue;
+      this.guard();
+      applyUpdate(this.ydoc, loaded.update, "recovery");
+      migrated.push(loaded);
+    }
+    this.guard();
+    reply ??= await this.open();
+    this.applyReply(reply);
+    if (this.persistence) {
+      await checkpointRecovery(this.persistence, this.ydoc, this.workspace, id2, migrated.map((source) => source.name), migrated.length > 0);
+      await this.client.recoveryDirectory.put(this.workspace, this.path, id2);
+      for (const source of migrated) await markLegacy(source, id2);
+    }
+    await this.releaseOtherRecovery();
+    return reply;
+  }
+  fence(error) {
+    this.failed = true;
+    if (!["document-changed", "identity-required", "recovery-failed"].includes(error.code) || this.closed) return;
+    this.blocked = error;
+    this.suspended = true;
+    this.client.emit?.("document-error", { path: this.path, documentId: this.documentId, code: error.code, message: error.message });
   }
   send(update) {
-    if (!this.client.ready || this.client.authenticating || this.closed) return Promise.resolve();
+    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked) return Promise.resolve();
     const work = this.transmit(update, this.localVersion);
     this.pending.add(work);
     work.finally(() => this.pending.delete(work));
@@ -9340,32 +9708,48 @@ var Doc2 = class {
   async transmit(update, version) {
     this.inflight++;
     try {
-      await this.client.request("doc.update", { path: this.path, update: b64.encode(update) });
+      await this.client.request("doc.update", { path: this.path, update: b64.encode(update), ...this.documentId ? { documentId: this.documentId } : {} });
       this.acknowledgedVersion = Math.max(this.acknowledgedVersion, version);
     } catch (error) {
-      this.failed = true;
+      this.fence(error);
       if (error.code === "auth-required") this.client.needSignIn(error.login);
     } finally {
       if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) this.unsent = false;
     }
   }
   async save() {
+    this.guard();
+    if (this.started) await this.started;
     await Promise.all([...this.pending]);
     if (this.syncing) await this.syncing;
     if (this.closed) throw new Error("The shared document is closed.");
     if (this.unsent) await this.sync();
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
-    return this.client.request("doc.save", { path: this.path });
+    this.guard();
+    try {
+      return await this.client.request("doc.save", { path: this.path, ...this.documentId ? { documentId: this.documentId } : {} });
+    } catch (error) {
+      this.fence(error);
+      throw error;
+    }
   }
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
+    this.abort.abort();
     this.closing = (async () => {
-      await this.persistence?.destroy();
+      await Promise.all([...this.persistences].map((store) => {
+        const closing = store.destroy();
+        if (store.db) return closing;
+        void closing.catch(() => {
+        });
+      }));
+      this.persistences.clear();
       this.ydoc.destroy();
       this.listeners.clear();
       if (this.client.ready) await this.client.request("doc.close", { path: this.path }).catch(() => {
       });
+      if (this.client.documentIds?.get(this.documentId) === this) this.client.documentIds.delete(this.documentId);
       if (this.client.docs.get(this.path) === this) this.client.docs.delete(this.path);
     })();
     return this.closing;
@@ -9390,6 +9774,8 @@ var SessionClient = class {
     this.next = 1;
     this.waiting = /* @__PURE__ */ new Map();
     this.docs = /* @__PURE__ */ new Map();
+    this.documentIds = /* @__PURE__ */ new Map();
+    this.recoveryDirectory = new RecoveryDirectory();
     this.handlers = /* @__PURE__ */ new Map();
     this.pendingAuth = false;
     this.identity = null;
@@ -9508,7 +9894,7 @@ var SessionClient = class {
       message.ok ? reply.resolve(message) : reply.reject(new SessionError(message));
     } else if (message.ev === "doc.update") {
       const doc2 = this.docs.get(message.path);
-      if (doc2) {
+      if (doc2 && !doc2.closed && !doc2.blocked) {
         applyUpdate(doc2.ydoc, b64.decode(message.update), "session");
         doc2.listeners.forEach((listener) => listener("remote"));
       }
@@ -9590,7 +9976,12 @@ var SessionClient = class {
       this.cacheable = context.cacheable;
       this.cacheIdentity = reply.cacheIdentity;
       this.hello.cacheIdentity = reply.cacheIdentity;
-      await Promise.all(documents.filter((doc2) => doc2.workspace !== this.workspace).map((doc2) => doc2.moveRecovery()));
+      try {
+        await Promise.all(documents.filter((doc2) => doc2.workspace !== this.workspace).map((doc2) => doc2.moveRecovery()));
+      } catch (error) {
+        this.invalidate();
+        throw error;
+      }
       this.pendingAuth = false;
       this.emit("signed-in", this.identity);
     } finally {
@@ -9648,6 +10039,7 @@ var SessionClient = class {
   }
   close() {
     this.stopped = true;
+    this.recoveryDirectory.close();
     this.socket?.close();
   }
 };
@@ -9792,6 +10184,12 @@ var EditorDocuments = class {
         this.emit({ ev: "view.error", handle: view.handle, code: "workspace-changed", message });
       }
     });
+    this.unsubscribeDocument = client.on?.("document-error", ({ path, code, message }) => {
+      for (const view of this.documents.values()) if (view.doc.path === path) {
+        view.ready = false;
+        this.emit({ ev: "view.error", handle: view.handle, code, message });
+      }
+    });
   }
   request(op, request) {
     const handle = request.handle;
@@ -9823,6 +10221,7 @@ var EditorDocuments = class {
         if (op === "view.close") return {};
         throw new Error("The shared document is closed.");
       }
+      if (view.doc.blocked && op !== "view.close") throw view.doc.blocked;
       if (op === "view.ready") {
         view.ready = true;
         view.offerRemote();
@@ -9847,6 +10246,7 @@ var EditorDocuments = class {
   close() {
     this.closed = true;
     this.unsubscribe?.();
+    this.unsubscribeDocument?.();
     for (const view of this.documents.values()) {
       view.dispose();
       void view.doc.close();

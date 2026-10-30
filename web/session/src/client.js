@@ -3,6 +3,7 @@
 // reach the session when it is reachable and the person has signed in. A reconnect catches both sides up.
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
+import {RecoveryDirectory, validDocumentId, legacyName, recoveryName, readLegacy, recoveryHeader, checkpointRecovery, markLegacy} from "./recovery.js";
 
 export function cacheNamespace(address, identity) {
   if (identity?.version !== 1 || ![identity.authority,identity.workspace,identity.principal].every(value =>
@@ -48,6 +49,10 @@ export class Doc {
     this.failed = false;
     this.listeners = new Set();
     this.persistence = null;
+    this.persistences = new Set();
+    this.documentId = null;
+    this.suspended = false;
+    this.abort = new AbortController();
     this.pending = new Set();
     this.localVersion = 0;
     this.acknowledgedVersion = 0;
@@ -59,36 +64,86 @@ export class Doc {
     });
   }
 
-  /** Waits for what the page kept of this document, then catches up with the session. */
-  async start() {
-    await this.recover();
-    await this.sync();
+  /** Recovery is loaded while network publication is suspended. */
+  start() { return this.sync(); }
+
+  get persistent() { return this.client.options?.persist !== false && this.client.cacheable && typeof indexedDB !== "undefined"; }
+
+  guard() {
+    if (this.closed) throw new Error("The shared document is closed.");
+    if (this.blocked) throw this.blocked;
+    if (this.client.invalidated) throw this.client.invalidated;
   }
 
-  async recover() {
-    if (this.client.options.persist !== false && this.client.cacheable && typeof indexedDB !== "undefined") {
-      this.persistence = new IndexeddbPersistence(`rayde:v2:${JSON.stringify([this.workspace,this.path])}`, this.ydoc);
-      await this.persistence.whenSynced;
+  identify(id) {
+    this.guard();
+    if (!validDocumentId(id)) throw Object.assign(new Error("The workspace returned an invalid document identity."),{code:"recovery-failed"});
+    if (this.documentId && this.documentId !== id) throw Object.assign(new Error("The path belongs to a different document. Reopen it to continue; its previous edits are kept in this browser."),{code:"document-changed"});
+    const owner = this.client.documentIds?.get(id);
+    if (owner && owner !== this) throw Object.assign(new Error("This document already has an editor binding through another path."),{code:"document-open"});
+    this.documentId = id;
+    this.client.documentIds?.set(id,this);
+  }
+
+  async recover(name) {
+    if (!this.persistent || this.persistence?.name === name) return;
+    this.guard();
+    const persistence = new IndexeddbPersistence(name,this.ydoc);
+    this.persistences.add(persistence);
+    // Destroying persistence suppresses its synced event, so closing must cancel the wait.
+    await new Promise((resolve,reject) => {
+      const finish = error => { clearTimeout(timer); this.abort.signal.removeEventListener("abort",cancel); error ? reject(error) : resolve(); };
+      const cancel = () => finish(new Error("The shared document is closed."));
+      const timer = setTimeout(() => finish(Object.assign(new Error("Browser document recovery did not open in time."),{code:"recovery-failed"})),30000);
+      this.abort.signal.addEventListener("abort",cancel,{once:true});
+      persistence.whenSynced.then(() => finish(),finish);
+      persistence._db.catch(finish);
+    });
+    this.guard();
+    this.persistence = persistence;
+  }
+
+  async releaseOtherRecovery() {
+    for (const persistence of this.persistences) if (persistence !== this.persistence) {
+      await persistence.destroy(); this.persistences.delete(persistence);
     }
   }
 
   async moveRecovery() {
-    await this.persistence?.destroy(); this.persistence = null;
+    this.suspended = true;
+    if (this.closed) return;
+    // Commit the old scope before detaching it; account-only recovery must never write back into viewer storage.
+    await this.checkpointGraph();
+    await Promise.all([...this.persistences].map(store=>store.destroy()));
+    this.persistences.clear(); this.persistence = null;
     this.workspace = this.client.workspace;
-    if (!this.closed) await this.recover();
+    if (this.documentId) {
+      await this.recover(recoveryName(this.workspace,this.documentId));
+      if (this.persistence) {
+        await checkpointRecovery(this.persistence,this.ydoc,this.workspace,this.documentId,[],true);
+        await this.client.recoveryDirectory.put(this.workspace,this.path,this.documentId);
+      }
+    } else {
+      await this.recover(legacyName(this.workspace,this.path));
+      await this.checkpointGraph();
+    }
+    await this.releaseOtherRecovery();
+  }
+
+  async checkpointGraph() {
+    const persistence = this.persistence;
+    if (!persistence || this.closed) return;
+    await new Promise((resolve,reject) => {
+      const tx = persistence.db.transaction("updates","readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("Could not preserve document recovery."));
+      tx.objectStore("updates").add(Y.encodeStateAsUpdate(this.ydoc));
+    });
   }
 
   async checkpoint() {
     await this.started?.catch(() => {});
-    const persistence = this.persistence;
-    if (!persistence || this.closed) return;
-    await persistence.whenSynced;
-    await new Promise((resolve, reject) => {
-      const transaction = persistence.db.transaction("updates", "readwrite");
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = transaction.onabort = () => reject(transaction.error ?? new Error("Could not preserve document recovery."));
-      transaction.objectStore("updates").add(Y.encodeStateAsUpdate(this.ydoc));
-    });
+    await this.checkpointGraph();
   }
 
   onChange(listener) {
@@ -107,21 +162,110 @@ export class Doc {
   }
 
   async synchronize() {
-    if (this.closed || !this.client.ready) return;
-    const reply = await this.client.request("doc.open", { path: this.path, vector: b64.encode(Y.encodeStateVector(this.ydoc)) });
     if (this.closed) return;
+    this.guard();
+    this.suspended = true;
+    try {
+      if (this.documentId && this.client.hello?.documentIdentities !== 1) throw Object.assign(new Error("The workspace no longer verifies document identities. Reopen it before continuing."),{code:"document-changed"});
+      if (!this.client.ready) {
+        if (!this.persistence && this.persistent) {
+          const id = await this.client.recoveryDirectory.get(this.workspace,this.path);
+          this.guard();
+          if (id) {
+            if (!await recoveryHeader(this.workspace,id)) throw Object.assign(new Error("The document's verified recovery is unavailable. Reconnect before opening it."),{code:"recovery-failed"});
+            this.identify(id); await this.recover(recoveryName(this.workspace,id));
+          } else if (await readLegacy(legacyName(this.workspace,this.path))) await this.recover(legacyName(this.workspace,this.path));
+        }
+        if (!this.persistence && Y.encodeStateVector(this.ydoc).length <= 1) throw new Error("Reconnect before opening a document without browser recovery.");
+        return;
+      }
+      let reply;
+      if (this.client.hello?.documentIdentities === 1) reply = await this.synchronizeIdentity();
+      else {
+        await this.recover(legacyName(this.workspace,this.path));
+        this.guard();
+        reply = await this.open();
+        this.identityHint = validDocumentId(reply.documentId) ? reply.documentId : null;
+        this.applyReply(reply);
+        await this.releaseOtherRecovery();
+      }
+      this.guard();
+      const missing = Y.encodeStateAsUpdate(this.ydoc,b64.decode(reply.vector));
+      this.failed = false; this.suspended = false;
+      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
+      else if (this.inflight === 0) this.unsent = false;
+      this.listeners.forEach(listener => listener("synced"));
+    } catch (error) {
+      this.fence(error); throw error;
+    }
+  }
+
+  open(vector = Y.encodeStateVector(this.ydoc), expected = this.documentId) {
+    this.guard();
+    return this.client.request("doc.open",{path:this.path,vector:b64.encode(vector),...(expected ? {documentId:expected} : {})});
+  }
+
+  applyReply(reply) {
+    this.guard();
+    if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
-    Y.applyUpdate(this.ydoc, b64.decode(reply.update), "session");
-    const missing = Y.encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
-    // An empty update is two bytes: nothing to send.
-    this.failed = false;
-    if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing);
-    else if (this.inflight === 0) this.unsent = false;
-    this.listeners.forEach((listener) => listener("synced"));
+    Y.applyUpdate(this.ydoc,b64.decode(reply.update),"session");
+  }
+
+  async synchronizeIdentity() {
+    const name = legacyName(this.workspace,this.path);
+    const legacy = this.persistent ? await readLegacy(name) : null;
+    let reply, proven = null;
+    if (!this.documentId) {
+      // An unbound legacy graph must pass the server's rebound-path check before import.
+      if ((legacy?.last && !legacy.binding) || Y.encodeStateVector(this.ydoc).length > 1) {
+        if (legacy?.last && !legacy.binding) proven = await readLegacy(name,true);
+        reply = await this.open(proven?.vector ?? Y.encodeStateVector(this.ydoc),proven?.binding?.id ?? this.identityHint);
+      } else {
+        this.guard();
+        const lookup = this.client.hello.documentLookup === 1 ? await this.client.request("doc.lookup",{path:this.path}) : null;
+        if (lookup?.documentId) this.identify(lookup.documentId);
+        else reply = await this.open(new Uint8Array([0]));
+      }
+      this.guard();
+      if (reply) this.identify(reply.documentId);
+    }
+    const id = this.documentId;
+    const header = this.persistent ? await recoveryHeader(this.workspace,id) : null;
+    await this.recover(recoveryName(this.workspace,id));
+    const migrated = [];
+    if (proven) { Y.applyUpdate(this.ydoc,proven.update,"recovery"); migrated.push(proven); }
+    const names = new Set([name,...(header?.sources ?? [])]);
+    for (const sourceName of names) {
+      if (proven?.name === sourceName) continue;
+      const source = sourceName === name ? legacy : await readLegacy(sourceName);
+      if (source?.binding?.id !== id || header && source.last <= source.binding.copied) continue;
+      const loaded = await readLegacy(sourceName,true);
+      if (!loaded || loaded.binding?.id !== id) continue;
+      this.guard();
+      Y.applyUpdate(this.ydoc,loaded.update,"recovery"); migrated.push(loaded);
+    }
+    this.guard();
+    reply ??= await this.open();
+    this.applyReply(reply);
+    if (this.persistence) {
+      await checkpointRecovery(this.persistence,this.ydoc,this.workspace,id,migrated.map(source=>source.name),migrated.length>0);
+      await this.client.recoveryDirectory.put(this.workspace,this.path,id);
+      for (const source of migrated) await markLegacy(source,id);
+    }
+    await this.releaseOtherRecovery();
+    return reply;
+  }
+
+  fence(error) {
+    this.failed = true;
+    if (!["document-changed","identity-required","recovery-failed"].includes(error.code) || this.closed) return;
+    this.blocked = error; this.suspended = true;
+    this.client.emit?.("document-error",{path:this.path,documentId:this.documentId,code:error.code,message:error.message});
   }
 
   send(update) {
-    if (!this.client.ready || this.client.authenticating || this.closed) return Promise.resolve();
+    if (!this.client.ready || this.client.authenticating || this.closed || this.suspended || this.blocked) return Promise.resolve();
     const work = this.transmit(update, this.localVersion);
     this.pending.add(work);
     work.finally(() => this.pending.delete(work));
@@ -131,10 +275,10 @@ export class Doc {
   async transmit(update, version) {
     this.inflight++;
     try {
-      await this.client.request("doc.update", { path: this.path, update: b64.encode(update) });
+      await this.client.request("doc.update", { path: this.path, update: b64.encode(update), ...(this.documentId ? {documentId:this.documentId} : {}) });
       this.acknowledgedVersion = Math.max(this.acknowledgedVersion,version);
     } catch (error) {
-      this.failed = true;
+      this.fence(error);
       if (error.code === "auth-required") this.client.needSignIn(error.login);
       // Anything else is retried by the next handshake.
     } finally {
@@ -144,23 +288,35 @@ export class Doc {
   }
 
   async save() {
+    this.guard();
+    if (this.started) await this.started;
     // Edits queued before Save must reach the session before its file is flushed.
     await Promise.all([...this.pending]);
     if (this.syncing) await this.syncing;
     if (this.closed) throw new Error("The shared document is closed.");
     if (this.unsent) await this.sync();
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
-    return this.client.request("doc.save", { path: this.path });
+    this.guard();
+    try { return await this.client.request("doc.save", { path: this.path, ...(this.documentId ? {documentId:this.documentId} : {}) }); }
+    catch (error) { this.fence(error); throw error; }
   }
 
   close() {
     if (this.closing) return this.closing;
     this.closed = true;
+    this.abort.abort();
     this.closing = (async () => {
-      await this.persistence?.destroy();
+      await Promise.all([...this.persistences].map(store => {
+        const closing = store.destroy();
+        // A blocked IndexedDB open cannot hold an editor tab open. Destroy still closes it when it arrives.
+        if (store.db) return closing;
+        void closing.catch(() => {});
+      }));
+      this.persistences.clear();
       this.ydoc.destroy();
       this.listeners.clear();
       if (this.client.ready) await this.client.request("doc.close", { path: this.path }).catch(() => {});
+      if (this.client.documentIds?.get(this.documentId) === this) this.client.documentIds.delete(this.documentId);
       if (this.client.docs.get(this.path) === this) this.client.docs.delete(this.path);
     })();
     return this.closing;
@@ -186,6 +342,8 @@ export class SessionClient {
     this.next = 1;
     this.waiting = new Map();
     this.docs = new Map();
+    this.documentIds = new Map();
+    this.recoveryDirectory = new RecoveryDirectory();
     this.handlers = new Map();
     this.pendingAuth = false;
     this.identity = null;
@@ -282,7 +440,7 @@ export class SessionClient {
       message.ok ? reply.resolve(message) : reply.reject(new SessionError(message));
     } else if (message.ev === "doc.update") {
       const doc = this.docs.get(message.path);
-      if (doc) {
+      if (doc && !doc.closed && !doc.blocked) {
         Y.applyUpdate(doc.ydoc, b64.decode(message.update), "session");
         doc.listeners.forEach((listener) => listener("remote"));
       }
@@ -354,7 +512,8 @@ export class SessionClient {
       this.identity = { login: reply.login, id: reply.id };
       this.workspace = context.key; this.cacheable = context.cacheable; this.cacheIdentity = reply.cacheIdentity;
       this.hello.cacheIdentity = reply.cacheIdentity;
-      await Promise.all(documents.filter(doc => doc.workspace !== this.workspace).map(doc => doc.moveRecovery()));
+      try { await Promise.all(documents.filter(doc => doc.workspace !== this.workspace).map(doc => doc.moveRecovery())); }
+      catch (error) { this.invalidate(); throw error; }
       this.pendingAuth = false;
       this.emit("signed-in", this.identity);
     } finally { this.authenticating = false; }
@@ -390,6 +549,7 @@ export class SessionClient {
 
   close() {
     this.stopped = true;
+    this.recoveryDirectory.close();
     this.socket?.close();
   }
 }

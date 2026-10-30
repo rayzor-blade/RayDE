@@ -237,7 +237,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "documentLookup":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -280,6 +280,13 @@ impl<S: FileStore> Connection<S> {
                 let from=clean(text(request,"from")?)?;let to=clean(text(request,"to")?)?;
                 if request["preserveDocuments"]==true {return workspace.docs.rename_documents(&from,&to).await.map(|receipt|json!({"documents":receipt.documents,"revision":receipt.revision}));}
                 workspace.docs.rename(&from,&to).await.map(|_|json!({}))
+            },
+            "doc.lookup" => {
+                if !store.document_identities() { return Err(SessionError::new("unsupported", "This workspace does not support document identities.")); }
+                let path = clean(text(request, "path")?)?;
+                let entry = store.stat(&path).await?.ok_or_else(|| SessionError::new("not-found", "The file does not exist."))?;
+                if entry.kind != "file" { return Err(SessionError::new("not-file", "The path is not a file.")); }
+                Ok(json!({"documentId":store.document_identity(&path).await?}))
             },
             "doc.resolve"=>{
                 let id=text(request,"documentId")?;
