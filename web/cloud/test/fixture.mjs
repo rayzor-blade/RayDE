@@ -31,7 +31,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     compatibilityDate: "2026-07-30",
     port,
     host: "127.0.0.1",
-    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true } },
+    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true } },
     durableObjectsPersist: persist,
     r2Buckets: files ? ["WORKSPACE_FILES"] : [],
     r2Persist: persist,

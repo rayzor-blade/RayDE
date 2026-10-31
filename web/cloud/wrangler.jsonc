@@ -11,6 +11,14 @@
       {
         "name": "WORKSPACES",
         "class_name": "WorkspaceSession"
+      },
+      {
+        "name": "SYNC_WORKSPACES",
+        "class_name": "SyncWorkspaceSession"
+      },
+      {
+        "name": "SYNC_ACCOUNTS",
+        "class_name": "SyncAccountLedger"
       }
     ]
   },
@@ -20,6 +28,13 @@
       "new_sqlite_classes": [
         "AccountSession",
         "WorkspaceSession"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "SyncWorkspaceSession",
+        "SyncAccountLedger"
       ]
     }
   ],

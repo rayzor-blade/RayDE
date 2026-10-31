@@ -4,6 +4,7 @@ mod checkpoints;
 mod journal;
 mod recovery;
 mod file_payloads;
+mod sync;
 pub use account::AccountSession;
 pub use workspace::WorkspaceSession;
 
@@ -332,6 +333,9 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
             .headers_mut()
             .append("Set-Cookie", &cookie("rayde_oauth", "", &url, 0))?;
         return Ok(response);
+    }
+    if let Some(rest) = path.strip_prefix("/api/sync/") {
+        return sync::route(&mut req, &env, rest).await;
     }
     if path.starts_with("/api/") {
         let (sid, session) = auth(&req, &env).await?;

@@ -17,6 +17,7 @@ base64 = "0.22"
 getrandom = { version = "0.2", features = ["js"] }
 futures-util = "0.3"
 futures-channel = "0.3"
+rayde-sync = { path = "../../native/sync", default-features = false }
 rayde-session = { path = "../../native/session", default-features = false }
 
 [profile.release]

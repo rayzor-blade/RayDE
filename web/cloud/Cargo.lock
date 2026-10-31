@@ -587,6 +587,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.2.17",
  "rayde-session",
+ "rayde-sync",
  "serde",
  "serde_json",
  "sha2",
@@ -605,6 +606,15 @@ dependencies = [
  "sha2",
  "subtle",
  "yrs",
+]
+
+[[package]]
+name = "rayde-sync"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
