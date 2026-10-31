@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1793407104,"nonce":"GUnWSgM/ldMYq0hO7NmUrYqyxLA=","status":2}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1793407104,"nonce":"WevMrhcTDPnKBqA1DDeQYgU8JNM=","message":"Landed: the compile server is now tied to its owner (commit above). The 18 orphans from before the fix are still running and need a decision from darmie; see the issue text for pids.","files":null}]}
