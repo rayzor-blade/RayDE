@@ -58,6 +58,10 @@ Not mapped: GPU (no flag in 0.7.11) and read-only mounts (option syntax unchecke
 - **nan8**: its actor-level `Executor` (deploy, send, subscribe) becomes a client of this interface instead of calling a backend directly.
 - **Fake** (`rayde_sandbox::fake`): in memory, for client tests and for the conformance suite. `with_program` registers a stand-in for a guest program (the runner's service tests play the session bridge this way).
 
+## Choosing a backend
+
+Not this crate's job. Which backend runs a session is decided by the control plane (nan8's scheduler), from the capabilities each backend advertises; a backend only answers `Unsupported` for what it lacks.
+
 ## Conformance
 
 `rayde_sandbox::conformance::run_all(&provider, prefix)` checks idempotent create and remove, conflict rules, label selection, piped stdio, output limits and deadlines, volume persistence and refusal while mounted, and that every unadvertised feature answers `Unsupported`. A backend's tests call it with a unique prefix. The fake passes it with every feature and with none.
