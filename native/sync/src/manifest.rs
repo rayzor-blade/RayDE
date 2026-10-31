@@ -378,6 +378,12 @@ impl Manifest {
         Totals { files: self.files.len() as u64, bytes: self.files.iter().map(|f| f.size).sum(), stored_bytes: unique.values().map(|s| *s as u64).sum() }
     }
 
+    /// Every distinct chunk this generation stores, with its size: those of files, buffers and the history bundle.
+    pub fn chunk_set(&self) -> BTreeMap<String, u32> {
+        let all = self.files.iter().flat_map(|f| f.chunks.iter()).chain(self.buffers.iter().flat_map(|b| b.chunks.iter())).chain(self.git.history.iter().flat_map(|h| h.chunks.iter()));
+        all.map(|c| (c.hash.clone(), c.size)).collect()
+    }
+
     /// Puts every list in its canonical order, recomputes the totals and sets the checksum. A manifest is final once this has run.
     pub fn finalize(&mut self) {
         self.files.sort_by(|a, b| a.path.cmp(&b.path));

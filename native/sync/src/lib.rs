@@ -1,9 +1,10 @@
 //! Cloud Sync's shared core.
 //!
-//! The pure modules (`ids`, `policy`, `lifecycle`, `manifest`, `exclude`, `chunk`) are data and rules with no I/O, so the gateway can
+//! The pure modules (`ids`, `policy`, `lifecycle`, `manifest`, `exclude`, `chunk`, `gateway`) are data and rules with no I/O, so the gateway can
 //! validate exactly what the desktop produced. `scan` (feature `scan`) is the desktop engine that reads a Git working tree.
 pub mod chunk;
 pub mod exclude;
+pub mod gateway;
 pub mod ids;
 pub mod lifecycle;
 pub mod manifest;
