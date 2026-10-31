@@ -24,8 +24,36 @@ class HeapsSurface {
 		target = new h3d.mat.Texture(link.width, link.height, [Target]);
 	}
 
-	/** Starts streaming `app`'s scene at `width` by `height`. Returns the link, for its `deflate` option. */
+	/** Starts streaming `app`'s scene at `width` by `height`. Returns the link, for its `deflate` option. Call from `init`. */
 	public static function attach(app:hxd.App, width:Int, height:Int):SurfaceLink {
+		var surface = create(app, width, height);
+		// Heaps installs its own loop after `init` returns, and runs one frame itself first, so the wrapper goes in on the second frame.
+		var loop = @:privateAccess app.mainLoop;
+		new Install(app.s2d, () -> hxd.System.setLoop(() -> {
+			surface.deliver();
+			loop();
+			surface.captureOrExit();
+		}));
+		return surface.link;
+	}
+
+	static var current:Null<HeapsSurface>;
+
+	/** Called by the injected build step before each frame of any `hxd.App`: the first call starts streaming at RAYDE_SURFACE_SIZE (WIDTHxHEIGHT, default 800x600). */
+	public static function before(app:hxd.App):Void {
+		if (current == null) {
+			var size = (Sys.getEnv("RAYDE_SURFACE_SIZE") ?? "800x600").split("x"), width = Std.parseInt(size[0]), height = Std.parseInt(size[1]);
+			current = create(app, width ?? 800, height ?? 600);
+		}
+		current.deliver();
+	}
+
+	/** Called after each frame: draws the scene to the texture and sends what changed. */
+	public static function after(app:hxd.App):Void {
+		if (current != null) current.captureOrExit();
+	}
+
+	static function create(app:hxd.App, width:Int, height:Int):HeapsSurface {
 		SurfaceLink.redirectTrace();
 		var window = hxd.Window.getInstance();
 		window.resize(width, height);
@@ -34,20 +62,19 @@ class HeapsSurface {
 		app.s2d.scaleMode = Fixed(width, height, 1);
 		var link = new SurfaceLink(width, height), surface = new HeapsSurface(app, link);
 		link.start();
-		// Heaps installs its own loop after `init` returns, and runs one frame itself first, so the wrapper goes in on the second frame.
-		var loop = @:privateAccess app.mainLoop;
-		new Install(app.s2d, () -> hxd.System.setLoop(() -> {
-			surface.deliver();
-			loop();
-			try surface.capture() catch (e:Dynamic) {
-				Sys.stderr().writeString('surface capture failed: $e\n${haxe.CallStack.toString(haxe.CallStack.exceptionStack())}\n');
-				Sys.exit(1);
-			}
-		}));
-		return link;
+		return surface;
+	}
+
+	function captureOrExit():Void {
+		try capture() catch (e:Dynamic) {
+			Sys.stderr().writeString('surface capture failed: $e\n${haxe.CallStack.toString(haxe.CallStack.exceptionStack())}\n');
+			Sys.exit(1);
+		}
 	}
 
 	function deliver():Void {
+		// Ending from the render thread: the sender thread's own exit does not stop a Heaps app.
+		if (link.viewerGone) Sys.exit(0);
 		var window = hxd.Window.getInstance();
 		for (input in link.takeInputs()) {
 			var kind:Null<EventKind> = switch input.type {

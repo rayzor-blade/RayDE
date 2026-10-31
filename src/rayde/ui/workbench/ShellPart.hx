@@ -112,6 +112,9 @@ class ShellPart {
 				if (command == null || command == "") wb.say("Set RAYDE_SURFACE_APP to the command of a headless app that speaks the surface protocol.");
 				else wb.runPart.previewSurface(command, Sys.getEnv("RAYDE_SURFACE_DIR"));
 			}},
+			#if !wasm
+			{id:"previewheaps", label:"Preview Heaps App", icon:Icons.EYE_LINE, run:wb.runPart.previewHeaps},
+			#end
 			#if wasm
 			{id:"previewapp",label:"Preview App",icon:Icons.EYE_LINE,run:wb.runPart.previewApp},
 			{id:"rebuildapppreview",label:"Rebuild App Preview from Scratch",icon:Icons.RESTART_LINE,run:wb.runPart.forcePreviewApp},

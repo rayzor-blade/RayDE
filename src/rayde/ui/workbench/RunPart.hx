@@ -165,6 +165,14 @@ class RunPart {
 		wb.openFile(Workbench.SURFACE_PREVIEW);
 	}
 
+	/** Builds the open Heaps project (its native.hxml) with the surface hook and shows it in a Surface Preview tab. */
+	public function previewHeaps():Void {
+		var dir = wb.props.display.cwd, script = haxe.io.Path.directory(Fs.fullPath(Sys.programPath())) + "/../scripts/heaps-surface.sh";
+		if (!Fs.exists(script)) {wb.say("Heaps previews need RayDE's scripts folder beside the program.");return;}
+		if (!Fs.exists(dir + "/native.hxml")) {wb.say("This project has no native.hxml; the Heaps starter creates one.");return;}
+		saveBefore(() -> previewSurface("bash '" + Fs.fullPath(script).split("'").join("'\\''") + "'", dir));
+	}
+
 	public function restartSurfacePreview():Void {
 		if (surfaceCommand != "") previewSurface(surfaceCommand);
 	}

@@ -23,6 +23,9 @@ class SurfaceLink {
 	/** Frames replaced before they were sent. */
 	public var dropped(default, null) = 0;
 
+	/** True once the viewer is gone (its pipe closed): the app should end, since nobody can see or stop it. */
+	public var viewerGone(default, null) = false;
+
 	final lock = new Mutex();
 	final ready = new Lock();
 	final spare:Array<Bytes> = [];
@@ -54,6 +57,7 @@ class SurfaceLink {
 		SurfaceProtocol.writeTo(Sys.stdout(), SurfaceProtocol.hello(width, height));
 		Thread.create(readInputs);
 		Thread.create(() -> try send() catch (e:Dynamic) {
+			viewerGone = true;
 			Sys.stderr().writeString('surface sender failed: $e\n');
 			Sys.exit(1);
 		});
@@ -114,7 +118,9 @@ class SurfaceLink {
 			inputLock.acquire();
 			queued.push(input);
 			inputLock.release();
-		} catch (_:Dynamic) {}
+		} catch (_:Dynamic) {
+			viewerGone = true;
+		}
 	}
 
 	function send():Void {
