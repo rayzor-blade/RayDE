@@ -10,6 +10,7 @@ import rayde.ui.Workbench;
 
 /** Opens the Cloud Sync panel in the real workbench in every state it has, checks what each shows, and captures them into bin/snapshots. */
 @:access(rayde.ui.Workbench)
+@:access(rayde.ui.workbench.ExtensionsPart)
 class SyncPanelSnapshot {
 	static function check(ok:Bool, message:String):Void if (!ok) throw message;
 
@@ -18,6 +19,8 @@ class SyncPanelSnapshot {
 		for (path in [root + "/home", root + "/extensions", workspace]) sys.FileSystem.createDirectory(path);
 		Sys.putEnv("HOME", root + "/home");
 		Sys.putEnv("RAYDE_EXTENSIONS", root + "/extensions");
+		// The Git extension, without a repository: Initialize Git asks it, and it uses the bundled libgit2.
+		check(Sys.command("python3", ["tests/git_fixture.py", workspace, "--install", "--without-repository"]) == 0, "Git extension setup failed");
 		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), Dark);
 		rayde.ui.Style.use();
 		var compiler = new CompilerServer(), tree = new LayoutTree(), stop:Void->Void = null, bench:Workbench = null;
@@ -36,6 +39,7 @@ class SyncPanelSnapshot {
 		try {
 			bench.openProject();
 			settle(8);
+			bench.extensionsPart.extensionManager.setNativeApproved("git", "git2", true);
 			check(has("#rayde-activity-sync"), "The activity bar has no Cloud Sync icon");
 			var feature = SyncFeature.of(bench.contributions);
 			check(feature != null, "The Cloud Sync feature is not installed");
@@ -48,6 +52,8 @@ class SyncPanelSnapshot {
 			// Initializing is the person's own act and works without an account: the folder becomes a repository and the panel moves on to sign-in.
 			check(!sys.FileSystem.exists(workspace + "/.git"), "The folder should start without a repository");
 			feature.initGit();
+			var end = haxe.Timer.stamp() + 20;
+			while (feature.state.get().phase == "no-git" && haxe.Timer.stamp() < end) { settle(3); Sys.sleep(.01); }
 			settle(6);
 			check(sys.FileSystem.exists(workspace + "/.git"), "Initialize Git did not make a repository");
 			check(feature.state.get().phase == "signed-out", "After initializing, the panel should wait on sign-in, not " + feature.state.get().phase);

@@ -69,26 +69,22 @@ class SyncFeature {
 			onExpiry={hours -> { var s = state.get(); state.set({phase:s.phase, branch:s.branch, files:s.files, bytes:s.bytes, excluded:s.excluded, allocation:s.allocation, expiryHours:hours,
 				sent:s.sent, total:s.total, url:s.url, lastSync:s.lastSync, used:s.used, expiresAt:s.expiresAt, compute:s.compute, message:s.message, conflicts:s.conflicts}); }}/>;
 
-	/** Runs `git init` in the workspace folder, as the person's own act, then looks at the folder again. The sync never does this by itself. */
+	/**
+		Asks the Git extension to initialize a repository in the workspace folder, as the person's own act; it uses the libgit2 RayDE bundles, so no
+		`git` program is needed. The extension answers a moment later, so the folder is looked at again until it is a repository. The sync never does this by itself.
+	**/
 	public function initGit():Void {
-		#if wasm
-		host.say("Initializing a repository is available in the desktop app.");
-		#else
-		try {
-			var git = new sys.io.Process("git", ["-C", host.cwd, "init"]);
-			git.stdout.readAll();
-			var failure = StringTools.trim(git.stderr.readAll().toString()), code = git.exitCode();
-			git.close();
-			if (code != 0) {
-				host.say("git init failed" + (failure == "" ? "" : ": " + failure));
-				return;
-			}
-			host.say("Initialized an empty Git repository");
-		} catch (error:Dynamic) {
-			host.say("Could not run git: " + error);
+		if (!host.extensionCommand("git", "git.initialize")) {
+			host.say("Initializing a repository needs the Git extension, which is not available.");
+			return;
 		}
-		refresh();
-		#end
+		var looks = 0;
+		function look():Void {
+			refresh();
+			if (host.closed() || state.get().phase != NoGit || ++looks > 30) return;
+			ashui.animation.AnimationScheduler.main.after(.5, look);
+		}
+		ashui.animation.AnimationScheduler.main.after(.25, look);
 	}
 
 	function unavailable():Void

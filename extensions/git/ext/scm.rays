@@ -262,6 +262,7 @@ function Sidebar(props) {
 }
 
 mount(() -> <Sidebar/>, 'scm');
+registerCommand('git.initialize', args -> initialize());
 registerCommand('git.refresh', args -> refresh());
 registerCommand('git.fetch', args -> runRemote('fetch'));
 registerCommand('git.pull', args -> runRemote('pull'));

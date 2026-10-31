@@ -29,6 +29,8 @@ typedef Host = {
 	/** Lets go of the text of documents nothing shows any more. */
 	releaseDocuments:Void->Void,
 	/** The side panel: showing a view of it, folding it away, and whether a view is in it. */
+	/** Runs a command of an extension (its id, then the command's), activating the extension if that is how it starts. False when there is no such running or startable extension. */
+	extensionCommand:String->String->Bool,
 	showSidebar:String->Void,
 	hideSidebar:Void->Void,
 	sidebarShown:String->Bool

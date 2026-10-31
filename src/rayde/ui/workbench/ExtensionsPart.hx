@@ -168,6 +168,10 @@ class ExtensionsPart {
 		return out;
 	}
 
+	/** Runs an extension's command on behalf of a built-in feature. False when the extension is missing, disabled or cannot be started for it. */
+	public function runForFeature(id:String, command:String):Bool
+		return extensionManager != null && extensionManager.command(id, command, {path: null, kind: null});
+
 	function runExtensionCommand(id:String, command:String, path:Null<String>, ?range:{from:Int,to:Int}):Void {
 		var kind:Null<String> = path == null ? null : Fs.exists(path) && Fs.isDirectory(path) ? "folder" : "file";
 		var args:Dynamic = {path:path,kind:kind};

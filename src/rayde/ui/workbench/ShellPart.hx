@@ -237,6 +237,7 @@ class ShellPart {
 			isDocument: file -> file != "" && !Workbench.isVirtual(file) && !ImagePreview.isRaster(file) && FileOps.inside(wb.props.display.cwd, file),
 			hasBuffer: file -> wb.documentsPart.buffers.exists(file), state: wb.documentsPart.documentState, editorOf: wb.editorOf, open: wb.openFile, say: wb.say, ask: request -> wb.prompt.set(request),
 			edited: wb.documentsPart.edited, releaseDocuments: wb.documentsPart.releaseClosedDocuments,
+			extensionCommand: wb.extensionsPart.runForFeature,
 			showSidebar: id -> { wb.sideView.set(id); if (!wb.explorerShown.get()) wb.treeWidth.set(Workbench.ACTIVITY + Workbench.EXPLORER_WIDTH); },
 			hideSidebar: () -> wb.treeWidth.set(Workbench.ACTIVITY),
 			sidebarShown: id -> wb.explorerShown.get() && wb.sideView.get() == id
