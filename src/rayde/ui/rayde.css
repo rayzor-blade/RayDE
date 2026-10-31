@@ -261,6 +261,8 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde .ui-toast { position: relative; flex-direction: column; align-items: stretch; max-width: calc(100vw - 32px); }
 #rayde .ui-toast-icon { position: absolute; left: 16px; top: 16px; }
 #rayde .ui-toast-body { min-width: 0; flex-grow: 0; flex-shrink: 0; padding-left: 32px; padding-right: 24px; gap: 6px; }
+/* A path or a URL has no spaces to break at; the text breaks inside it rather than running out of the card. */
+#rayde .ui-toast-title, #rayde .ui-toast-description { overflow-wrap: anywhere; }
 #rayde .ui-toast[data-variant="default"] > .ui-toast-body { padding-left: 0; }
 #rayde .ui-toast > .ui-toast-close { position: absolute; right: 12px; top: 12px; }
 #rayde .ui-toast > .ui-button { flex-shrink: 0; align-self: flex-end; }

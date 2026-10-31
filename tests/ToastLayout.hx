@@ -33,6 +33,14 @@ class ToastLayout {
 				ashui.input.Pointer.press(tree); ashui.input.Pointer.release(tree); settle();
 				if (!clicked || Css.query(tree, root.node.id, ".ui-toast").length != 0) throw "toast action did not run and dismiss the notification";
 			}
+			// A path has no spaces to break at, and it must still stay inside the card.
+			Toaster.show({title:"Git", description:"open repository: could not find repository at '/private/tmp/claude-501/-Users-amaterasu-Vibranium-RayDE/52a5e6a9-cd3e-4e7b-b7fa-d101d32381fd/scratchpad/heaps-preview'", variant:Destructive});
+			settle();
+			var card = bounds(".ui-toast"), text = bounds(".ui-toast-description");
+			Snapshot.capture('toast-${dark ? "dark" : "light"}-path', tree, root.node, 800, 400, dark ? 0x0d1117 : 0xf5f6fa);
+			if (text.x + text.width > card.x + card.width - 8) throw "a long path runs out of the toast";
+			// The sentence takes a line and the path, at this width, three more; one line for the path means it was cut off.
+			if (text.height < 60) throw "a long path should wrap onto several lines, not run out of the toast";
 			tree.dispose();
 		}
 	}
