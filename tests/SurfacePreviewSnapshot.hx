@@ -46,6 +46,9 @@ class SurfacePreviewSnapshot {
 			while ((pump.feed.frames < 5 || Css.query(tree, bench.node.id, "#rayde-surface-preview").length == 0) && waited++ < 600) { settle(); Sys.sleep(.02); }
 			if (pump.feed.frames < 5) Sys.println("app log: " + pump.takeLog().filter(l -> l.indexOf("[ash]") != 0 && l.indexOf("[promote]") != 0).slice(0, 12).join(" | ") + " failure=" + pump.failure + " finished=" + pump.finished() + " ready=" + pump.ready());
 			check(pump.feed.frames >= 5, "No frames reached the tab");
+			// RAYDE_SURFACE_SETTLE=N runs N more frames first, so the tab can finish resizing the app to its own size.
+			for (_ in 0...(Std.parseInt(Sys.getEnv("RAYDE_SURFACE_SETTLE") ?? "0") ?? 0)) { settle(); Sys.sleep(.02); }
+			Sys.println("size " + pump.size().width + "x" + pump.size().height + " frames " + pump.feed.frames + " outstanding " + pump.outstanding() + " finished " + pump.finished() + " failure " + pump.failure);
 			settle(10);
 			Snapshot.capture("surface-preview-running", tree, bench.node, 1280, 800);
 			var views = Css.query(tree, bench.node.id, "#rayde-surface-preview canvas");

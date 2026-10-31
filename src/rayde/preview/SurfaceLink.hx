@@ -7,7 +7,7 @@ import sys.thread.Mutex;
 import sys.thread.Thread;
 
 /** What the render side hands the sender: the newest picture and the last input applied before it. */
-private typedef Picture = {pixels:Null<Bytes>, input:Int};
+private typedef Picture = {pixels:Null<Bytes>, input:Int, width:Int, height:Int};
 
 /**
  * The producer's end of the surface protocol, for any framework's shim. The render side calls `submit` with each picture and `takeInputs`
@@ -16,8 +16,9 @@ private typedef Picture = {pixels:Null<Bytes>, input:Int};
  * Everything an app prints to stdout would corrupt the stream, so `redirectTrace` sends `trace` to stderr; call it first.
  */
 class SurfaceLink {
-	public final width:Int;
-	public final height:Int;
+	/** The size of the pictures `buffer` and `submit` deal in now; `resize` changes it. */
+	public var width(default, null):Int;
+	public var height(default, null):Int;
 	/** Deflate a frame's rectangle when that makes it smaller. */
 	public var deflate = false;
 	/** Frames replaced before they were sent. */
@@ -34,6 +35,9 @@ class SurfaceLink {
 	var credits = 0;
 	var spent = 0;
 	var creditsSeen = false;
+	var sizeWanted:Null<{width:Int, height:Int}>;
+	var sentWidth:Int;
+	var sentHeight:Int;
 	var queued:Array<SurfaceInput> = [];
 	var pending:Null<Picture>;
 	var closing = false;
@@ -47,6 +51,8 @@ class SurfaceLink {
 	public function new(width:Int, height:Int) {
 		this.width = width;
 		this.height = height;
+		sentWidth = width;
+		sentHeight = height;
 		stats = Sys.getEnv("SURFACE_STATS") == "1";
 	}
 
@@ -79,7 +85,7 @@ class SurfaceLink {
 	public function submit(pixels:Bytes):Void {
 		lock.acquire();
 		var old = pending;
-		pending = {pixels: pixels, input: applied};
+		pending = {pixels: pixels, input: applied, width: width, height: height};
 		if (old != null) {
 			spare.push(old.pixels);
 			dropped++;
@@ -123,6 +129,25 @@ class SurfaceLink {
 		return seen;
 	}
 
+	/** The size the viewer last asked for since the last call, or null. The render side applies it and then calls `resize`. */
+	public function takeResize():Null<{width:Int, height:Int}> {
+		inputLock.acquire();
+		var wanted = sizeWanted;
+		sizeWanted = null;
+		inputLock.release();
+		return wanted;
+	}
+
+	/** Changes the size of the pictures from the next one on: the sender announces it and sends that picture whole. Call from the render side. */
+	public function resize(newWidth:Int, newHeight:Int):Void {
+		lock.acquire();
+		width = newWidth;
+		height = newHeight;
+		spare.splice(0, spare.length);
+		pending = null;
+		lock.release();
+	}
+
 	/** Waits up to `seconds` for permission to draw a frame and spends it; false when none came, so the caller can look at its own events and try again. */
 	public function takeCredit(seconds:Float):Bool {
 		if (!creditWait.wait(seconds)) return false;
@@ -145,6 +170,15 @@ class SurfaceLink {
 				if (grant) credits++;
 				inputLock.release();
 				if (grant) creditWait.release();
+				continue;
+			}
+			if (record.kind == SurfaceProtocol.RESIZE) {
+				var size = SurfaceProtocol.parseHello(record.payload);
+				if (size.width > 0 && size.height > 0) {
+					inputLock.acquire();
+					sizeWanted = size;
+					inputLock.release();
+				}
 				continue;
 			}
 			if (record.kind != SurfaceProtocol.INPUT) continue;
@@ -177,10 +211,18 @@ class SurfaceLink {
 				}
 				continue;
 			}
-			var t0 = haxe.Timer.stamp(), now = next.pixels, rect = changed(now, previous);
+			var w = next.width, h = next.height;
+			if (w != sentWidth || h != sentHeight) {
+				// The size changed: announce it, and the first picture at the new size goes whole.
+				SurfaceProtocol.writeTo(out, SurfaceProtocol.hello(w, h));
+				sentWidth = w;
+				sentHeight = h;
+				previous = null;
+			}
+			var t0 = haxe.Timer.stamp(), now = next.pixels, rect = changed(now, previous, w, h);
 			var t1 = haxe.Timer.stamp();
 			if (rect != null) {
-				var data = rows(now, rect.x, rect.y, rect.w, rect.h), encoding = 0;
+				var data = rows(now, rect.x, rect.y, rect.w, rect.h, w), encoding = 0;
 				if (deflate) {
 					var packed:Bytes = try haxe.zip.Compress.run(data, 1) catch (_:Dynamic) null;
 					if (packed != null && packed.length < data.length) {
@@ -212,22 +254,23 @@ class SurfaceLink {
 	function recycle(b:Null<Bytes>):Void {
 		if (b == null) return;
 		lock.acquire();
-		spare.push(b);
+		// A buffer from before a resize is the wrong size.
+		if (b.length == width * height * 4) spare.push(b);
 		lock.release();
 	}
 
 	static function fmt(seconds:Float):String
 		return Std.string(Math.round(seconds * 10000) / 10);
 
-	function rows(b:Bytes, x:Int, y:Int, w:Int, h:Int):Bytes {
-		if (w == width) return b.sub(y * width * 4, h * width * 4);
+	function rows(b:Bytes, x:Int, y:Int, w:Int, h:Int, stride:Int):Bytes {
+		if (w == stride) return b.sub(y * stride * 4, h * stride * 4);
 		var out = Bytes.alloc(w * h * 4);
-		for (r in 0...h) out.blit(r * w * 4, b, ((y + r) * width + x) * 4, w * 4);
+		for (r in 0...h) out.blit(r * w * 4, b, ((y + r) * stride + x) * 4, w * 4);
 		return out;
 	}
 
 	/** The rectangle that differs from the last picture sent, the whole picture for the first, or null when nothing changed. */
-	function changed(now:Bytes, previous:Null<Bytes>):Null<{x:Int, y:Int, w:Int, h:Int}> {
+	function changed(now:Bytes, previous:Null<Bytes>, width:Int, height:Int):Null<{x:Int, y:Int, w:Int, h:Int}> {
 		if (previous == null) return {x: 0, y: 0, w: width, h: height};
 		var x0 = width, y0 = height, x1 = 0, y1 = 0, row = width * 4;
 		var a:hl.Bytes = @:privateAccess now.b, b:hl.Bytes = @:privateAccess previous.b;

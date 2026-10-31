@@ -13,7 +13,9 @@ typedef SurfaceViewProps = {
 	pump:SurfacePump,
 	source:PixelSurface,
 	/** Called when the user presses Shift+Escape, the one key the app does not receive: where focus goes next is the caller's. */
-	leave:Void->Void
+	leave:Void->Void,
+	/** Receives a function that reports this view's box in layout units, or null before it is laid out. */
+	measure:Null<Void->Null<{width:Float, height:Float}>>->Void
 };
 
 /**
@@ -42,6 +44,12 @@ class SurfaceView extends Component<SurfaceViewProps> {
 	function render():Element {
 		var pump = props.pump, source = props.source;
 		var root:Element = null;
+		props.measure(() -> {
+			var box = root == null || root.tree == null ? null : root.tree.getBounds(root.node);
+			return box == null ? null : {width: box.width, height: box.height};
+		});
+		// A view that goes away must not leave its measurement behind for the next one.
+		Owner.onCleanup(() -> props.measure(null));
 		function point(e:ashui.input.Events.PointerEvent):Null<{x:Int, y:Int}> {
 			var box = root == null || root.tree == null ? null : root.tree.getBounds(root.node);
 			return box == null ? null : map(e.localX, e.localY, box.width, box.height, source.width, source.height);

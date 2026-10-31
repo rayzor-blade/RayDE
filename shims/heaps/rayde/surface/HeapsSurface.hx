@@ -12,7 +12,7 @@ import rayde.preview.SurfaceProtocol;
 class HeapsSurface {
 	final link:SurfaceLink;
 	final app:hxd.App;
-	final target:h3d.mat.Texture;
+	var target:h3d.mat.Texture;
 	final stats = Sys.getEnv("SURFACE_STATS") == "1";
 	var drawTime = 0.;
 	var readTime = 0.;
@@ -47,9 +47,11 @@ class HeapsSurface {
 	public static function before(app:hxd.App):Bool {
 		if (current == null) {
 			var size = (Sys.getEnv("RAYDE_SURFACE_SIZE") ?? "800x600").split("x"), width = Std.parseInt(size[0]), height = Std.parseInt(size[1]);
-			current = create(app, width ?? 800, height ?? 600);
+			current = create(app, width ?? 800, height ?? 600, true);
 		}
 		current.deliver();
+		var wanted = current.link.takeResize();
+		if (wanted != null) current.resizeTo(wanted.width, wanted.height);
 		if (!current.link.viewerPaces) return true;
 		// The raw time between frames is the viewer's own interval between credits, which follows its display, so motion stays true to display time.
 		// A short wait keeps the app answering its window and noticing a viewer that left.
@@ -63,16 +65,53 @@ class HeapsSurface {
 		if (!current.link.viewerPaces) current.pace();
 	}
 
-	static function create(app:hxd.App, width:Int, height:Int):HeapsSurface {
+	/** `fit` keeps the scene at the size the app laid itself out for and scales it, centred, to the picture; without it the scene is `width` by `height` as is. */
+	static function create(app:hxd.App, width:Int, height:Int, fit = false):HeapsSurface {
 		SurfaceLink.redirectTrace();
 		var window = hxd.Window.getInstance();
+		var design = fit ? {width: app.s2d.width, height: app.s2d.height} : null;
 		window.resize(width, height);
+		// The window's own resize event arrives later; the scene scales and aligns by the engine's size, which has to be right now.
+		app.engine.resize(width, height);
 		// The picture is read back from a texture, so the app needs no visible window.
 		if (Sys.getEnv("SURFACE_SHOW_WINDOW") != "1") @:privateAccess window.window.visible = false;
-		app.s2d.scaleMode = Fixed(width, height, 1);
 		var link = new SurfaceLink(width, height), surface = new HeapsSurface(app, link);
+		surface.design = design;
+		surface.fitScene(width, height);
 		link.start();
 		return surface;
+	}
+
+	var design:Null<{width:Int, height:Int}>;
+
+	/** How the design-sized scene sits in the picture: its scale and where its top-left lands. `Scene.drawTo` ignores the scene's scale mode, so the transform is the scene's own. */
+	var zoom = 1.;
+	var offsetX = 0.;
+	var offsetY = 0.;
+
+	function fitScene(width:Int, height:Int):Void {
+		if (design == null) {
+			app.s2d.scaleMode = Fixed(width, height, 1);
+			return;
+		}
+		// The scene stays the size the app laid itself out for, so its coordinates mean what the app expects; the picture shows it scaled to fit, centred.
+		app.s2d.scaleMode = Fixed(design.width, design.height, 1, Left, Top);
+		zoom = Math.min(width / design.width, height / design.height);
+		offsetX = (width - design.width * zoom) / 2;
+		offsetY = (height - design.height * zoom) / 2;
+		app.s2d.setScale(zoom);
+		app.s2d.setPosition(offsetX, offsetY);
+	}
+
+	/** Draws at a new size: the window and the scene's stage follow, the render target is replaced, and the link announces it with the next picture. */
+	function resizeTo(width:Int, height:Int):Void {
+		if (width == link.width && height == link.height) return;
+		hxd.Window.getInstance().resize(width, height);
+		app.engine.resize(width, height);
+		fitScene(width, height);
+		target.dispose();
+		target = new h3d.mat.Texture(width, height, [Target]);
+		link.resize(width, height);
 	}
 
 	var nextFrameAt = 0.;
@@ -106,7 +145,8 @@ class HeapsSurface {
 				case _: null;
 			};
 			if (kind == null) continue;
-			var e = new hxd.Event(kind, input.a, input.b);
+			// Pointer positions arrive in the picture's pixels; the scene's own are the design's.
+			var e = new hxd.Event(kind, (input.a - offsetX) / zoom, (input.b - offsetY) / zoom);
 			e.button = input.c;
 			window.event(e);
 		}

@@ -23,7 +23,8 @@ typedef SurfaceInput = {id:Int, type:Int, a:Int, b:Int, c:Int};
 /**
  * The surface protocol between a producer (a shim inside a headless app) and RayDE, as records on the app's stdio.
  * A record is four bytes of length (big-endian) for what follows, one byte of kind and the payload.
- * Producer to viewer: HELLO (width, height), FRAME, LOG (text), EXIT and ACK. Viewer to producer: INPUT and CREDIT.
+ * Producer to viewer: HELLO (width, height), FRAME, LOG (text), EXIT and ACK. Viewer to producer: INPUT, CREDIT and RESIZE.
+ * A producer announces its size with HELLO, again whenever it changes: the pictures after a HELLO are that size, and the first is whole.
  * Credits make the viewer the only clock: once a producer has seen a CREDIT it draws one frame per credit it holds (at most two) and answers each
  * with an ACK, so the viewer knows how many are outstanding even when a frame had nothing to send. A producer that never sees one paces itself.
  */
@@ -37,6 +38,8 @@ class SurfaceProtocol {
 	public static inline var CREDIT = 6;
 	/** Producer to viewer: one credit was spent. Empty payload. */
 	public static inline var ACK = 7;
+	/** Viewer to producer: draw at this size, as a HELLO payload (width and height); the producer answers with a HELLO of the size it chose. */
+	public static inline var RESIZE = 8;
 
 	/** Input types for `SurfaceInput.type`: pointer down, up and move carry x in `a`, y in `b` and the button in `c`. */
 	public static inline var POINTER_DOWN = 1;
@@ -83,6 +86,14 @@ class SurfaceProtocol {
 		out.writeUInt16(width);
 		out.writeUInt16(height);
 		return record(HELLO, out.getBytes());
+	}
+
+	public static function resize(width:Int, height:Int):Bytes {
+		var out = new BytesOutput();
+		out.bigEndian = true;
+		out.writeUInt16(width);
+		out.writeUInt16(height);
+		return record(RESIZE, out.getBytes());
 	}
 
 	public static function parseHello(payload:Bytes):{width:Int, height:Int} {

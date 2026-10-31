@@ -57,6 +57,11 @@ class SurfacePump {
 	public function poll(surface:PixelSurface):Bool {
 		lock.acquire();
 		try {
+			// A new size was announced and the caller has not replaced its surface yet.
+			if (feed.width > 0 && (surface.width != feed.width || surface.height != feed.height)) {
+				lock.release();
+				return false;
+			}
 			var wrote = feed.flush(surface);
 			if (wrote) feed.clean();
 			lock.release();
@@ -94,6 +99,15 @@ class SurfacePump {
 		}
 		wire.release();
 		return id;
+	}
+
+	/** Asks the app to draw at this size. It answers with a new HELLO, after which pictures come at that size. */
+	public function resize(width:Int, height:Int):Void {
+		wire.acquire();
+		try if (!stopped) SurfaceProtocol.writeTo(program.stdin, SurfaceProtocol.resize(width, height)) catch (_:Dynamic) {
+			stopped = true;
+		}
+		wire.release();
 	}
 
 	/** Credits granted and not yet acknowledged, for a readout. */
