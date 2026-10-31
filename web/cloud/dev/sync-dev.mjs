@@ -1,0 +1,71 @@
+// A local Cloud Sync gateway with the compute it needs: the Worker on 127.0.0.1:8787, and a stand-in for the runner that restores a published
+// generation into a folder and serves it with `rayde-session`. Development only: accounts are `X-Dev-Account` names, signed in with /auth/dev.
+//
+//   node dev/sync-dev.mjs [--port 8787] [--data DIR]
+//   RAYDE_SYNC_GATEWAY=http://127.0.0.1:8787 RAYDE_SYNC_DEV_ACCOUNT=alice  (then Sync, and Open, in the Cloud Sync panel)
+import { Miniflare } from "miniflare";
+import { spawn } from "node:child_process";
+import { createServer } from "node:net";
+import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { listening, options } from "../test/fixture.mjs";
+
+const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : fallback; };
+const port = Number(flag("port", 8787));
+const data = resolve(flag("data", join(homedir(), ".rayde", "sync-dev")));
+const base = `http://127.0.0.1:${port}`;
+const secret = "dev-runner-secret";
+const session = resolve(dirname(fileURLToPath(import.meta.url)), "../../../native/session/target/debug/rayde-session");
+const freePort = () => new Promise(done => { const server = createServer().listen(0, "127.0.0.1", () => { const p = server.address().port; server.close(() => done(p)); }); });
+const running = new Map();
+
+let mf;
+const runner = async request => {
+  if (request.headers.get("Authorization") !== `Bearer ${secret}`) return new Response("{}", { status: 403 });
+  const { id, repository } = await request.json();
+  const source = repository?.sync;
+  if (!source) return new Response(JSON.stringify({ message: "This runner only restores synced workspaces." }), { status: 400 });
+  const get = path => mf.dispatchFetch(`${base}/api/sync/runner/${id}${path}`, { headers: { Authorization: `Bearer ${secret}` } });
+  const response = await get("/manifest");
+  if (!response.ok) return new Response(JSON.stringify({ message: "The snapshot is not available." }), { status: 502 });
+  const manifest = await response.json();
+  const root = join(data, "workspaces", id, String(manifest.generation));
+  await rm(root, { recursive: true, force: true });
+  for (const file of manifest.files) {
+    const target = join(root, file.path);
+    if (!target.startsWith(root + "/")) throw new Error(`path escapes the workspace: ${file.path}`);
+    await mkdir(dirname(target), { recursive: true });
+    if (file.kind === "symlink") { await symlink(file.link, target); continue; }
+    const parts = [];
+    for (const chunk of file.chunks) parts.push(Buffer.from(await (await get(`/chunks/${chunk.hash}`)).arrayBuffer()));
+    await writeFile(target, Buffer.concat(parts));
+    if (file.kind === "executable") await chmod(target, 0o755);
+  }
+  running.get(id)?.kill();
+  const sessionPort = await freePort(), token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex");
+  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base], { stdio: "inherit" });
+  running.set(id, child);
+  await listening(sessionPort, child);
+  console.log(`restored ${id} generation ${manifest.generation} (${manifest.files.length} files) on :${sessionPort}`);
+  const project = manifest.files.some(f => f.path === "build.hxml") ? "build.hxml" : null;
+  return new Response(JSON.stringify({ url: `ws://127.0.0.1:${sessionPort}/session`, token, project }), { headers: { "Content-Type": "application/json" } });
+};
+
+const { config } = options({ appOrigin: base, port, runnerSecret: secret, provision: null });
+config.durableObjectsPersist = join(data, "state");
+config.r2Persist = join(data, "files");
+config.serviceBindings.RUNNER = runner;
+mf = new Miniflare(config);
+await mf.ready;
+console.log(`Cloud Sync gateway: ${base}\nsign in a browser with ${base}/auth/dev?account=alice`);
+const stop = async () => {
+  for (const child of running.values()) child.kill();
+  // Disposing can wait on open sockets; the process leaves either way.
+  setTimeout(() => process.exit(0), 2000).unref();
+  await mf.dispose();
+  process.exit(0);
+};
+process.on("SIGTERM", stop);
+process.on("SIGINT", stop);

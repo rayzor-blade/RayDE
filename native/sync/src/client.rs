@@ -32,6 +32,9 @@ pub struct Config {
     pub device: Option<String>,
     #[serde(default)]
     pub history: bool,
+    /// "push" (the default) or "open".
+    #[serde(default)]
+    pub action: String,
 }
 
 #[derive(Debug)]
@@ -90,20 +93,48 @@ fn strings(value: &Value) -> Vec<String> {
     value.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
 }
 
-/// Runs one upload to completion, reporting through `emit`. `cancelled` is asked between chunks; a cancelled upload is dropped at the gateway.
-pub fn run(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
-    let gateway = Gateway {
+fn gateway_of(config: &Config) -> Gateway {
+    Gateway {
         base: config.gateway.trim_end_matches('/').to_string(),
         account: config.account.clone(),
         agent: ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(10)).timeout(Duration::from_secs(300)).build(),
-    };
+    }
+}
+
+/// The folder remembers its workspace per gateway, inside `.git`, which is never uploaded. Returns the file and what it held.
+fn remembered(config: &Config) -> Result<(PathBuf, Value), Failure> {
     let git_dir = std::process::Command::new("git").arg("-C").arg(&config.root).args(["rev-parse", "--absolute-git-dir"]).output().map_err(|e| Failure::new("git", e.to_string()))?;
     if !git_dir.status.success() {
         return Err(Failure::new("not-a-repository", "This folder is not a Git repository."));
     }
-    // The folder remembers its workspace per gateway, inside `.git`, which is never uploaded.
-    let state_path = PathBuf::from(String::from_utf8_lossy(&git_dir.stdout).trim()).join("rayde-sync.json");
-    let remembered: Value = fs::read(&state_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(json!({}));
+    let path = PathBuf::from(String::from_utf8_lossy(&git_dir.stdout).trim()).join("rayde-sync.json");
+    let held = fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(json!({}));
+    Ok((path, held))
+}
+
+/// Runs the job the config names, reporting through `emit`. `cancelled` is asked between chunks of an upload.
+pub fn run(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
+    match config.action.as_str() {
+        "" | "push" => push(config, emit, cancelled),
+        "open" => open(config, emit),
+        other => Err(Failure::new("usage", format!("unknown action {other}"))),
+    }
+}
+
+/// Asks the gateway to start a browser session on the folder's published copy, and reports its link.
+fn open(config: &Config, emit: &mut dyn FnMut(Value)) -> Result<(), Failure> {
+    let gateway = gateway_of(config);
+    let (_, held) = remembered(config)?;
+    let id = held[&gateway.base]["workspace"].as_str().ok_or_else(|| Failure::new("not-synced", "This folder has not been synced to this gateway."))?.to_string();
+    let opened = gateway.json("POST", &format!("/workspaces/{id}/open"), None)?;
+    emit(json!({"event": "opened", "id": id, "url": opened["url"], "generation": opened["generation"]}));
+    Ok(())
+}
+
+/// Runs one upload to completion. A cancelled upload is dropped at the gateway.
+fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
+    let gateway = gateway_of(config);
+    let (state_path, remembered) = remembered(config)?;
     let key = gateway.base.clone();
 
     let status = match remembered[&key]["workspace"].as_str() {

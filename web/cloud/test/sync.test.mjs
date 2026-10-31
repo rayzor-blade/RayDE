@@ -113,3 +113,47 @@ test("the upload client publishes a folder, then only what changed, and the clou
   assert.ok(keys.some(k => k.endsWith("generations/000000000002.json")));
   assert.ok(!keys.some(k => k.endsWith(digest("one"))), "a chunk no generation references is deleted");
 });
+
+test("a synced workspace opens in a browser session on the restored files", async t => {
+  const { spawn } = await import("node:child_process");
+  const { readFile } = await import("node:fs/promises");
+  const port = await freePort(), base = `http://127.0.0.1:${port}`, data = await mkdtemp(join(tmpdir(), "rayde-sync-dev-"));
+  const server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
+  t.after(async () => {
+    const exited = new Promise(done => server.once("exit", done));
+    server.kill();
+    await exited;
+    server.stdout.destroy();
+    await rm(data, { recursive: true, force: true });
+  });
+  await new Promise((done, fail) => { server.stdout.on("data", chunk => String(chunk).includes("Cloud Sync gateway") && done()); server.once("exit", () => fail(new Error("the dev gateway exited"))); });
+  const { root } = await repository({ "main.hx": "class Main {}\n", "notes.txt": "synced text" });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pushed = push(root, base);
+  assert.equal(pushed.last.event, "published", JSON.stringify(pushed.events));
+  const id = pushed.last.url.split("/").pop();
+  const api = (path, init = {}) => fetch(base + path, { redirect: "manual", ...init, headers: { "X-Dev-Account": "alice", ...(init.headers ?? {}) } });
+
+  const stranger = await fetch(`${base}/api/sync/workspaces/${id}/open`, { method: "POST", headers: { "X-Dev-Account": "bob" } });
+  assert.equal(stranger.status, 404, "another account cannot open it");
+  const forged = await fetch(`${base}/api/sync/runner/${id}/manifest`, { headers: { Authorization: "Bearer guess" } });
+  assert.equal(forged.status, 403, "only the runner reads a snapshot without an account");
+
+  const opened = await api(`/api/sync/workspaces/${id}/open`, { method: "POST" });
+  assert.equal(opened.status, 200, await opened.text());
+  const login = await fetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });
+  assert.equal(login.status, 302);
+  const cookie = login.headers.getSetCookie().find(c => c.startsWith("rayde_session=")).split(";")[0];
+  const page = await fetch(`${base}/${id}`, { headers: { Cookie: cookie }, redirect: "manual" });
+  assert.equal(page.status, 200, "the workspace page opens for its owner");
+  let state;
+  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(state.status, "ready", JSON.stringify(state));
+  assert.equal(await readFile(join(data, "workspaces", id, "1", "notes.txt"), "utf8"), "synced text");
+
+  await writeFile(join(root, "notes.txt"), "changed text");
+  assert.equal(push(root, base).last.generation, 2);
+  assert.equal((await api(`/api/sync/workspaces/${id}/open`, { method: "POST" })).status, 200);
+  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready" && (await readFile(join(data, "workspaces", id, "2", "notes.txt"), "utf8").catch(() => ""))) break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(await readFile(join(data, "workspaces", id, "2", "notes.txt"), "utf8"), "changed text", "a newer generation is restored again");
+});

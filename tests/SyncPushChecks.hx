@@ -60,6 +60,15 @@ class SyncPushChecks {
 			until(() -> feature.state.get().phase == "synced" || feature.state.get().phase == "failed", "The second upload did not finish");
 			check(feature.state.get().phase == "synced" && feature.state.get().url == first.url, "A second sync should publish to the same workspace");
 			check(feature.state.get().total < first.total + 1 && feature.state.get().total <= 3, "Only the changed file should go again, not " + feature.state.get().total + " bytes");
+			// Open asks the gateway for a browser session on the published copy and is told its link.
+			var job = rayde.sync.NativeSync.start({root: workspace, gateway: gateway, account: Sys.getEnv("RAYDE_SYNC_DEV_ACCOUNT"), action: "open"}), opened:Dynamic = null;
+			until(() -> {
+				var events = rayde.sync.NativeSync.poll(job);
+				if (events != null) for (event in events) if (event.event == "opened" || event.event == "error") opened = event;
+				return opened != null;
+			}, "Open did not answer");
+			rayde.sync.NativeSync.close(job);
+			check(opened.event == "opened" && opened.url == first.url && opened.generation == 2, "Open should report the workspace link at generation 2: " + haxe.Json.stringify(opened));
 			Sys.putEnv("RAYDE_SYNC_GATEWAY", "http://127.0.0.1:1");
 			feature.sync();
 			until(() -> feature.state.get().phase == "synced" || feature.state.get().phase == "failed", "An unreachable gateway did not end the upload");

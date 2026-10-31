@@ -169,6 +169,16 @@ class ExtensionsPart {
 	}
 
 	/** Runs an extension's command on behalf of a built-in feature. False when the extension is missing, disabled or cannot be started for it. */
+	/** Opens an HTTP, HTTPS or mailto link in the system's handler. */
+	public function openExternal(url:String):Void {
+		var result = switch Sys.systemName() {
+			case "Mac": Sys.command("open", [url]);
+			case "Windows": Sys.command("rundll32", ["url.dll,FileProtocolHandler", url]);
+			case _: Sys.command("xdg-open", [url]);
+		};
+		if (result != 0) throw "Cannot open external link";
+	}
+
 	public function runForFeature(id:String, command:String):Bool
 		return extensionManager != null && extensionManager.command(id, command, {path: null, kind: null});
 
@@ -434,14 +444,7 @@ class ExtensionsPart {
 				var id = Workbench.TAB + file + "#" + root;
 				if (wb.open.get().indexOf(id) >= 0) wb.active.set(id);
 			},
-			openExternal: url -> {
-				var result = switch Sys.systemName() {
-					case "Mac": Sys.command("open", [url]);
-					case "Windows": Sys.command("rundll32", ["url.dll,FileProtocolHandler", url]);
-					case _: Sys.command("xdg-open", [url]);
-				};
-				if (result != 0) throw "Cannot open external link";
-			},
+			openExternal: openExternal,
 			writeFile: (p, text) -> {
 				var full = wb.projectPath(p);
 				var b = wb.documentsPart.buffers.get(full), before = b != null ? b.get() : Fs.exists(full) ? Fs.getContent(full) : "";

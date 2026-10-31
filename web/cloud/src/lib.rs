@@ -245,6 +245,17 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         )
         .await?;
     }
+    // Sign-in for a gateway running on this machine, where there is no GitHub App: `/auth/dev?account=NAME&return=/ID`.
+    if path == "/auth/dev" && config(&env, "LOCAL_DEV").as_deref() == Some("1") {
+        let name = query("account").filter(|n| rayde_sync::ids::AccountId::parse(&format!("dev:{n}")).is_ok()).ok_or_else(|| bad(400, "That development account name is not valid."))?;
+        let sid = random()?;
+        rpc(&env, "ACCOUNTS", &sid, "put", &json!({"kind":"account","user":{"id":sync::dev_user_id(&name),"login":name,"avatarUrl":Value::Null},"csrf":random()?,"expires":now()+7*DAY,"tokens":{"access":"","refresh":Value::Null,"expires":Value::Null}})).await?;
+        let mut destination = Url::parse(&origin).map_err(|_| bad(503, "Sign-in is not configured."))?;
+        destination.set_path(&query("return").filter(|r| r.starts_with('/') && !r.starts_with("//")).unwrap_or_else(|| "/".into()));
+        let mut response = redirect_response(destination)?;
+        response.headers_mut().append("Set-Cookie", &cookie("rayde_session", &sid, &url, 7 * 86400))?;
+        return Ok(response);
+    }
     if path == "/auth/github/start" {
         let client = config(&env, "GITHUB_CLIENT_ID")
             .ok_or_else(|| bad(503, "GitHub sign-in is not configured."))?;
@@ -408,14 +419,19 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                     &json!({"owner":session["user"]["id"]}),
                 )
                 .await?;
-                let granted = rpc(
-                    &env,
-                    "ACCOUNTS",
-                    &sid,
-                    "repository",
-                    &json!({"id":record["repository"]["id"]}),
-                )
-                .await?;
+                // A synced workspace is the account's own upload, not a GitHub repository: there is no grant to look up and no repository token.
+                let granted = if record["repository"]["sync"].is_object() {
+                    json!({"access": Value::Null})
+                } else {
+                    rpc(
+                        &env,
+                        "ACCOUNTS",
+                        &sid,
+                        "repository",
+                        &json!({"id":record["repository"]["id"]}),
+                    )
+                    .await?
+                };
                 let headers = Headers::new();
                 headers.set("Upgrade", "websocket")?;
                 headers.set("X-RayDE-Identity",&json!({"owner":session["user"]["id"],"sid":sid,"expires":session["expires"],"origin":origin,"access":granted["access"]}).to_string())?;

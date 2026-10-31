@@ -18,6 +18,8 @@ class SyncFeature {
 	public final state = Signal.make(Sync.empty(SignedOut));
 	/** The running upload's handle in the native client, or -1. */
 	var push = -1;
+	/** Whether the running job only asks for a browser session, which leaves the panel's state as it is. */
+	var opening = false;
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -67,7 +69,7 @@ class SyncFeature {
 		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
-			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={unavailable} onOpen={unavailable} onShare={unavailable} onPause={unavailable}
+			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
 			onExport={unavailable} onExtend={unavailable} onDisconnect={unavailable} onDelete={unavailable}
 			onExpiry={hours -> { var s = state.get(); state.set({phase:s.phase, branch:s.branch, files:s.files, bytes:s.bytes, excluded:s.excluded, allocation:s.allocation, expiryHours:hours,
 				sent:s.sent, total:s.total, url:s.url, lastSync:s.lastSync, used:s.used, expiresAt:s.expiresAt, compute:s.compute, message:s.message, conflicts:s.conflicts}); }}/>;
@@ -125,6 +127,28 @@ class SyncFeature {
 		#end
 	}
 
+	/** Asks the gateway to start a browser session on the published copy, then opens its link. */
+	public function open():Void {
+		#if !wasm
+		var url = gateway();
+		if (push >= 0 || url == null) return;
+		try {
+			opening = true;
+			push = NativeSync.start({root: host.cwd, gateway: url, account: account(), action: "open"});
+		} catch (error) {
+			opening = false;
+			host.say(Std.string(error));
+			return;
+		}
+		follow();
+		#end
+	}
+
+	public function copy():Void {
+		ashui.input.Clipboard.setText(state.get().url);
+		host.say("Link copied");
+	}
+
 	public function cancel():Void {
 		#if !wasm
 		if (push >= 0) NativeSync.cancel(push);
@@ -153,6 +177,10 @@ class SyncFeature {
 					current.lastSync = Date.now().getTime();
 					current.used = event.stored;
 					current.expiresAt = event.expiresAt == null ? 0 : event.expiresAt;
+				case "opened":
+					try host.openExternal(event.url) catch (error) host.say(Std.string(error));
+				case "error" if (opening):
+					host.say(event.message);
 				case "error":
 					if (event.code == "cancelled") current.phase = Ready else {
 						current.phase = Failed;
@@ -169,6 +197,7 @@ class SyncFeature {
 		}
 		NativeSync.close(id);
 		push = -1;
+		opening = false;
 	}
 
 	function failed(message:String):Void {

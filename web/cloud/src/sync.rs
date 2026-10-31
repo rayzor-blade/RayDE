@@ -109,8 +109,41 @@ async fn limited(req: &mut Request, limit: usize) -> AppResult<Vec<u8>> {
     Ok(bytes)
 }
 
+/// The id a browser session gives the same account: a GitHub user's own id, and for a development account a number made from its name.
+fn browser_owner(owner: &str) -> Value {
+    match owner.split_once(':') {
+        Some(("github", id)) => id.parse::<u64>().map(Value::from).unwrap_or(Value::Null),
+        Some(("dev", name)) => json!(dev_user_id(name)),
+        _ => Value::Null,
+    }
+}
+
+pub(crate) fn dev_user_id(name: &str) -> u64 {
+    // FNV-1a, kept above the range of real GitHub ids' low values so a development account never collides with a small id.
+    name.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3)) % 1_000_000_000 + 2_000_000_000
+}
+
+/// What the compute that restores a snapshot may read: the manifest and chunks of a workspace, with the runner's secret and no account.
+async fn runner_route(req: &Request, env: &Env, parts: &[&str]) -> AppResult<Response> {
+    let secret = config(env, "RUNNER_SECRET").ok_or_else(|| bad(503, "Workspace compute is not configured."))?;
+    if req.headers().get("Authorization")?.as_deref() != Some(&format!("Bearer {secret}")) {
+        return Err(bad(403, "The request could not be verified."));
+    }
+    match parts {
+        [id, "manifest"] => forward(env, id, workspace_request("/manifest", RUNNER, Method::Get, &[], None)?).await,
+        [id, "chunks", hash] => forward(env, id, workspace_request("/chunk-read", RUNNER, Method::Get, &[("X-Sync-Hash", hash)], None)?).await,
+        _ => Err(bad(404, "There is no such sync route.")),
+    }
+}
+
+const RUNNER: &str = "@runner";
+
 /// `/api/sync/...` for an authenticated account.
 pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult<Response> {
+    if let Some(runner) = rest.trim_matches('/').strip_prefix("runner/") {
+        let parts: Vec<&str> = runner.split('/').collect();
+        return runner_route(req, env, &parts).await;
+    }
     let owner = owner_of(req, env).await?;
     let method = req.method();
     let parts: Vec<&str> = rest.trim_matches('/').split('/').collect();
@@ -126,6 +159,25 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
             forward(env, id.as_str(), request).await
         }
         (Method::Get, ["workspaces", id]) => forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await,
+        (Method::Post, ["workspaces", id, "open"]) => {
+            let status = forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await?;
+            let mut status = status;
+            let body: Value = status.json().await?;
+            if status.status_code() >= 400 {
+                return Ok(reply(&body, status.status_code())?);
+            }
+            let generation = body["generation"].as_u64().unwrap_or(0);
+            if generation == 0 {
+                return Err(bad(409, "Nothing has been published yet."));
+            }
+            let owner_id = browser_owner(&owner);
+            if owner_id.is_null() {
+                return Err(bad(400, "This account cannot open a browser workspace."));
+            }
+            let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation}});
+            rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
+            Ok(reply(&json!({"id": id, "url": body["url"], "generation": generation}), 200)?)
+        }
         (Method::Post, ["workspaces", id, "uploads"]) => {
             let bytes = limited(req, 4 * 1024 * 1024).await?;
             forward(env, id, workspace_request("/begin", &owner, Method::Post, &[("Content-Type", "application/json")], Some(bytes))?).await
@@ -241,7 +293,8 @@ impl SyncWorkspaceSession {
         }
 
         // Anything else is for the owner of an existing workspace; to anyone else it does not exist.
-        let mut workspace = stored.filter(|w| w.owner.as_str() == owner).ok_or_else(|| bad(404, "No such synced workspace."))?;
+        let reads_only = owner == RUNNER && matches!(op.as_str(), "/manifest" | "/chunk-read");
+        let mut workspace = stored.filter(|w| reads_only || w.owner.as_str() == owner).ok_or_else(|| bad(404, "No such synced workspace."))?;
         let id = workspace.id.as_str().to_string();
         match op.as_str() {
             "/status" => Ok(reply(&status_body(&id, &workspace, &origin), 200)?),

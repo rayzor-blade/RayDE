@@ -749,6 +749,15 @@ impl WorkspaceSession {
                 value = Some(record);
             }
             let mut record = value.unwrap();
+            // A newer generation of a synced workspace is restored again, not served from the copy of an older one.
+            let wanted = &data["repository"]["sync"]["generation"];
+            if wanted.is_u64() && record["repository"]["sync"]["generation"] != *wanted {
+                record["repository"] = data["repository"].clone();
+                record["status"] = json!("preparing");
+                record["connection"] = Value::Null;
+                record["message"] = Value::Null;
+                storage.put("workspace", &record).await?;
+            }
             if record["status"] == "failed" {
                 record["status"] = json!("preparing");
                 record["message"] = Value::Null;

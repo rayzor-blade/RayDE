@@ -31,6 +31,8 @@ typedef Host = {
 	/** The side panel: showing a view of it, folding it away, and whether a view is in it. */
 	/** Runs a command of an extension (its id, then the command's), activating the extension if that is how it starts. False when there is no such running or startable extension. */
 	extensionCommand:String->String->Bool,
+	/** Opens a link in the system's browser or mail handler. */
+	openExternal:String->Void,
 	showSidebar:String->Void,
 	hideSidebar:Void->Void,
 	sidebarShown:String->Bool
