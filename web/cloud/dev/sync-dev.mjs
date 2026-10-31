@@ -1,11 +1,14 @@
 // A local Cloud Sync gateway with the compute it needs: the Worker on 127.0.0.1:8787, and a stand-in for the runner that restores a published
 // generation into a folder and serves it with `rayde-session`. Development only: accounts are `X-Dev-Account` names, signed in with /auth/dev.
 //
-//   node dev/sync-dev.mjs [--port 8787] [--data DIR]
+//   node dev/sync-dev.mjs [--port 8787] [--data DIR] [--assets URL]
+// The editor page is site/dist, served here as the root of the assets origin; --assets points at another server that does the same.
 //   RAYDE_SYNC_GATEWAY=http://127.0.0.1:8787 RAYDE_SYNC_DEV_ACCOUNT=alice  (then Sync, and Open, in the Cloud Sync panel)
 import { Miniflare } from "miniflare";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
+import { createServer as http } from "node:http";
+import { readFile } from "node:fs/promises";
 import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -16,6 +19,22 @@ const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); 
 const port = Number(flag("port", 8787));
 const data = resolve(flag("data", join(homedir(), ".rayde", "sync-dev")));
 const base = `http://127.0.0.1:${port}`;
+const dist = resolve(dirname(fileURLToPath(import.meta.url)), "../../../site/dist");
+const types = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".wasm": "application/wasm", ".hl": "application/octet-stream", ".svg": "image/svg+xml", ".png": "image/png" };
+let assets = flag("assets");
+if (!assets) {
+  const files = http(async (request, response) => {
+    const path = new URL(request.url, "http://x").pathname;
+    const file = resolve(dist, "." + (path === "/" ? "/index.html" : path));
+    if (file !== dist && !file.startsWith(dist + "/")) { response.writeHead(403).end(); return; }
+    try {
+      const body = await readFile(file);
+      response.writeHead(200, { "Content-Type": types[file.slice(file.lastIndexOf("."))] ?? "application/octet-stream", "Access-Control-Allow-Origin": "*" }).end(body);
+    } catch { response.writeHead(404).end(); }
+  });
+  await new Promise(done => files.listen(0, "127.0.0.1", done));
+  assets = `http://127.0.0.1:${files.address().port}`;
+}
 const secret = "dev-runner-secret";
 const session = resolve(dirname(fileURLToPath(import.meta.url)), "../../../native/session/target/debug/rayde-session");
 const freePort = () => new Promise(done => { const server = createServer().listen(0, "127.0.0.1", () => { const p = server.address().port; server.close(() => done(p)); }); });
@@ -53,7 +72,7 @@ const runner = async request => {
   return new Response(JSON.stringify({ url: `ws://127.0.0.1:${sessionPort}/session`, token, project }), { headers: { "Content-Type": "application/json" } });
 };
 
-const { config } = options({ appOrigin: base, port, runnerSecret: secret, provision: null });
+const { config } = options({ appOrigin: base, asset: assets, port, runnerSecret: secret, provision: null });
 config.durableObjectsPersist = join(data, "state");
 config.r2Persist = join(data, "files");
 config.serviceBindings.RUNNER = runner;
