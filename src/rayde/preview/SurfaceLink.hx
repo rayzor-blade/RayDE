@@ -30,6 +30,10 @@ class SurfaceLink {
 	final ready = new Lock();
 	final spare:Array<Bytes> = [];
 	final inputLock = new Mutex();
+	final creditWait = new Lock();
+	var credits = 0;
+	var spent = 0;
+	var creditsSeen = false;
 	var queued:Array<SurfaceInput> = [];
 	var pending:Null<Picture>;
 	var closing = false;
@@ -109,10 +113,40 @@ class SurfaceLink {
 		return inputs;
 	}
 
+	/** Whether the viewer has sent a credit, which means it paces the frames: from then on `takeCredit` is how a frame starts. */
+	public var viewerPaces(get, never):Bool;
+
+	function get_viewerPaces():Bool {
+		inputLock.acquire();
+		var seen = creditsSeen;
+		inputLock.release();
+		return seen;
+	}
+
+	/** Waits up to `seconds` for permission to draw a frame and spends it; false when none came, so the caller can look at its own events and try again. */
+	public function takeCredit(seconds:Float):Bool {
+		if (!creditWait.wait(seconds)) return false;
+		inputLock.acquire();
+		credits--;
+		spent++;
+		inputLock.release();
+		return true;
+	}
+
 	function readInputs():Void {
 		var stdin = Sys.stdin();
 		try while (true) {
 			var record = SurfaceProtocol.read(stdin);
+			if (record.kind == SurfaceProtocol.CREDIT) {
+				inputLock.acquire();
+				creditsSeen = true;
+				// A viewer that is ahead does not bank frames: at most two wait.
+				var grant = credits < 2;
+				if (grant) credits++;
+				inputLock.release();
+				if (grant) creditWait.release();
+				continue;
+			}
 			if (record.kind != SurfaceProtocol.INPUT) continue;
 			var input = SurfaceProtocol.parseInput(record.payload);
 			inputLock.acquire();
@@ -131,6 +165,11 @@ class SurfaceLink {
 			var next = pending, done = closing;
 			pending = null;
 			lock.release();
+			inputLock.acquire();
+			var acks = spent;
+			spent = 0;
+			inputLock.release();
+			for (_ in 0...acks) SurfaceProtocol.writeTo(out, SurfaceProtocol.record(SurfaceProtocol.ACK, Bytes.alloc(0)));
 			if (next == null) {
 				if (done) {
 					SurfaceProtocol.writeTo(out, SurfaceProtocol.record(SurfaceProtocol.EXIT, Bytes.alloc(0)));

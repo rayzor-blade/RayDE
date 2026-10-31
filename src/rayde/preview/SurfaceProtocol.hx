@@ -23,7 +23,9 @@ typedef SurfaceInput = {id:Int, type:Int, a:Int, b:Int, c:Int};
 /**
  * The surface protocol between a producer (a shim inside a headless app) and RayDE, as records on the app's stdio.
  * A record is four bytes of length (big-endian) for what follows, one byte of kind and the payload.
- * Producer to viewer: HELLO (width, height), FRAME, LOG (text) and EXIT. Viewer to producer: INPUT.
+ * Producer to viewer: HELLO (width, height), FRAME, LOG (text), EXIT and ACK. Viewer to producer: INPUT and CREDIT.
+ * Credits make the viewer the only clock: once a producer has seen a CREDIT it draws one frame per credit it holds (at most two) and answers each
+ * with an ACK, so the viewer knows how many are outstanding even when a frame had nothing to send. A producer that never sees one paces itself.
  */
 class SurfaceProtocol {
 	public static inline var HELLO = 1;
@@ -31,6 +33,10 @@ class SurfaceProtocol {
 	public static inline var LOG = 3;
 	public static inline var EXIT = 4;
 	public static inline var INPUT = 5;
+	/** Viewer to producer: permission to draw one frame. Empty payload. */
+	public static inline var CREDIT = 6;
+	/** Producer to viewer: one credit was spent. Empty payload. */
+	public static inline var ACK = 7;
 
 	/** Input types for `SurfaceInput.type`: pointer down, up and move carry x in `a`, y in `b` and the button in `c`. */
 	public static inline var POINTER_DOWN = 1;

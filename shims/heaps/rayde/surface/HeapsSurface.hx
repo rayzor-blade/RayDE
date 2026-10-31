@@ -22,6 +22,7 @@ class HeapsSurface {
 		this.app = app;
 		this.link = link;
 		target = new h3d.mat.Texture(link.width, link.height, [Target]);
+		frameSeconds = 1 / fps;
 	}
 
 	/** Starts streaming `app`'s scene at `width` by `height`. Returns the link, for its `deflate` option. Call from `init`. */
@@ -39,18 +40,27 @@ class HeapsSurface {
 
 	static var current:Null<HeapsSurface>;
 
-	/** Called by the injected build step before each frame of any `hxd.App`: the first call starts streaming at RAYDE_SURFACE_SIZE (WIDTHxHEIGHT, default 800x600). */
-	public static function before(app:hxd.App):Void {
+	/**
+	 * Called by the injected build step before each frame of any `hxd.App`; the frame runs only when this returns true. The first call starts
+	 * streaming at RAYDE_SURFACE_SIZE (WIDTHxHEIGHT, default 800x600). Once the viewer sends credits, a frame starts when one is held.
+	 */
+	public static function before(app:hxd.App):Bool {
 		if (current == null) {
 			var size = (Sys.getEnv("RAYDE_SURFACE_SIZE") ?? "800x600").split("x"), width = Std.parseInt(size[0]), height = Std.parseInt(size[1]);
 			current = create(app, width ?? 800, height ?? 600);
 		}
 		current.deliver();
+		if (!current.link.viewerPaces) return true;
+		// The raw time between frames is the viewer's own interval between credits, which follows its display, so motion stays true to display time.
+		// A short wait keeps the app answering its window and noticing a viewer that left.
+		return current.link.takeCredit(.1);
 	}
 
-	/** Called after each frame: draws the scene to the texture and sends what changed. */
+	/** Called after each frame: draws the scene to the texture and sends what changed, then waits out the rest of the frame (RAYDE_SURFACE_FPS, default 60) so the app does not outrun the viewer. */
 	public static function after(app:hxd.App):Void {
-		if (current != null) current.captureOrExit();
+		if (current == null) return;
+		current.captureOrExit();
+		if (!current.link.viewerPaces) current.pace();
 	}
 
 	static function create(app:hxd.App, width:Int, height:Int):HeapsSurface {
@@ -63,6 +73,18 @@ class HeapsSurface {
 		var link = new SurfaceLink(width, height), surface = new HeapsSurface(app, link);
 		link.start();
 		return surface;
+	}
+
+	var nextFrameAt = 0.;
+	final fps = Math.max(1, Std.parseFloat(Sys.getEnv("RAYDE_SURFACE_FPS") ?? "60"));
+	final frameSeconds:Float;
+
+	function pace():Void {
+		var now = haxe.Timer.stamp();
+		nextFrameAt = nextFrameAt == 0 ? now + frameSeconds : nextFrameAt + frameSeconds;
+		// A frame that ran long does not make the next ones catch up in a burst.
+		if (nextFrameAt < now) nextFrameAt = now;
+		else Sys.sleep(nextFrameAt - now);
 	}
 
 	function captureOrExit():Void {

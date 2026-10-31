@@ -21,6 +21,8 @@ class SurfacePump {
 	var stopped = false;
 	var ended = false;
 	var logged = 0;
+	var granted = 0;
+	var acked = 0;
 
 	public function new(program:Program) {
 		this.program = program;
@@ -94,6 +96,37 @@ class SurfacePump {
 		return id;
 	}
 
+	/** Credits granted and not yet acknowledged, for a readout. */
+	public function outstanding():Int {
+		lock.acquire();
+		var n = granted - acked;
+		lock.release();
+		return n;
+	}
+
+	/** Gives the app permission to draw one frame, unless `limit` are already outstanding. Returns whether one was sent. */
+	public function grant(limit = 2):Bool {
+		lock.acquire();
+		var outstanding = granted - acked;
+		lock.release();
+		if (outstanding >= limit) return false;
+		wire.acquire();
+		var sent = false;
+		try if (!stopped) {
+			SurfaceProtocol.writeTo(program.stdin, SurfaceProtocol.record(SurfaceProtocol.CREDIT, haxe.io.Bytes.alloc(0)));
+			sent = true;
+		} catch (_:Dynamic) {
+			stopped = true;
+		}
+		wire.release();
+		if (sent) {
+			lock.acquire();
+			granted++;
+			lock.release();
+		}
+		return sent;
+	}
+
 	/** Stops the app and releases its pipes. Safe to call again. */
 	public function stop():Void {
 		wire.acquire();
@@ -112,6 +145,12 @@ class SurfacePump {
 	function readRecords():Void {
 		try while (true) {
 			var record = SurfaceProtocol.read(program.stdout);
+			if (record.kind == SurfaceProtocol.ACK) {
+				lock.acquire();
+				acked++;
+				lock.release();
+				continue;
+			}
 			var prepared = SurfaceFeed.prepare(record.kind, record.payload);
 			if (prepared == null) continue;
 			lock.acquire();

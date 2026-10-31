@@ -24,9 +24,10 @@ class Inject {
 			access: [],
 			pos: Context.currentPos(),
 			kind: FFun({args: [], ret: null, expr: macro {
-				rayde.surface.HeapsSurface.before(this);
-				raydeMainLoop();
-				rayde.surface.HeapsSurface.after(this);
+				if (rayde.surface.HeapsSurface.before(this)) {
+					raydeMainLoop();
+					rayde.surface.HeapsSurface.after(this);
+				}
 			}})
 		};
 		fields.push(wrapper);
