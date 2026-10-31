@@ -616,3 +616,5 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde-sync-panel .rayde-sync-link { flex-direction: row; align-items: center; min-width: 0; overflow: hidden; }
 #rayde-sync-panel .rayde-sync-url { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #rayde-sync-panel .rayde-sync-card .ui-progress { align-self: stretch; width: auto; min-width: 0; max-width: 100%; }
+/* These menu triggers are an icon, or an icon and a label; the chevron the trigger adds of its own is left out. */
+#rayde-sync-panel #rayde-sync-more .ui-dropdown-menu-chevron, #rayde-surface-preview #rayde-surface-shape .ui-dropdown-menu-chevron { display: none; }
