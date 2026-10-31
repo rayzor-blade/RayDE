@@ -174,7 +174,7 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
             if owner_id.is_null() {
                 return Err(bad(400, "This account cannot open a browser workspace."));
             }
-            let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation}});
+            let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
             rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
             Ok(reply(&json!({"id": id, "url": body["url"], "generation": generation}), 200)?)
         }

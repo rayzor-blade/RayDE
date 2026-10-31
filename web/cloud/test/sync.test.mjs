@@ -128,6 +128,7 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   });
   await new Promise((done, fail) => { server.stdout.on("data", chunk => String(chunk).includes("Cloud Sync gateway") && done()); server.once("exit", () => fail(new Error("the dev gateway exited"))); });
   const { root } = await repository({ "main.hx": "class Main {}\n", "notes.txt": "synced text" });
+  const name = root.split("/").pop();
   t.after(() => rm(root, { recursive: true, force: true }));
   const pushed = push(root, base);
   assert.equal(pushed.last.event, "published", JSON.stringify(pushed.events));
@@ -149,11 +150,17 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   let state;
   for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(r => setTimeout(r, 100)); }
   assert.equal(state.status, "ready", JSON.stringify(state));
-  assert.equal(await readFile(join(data, "workspaces", id, "1", "notes.txt"), "utf8"), "synced text");
+  assert.equal(await readFile(join(data, "workspaces", id, "1", name, "notes.txt"), "utf8"), "synced text");
+
+  // The browser's own connection reaches the restored session through the Worker.
+  const { default: WebSocket } = await import("ws");
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/workspaces/${id}/socket`, { headers: { Cookie: cookie, Origin: base } });
+  await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); socket.once("unexpected-response", (_, response) => fail(new Error(`socket ${response.statusCode}`))); setTimeout(() => fail(new Error("the socket did not open")), 10000); });
+  socket.close();
 
   await writeFile(join(root, "notes.txt"), "changed text");
   assert.equal(push(root, base).last.generation, 2);
   assert.equal((await api(`/api/sync/workspaces/${id}/open`, { method: "POST" })).status, 200);
-  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready" && (await readFile(join(data, "workspaces", id, "2", "notes.txt"), "utf8").catch(() => ""))) break; await new Promise(r => setTimeout(r, 100)); }
-  assert.equal(await readFile(join(data, "workspaces", id, "2", "notes.txt"), "utf8"), "changed text", "a newer generation is restored again");
+  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready" && (await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8").catch(() => ""))) break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8"), "changed text", "a newer generation is restored again");
 });

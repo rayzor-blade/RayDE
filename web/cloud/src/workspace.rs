@@ -749,9 +749,9 @@ impl WorkspaceSession {
                 value = Some(record);
             }
             let mut record = value.unwrap();
-            // A newer generation of a synced workspace is restored again, not served from the copy of an older one.
-            let wanted = &data["repository"]["sync"]["generation"];
-            if wanted.is_u64() && record["repository"]["sync"]["generation"] != *wanted {
+            // Opening a synced workspace restores it again: a newer generation replaces an older copy, and a compute that has gone away is replaced.
+            let wanted = &data["repository"]["sync"];
+            if wanted.is_object() && record["repository"]["sync"] != *wanted {
                 record["repository"] = data["repository"].clone();
                 record["status"] = json!("preparing");
                 record["connection"] = Value::Null;

@@ -50,7 +50,9 @@ const runner = async request => {
   const response = await get("/manifest");
   if (!response.ok) return new Response(JSON.stringify({ message: "The snapshot is not available." }), { status: 502 });
   const manifest = await response.json();
-  const root = join(data, "workspaces", id, String(manifest.generation));
+  // The folder is named after the one that was synced, which is what the editor shows as the workspace's name.
+  const name = String(manifest.name ?? "").replace(/[^\w.-]+/g, "-").replace(/^[.-]+/, "") || "workspace";
+  const root = join(data, "workspaces", id, String(manifest.generation), name);
   await rm(root, { recursive: true, force: true });
   for (const file of manifest.files) {
     const target = join(root, file.path);
