@@ -1,1 +1,1 @@
-{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":4,"timestamp":1793478768,"nonce":"wUo/FzMmok67pyXcu/t53Rtj/Zw=","status":2}]}
+{"author":{"id":"038d65070aa747b6bc9d50939fa697ec871a40ed259db54429b255bbef2581d6"},"ops":[{"type":3,"timestamp":1793479648,"nonce":"2bvKmDr8NioG88rgEG7ZT8UZLek=","message":"The Cloud Sync sidebar's Initialize Git now goes through this extension's git.initialize command (libgit2), not a git executable: 9553cb3.","files":null}]}
