@@ -41,9 +41,17 @@ const freePort = () => new Promise(done => { const server = createServer().liste
 const running = new Map();
 
 let mf;
+// One restore of a workspace at a time: overlapping requests would each start a session and lose track of one of them.
+const turns = new Map();
 const runner = async request => {
   if (request.headers.get("Authorization") !== `Bearer ${secret}`) return new Response("{}", { status: 403 });
-  const { id, repository } = await request.json();
+  const body = await request.json();
+  const before = turns.get(body.id) ?? Promise.resolve();
+  const turn = before.then(() => restore(body), () => restore(body));
+  turns.set(body.id, turn.catch(() => {}));
+  return turn;
+};
+const restore = async ({ id, repository }) => {
   const source = repository?.sync;
   if (!source) return new Response(JSON.stringify({ message: "This runner only restores synced workspaces." }), { status: 400 });
   const get = path => mf.dispatchFetch(`${base}/api/sync/runner/${id}${path}`, { headers: { Authorization: `Bearer ${secret}` } });
@@ -70,8 +78,9 @@ const runner = async request => {
   running.set(id, child);
   await listening(sessionPort, child);
   console.log(`restored ${id} generation ${manifest.generation} (${manifest.files.length} files) on :${sessionPort}`);
+  // Recoverable: a visit that finds the session gone has the Worker ask for a new one, which is what a gateway restart leaves behind.
   const project = manifest.files.some(f => f.path === "build.hxml") ? "build.hxml" : null;
-  return new Response(JSON.stringify({ url: `ws://127.0.0.1:${sessionPort}/session`, token, project }), { headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify({ url: `ws://127.0.0.1:${sessionPort}/session`, token, project, recoverable: true }), { headers: { "Content-Type": "application/json" } });
 };
 
 const { config } = options({ appOrigin: base, asset: assets, port, runnerSecret: secret, provision: null });
@@ -90,5 +99,6 @@ const stop = async () => {
   await mf.dispose();
   process.exit(0);
 };
+process.on("exit", () => { for (const child of running.values()) child.kill(); });
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);

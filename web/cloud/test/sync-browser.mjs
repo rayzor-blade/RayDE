@@ -1,5 +1,6 @@
 // Explicit browser check (needs Chrome): a synced workspace opened in the editor talks to its restored session. It records the editor's own socket to
-// /api/workspaces/{id}/socket and requires that the file listing and a file's content arrive over it.
+// /api/workspaces/{id}/socket and requires that the file listing and a file's content arrive over it, then does it again after the gateway has restarted
+// and killed the session, visiting the link without opening the workspace again.
 //   node test/sync-browser.mjs
 import { createRequire } from "node:module";
 import { spawn, spawnSync } from "node:child_process";
@@ -25,49 +26,65 @@ await writeFile(join(folder, "build.hxml"), "-main Main\n--interp\n");
 await writeFile(join(folder, "Main.hx"), `class Main {\n  static function main() { trace("${marker}"); }\n}\n`);
 git("add", "-A"); git("commit", "-q", "-m", "first");
 
-const server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
-let browser;
-const cleanup = async () => { await browser?.close().catch(() => {}); server.kill(); await rm(data, { recursive: true, force: true }); await rm(folder, { recursive: true, force: true }); };
-try {
+let server, browser;
+async function gateway() {
+  server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
   await new Promise((done, fail) => { server.stdout.on("data", c => String(c).includes("Cloud Sync gateway") && done()); server.once("exit", () => fail(Error("the dev gateway exited"))); });
-  const run = (...extra) => JSON.parse(spawnSync(push, [folder, base, "alice", ...extra], { encoding: "utf8" }).stdout.trim().split("\n").at(-1));
-  const published = run();
-  assert.equal(published.event, "published", JSON.stringify(published));
-  assert.equal(run("open").event, "opened");
-  const id = published.id;
+}
+async function stopGateway() {
+  if (!server) return;
+  const exited = new Promise(done => server.once("exit", done));
+  server.kill();
+  await exited;
+  server = null;
+}
+const cleanup = async () => { await browser?.close().catch(() => {}); await stopGateway(); await rm(data, { recursive: true, force: true }); await rm(folder, { recursive: true, force: true }); };
 
-  browser = await puppeteer.launch({ executablePath: chrome, headless: "new", args: ["--no-sandbox", "--enable-unsafe-webgpu"], defaultViewport: { width: 1280, height: 800 } });
+// Opens the workspace link in a clean page and requires the channel to the session to work.
+async function visit(id, label) {
   const page = await browser.newPage();
   const cdp = await page.createCDPSession();
   await cdp.send("Network.enable");
-  const sockets = new Map(), sent = [], received = [];
+  const sockets = new Map(), sent = [], received = [], errors = [];
+  const mine = e => sockets.get(e.requestId)?.includes(`/api/workspaces/${id}/socket`);
   const text = frame => frame.opcode === 2 ? Buffer.from(frame.payloadData, "base64").toString("latin1") : frame.payloadData;
   cdp.on("Network.webSocketCreated", e => sockets.set(e.requestId, e.url));
-  cdp.on("Network.webSocketFrameSent", e => { if (sockets.get(e.requestId)?.includes(`/api/workspaces/${id}/socket`)) sent.push(text(e.response)); });
-  cdp.on("Network.webSocketFrameReceived", e => { if (sockets.get(e.requestId)?.includes(`/api/workspaces/${id}/socket`)) received.push(text(e.response)); });
-  const errors = [];
+  cdp.on("Network.webSocketFrameSent", e => { if (mine(e)) sent.push(text(e.response)); });
+  cdp.on("Network.webSocketFrameReceived", e => { if (mine(e)) received.push(text(e.response)); });
   page.on("pageerror", e => errors.push(String(e)));
-
-  // A direct visit with no session is signed in as the development account.
+  const until = async (done, what, ms = 60000) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { if (done()) return; await sleep(250); }
+    await page.screenshot({ path: join(tmpdir(), `sync-browser-${label}.png`) });
+    throw Error(`${label}: ${what}\nsent ${sent.length}, received ${received.length}, page ${page.url()}\nlast received: ${received.slice(-3).map(f => f.slice(0, 200)).join(" | ")}\n${errors.join("\n")}`);
+  };
+  // A visit with no session is signed in as the development account.
   await page.goto(`${base}/${id}`, { waitUntil: "domcontentloaded" });
-  const until = async (done, what, ms = 60000) => { const end = Date.now() + ms; while (Date.now() < end) { if (done()) return; await sleep(250); } throw Error(`${what}\nsent ${sent.length}, received ${received.length}\n${errors.join("\n")}`); };
-
-  await until(() => [...sockets.values()].some(url => url.includes(`/api/workspaces/${id}/socket`)), "the editor never opened the workspace socket");
+  await until(() => sockets.size > 0, "the editor never opened the workspace socket");
   await until(() => sent.length > 0 && received.length > 0, "the editor and the session exchanged nothing");
   await until(() => received.some(frame => frame.includes("Main.hx")), "the session never listed the synced files");
-
   // Open the file from the Explorer: its content has to come back from the session, not from anything the page had.
   await sleep(1500);
   await page.mouse.click(140, 140);
   await page.mouse.click(140, 140, { count: 2 });
-  try {
-    await until(() => received.some(frame => frame.includes(marker)), "Main.hx was not read through the session");
-  } catch (error) {
-    await page.screenshot({ path: join(tmpdir(), "sync-browser-failure.png") });
-    throw error;
-  }
+  await until(() => received.some(frame => frame.includes(marker)), "Main.hx was not read through the session");
   assert.equal(errors.length, 0, errors.join("\n"));
-  console.log(`channel ok: ${sent.length} frames sent, ${received.length} received, content of Main.hx came from the session`);
+  console.log(`${label}: ${sent.length} frames sent, ${received.length} received, content of Main.hx came from the session`);
+  await page.close();
+}
+
+try {
+  await gateway();
+  const run = (...extra) => JSON.parse(spawnSync(push, [folder, base, "alice", ...extra], { encoding: "utf8" }).stdout.trim().split("\n").at(-1));
+  const published = run();
+  assert.equal(published.event, "published", JSON.stringify(published));
+  assert.equal(run("open").event, "opened");
+  browser = await puppeteer.launch({ executablePath: chrome, headless: "new", args: ["--no-sandbox", "--enable-unsafe-webgpu"], defaultViewport: { width: 1280, height: 800 } });
+  await visit(published.id, "first visit");
+  await stopGateway();
+  await gateway();
+  await visit(published.id, "after a gateway restart");
+  console.log("channel ok");
 } finally {
   await cleanup();
 }
