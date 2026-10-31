@@ -23,11 +23,42 @@ pub struct Entitlement {
     pub max_account_bytes: u64,
     /// Whether storage may outlive compute and stay until deleted.
     pub retained: bool,
+    /// GPU session time the account may use in a billing period, metered apart from storage; 0 means the plan has no GPU class.
+    #[serde(default)]
+    pub gpu_ms_per_period: u64,
 }
 
 impl Entitlement {
     pub fn free() -> Self {
-        Entitlement { max_expiry_ms: DEFAULT_EXPIRY_MS, max_allocation_bytes: DEFAULT_ALLOCATION_BYTES, max_workspaces: 3, max_account_bytes: 3 * GB, retained: false }
+        Entitlement { max_expiry_ms: DEFAULT_EXPIRY_MS, max_allocation_bytes: DEFAULT_ALLOCATION_BYTES, max_workspaces: 3, max_account_bytes: 3 * GB, retained: false, gpu_ms_per_period: 0 }
+    }
+}
+
+/// What a session's guest has. A workspace is the same either way: a restored snapshot can start in either class.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionClass {
+    Cpu,
+    Gpu,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SessionDenied {
+    /// The plan has no GPU allowance.
+    GpuNotInPlan,
+    /// The period's GPU time is used up.
+    GpuAllowanceUsed,
+}
+
+/// Whether the plan lets an account start a session of `class`, given the GPU time it has used this period. Returns the GPU time left, `None` for a CPU session.
+pub fn admit(class: SessionClass, plan: &Entitlement, gpu_used_ms: u64) -> Result<Option<u64>, SessionDenied> {
+    match class {
+        SessionClass::Cpu => Ok(None),
+        SessionClass::Gpu if plan.gpu_ms_per_period == 0 => Err(SessionDenied::GpuNotInPlan),
+        SessionClass::Gpu => match plan.gpu_ms_per_period.saturating_sub(gpu_used_ms) {
+            0 => Err(SessionDenied::GpuAllowanceUsed),
+            left => Ok(Some(left)),
+        },
     }
 }
 
@@ -216,6 +247,25 @@ impl Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cpu_session_is_always_admitted_and_a_gpu_one_needs_a_plan_with_time_left() {
+        let free = Entitlement::free();
+        assert_eq!(admit(SessionClass::Cpu, &free, u64::MAX), Ok(None));
+        assert_eq!(admit(SessionClass::Gpu, &free, 0), Err(SessionDenied::GpuNotInPlan));
+        let plan = Entitlement { gpu_ms_per_period: 60 * 60_000, ..Entitlement::free() };
+        assert_eq!(admit(SessionClass::Gpu, &plan, 0), Ok(Some(60 * 60_000)));
+        assert_eq!(admit(SessionClass::Gpu, &plan, 59 * 60_000), Ok(Some(60_000)));
+        assert_eq!(admit(SessionClass::Gpu, &plan, 60 * 60_000), Err(SessionDenied::GpuAllowanceUsed));
+        assert_eq!(admit(SessionClass::Gpu, &plan, u64::MAX), Err(SessionDenied::GpuAllowanceUsed));
+    }
+
+    #[test]
+    fn an_entitlement_saved_before_the_gpu_class_has_no_gpu_time() {
+        let old = r#"{"max_expiry_ms":86400000,"max_allocation_bytes":1000000000,"max_workspaces":3,"max_account_bytes":3000000000,"retained":false}"#;
+        let plan: Entitlement = serde_json::from_str(old).unwrap();
+        assert_eq!(plan, Entitlement::free());
+    }
 
     #[test]
     fn the_clock_starts_at_the_first_publication_and_only_there() {
