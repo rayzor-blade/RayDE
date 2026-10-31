@@ -33,6 +33,12 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 		var pump = props.pump, screen = Signal.make((null:Null<PixelSurface>)), state = Signal.make("starting"), timer:Null<ashui.animation.AnimationScheduler.Timer> = null, gone = false;
 		// Pictures drawn and pictures received from the app each second, so a lag shows as a gap between the two or as a low first number.
 		function chooseShape(value:String):Void shape.set(value);
+		#if (ashui_window && !wasm)
+		// A picture that changes every frame needs a frame of slack, or a late one waits out a whole refresh; the window goes back to its default after.
+		var window = ashui.app.WindowedApp.current;
+		if (window != null) window.frameLatency = 2;
+		Owner.onCleanup(() -> if (window != null && !window.disposed) window.frameLatency = 1);
+		#end
 		function shapeItem(value:String, label:String):Element
 			return <dropdown-menu-item id={"rayde-surface-shape-" + value.split(":").join("x")} onSelect={() -> chooseShape(value)}>
 				<div class="flex items-center gap-2"><div class="size-4 shrink-0"><if {shape.get() == value}><icon document={Icons.CHECK_LINE} class="size-4"/></if></div><text>${label}</text></div>
