@@ -211,7 +211,7 @@ class EditorPart {
 	}
 
 	function tabLabel(file:String):String
-		return file == Workbench.SURFACE_PREVIEW ? "Surface Preview" : file == Workbench.APP_PREVIEW ? (wb.runPart.appPreview==null || wb.runPart.appPreview.title.get()=="" ? "App Preview" : wb.runPart.appPreview.title.get()) : fileLabel(file);
+		return file == Workbench.SURFACE_PREVIEW ? wb.runPart.surfaceTitle : file == Workbench.APP_PREVIEW ? (wb.runPart.appPreview==null || wb.runPart.appPreview.title.get()=="" ? "App Preview" : wb.runPart.appPreview.title.get()) : fileLabel(file);
 
 	function fileLabel(file:String):String
 		return file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
@@ -318,7 +318,7 @@ class EditorPart {
 
 	/** One open file's editor, which checks the file as it is typed. */
 	function page(file:String, selected:Signal<String>):Element {
-		if (file == Workbench.SURFACE_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {wb.runPart.surfaceRevision.get() >= 0 && selected.get() == file && wb.runPart.surfacePreview != null}><surface-preview pump={wb.runPart.surfacePreview} title="Surface Preview" leave={focusCurrent} restart={wb.runPart.restartSurfacePreview}/></if></tabs-content>;
+		if (file == Workbench.SURFACE_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {wb.runPart.surfaceRevision.get() >= 0 && selected.get() == file && wb.runPart.surfacePreview != null}><surface-preview pump={wb.runPart.surfacePreview} title={wb.runPart.surfaceTitle} leave={focusCurrent} restart={wb.runPart.restartSurfacePreview}/></if></tabs-content>;
 		if (file == Workbench.APP_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file && wb.runPart.appPreview != null}><app-preview build={wb.runPart.appPreview} rebuild={wb.runPart.previewApp} shown={() -> !wb.quickOpen.get() && wb.prompt.get() == null && !Lambda.exists([for (opened in wb.extensionsPart.previewSheets) opened], opened -> opened.get())}/></if></tabs-content>;
 		if (file.startsWith(Workbench.DIFF_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.comparisonPage(file)}</if></tabs-content>;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;

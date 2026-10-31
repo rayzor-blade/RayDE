@@ -107,6 +107,9 @@ class RunPart {
 	public final surfaceRevision = Signal.make(0);
 	/** Shell command line of a headless app that speaks the surface protocol on its stdio, run from RAYDE_SURFACE_DIR (or the project folder). */
 	var surfaceCommand = "";
+	/** What the Surface Preview tab and its header call the app: its name, or "Surface Preview" when it has none. */
+	public var surfaceTitle(default, null) = "Surface Preview";
+	var surfaceDir:Null<String>;
 	final previewRevision = Signal.make(0);
 
 	function previewBuilding():Bool {
@@ -153,9 +156,11 @@ class RunPart {
 	}
 
 	/** Starts `command` (a shell command line) as a headless app and presents its surface in a tab. */
-	public function previewSurface(command:String, ?dir:String):Void {
+	public function previewSurface(command:String, ?dir:String, ?title:String):Void {
 		closeSurfacePreview();
 		surfaceCommand = command;
+		surfaceDir = dir;
+		surfaceTitle = title != null && title != "" ? title : "Surface Preview";
 		var folder = dir != null ? dir : wb.props.display.cwd;
 		try {
 			var program = new rayde.workspace.LocalLauncher().start("/bin/sh", ["-c", "cd '" + folder.split("'").join("'\\''") + "' && exec " + command]);
@@ -180,11 +185,11 @@ class RunPart {
 		var dir = wb.props.display.cwd, script = haxe.io.Path.directory(Fs.fullPath(Sys.programPath())) + "/../scripts/heaps-surface.sh";
 		if (!Fs.exists(script)) {wb.say("Heaps previews need RayDE's scripts folder beside the program.");return;}
 		if (!Fs.exists(dir + "/native.hxml")) {wb.say("This project has no native.hxml; the Heaps starter creates one.");return;}
-		saveBefore(() -> previewSurface("bash '" + Fs.fullPath(script).split("'").join("'\\''") + "'", dir));
+		saveBefore(() -> previewSurface("bash '" + Fs.fullPath(script).split("'").join("'\\''") + "'", dir, wb.props.name));
 	}
 
 	public function restartSurfacePreview():Void {
-		if (surfaceCommand != "") previewSurface(surfaceCommand);
+		if (surfaceCommand != "") previewSurface(surfaceCommand, surfaceDir, surfaceTitle == "Surface Preview" ? null : surfaceTitle);
 	}
 
 	public function closeSurfacePreview():Void {
