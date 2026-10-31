@@ -16,6 +16,8 @@ class SyncFeature {
 	final host:Host;
 	static final installed = new haxe.ds.ObjectMap<Contributions, SyncFeature>();
 	public final state = Signal.make(Sync.empty(SignedOut));
+	/** The running upload's handle in the native client, or -1. */
+	var push = -1;
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -53,8 +55,9 @@ class SyncFeature {
 		#if wasm
 		return;
 		#else
+		if (push >= 0) return;
 		var branch = branchOf(host.cwd);
-		var next = Sync.empty(branch == null ? NoGit : SignedOut);
+		var next = Sync.empty(branch == null ? NoGit : account() == null ? SignedOut : Ready);
 		next.branch = branch ?? "";
 		state.set(next);
 		#end
@@ -64,7 +67,7 @@ class SyncFeature {
 		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
-			onSync={unavailable} onCancel={unavailable} onRetry={unavailable} onCopy={unavailable} onOpen={unavailable} onShare={unavailable} onPause={unavailable}
+			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={unavailable} onOpen={unavailable} onShare={unavailable} onPause={unavailable}
 			onExport={unavailable} onExtend={unavailable} onDisconnect={unavailable} onDelete={unavailable}
 			onExpiry={hours -> { var s = state.get(); state.set({phase:s.phase, branch:s.branch, files:s.files, bytes:s.bytes, excluded:s.excluded, allocation:s.allocation, expiryHours:hours,
 				sent:s.sent, total:s.total, url:s.url, lastSync:s.lastSync, used:s.used, expiresAt:s.expiresAt, compute:s.compute, message:s.message, conflicts:s.conflicts}); }}/>;
@@ -86,6 +89,95 @@ class SyncFeature {
 		}
 		ashui.animation.AnimationScheduler.main.after(.25, look);
 	}
+
+	/** Where the gateway is, from `RAYDE_SYNC_GATEWAY`; null until a hosted one exists to default to. */
+	static function gateway():Null<String> {
+		var url = Sys.getEnv("RAYDE_SYNC_GATEWAY");
+		return url == null || url == "" ? null : url;
+	}
+
+	/** The development account of a gateway running on this machine, which has no GitHub App to sign in with. */
+	static function account():Null<String> {
+		var name = Sys.getEnv("RAYDE_SYNC_DEV_ACCOUNT");
+		return gateway() == null || name == null || name == "" ? null : name;
+	}
+
+	/** Uploads the folder through the native client and follows its events until it publishes, fails or is cancelled. */
+	public function sync():Void {
+		#if !wasm
+		if (push >= 0) return;
+		var url = gateway();
+		if (url == null || state.get().phase == NoGit) {
+			host.say(url == null ? "Set RAYDE_SYNC_GATEWAY to a gateway to sync with." : "Cloud Sync needs a Git repository.");
+			return;
+		}
+		var before = state.get();
+		var running = Sync.empty(Checking);
+		running.branch = before.branch;
+		state.set(running);
+		try {
+			push = NativeSync.start({root: host.cwd, gateway: url, account: account(), device: host.name});
+		} catch (error) {
+			failed(Std.string(error));
+			return;
+		}
+		follow();
+		#end
+	}
+
+	public function cancel():Void {
+		#if !wasm
+		if (push >= 0) NativeSync.cancel(push);
+		#end
+	}
+
+	#if !wasm
+	function follow():Void {
+		var id = push;
+		var events = NativeSync.poll(id);
+		var current = state.get();
+		if (events != null) for (event in events) {
+			switch (event.event) {
+				case "workspace": current.url = event.url;
+				case "scanned":
+					current.phase = Uploading;
+					current.files = event.files;
+					current.bytes = event.bytes;
+					current.excluded = event.omitted;
+				case "upload":
+					current.sent = event.bytes;
+					current.total = event.bytesTotal;
+				case "published":
+					current.phase = Synced;
+					current.url = event.url;
+					current.lastSync = Date.now().getTime();
+					current.used = event.stored;
+					current.expiresAt = event.expiresAt == null ? 0 : event.expiresAt;
+				case "error":
+					if (event.code == "cancelled") current.phase = Ready else {
+						current.phase = Failed;
+						current.message = event.message;
+					}
+			}
+		}
+		state.set({phase:current.phase, branch:current.branch, files:current.files, bytes:current.bytes, excluded:current.excluded, allocation:current.allocation,
+			expiryHours:current.expiryHours, sent:current.sent, total:current.total, url:current.url, lastSync:current.lastSync, used:current.used,
+			expiresAt:current.expiresAt, compute:current.compute, message:current.message, conflicts:current.conflicts});
+		if (NativeSync.pending(id) && !host.closed()) {
+			ashui.animation.AnimationScheduler.main.after(.2, follow);
+			return;
+		}
+		NativeSync.close(id);
+		push = -1;
+	}
+
+	function failed(message:String):Void {
+		var s = Sync.empty(Failed);
+		s.branch = state.get().branch;
+		s.message = message;
+		state.set(s);
+	}
+	#end
 
 	function unavailable():Void
 		host.say("Cloud Sync is not available yet.");

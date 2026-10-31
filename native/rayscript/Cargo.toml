@@ -29,6 +29,7 @@ scraper = { version = "=0.27.0", default-features = false }
 image = { version = "=0.25.10", default-features = false, features = ["png", "bmp", "gif", "ico"] }
 avif-decode = { version = "=3.0.0", default-features = false }
 rayde-jam = { path = "../jam" }
+rayde-sync = { path = "../sync" }
 
 [profile.release]
 debug = 1

@@ -10,6 +10,8 @@ pub mod lifecycle;
 pub mod manifest;
 pub mod policy;
 
+#[cfg(feature = "client")]
+pub mod client;
 #[cfg(feature = "scan")]
 pub mod scan;
 

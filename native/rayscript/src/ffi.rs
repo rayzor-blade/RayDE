@@ -342,3 +342,23 @@ pub extern "C" fn runtime_close(handle: i32) -> i32 {
     .unwrap_or(0)
 }
 define_prim!(hlp_runtime_close, runtime_close, "Pi_i");
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sync_push_start(data:*const vbyte,len:i32) -> i32 {
+    catch_unwind(||unsafe {text(data,len)}.map_or(-1,super::sync::start)).unwrap_or(-1)
+}
+define_prim!(hlp_sync_push_start,sync_push_start,"PBi_i");
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_push_poll(id:i32) -> *mut vbyte {
+    catch_unwind(||super::sync::poll(id).map_or(ptr::null_mut(),|s|packed_text(&s))).unwrap_or(ptr::null_mut())
+}
+define_prim!(hlp_sync_push_poll,sync_push_poll,"Pi_B");
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_push_pending(id:i32) -> bool { catch_unwind(||super::sync::pending(id)).unwrap_or(false) }
+define_prim!(hlp_sync_push_pending,sync_push_pending,"Pi_b");
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_push_cancel(id:i32) { let _=catch_unwind(||super::sync::cancel(id)); }
+define_prim!(hlp_sync_push_cancel,sync_push_cancel,"Pi_v");
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_push_close(id:i32) { let _=catch_unwind(||super::sync::close(id)); }
+define_prim!(hlp_sync_push_close,sync_push_close,"Pi_v");
