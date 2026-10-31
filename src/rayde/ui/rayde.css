@@ -591,3 +591,28 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde-extension-preview-sheet { padding: 0; gap: 0; --ui-sheet-width: 480px; }
 #rayde-extension-preview-sheet > .ui-dialog-header { padding: 16px 48px 12px 16px; border-bottom: 1px solid var(--border); }
 #rayde-extension-preview-sheet #rayde-studio { flex: 1; min-height: 0; }
+
+#rayde-sync-panel { overflow: hidden; border-left: 1px solid var(--border); }
+#rayde-sync-panel .rayde-sync-heading { flex-direction: row; align-items: center; gap: 8px; height: 36px; flex-shrink: 0; padding: 0 12px; font-size: var(--text-xs); font-weight: 600; color: var(--text-secondary); }
+#rayde-sync-panel .rayde-sync-scroll { background: var(--background); flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 14px 12px; gap: 14px; }
+#rayde-sync-panel .rayde-sync-workspace { font-size: 13px; font-weight: 600; color: var(--text-primary); white-space: normal; }
+#rayde-sync-panel .rayde-sync-section { flex-direction: column; gap: 12px; flex-shrink: 0; min-width: 0; }
+#rayde-sync-panel .rayde-sync-title { font-size: 12px; font-weight: 600; white-space: normal; }
+#rayde-sync-panel .rayde-sync-hero-title { font-size: 18px; font-weight: 600; white-space: normal; }
+#rayde-sync-panel .rayde-sync-welcome { width: 48px; height: 48px; align-items: center; justify-content: center; border-radius: var(--radius-xl); background: var(--accent-subtle); color: var(--primary); }
+#rayde-sync-panel .rayde-sync-muted { font-size: 11px; color: var(--text-secondary); white-space: normal; line-height: 1.5; }
+#rayde-sync-panel .rayde-sync-card { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); }
+#rayde-sync-panel .rayde-sync-actions { flex-direction: row; align-items: center; gap: 8px; }
+#rayde-sync-panel .rayde-sync-actions > .ui-button { flex: 1; min-width: 0; }
+#rayde-sync-panel .rayde-sync-actions > .ui-dropdown-menu { flex-shrink: 0; }
+#rayde-sync-panel .rayde-sync-actions .ui-button { --ui-button-height: 30px; --ui-button-font-size: 12px; --ui-button-padding: 5px 8px; }
+#rayde-sync-panel .rayde-sync-actions [data-size="icon"] { --ui-button-width: 30px; flex: 0 0 auto; }
+#rayde-sync-panel .ui-badge { --ui-badge-font-size: 10px; --ui-badge-line-height: 16px; --ui-badge-padding: 2px 7px; flex-shrink: 0; align-self: center; }
+#rayde-sync-panel .rayde-sync-details { flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+#rayde-sync-panel .rayde-sync-details.rayde-sync-flush { padding-top: 0; border-top: none; }
+#rayde-sync-panel .rayde-sync-detail { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+#rayde-sync-panel .rayde-sync-value { min-width: 0; text-align: right; color: var(--text-primary); white-space: normal; }
+#rayde-sync-panel .rayde-sync-error { font-size: 12px; color: var(--error); white-space: normal; }
+#rayde-sync-panel .rayde-sync-link { flex-direction: row; align-items: center; min-width: 0; overflow: hidden; }
+#rayde-sync-panel .rayde-sync-url { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#rayde-sync-panel .rayde-sync-card .ui-progress { align-self: stretch; width: auto; min-width: 0; max-width: 100%; }
