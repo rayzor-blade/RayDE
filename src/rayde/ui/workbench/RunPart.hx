@@ -165,6 +165,16 @@ class RunPart {
 		wb.openFile(Workbench.SURFACE_PREVIEW);
 	}
 
+	/** Whether the file with this `text` defines a Heaps app in a project that has a Heaps native build, which the Surface Preview can run. */
+	public function canPreviewHeaps(text:String):Bool {
+		#if wasm
+		return false;
+		#else
+		var hxml = wb.props.display.cwd + "/native.hxml";
+		return wb.extension == null && text.indexOf("extends hxd.App") >= 0 && Fs.exists(hxml) && Fs.getContent(hxml).indexOf("-lib heaps") >= 0;
+		#end
+	}
+
 	/** Builds the open Heaps project (its native.hxml) with the surface hook and shows it in a Surface Preview tab. */
 	public function previewHeaps():Void {
 		var dir = wb.props.display.cwd, script = haxe.io.Path.directory(Fs.fullPath(Sys.programPath())) + "/../scripts/heaps-surface.sh";
