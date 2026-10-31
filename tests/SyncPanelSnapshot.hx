@@ -45,6 +45,13 @@ class SyncPanelSnapshot {
 			// The folder is not a Git repository, so that is what stands in the way.
 			check(has("#rayde-sync-init-git"), "A folder without Git should offer to initialize it");
 			Snapshot.capture("cloud-sync-live-no-git", tree, bench.node, 1280, 800);
+			// Initializing is the person's own act and works without an account: the folder becomes a repository and the panel moves on to sign-in.
+			check(!sys.FileSystem.exists(workspace + "/.git"), "The folder should start without a repository");
+			feature.initGit();
+			settle(6);
+			check(sys.FileSystem.exists(workspace + "/.git"), "Initialize Git did not make a repository");
+			check(feature.state.get().phase == "signed-out", "After initializing, the panel should wait on sign-in, not " + feature.state.get().phase);
+			check(has("#rayde-sync-sign-in"), "The panel should offer Sign In once the folder is a repository");
 			// What each state shows, with the control that state exists for.
 			var expected = [
 				"signed-out" => "#rayde-sync-sign-in", "no-git" => "#rayde-sync-init-git", "ready" => "#rayde-sync-start", "checking" => "#rayde-sync-cancel",

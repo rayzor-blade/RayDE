@@ -63,11 +63,33 @@ class SyncFeature {
 	function panel():Element
 		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
-			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={() -> host.say("Initializing a repository from here is not available yet.")}
+			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={unavailable} onCancel={unavailable} onRetry={unavailable} onCopy={unavailable} onOpen={unavailable} onShare={unavailable} onPause={unavailable}
 			onExport={unavailable} onExtend={unavailable} onDisconnect={unavailable} onDelete={unavailable}
 			onExpiry={hours -> { var s = state.get(); state.set({phase:s.phase, branch:s.branch, files:s.files, bytes:s.bytes, excluded:s.excluded, allocation:s.allocation, expiryHours:hours,
 				sent:s.sent, total:s.total, url:s.url, lastSync:s.lastSync, used:s.used, expiresAt:s.expiresAt, compute:s.compute, message:s.message, conflicts:s.conflicts}); }}/>;
+
+	/** Runs `git init` in the workspace folder, as the person's own act, then looks at the folder again. The sync never does this by itself. */
+	public function initGit():Void {
+		#if wasm
+		host.say("Initializing a repository is available in the desktop app.");
+		#else
+		try {
+			var git = new sys.io.Process("git", ["-C", host.cwd, "init"]);
+			git.stdout.readAll();
+			var failure = StringTools.trim(git.stderr.readAll().toString()), code = git.exitCode();
+			git.close();
+			if (code != 0) {
+				host.say("git init failed" + (failure == "" ? "" : ": " + failure));
+				return;
+			}
+			host.say("Initialized an empty Git repository");
+		} catch (error:Dynamic) {
+			host.say("Could not run git: " + error);
+		}
+		refresh();
+		#end
+	}
 
 	function unavailable():Void
 		host.say("Cloud Sync is not available yet.");
