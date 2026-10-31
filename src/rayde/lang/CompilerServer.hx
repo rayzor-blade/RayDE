@@ -79,7 +79,7 @@ class CompilerServer {
 		for (candidate in 7600...7700) {
 			if (taken(candidate))
 				continue;
-			var p = Procs.start(haxe, ["--server-listen", Std.string(candidate)]);
+			var p = launch(haxe, candidate);
 			for (_ in 0...200) {
 				if (p.exitCode(false) != null)
 					break;
@@ -95,6 +95,20 @@ class CompilerServer {
 		}
 		throw 'no compilation server could start with $haxe';
 	}
+
+	/**
+	 * The shell that holds `haxe --server-listen <port>`. It kills the server when its own stdin closes, which the system does when this
+	 * process stops the server or ends in any way, so a server cannot outlive the process that started it. It ends when the server does.
+	 * Windows has no such shell, and runs the compiler directly.
+	 */
+	public static function launch(haxe:String, port:Int):Program {
+		if (Sys.systemName() == "Windows")
+			return Procs.start(haxe, ["--server-listen", Std.string(port)]);
+		return Procs.start("/bin/sh", ["-c", LIFELINE, haxe, Std.string(port)]);
+	}
+
+	// $0 is the compiler and $1 the port. Fd 3 keeps the real stdin, which a background command would otherwise lose to /dev/null.
+	static inline var LIFELINE = "exec 3<&0; \"$0\" --server-listen \"$1\" 3<&- & H=$!; (cat <&3 >/dev/null; kill $H 2>/dev/null) & wait $H";
 
 	public function stop():Void {
 		if (process == null)
