@@ -9,7 +9,6 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 pub mod conformance;
 pub mod fake;
-pub mod placed;
 
 pub type Labels = BTreeMap<String, String>;
 

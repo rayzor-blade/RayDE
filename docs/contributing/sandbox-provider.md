@@ -58,13 +58,9 @@ Not mapped: GPU (no flag in 0.7.11) and read-only mounts (option syntax unchecke
 - **nan8**: its actor-level `Executor` (deploy, send, subscribe) becomes a client of this interface instead of calling a backend directly.
 - **Fake** (`rayde_sandbox::fake`): in memory, for client tests and for the conformance suite. `with_program` registers a stand-in for a guest program (the runner's service tests play the session bridge this way).
 
-## Choosing a backend
-
-`rayde_sandbox::placed::Placed<A, B>` is a provider made of two. `create` places a sandbox on the primary when it can do everything the spec asks (GPU, an egress allowlist, restoring a snapshot), else on the secondary, else answers `Unsupported`; it never drops a requirement, so a GPU sandbox that also needs an allowlist is refused while the GPU backend cannot enforce one. A snapshot reference names the backend that took it, a volume pins its sandboxes to its backend, and a name in use on the other backend is a `Conflict`. Later calls by name go to the backend that holds the sandbox. The runner is generic over the provider, so it takes a `Placed` unchanged. The intended pair is MSB (allowlists, volumes, snapshots) and a dynASB adapter (GPU).
-
 ## Conformance
 
-`rayde_sandbox::conformance::run_all(&provider, prefix)` checks idempotent create and remove, conflict rules, label selection, piped stdio, output limits and deadlines, volume persistence and refusal while mounted, and that every unadvertised feature answers `Unsupported`. A backend's tests call it with a unique prefix. The fake passes it with every feature and with none, and so does a `Placed` pair.
+`rayde_sandbox::conformance::run_all(&provider, prefix)` checks idempotent create and remove, conflict rules, label selection, piped stdio, output limits and deadlines, volume persistence and refusal while mounted, and that every unadvertised feature answers `Unsupported`. A backend's tests call it with a unique prefix. The fake passes it with every feature and with none.
 
 ## Not decided
 
