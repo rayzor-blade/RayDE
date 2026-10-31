@@ -39,7 +39,9 @@ if [ -f bin/rayde-surface.hl ] && [ "$(cat bin/rayde-surface.key 2>/dev/null)" =
   echo "heaps-surface.sh: unchanged since the last build" >&2
 else
   rm -f bin/rayde-surface.key
-  haxe bin/rayde-surface.hxml -cp "$here/shims/heaps" -cp "$here/src" --macro 'rayde.surface.Inject.apply()' -hl bin/rayde-surface.hl >&2
+  # Built beside the old one and moved over it, so an app already running keeps the file it started from.
+  haxe bin/rayde-surface.hxml -cp "$here/shims/heaps" -cp "$here/src" --macro 'rayde.surface.Inject.apply()' -hl bin/rayde-surface.hl.next >&2
+  mv -f bin/rayde-surface.hl.next bin/rayde-surface.hl
   echo "$key" > bin/rayde-surface.key
 fi
 for lib in "$natives"/*.hdll "$natives"/libhl*; do
