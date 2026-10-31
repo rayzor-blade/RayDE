@@ -145,6 +145,9 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   const login = await fetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });
   assert.equal(login.status, 302);
   const cookie = login.headers.getSetCookie().find(c => c.startsWith("rayde_session=")).split(";")[0];
+  const anonymous = await fetch(`${base}/${id}`, { redirect: "manual" });
+  assert.equal(anonymous.status, 302);
+  assert.equal(new URL(anonymous.headers.get("Location")).pathname, "/auth/dev", "a local gateway signs in its development account, not GitHub");
   const page = await fetch(`${base}/${id}`, { headers: { Cookie: cookie }, redirect: "manual" });
   assert.equal(page.status, 200, "the workspace page opens for its owner");
   let state;

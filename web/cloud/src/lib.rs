@@ -228,6 +228,13 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         }
         let (_, session) = match auth(&req, &env).await {
             Ok(account) => account,
+            // A gateway running on this machine has no GitHub App, so its configured development account is signed in instead.
+            Err(error) if error.status == 401 && config(&env, "LOCAL_DEV").as_deref() == Some("1") && config(&env, "DEV_ACCOUNT").is_some() => {
+                let mut destination = Url::parse(&format!("{origin}/auth/dev"))
+                    .map_err(|_| bad(503, "Sign-in is not configured."))?;
+                destination.query_pairs_mut().append_pair("account", &config(&env, "DEV_ACCOUNT").unwrap_or_default()).append_pair("return", &path);
+                return redirect_response(destination);
+            }
             Err(error) if error.status == 401 => {
                 let mut destination = Url::parse(&format!("{origin}/auth/github/start"))
                     .map_err(|_| bad(503, "Sign-in is not configured."))?;

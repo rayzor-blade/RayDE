@@ -1,7 +1,7 @@
 // A local Cloud Sync gateway with the compute it needs: the Worker on 127.0.0.1:8787, and a stand-in for the runner that restores a published
 // generation into a folder and serves it with `rayde-session`. Development only: accounts are `X-Dev-Account` names, signed in with /auth/dev.
 //
-//   node dev/sync-dev.mjs [--port 8787] [--data DIR] [--assets URL]
+//   node dev/sync-dev.mjs [--port 8787] [--data DIR] [--assets URL] [--account alice]
 // The editor page is site/dist, served here as the root of the assets origin; --assets points at another server that does the same.
 //   RAYDE_SYNC_GATEWAY=http://127.0.0.1:8787 RAYDE_SYNC_DEV_ACCOUNT=alice  (then Sync, and Open, in the Cloud Sync panel)
 import { Miniflare } from "miniflare";
@@ -78,6 +78,8 @@ const { config } = options({ appOrigin: base, asset: assets, port, runnerSecret:
 config.durableObjectsPersist = join(data, "state");
 config.r2Persist = join(data, "files");
 config.serviceBindings.RUNNER = runner;
+// A visit with no session is signed in as this account, since a local gateway has no GitHub to send it to.
+config.bindings.DEV_ACCOUNT = flag("account", "alice");
 mf = new Miniflare(config);
 await mf.ready;
 console.log(`Cloud Sync gateway: ${base}\nsign in a browser with ${base}/auth/dev?account=alice`);
