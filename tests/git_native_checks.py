@@ -7,6 +7,7 @@ from pathlib import Path
 import queue
 import shutil
 import subprocess
+import tempfile
 import threading
 import statistics
 import time
@@ -103,6 +104,8 @@ import gitNative.eachStatus;
 import gitNative.diff;
 import gitNative.openHistory;
 import gitNative.repositoryStatus;
+import gitNative.repositoryExists;
+import gitNative.initRepository;
 import gitNative.remoteOperation;
 import gitNative.commitChanges;
 import gitNative.commitDetails;
@@ -284,6 +287,20 @@ emit({rows: rows, refs: refs, closed: closed, other: other, unborn: first});
         result = host.run(PREAMBLE + "emit({normal:repositoryStatus(REPO),unborn:repositoryStatus(EMPTY)});".replace("REPO", json.dumps(str(root))).replace("EMPTY", json.dumps(str(empty))))
         assert result["normal"]["branch"] == "main" and len(result["normal"]["entries"]) == len(entries)
         assert result["unborn"]["branch"] == "No commits"
+
+    # A folder that is not a repository is a plain "no", not an error; initializing it is the person's act and leaves a usable unborn repository.
+    # It is made outside this checkout: a folder inside a repository is part of it, as the rest of the extension treats it.
+    outside = tempfile.TemporaryDirectory()
+    plain = Path(outside.name) / "plain"
+    plain.mkdir()
+    with Host() as host:
+        result = host.run(PREAMBLE + "var before = repositoryExists(PLAIN); initRepository(PLAIN); emit({before:before, after:repositoryExists(PLAIN), again:initRepository(PLAIN), status:repositoryStatus(PLAIN)});".replace("PLAIN", json.dumps(str(plain))))
+        assert result["before"] is False and result["after"] is True, result
+        assert (plain / ".git").is_dir(), result
+        assert result["status"]["branch"] == "No commits" and result["status"]["entries"] == [], result
+        assert subprocess.run(["git", "-C", str(plain), "status", "--porcelain"], capture_output=True).returncode == 0
+    outside.cleanup()
+    print("git native: a folder without a repository is reported as such and can be initialized", flush=True)
 
     history = FIXTURE / "history"
     history.mkdir()

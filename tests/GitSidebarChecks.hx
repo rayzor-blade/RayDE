@@ -20,8 +20,10 @@ class GitSidebarChecks {
 		var home = Sys.getEnv("HOME"),
 			extensions = Sys.getEnv("RAYDE_EXTENSIONS");
 		try
-			for (dark in [false, true])
-				run(dark)
+			for (dark in [false, true]) {
+				run(dark);
+				runWithoutRepository(dark);
+			}
 		catch (error:Dynamic) {
 			Sys.putEnv("HOME", home);
 			Sys.putEnv("RAYDE_EXTENSIONS", extensions);
@@ -29,7 +31,84 @@ class GitSidebarChecks {
 		}
 		Sys.putEnv("HOME", home);
 		Sys.putEnv("RAYDE_EXTENSIONS", extensions);
-		Sys.println("Git sidebar: repeated hide/reopen restores content, tools and readiness without restarting the host in both themes");
+		Sys.println("Git sidebar: repeated hide/reopen restores content, tools and readiness without restarting the host; a folder without a repository offers to initialize one instead of an error, in both themes");
+	}
+
+	/** A folder that is not a repository: the sidebar says so and offers to initialize one, with no error; initializing leaves a working sidebar. */
+	static function runWithoutRepository(dark:Bool):Void {
+		// Outside this checkout, which is itself a repository that would otherwise contain the folder.
+		var workspace = haxe.io.Path.join([Sys.getEnv("TMPDIR") ?? "/tmp", "rayde-git-empty-" + Std.random(0x3fffffff)]),
+			root = Sys.getCwd() + "bin/git-empty-" + Std.random(0x3fffffff);
+		for (dir in [root + "/home", root + "/extensions", workspace + "/src"])
+			sys.FileSystem.createDirectory(dir);
+		Sys.putEnv("HOME", root + "/home");
+		Sys.putEnv("RAYDE_EXTENSIONS", root + "/extensions");
+		sys.io.File.saveContent(workspace + "/build.hxml", "-cp src\n-main Main\n--no-output\n");
+		sys.io.File.saveContent(workspace + "/src/Main.hx", "class Main { static function main() {} }\n");
+		check(Sys.command("python3", ["tests/git_fixture.py", workspace, "--install", "--without-repository"]) == 0, "Git extension setup failed");
+		check(!sys.FileSystem.exists(workspace + "/.git"), "The folder should start without a repository");
+		ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(), dark ? Dark : Light);
+		rayde.ui.Style.use();
+		var tree = new LayoutTree(),
+			compiler = new CompilerServer(),
+			stop:Void->Void = null;
+		var bench = Owner.root(tree, dispose -> {
+			stop = dispose;
+			return new Workbench({display: Display.ofHxml(compiler, workspace + "/build.hxml"), name: "Git sidebar"});
+		});
+		function settle(frames = 5):Void
+			for (_ in 0...frames) {
+				Offscreen.advance(1 / 60);
+				Css.setViewport(1280, 850);
+				Css.update();
+				tree.flush();
+				tree.computeLayout(bench.node, 1280, 850);
+			}
+		function count(selector:String):Int
+			return Css.query(tree, bench.node.id, selector).length;
+		function click(selector:String):Void {
+			var nodes = Css.query(tree, bench.node.id, selector);
+			check(nodes.length == 1, 'Missing $selector');
+			var box = tree.getScrolledBounds(new Node(nodes[0]));
+			Pointer.move(tree, box.x + box.width / 2, box.y + box.height / 2);
+			Pointer.press(tree);
+			Pointer.release(tree);
+			settle();
+		}
+		function until(done:Void->Bool, message:String):Void {
+			var end = haxe.Timer.stamp() + 15;
+			while (!done() && haxe.Timer.stamp() < end) {
+				settle(3);
+				Sys.sleep(.005);
+			}
+			check(done(), message);
+			settle();
+		}
+		try {
+			var entry = bench.extensionsPart.extensionManager.find("git");
+			check(entry != null, "Git extension missing");
+			bench.extensionsPart.extensionManager.setNativeApproved("git", "git2", true);
+			var studio = bench.extensionsPart.studios.get(entry.connection.file);
+			settle();
+			click("#rayde-activity-ext-git-scm");
+			until(() -> count("#git-init") == 1 && count("#rayde-studio-loading") == 0, "The sidebar did not offer to initialize a repository");
+			check(count("#git-scm-working-files") == 0, "A folder without a repository should not show a changes list");
+			check(count(".ui-toast") == 0, "A folder without a repository should not raise an error toast");
+			check(!Lambda.exists(studio.console.get(), e -> e.kind == "error"), "A folder without a repository reported an extension error");
+			Snapshot.capture('git-sidebar-no-repository-${dark ? "dark" : "light"}', tree, bench.node, 1280, 850);
+			click("#git-init");
+			until(() -> sys.FileSystem.exists(workspace + "/.git") && count("#git-init") == 0 && count("#git-scm-working-files") == 1, "Initializing did not leave a working sidebar");
+			check(!Lambda.exists(studio.console.get(), e -> e.kind == "error"), "Initializing a repository reported an extension error");
+			Snapshot.capture('git-sidebar-initialized-${dark ? "dark" : "light"}', tree, bench.node, 1280, 850);
+		} catch (error:Dynamic) {
+			stop();
+			tree.dispose();
+			compiler.stop();
+			throw error;
+		}
+		stop();
+		tree.dispose();
+		compiler.stop();
 	}
 
 	static function run(dark:Bool):Void {

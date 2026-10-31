@@ -66,6 +66,7 @@ native "git2" {
   function git_libgit2_features():Int32;
   @:blocking function git_error_last():Error;
   @:blocking function git_repository_open_ext(out:Out<Repository>, path:CString, flags:UInt32, ceiling:CString):Int32;
+  @:blocking function git_repository_init(out:Out<Repository>, path:CString, bare:UInt32):Int32;
   function git_repository_free(repository:Repository):Void;
   function git_repository_path(repository:Repository):CString;
   function git_repository_workdir(repository:Repository):CString;
@@ -170,6 +171,38 @@ function version() {
   var major = Out(Int32), minor = Out(Int32), patch = Out(Int32);
   check(git_libgit2_version(major, minor, patch), 'version');
   return {major: major.value, minor: minor.value, patch: patch.value, features: git_libgit2_features()};
+}
+
+/** Whether `path` is in a Git repository. A folder that is not one is a plain false; anything else that goes wrong is an error. */
+function repositoryExists(path) {
+  check(git_libgit2_init(), 'initialize');
+  try {
+    var out = Out(Repository);
+    var code = git_repository_open_ext(out, path, 0, null);
+    if (code == 0) { out.value.close(); git_libgit2_shutdown(); return true; }
+    // GIT_ENOTFOUND: there is no repository here or above.
+    if (code == -3) { git_libgit2_shutdown(); return false; }
+    check(code, 'open repository');
+    git_libgit2_shutdown();
+    return false;
+  } catch (error) {
+    git_libgit2_shutdown();
+    throw error;
+  }
+}
+
+/** Makes `path` a Git repository. Only ever the person's own act. A folder that already is one is left as it is. */
+function initRepository(path) {
+  check(git_libgit2_init(), 'initialize');
+  try {
+    var out = Out(Repository);
+    check(git_repository_init(out, path, 0), 'initialize repository');
+    out.value.close();
+    git_libgit2_shutdown();
+  } catch (error) {
+    git_libgit2_shutdown();
+    throw error;
+  }
 }
 
 function withRepository(path, action) {

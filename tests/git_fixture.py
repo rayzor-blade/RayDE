@@ -77,7 +77,12 @@ def create(root):
 
 
 if __name__ == "__main__":
-    root = create(sys.argv[1])
+    if "--without-repository" in sys.argv:
+        # Only the extension: the folder is left as it is, without a repository.
+        root = Path(sys.argv[1])
+        root.mkdir(parents=True, exist_ok=True)
+    else:
+        root = create(sys.argv[1])
     if "--install" in sys.argv:
         source = Path(__file__).resolve().parents[1] / "extensions/git"
         target = root / ".rayde/extensions/git"

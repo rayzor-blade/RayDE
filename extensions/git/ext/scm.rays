@@ -4,6 +4,8 @@ import rayde.workspace.openFile;
 import rayde.settings.get;
 import rayde.window.setStatusItem;
 import gitNative.repositoryStatus;
+import gitNative.repositoryExists;
+import gitNative.initRepository;
 import gitNative.branchSummary;
 import gitNative.openHistory;
 import gitNative.remoteOperation;
@@ -33,7 +35,7 @@ function groups(entries) {
     {id:'changes', title:'Changes', items:changes}, {id:'untracked', title:'Untracked', items:untracked}];
 }
 
-var state = signal(null), sections = signal(groups([])), busy = signal(false);
+var state = signal(null), sections = signal(groups([])), busy = signal(false), missing = signal(false);
 var commits = signal([]), refs = signal([]), selected = signal(''), selectedInfo = signal('');
 var expand = null;
 var operation = signal(''), focus = signal('all');
@@ -61,6 +63,35 @@ function refreshBranch() {
 
 function configureHistory(action) { expand = action; }
 
+/** The folder is not a Git repository: nothing to show but the way to make one. */
+function showMissing() {
+  missing.value = true;
+  state.value = null;
+  sections.value = groups([]);
+  commits.value = [];
+  refs.value = [];
+  statusKey = ''; entriesKey = ''; historyKey = ''; lastFailure = '';
+  setStatusItem('branch', null);
+}
+
+/** Initializes a repository in the workspace folder, because the person asked to. */
+function initialize() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    if (repositoryPath == null) repositoryPath = await root();
+    initRepository(repositoryPath);
+    missing.value = false;
+    busy.value = false;
+    report('Initialized an empty Git repository', 'success');
+  } catch (failure) {
+    busy.value = false;
+    report(failure);
+    return;
+  }
+  refresh();
+}
+
 function choose(id) {
   if (id == selected.value && selectedInfo.value != '' && changed.error.value == '') return;
   selected.value = id;
@@ -80,7 +111,16 @@ function refresh(showBusy = true) {
   if (showBusy) busy.value = true;
   try {
     if (repositoryPath == null) repositoryPath = await root();
-    var path = repositoryPath, snapshot = repositoryStatus(path);
+    var path = repositoryPath;
+    // A folder that is not a repository is not an error: the view offers to make one, and says nothing else.
+    if (!repositoryExists(path)) {
+      showMissing();
+      refreshing = false;
+      if (showBusy) busy.value = false;
+      return;
+    }
+    missing.value = false;
+    var snapshot = repositoryStatus(path);
     var status = Json.stringify(snapshot), entries = Json.stringify(snapshot.entries);
     if (status != statusKey) { statusKey = status; state.value = snapshot; showBranch(snapshot); }
     if (entries != entriesKey) { entriesKey = entries; sections.value = groups(snapshot.entries); }
@@ -153,6 +193,13 @@ function openEntry(group, entry) {
 function Sidebar(props) {
   var hover = commitHover();
   return <div id="git-scm" class="flex flex-col flex-1 min-h-0 min-w-0">
+    <if {missing.value}>
+      <div id="git-scm-empty" class="flex flex-col items-start gap-3 p-4">
+        <h3 class="text-base font-semibold m-0">No Git repository</h3>
+        <p class="text-sm text-text-secondary m-0">This folder is not a Git repository. Initialize one to see changes, history and the graph here.</p>
+        <ui-button id="git-init" disabled={busy.value} onClick={() -> initialize()}>Initialize Repository</ui-button>
+      </div>
+    <else>
     <div class="flex items-center gap-1 px-3 py-2 border-b shrink-0">
       <span id="git-scm-branch" class="text-sm font-semibold truncate flex-1">{state.value == null ? 'Repository' : state.value.branch}</span>
       <ui-button id="git-fetch" class="w-8" size="icon" variant="ghost" tooltip="Fetch" disabled={busy.value || operation.value != ''} onClick={() -> runRemote('fetch')}><ui-icon name="fetch"/></ui-button>
@@ -210,6 +257,7 @@ function Sidebar(props) {
       <Files state={changed} id="git-scm-commit-files"/>
     </div>
     </ui-panel-group>
+    </if>
   </div>;
 }
 
