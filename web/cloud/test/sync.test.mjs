@@ -148,6 +148,14 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   const anonymous = await fetch(`${base}/${id}`, { redirect: "manual" });
   assert.equal(anonymous.status, 302);
   assert.equal(new URL(anonymous.headers.get("Location")).pathname, "/auth/dev", "a local gateway signs in its development account, not GitHub");
+  // Open Repository starts GitHub sign-in; here it signs in the development account and returns to the repository picker.
+  const start = await fetch(`${base}/auth/github/start`, { redirect: "manual" });
+  assert.equal(new URL(start.headers.get("Location")).pathname, "/auth/dev");
+  const picker = await fetch(new URL(start.headers.get("Location")), { redirect: "manual" });
+  const back = new URL(picker.headers.get("Location"));
+  assert.equal(back.pathname + back.search, "/?repositories=1", "the repository picker link keeps its query");
+  const listed = await (await fetch(`${base}/api/repositories`, { headers: { Cookie: picker.headers.getSetCookie()[0].split(";")[0] } })).json();
+  assert.deepEqual(listed.repositories, [], "a local gateway has no GitHub repositories to offer");
   const page = await fetch(`${base}/${id}`, { headers: { Cookie: cookie }, redirect: "manual" });
   assert.equal(page.status, 200, "the workspace page opens for its owner");
   let state;

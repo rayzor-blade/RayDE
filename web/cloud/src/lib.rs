@@ -257,11 +257,18 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         let name = query("account").filter(|n| rayde_sync::ids::AccountId::parse(&format!("dev:{n}")).is_ok()).ok_or_else(|| bad(400, "That development account name is not valid."))?;
         let sid = random()?;
         rpc(&env, "ACCOUNTS", &sid, "put", &json!({"kind":"account","user":{"id":sync::dev_user_id(&name),"login":name,"avatarUrl":Value::Null},"csrf":random()?,"expires":now()+7*DAY,"tokens":{"access":"","refresh":Value::Null,"expires":Value::Null}})).await?;
-        let mut destination = Url::parse(&origin).map_err(|_| bad(503, "Sign-in is not configured."))?;
-        destination.set_path(&query("return").filter(|r| r.starts_with('/') && !r.starts_with("//")).unwrap_or_else(|| "/".into()));
+        let destination = Url::parse(&origin).map_err(|_| bad(503, "Sign-in is not configured."))?;
+        let back = query("return").filter(|r| r.starts_with('/') && !r.starts_with("//")).unwrap_or_else(|| "/".into());
+        let destination = destination.join(&back).map_err(|_| bad(400, "That return path is not valid."))?;
         let mut response = redirect_response(destination)?;
         response.headers_mut().append("Set-Cookie", &cookie("rayde_session", &sid, &url, 7 * 86400))?;
         return Ok(response);
+    }
+    if path == "/auth/github/start" && config(&env, "LOCAL_DEV").as_deref() == Some("1") && config(&env, "DEV_ACCOUNT").is_some() {
+        let mut destination = Url::parse(&format!("{origin}/auth/dev")).map_err(|_| bad(503, "Sign-in is not configured."))?;
+        let back = query("workspace").filter(|id| workspace_id(id)).map(|id| format!("/{id}")).unwrap_or_else(|| "/?repositories=1".into());
+        destination.query_pairs_mut().append_pair("account", &config(&env, "DEV_ACCOUNT").unwrap_or_default()).append_pair("return", &back);
+        return redirect_response(destination);
     }
     if path == "/auth/github/start" {
         let client = config(&env, "GITHUB_CLIENT_ID")

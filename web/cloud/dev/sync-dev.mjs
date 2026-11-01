@@ -89,6 +89,14 @@ const { config } = options({ appOrigin: base, asset: assets, port, runnerSecret:
 config.durableObjectsPersist = join(data, "state");
 config.r2Persist = join(data, "files");
 config.serviceBindings.RUNNER = runner;
+// There is no GitHub here: the signed-in account has the app installed on no repositories, so the repository picker lists none.
+const none = body => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+config.serviceBindings.GITHUB = request => {
+  const path = new URL(request.url).pathname;
+  if (path === "/user/installations") return none({ installations: [{ id: 1 }] });
+  if (path.endsWith("/repositories")) return none({ repositories: [] });
+  return none({ message: "No GitHub on a local gateway" });
+};
 // A visit with no session is signed in as this account, since a local gateway has no GitHub to send it to.
 config.bindings.DEV_ACCOUNT = flag("account", "alice");
 mf = new Miniflare(config);
