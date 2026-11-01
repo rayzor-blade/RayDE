@@ -648,6 +648,7 @@ class ExplorerPart {
 	/** What is in `dir`, folders first, then Haxe files, then the rest, each by name. */
 	function explorerEntries(dir:String):Array<rayde.ui.ExplorerTree.ExplorerEntry> {
 		var names = try Fs.readDirectory(dir) catch (_:Dynamic) [];
+		names = names.filter(name -> name != ".git");
 		var directories = new Map<String, Bool>();
 		names = [for (name in names) try { directories.set(name, Fs.isDirectory(haxe.io.Path.join([dir, name]))); name; } catch (_:Dynamic) continue];
 		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;

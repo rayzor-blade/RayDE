@@ -117,6 +117,7 @@ class ExplorerFileChecks {
 			if (services.readFile(library + "/README.md") != "# Dependency\n") throw "Collapsing Dependencies revoked the active preview's source";
 			for (name in files) if (Css.query(tree, bench.node.id, '[data-path="$root/src/$name"]').length != 1) throw "Explorer hid " + name;
 			if (Css.query(tree, bench.node.id, '[data-path="$root/.config"]').length != 1) throw "Explorer hid dotfolder";
+			if (Lambda.exists(bench.explorerPart.explorerEntries(root), entry -> entry.path == root + "/.git")) throw "Explorer listed .git";
 			var rows = bench.explorerPart.explorerEntries(root + "/src");
 			if (rows[0].path != root + "/src/z.HX") throw "Haxe file priority was lost";
 			var before = bench.active.get(); bench.explorerPart.openExplorerFile(root + "/.config");
