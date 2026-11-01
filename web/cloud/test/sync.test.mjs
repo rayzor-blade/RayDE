@@ -398,4 +398,77 @@ test("a restored session merges the cloud copy's newer generation: different pla
   assert.deepEqual(overlap.written, []);
   assert.equal(await read(doc), before, "the file is left as it was");
   assert.equal((await ask("sync.publish")).code, "conflict", "and the save is still refused");
+
+  // Choosing the cloud's version settles it: the tree takes it, and the session can save again.
+  const settled = await ask("sync.merge", { choices: { "doc.txt": "theirs" } });
+  assert.equal(settled.ok, true, JSON.stringify(settled));
+  assert.deepEqual(settled.conflicts, []);
+  assert.deepEqual(settled.written, ["doc.txt"]);
+  assert.equal(await read(doc), lines({ 2: "(desktop)", 5: "(desktop again)" }), "the cloud's version replaced ours");
+  const after = await ask("sync.publish");
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after.generation, 5);
+});
+
+test("a folder pulls the cloud copy's newer generation, and a choice settles the files both devices edited in the same place", async t => {
+  const { base } = await gateway(t);
+  const lines = edits => Array.from({ length: 12 }, (_, i) => `line ${i + 1}${edits[i + 1] ? " " + edits[i + 1] : ""}\n`).join("");
+  const { root: a } = await repository({ "doc.txt": lines({}), "other.txt": lines({}), "main.hx": "class Main {}\n" });
+  t.after(() => rm(a, { recursive: true, force: true }));
+  const run = (folder, action, env = {}) => {
+    const out = spawnSync(cli, [folder, base, "alice", action], { encoding: "utf8", env: { ...process.env, ...env } });
+    const events = out.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    return { events, last: events.at(-1) };
+  };
+  assert.equal(run(a, "push").last.generation, 1);
+
+  // A second device that has synced generation 1 too: its own clone with the same record of what it last synced.
+  const b = await mkdtemp(join(tmpdir(), "rayde-sync-device-"));
+  t.after(() => rm(b, { recursive: true, force: true }));
+  spawnSync("git", ["clone", "-q", a, join(b, "clone")]);
+  const two = join(b, "clone");
+  await cp(join(a, ".git", "rayde-sync.json"), join(two, ".git", "rayde-sync.json"));
+  await cp(join(a, ".git", "rayde-sync-base"), join(two, ".git", "rayde-sync-base"), { recursive: true });
+  const { readFile } = await import("node:fs/promises");
+  const read = (folder, name) => readFile(join(folder, name), "utf8");
+  const alice = (path, init = {}) => fetch(base + "/api/sync" + path, { ...init, headers: { "X-Dev-Account": "alice", ...(init.headers ?? {}) } });
+
+  // The other device edits line 10 and syncs. This one edited line 2 and has not seen that.
+  await writeFile(join(two, "doc.txt"), lines({ 10: "(other device)" }));
+  assert.equal(run(two, "push").last.generation, 2);
+  await writeFile(join(a, "doc.txt"), lines({ 2: "(this device)" }));
+  const refused = run(a, "push");
+  assert.equal(refused.last.code, "conflict", "it will not replace what the other device saved");
+
+  const pulled = run(a, "pull");
+  assert.equal(pulled.last.event, "merged", JSON.stringify(pulled.events));
+  assert.deepEqual(pulled.last.conflicts, []);
+  assert.deepEqual(pulled.last.written, ["doc.txt"]);
+  assert.equal(await read(a, "doc.txt"), lines({ 2: "(this device)", 10: "(other device)" }), "both edits are in the folder");
+  assert.equal(run(a, "push").last.generation, 3, "and the merged folder can now sync");
+  assert.equal(run(a, "pull").last.written.length, 0, "nothing more to pull");
+
+  // The other device catches up, then both edit the same lines of two files.
+  assert.equal(run(two, "pull").last.event, "merged");
+  await writeFile(join(two, "doc.txt"), lines({ 2: "(this device)", 10: "(other device)", 5: "(other)" }));
+  await writeFile(join(two, "other.txt"), lines({ 5: "(other)" }));
+  assert.equal(run(two, "push").last.generation, 4);
+  await writeFile(join(a, "doc.txt"), lines({ 2: "(this device)", 10: "(other device)", 5: "(mine)" }));
+  await writeFile(join(a, "other.txt"), lines({ 5: "(mine)" }));
+  const before = [await read(a, "doc.txt"), await read(a, "other.txt")];
+  const stuck = run(a, "pull");
+  assert.deepEqual(stuck.last.conflicts.map(c => c.path), ["doc.txt", "other.txt"]);
+  assert.deepEqual([await read(a, "doc.txt"), await read(a, "other.txt")], before, "with no choice nothing is changed");
+  assert.equal(run(a, "push").last.code, "conflict");
+
+  const settled = run(a, "pull", { RAYDE_SYNC_CHOICES: JSON.stringify({ "doc.txt": "mine", "other.txt": "theirs" }) });
+  assert.equal(settled.last.event, "merged", JSON.stringify(settled.events));
+  assert.deepEqual(settled.last.conflicts, []);
+  assert.equal(await read(a, "doc.txt"), before[0], "kept mine");
+  assert.equal(await read(a, "other.txt"), lines({ 5: "(other)" }), "took the other device's");
+  assert.equal(run(a, "push").last.generation, 5);
+  const id = JSON.parse(await readFile(join(a, ".git", "rayde-sync.json"), "utf8"))[base].workspace;
+  const manifest = await (await alice(`/workspaces/${id}/export/manifest`)).json();
+  const cloudDoc = manifest.files.find(file => file.path === "doc.txt");
+  assert.equal(Buffer.from(await (await alice(`/workspaces/${id}/export/chunks/${cloudDoc.chunks[0].hash}`)).arrayBuffer()).toString(), before[0], "the cloud now holds the version that was kept");
 });

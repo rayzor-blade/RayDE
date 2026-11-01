@@ -1,5 +1,5 @@
 //! A development driver for the upload: `cargo run --example push -- ROOT GATEWAY [DEV_ACCOUNT [ACTION [WORKSPACE TOKEN BASE_GENERATION]]]` prints each event as a
-//! JSON line. A DEV_ACCOUNT of `-` means none; ACTION is push, open or writeback, and writeback saves ROOT into WORKSPACE as the holder of TOKEN.
+//! JSON line. A DEV_ACCOUNT of `-` means none; ACTION is push, open, pull or writeback (RAYDE_SYNC_CHOICES={"path":"mine"|"theirs"} settles conflicted files on a pull), and writeback saves ROOT into WORKSPACE as the holder of TOKEN.
 use rayde_sync::client::{Config, run};
 
 fn main() {
@@ -21,6 +21,7 @@ fn main() {
         token: args.next(),
         base_generation: args.next().and_then(|base| base.parse().ok()),
         force: std::env::var("RAYDE_SYNC_FORCE").is_ok_and(|value| value == "1"),
+        choices: std::env::var("RAYDE_SYNC_CHOICES").ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default(),
     };
     if let Err(failure) = run(&config, &mut |event| println!("{event}"), &|| false) {
         println!("{}", serde_json::json!({"event": "error", "code": failure.code, "message": failure.message}));

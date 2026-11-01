@@ -1,9 +1,10 @@
 //! Saves the workspace's tree back into the cloud copy it was restored from, and brings the cloud copy's newer generation into it, as the holder of the
 //! capability the runner gave this session. It keeps what the tree was a copy of, so a merge has the version both sides started from.
 use crate::error::{Result, SessionError};
-use rayde_sync::client::{Base, Config, capture, merge_cloud, save};
+use rayde_sync::client::{Base, Config, capture, merge_with, save};
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -44,6 +45,7 @@ impl Writeback {
             token: Some(self.token.clone()),
             base_generation: Some(self.restored),
             force: false,
+            choices: BTreeMap::new(),
         }
     }
 
@@ -84,12 +86,13 @@ impl Writeback {
         }
     }
 
-    /// Brings the cloud copy's newer generation into the tree. Files that cannot be decided for the person are listed and nothing is changed.
-    pub async fn merge(self: &Arc<Self>, root: PathBuf) -> Result<Value> {
+    /// Brings the cloud copy's newer generation into the tree. Files edited in the same place on both sides need a choice, `mine` or `theirs`, by path; without
+    /// one for every such file they are listed and nothing is changed.
+    pub async fn merge(self: &Arc<Self>, root: PathBuf, choices: BTreeMap<String, String>) -> Result<Value> {
         let _one = self.working.lock().await;
         let base = self.current(root.clone())?;
         let config = self.config(root);
-        let outcome = tokio::task::spawn_blocking(move || merge_cloud(&config, &base)).await.map_err(|_| SessionError::new("sync-failed", "The merge stopped before it finished."))?;
+        let outcome = tokio::task::spawn_blocking(move || merge_with(&config, &base, &choices)).await.map_err(|_| SessionError::new("sync-failed", "The merge stopped before it finished."))?;
         match outcome {
             Ok((next, report)) => {
                 if report.conflicts.is_empty() {

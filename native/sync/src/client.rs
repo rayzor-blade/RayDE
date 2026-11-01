@@ -33,12 +33,15 @@ pub struct Config {
     pub device: Option<String>,
     #[serde(default)]
     pub history: bool,
-    /// "push" (the default), "open" or "writeback".
+    /// "push" (the default), "open", "pull" or "writeback".
     #[serde(default)]
     pub action: String,
     /// Publish over a cloud copy that has moved on since this folder last synced. Nothing merges the two yet, so this replaces the other device's changes.
     #[serde(default)]
     pub force: bool,
+    /// For `pull` and for a session's merge: which side wins a file both sides edited in the same place, `mine` or `theirs`, by path.
+    #[serde(default)]
+    pub choices: BTreeMap<String, String>,
     /// Write-back publishes into this existing workspace, as the holder of `token`, against the generation the tree was restored from.
     #[serde(default)]
     pub workspace: Option<String>,
@@ -134,6 +137,7 @@ pub fn run(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() ->
         "" | "push" => push(config, emit, cancelled),
         "open" => open(config, emit),
         "writeback" => writeback(config, emit, cancelled),
+        "pull" => pull(config, emit),
         other => Err(Failure::new("usage", format!("unknown action {other}"))),
     }
 }
@@ -192,9 +196,12 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
     let generation = upload(&gateway, &id, &snapshot, emit, cancelled)?;
-    // The folder now stands at what it published, so the next sync can tell when another device has saved after it.
+    // The folder now stands at what it published, so the next sync can tell when another device has saved after it, and a pull has the version to merge from.
     saved[&key] = json!({"workspace": id, "generation": generation});
     let _ = fs::write(&state_path, saved.to_string());
+    if let Ok(base) = base_from(&snapshot) {
+        let _ = store_base(&base_dir(&state_path, &id), &base);
+    }
     Ok(())
 }
 
@@ -337,6 +344,11 @@ pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
     upload(&gateway, &id, &snapshot, emit, cancelled)?;
+    base_from(&snapshot)
+}
+
+/// What a published snapshot is a copy of: its manifest and the text of its small files, read back from where the scan found them.
+fn base_from(snapshot: &Snapshot) -> Result<Base, Failure> {
     let (mut texts, mut total) = (BTreeMap::new(), 0u64);
     for file in snapshot.manifest.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
         let mut bytes = Vec::with_capacity(file.size as usize);
@@ -349,6 +361,76 @@ pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled
         }
     }
     Ok(Base { manifest: snapshot.manifest.clone(), texts })
+}
+
+/// Where a folder keeps what it last synced: inside `.git`, which is never uploaded.
+fn base_dir(state_path: &Path, workspace: &str) -> PathBuf {
+    state_path.parent().unwrap_or(Path::new(".")).join("rayde-sync-base").join(workspace)
+}
+
+/// Keeps `base` on disk: the manifest, an index of the text files, and their content named by hash so an unchanged file is written once.
+fn store_base(dir: &Path, base: &Base) -> std::io::Result<()> {
+    fs::create_dir_all(dir.join("blobs"))?;
+    let mut index = serde_json::Map::new();
+    for (path, bytes) in &base.texts {
+        let hash = sha256_hex(bytes);
+        let blob = dir.join("blobs").join(&hash);
+        if !blob.exists() {
+            fs::write(&blob, bytes)?;
+        }
+        index.insert(path.clone(), json!(hash));
+    }
+    for entry in fs::read_dir(dir.join("blobs"))?.flatten() {
+        if !index.values().any(|hash| hash.as_str().is_some_and(|hash| entry.file_name() == hash)) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+    fs::write(dir.join("texts.json"), Value::Object(index).to_string())?;
+    fs::write(dir.join("manifest.json"), base.manifest.to_bytes())
+}
+
+fn load_base(dir: &Path) -> Option<Base> {
+    let manifest = Manifest::from_bytes(&fs::read(dir.join("manifest.json")).ok()?).ok()?;
+    let index: Value = serde_json::from_slice(&fs::read(dir.join("texts.json")).ok()?).ok()?;
+    let mut texts = BTreeMap::new();
+    for (path, hash) in index.as_object()? {
+        let hash = hash.as_str()?;
+        let bytes = fs::read(dir.join("blobs").join(hash)).ok()?;
+        if sha256_hex(&bytes) == hash {
+            texts.insert(path.clone(), bytes);
+        }
+    }
+    Some(Base { manifest, texts })
+}
+
+/// Brings the cloud copy's newer generation into this folder, merging it with the folder's own changes since it last synced. With files both sides
+/// edited in the same place, and no `choices` for them, nothing is changed and they are reported.
+fn pull(config: &Config, emit: &mut dyn FnMut(Value)) -> Result<(), Failure> {
+    let (state_path, remembered) = remembered(config)?;
+    let key = gateway_of(config).base;
+    let id = remembered[&key]["workspace"].as_str().ok_or_else(|| Failure::new("not-synced", "This folder has not been synced to this gateway."))?.to_string();
+    let dir = base_dir(&state_path, &id);
+    let known = remembered[&key]["generation"].as_u64();
+    let base = load_base(&dir).filter(|base| known.is_none_or(|known| known == base.generation())).ok_or_else(|| Failure::new("no-base", "This folder has no record of what it last synced, so the cloud's changes cannot be merged with its own. Sync it once with the cloud copy replaced to start one."))?;
+    let mut with_workspace = config.clone();
+    with_workspace.workspace = Some(id.clone());
+    let (next, report) = merge_with(&with_workspace, &base, &config.choices)?;
+    if report.conflicts.is_empty() {
+        if next.generation() != base.generation() {
+            let _ = store_base(&dir, &next);
+            let mut saved = remembered.clone();
+            saved[&key] = json!({"workspace": id, "generation": next.generation()});
+            let _ = fs::write(&state_path, saved.to_string());
+        }
+    }
+    emit(json!({
+        "event": "merged",
+        "generation": report.generation,
+        "written": report.written,
+        "deleted": report.deleted,
+        "conflicts": report.conflicts.iter().map(|(path, reason)| json!({"path": path, "reason": reason})).collect::<Vec<_>>(),
+    }));
+    Ok(())
 }
 
 /// The CLI's write-back: the tree's base is whatever generation the config says it was restored from.
@@ -373,9 +455,28 @@ fn safe_path(path: &str) -> bool {
         && !path.components().any(|part| part.as_os_str().eq_ignore_ascii_case(".git"))
 }
 
+/// The content of one of the cloud copy's files, with every chunk and the whole checked against its hash.
+fn fetch_file(gateway: &Gateway, id: &str, file: &FileEntry) -> Option<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(file.size as usize);
+    for chunk in &file.chunks {
+        let part = gateway.call("GET", &format!("/workspaces/{id}/export/chunks/{}", chunk.hash), None).ok()?;
+        if sha256_hex(&part) != chunk.hash {
+            return None;
+        }
+        bytes.extend(part);
+    }
+    (sha256_hex(&bytes) == file.hash).then_some(bytes)
+}
+
 /// Brings the cloud copy's newer generation into the tree. Files changed only there move over, files changed only here stay, and text changed on both
 /// sides in different places is merged. If anything cannot be decided for the person, nothing at all is changed and the files are reported.
 pub fn merge_cloud(config: &Config, base: &Base) -> Result<(Base, MergeReport), Failure> {
+    merge_with(config, base, &config.choices)
+}
+
+/// `merge_cloud`, where `choices` says which side wins each file both sides edited in the same place. With a choice for every such file the merge goes
+/// through; without, nothing is changed and they are listed.
+pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, String>) -> Result<(Base, MergeReport), Failure> {
     let (gateway, id) = existing_workspace(config)?;
     let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
     let current = status["generation"].as_u64().unwrap_or(0);
@@ -397,29 +498,41 @@ pub fn merge_cloud(config: &Config, base: &Base) -> Result<(Base, MergeReport), 
                 Side::Ours => fs::read(config.root.join(path)).ok(),
                 Side::Theirs => {
                     let file = theirs.files.iter().find(|file| file.path == path && mergeable(file))?;
-                    let mut bytes = Vec::with_capacity(file.size as usize);
-                    for chunk in &file.chunks {
-                        let part = gateway.call("GET", &format!("/workspaces/{id}/export/chunks/{}", chunk.hash), None).ok()?;
-                        if sha256_hex(&part) != chunk.hash {
-                            return None;
-                        }
-                        bytes.extend(part);
-                    }
-                    (sha256_hex(&bytes) == file.hash).then(|| {
-                        fetched.insert(path.to_string(), bytes.clone());
-                        bytes
-                    })
+                    let bytes = fetch_file(&gateway, &id, file)?;
+                    fetched.insert(path.to_string(), bytes.clone());
+                    Some(bytes)
                 }
             }
         };
         merge::plan(&entries(&base.manifest.files), &entries(&ours.manifest.files), &entries(&theirs.files), &mut content)
     };
-    if !plan.conflicts.is_empty() {
+    if plan.conflicts.iter().any(|conflict| !matches!(choices.get(&conflict.path).map(String::as_str), Some("mine" | "theirs"))) {
         let conflicts = plan.conflicts.iter().map(|c| (c.path.clone(), c.reason.to_string())).collect();
         return Ok((base.clone(), MergeReport { generation: current, conflicts, ..Default::default() }));
     }
+    let mut actions = plan.actions;
+    for conflict in &plan.conflicts {
+        let theirs_file = theirs.files.iter().find(|file| file.path == conflict.path && mergeable(file));
+        match (choices[&conflict.path].as_str(), theirs_file) {
+            // Keeping our version leaves the tree as it is; the cloud's text is still kept for the next merge when it is small enough to merge.
+            ("mine", Some(file)) if file.size as usize <= MAX_TEXT => {
+                if let Some(bytes) = fetch_file(&gateway, &id, file) {
+                    fetched.insert(conflict.path.clone(), bytes);
+                }
+            }
+            ("theirs", Some(file)) => match fetch_file(&gateway, &id, file) {
+                Some(content) => {
+                    fetched.insert(conflict.path.clone(), content.clone());
+                    actions.push(Action::Write { path: conflict.path.clone(), content, executable: file.kind == FileKind::Executable });
+                }
+                None => return Err(Failure::new("network", "The cloud's version could not be read.")),
+            },
+            ("theirs", None) => actions.push(Action::Delete { path: conflict.path.clone() }),
+            _ => {}
+        }
+    }
     let mut report = MergeReport { generation: current, ..Default::default() };
-    for action in &plan.actions {
+    for action in &actions {
         let path = match action {
             Action::Write { path, .. } | Action::Delete { path } => path,
         };
@@ -427,7 +540,7 @@ pub fn merge_cloud(config: &Config, base: &Base) -> Result<(Base, MergeReport), 
             return Err(Failure::new("protocol", "The cloud copy names a path this tree cannot hold."));
         }
     }
-    for action in plan.actions {
+    for action in actions {
         match action {
             Action::Write { path, content, executable } => {
                 let target = config.root.join(&path);
