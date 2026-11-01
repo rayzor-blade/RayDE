@@ -241,11 +241,23 @@ test("a restored session saves back with a capability for its own workspace, and
   assert.deepEqual(manifest.files.map(file => file.path).sort(), ["added.txt", "main.hx"]);
   assert.equal(manifest.baseGeneration ?? manifest.base_generation, 1);
 
+  // The desktop has not seen generation 2, so syncing now would replace the browser's edits: it refuses and sends nothing.
+  const desktop = cliRun(root, base, "alice");
+  assert.equal(desktop.last.event, "error", JSON.stringify(desktop.events));
+  assert.equal(desktop.last.code, "conflict");
+  assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 2, "nothing was replaced");
+
   // A second save against the old base is a conflict, and nothing moves.
   const stale = cliRun(tree, base, "-", "writeback", id, grant.token, "1");
   assert.equal(stale.last.event, "error", JSON.stringify(stale.events));
   assert.equal(stale.last.code, "conflict");
   assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 2);
+
+  // Only an explicit decision to replace them goes through.
+  const forced = spawnSync(cli, [root, base, "alice"], { encoding: "utf8", env: { ...process.env, RAYDE_SYNC_FORCE: "1" } });
+  const forcedEvents = forced.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+  assert.equal(forcedEvents.at(-1).event, "published", forced.stdout);
+  assert.equal(forcedEvents.at(-1).generation, 3);
 });
 
 test("a restored session saves its edits back through its own socket, and a newer cloud copy is a conflict", async t => {
@@ -304,7 +316,9 @@ test("a restored session saves its edits back through its own socket, and a newe
 
   // The desktop pushes in between, so the session's base is stale.
   await writeFile(join(root, "notes.txt"), "desktop edit");
-  assert.equal(push(root, base).last.generation, 3);
+  assert.equal(push(root, base).last.code, "conflict", "the desktop has not seen the save, so it will not replace it unasked");
+  const forced = spawnSync(cli, [root, base, "alice"], { encoding: "utf8", env: { ...process.env, RAYDE_SYNC_FORCE: "1" } });
+  assert.equal(JSON.parse(forced.stdout.trim().split("\n").at(-1)).generation, 3);
   await writeFile(join(restoredRoot, "notes.txt"), "browser edit after");
   const conflict = await ask("sync.publish");
   assert.equal(conflict.ok, false, JSON.stringify(conflict));

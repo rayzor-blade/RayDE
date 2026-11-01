@@ -20,6 +20,7 @@ fn main() {
         workspace: args.next(),
         token: args.next(),
         base_generation: args.next().and_then(|base| base.parse().ok()),
+        force: std::env::var("RAYDE_SYNC_FORCE").is_ok_and(|value| value == "1"),
     };
     if let Err(failure) = run(&config, &mut |event| println!("{event}"), &|| false) {
         println!("{}", serde_json::json!({"event": "error", "code": failure.code, "message": failure.message}));

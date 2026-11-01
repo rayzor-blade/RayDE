@@ -35,6 +35,9 @@ pub struct Config {
     /// "push" (the default), "open" or "writeback".
     #[serde(default)]
     pub action: String,
+    /// Publish over a cloud copy that has moved on since this folder last synced. Nothing merges the two yet, so this replaces the other device's changes.
+    #[serde(default)]
+    pub force: bool,
     /// Write-back publishes into this existing workspace, as the holder of `token`, against the generation the tree was restored from.
     #[serde(default)]
     pub workspace: Option<String>,
@@ -150,17 +153,26 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
     let (state_path, remembered) = remembered(config)?;
     let key = gateway.base.clone();
 
+    // The generation this folder last synced, when it is still talking to the workspace it synced.
+    let mut known = None;
     let status = match remembered[&key]["workspace"].as_str() {
         Some(id) => match gateway.json("GET", &format!("/workspaces/{id}"), None) {
-            Ok(status) => status,
+            Ok(status) => {
+                known = remembered[&key]["generation"].as_u64();
+                status
+            }
             Err(failure) if failure.message.contains("No such") => gateway.json("POST", "/workspaces", Some(&json!({})))?,
             Err(failure) => return Err(failure),
         },
         None => gateway.json("POST", "/workspaces", Some(&json!({})))?,
     };
     let id = status["id"].as_str().ok_or_else(|| Failure::new("protocol", "The gateway did not name a workspace."))?.to_string();
+    let current = status["generation"].as_u64().unwrap_or(0);
+    if let Some(known) = known.filter(|known| *known != current && !config.force) {
+        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current}, but this folder last synced generation {known}: another device has saved since, and syncing now would replace those changes. Nothing was sent.")));
+    }
     let mut saved = remembered.clone();
-    saved[&key] = json!({"workspace": id});
+    saved[&key] = json!({"workspace": id, "generation": known});
     let _ = fs::write(&state_path, saved.to_string());
     emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
 
@@ -178,11 +190,15 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
         },
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
-    upload(&gateway, &id, &snapshot, emit, cancelled)
+    let generation = upload(&gateway, &id, &snapshot, emit, cancelled)?;
+    // The folder now stands at what it published, so the next sync can tell when another device has saved after it.
+    saved[&key] = json!({"workspace": id, "generation": generation});
+    let _ = fs::write(&state_path, saved.to_string());
+    Ok(())
 }
 
 /// Sends the chunks the gateway lacks and publishes the snapshot's manifest, dropping the upload if anything fails.
-fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
+fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<u64, Failure> {
     let declared: Vec<ChunkRef> = snapshot.chunks().map(|(hash, size)| ChunkRef { hash: hash.to_string(), size }).collect();
     emit(json!({"event": "scanned", "files": snapshot.manifest.files.len(), "bytes": snapshot.manifest.totals.bytes, "chunks": declared.len(), "omitted": snapshot.manifest.omissions.len()}));
 
@@ -219,7 +235,7 @@ fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut
     match result {
         Ok(done) => {
             emit(json!({"event": "published", "id": id, "url": done["url"], "generation": done["generation"], "expiresAt": done["expiresAt"], "stored": done["stored"]}));
-            Ok(())
+            Ok(done["generation"].as_u64().unwrap_or(0))
         }
         Err(failure) => {
             let _ = gateway.call("DELETE", &format!("/workspaces/{id}/uploads/{lease}"), None);
@@ -256,7 +272,7 @@ fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() 
         },
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
-    upload(&gateway, &id, &snapshot, emit, cancelled)
+    upload(&gateway, &id, &snapshot, emit, cancelled).map(|_| ())
 }
 
 /// An upload running on its own thread. Events are read with `poll`; the last one is `published` or `error`.
