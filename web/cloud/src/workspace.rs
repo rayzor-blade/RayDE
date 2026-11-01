@@ -576,7 +576,8 @@ impl WorkspaceSession {
                 let mut current = storage.get::<Value>("workspace").await?.ok_or_else(||bad(404,"Workspace not found."))?;
                 let mut response = connect_backend(&self.env, &current["connection"], &data, &signal).await;
                 let mut recovery = None;
-                if current["connection"]["recoverable"] == true && !response.as_ref().is_ok_and(|response|response.status_code() == 101) {
+                let recoverable = current["connection"]["recoverable"] == true || current["repository"]["sync"].is_object();
+                if recoverable && !response.as_ref().is_ok_and(|response|response.status_code() == 101) {
                     recovery = Some(self.reconnecting.lock().await);
                     current = storage.get::<Value>("workspace").await?.ok_or_else(||bad(404,"Workspace not found."))?;
                     response = connect_backend(&self.env, &current["connection"], &data, &signal).await;
