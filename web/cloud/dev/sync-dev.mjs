@@ -36,6 +36,7 @@ if (!assets) {
   assets = `http://127.0.0.1:${files.address().port}`;
 }
 const secret = "dev-runner-secret";
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const session = resolve(dirname(fileURLToPath(import.meta.url)), "../../../native/session/target/debug/rayde-session");
 const freePort = () => new Promise(done => { const server = createServer().listen(0, "127.0.0.1", () => { const p = server.address().port; server.close(() => done(p)); }); });
 const running = new Map();
@@ -74,7 +75,8 @@ const restore = async ({ id, repository }) => {
   }
   running.get(id)?.kill();
   const sessionPort = await freePort(), token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex");
-  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base], { stdio: "inherit" });
+  // The extension host needs --exec; this stand-in runs on the developer's own machine, as the local session does. The toolchain in bin/ (rayzor) is on its PATH.
+  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base, "--exec", "--extension-host", join(repo, "bin/rayde-extension-host"), "--extensions", join(repo, "extensions")], { stdio: "inherit", env: { ...process.env, PATH: `${join(repo, "bin")}:${process.env.PATH}` } });
   running.set(id, child);
   await listening(sessionPort, child);
   console.log(`restored ${id} generation ${manifest.generation} (${manifest.files.length} files) on :${sessionPort}`);
