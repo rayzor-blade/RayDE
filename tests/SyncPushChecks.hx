@@ -69,6 +69,52 @@ class SyncPushChecks {
 			}, "Open did not answer");
 			rayde.sync.NativeSync.close(job);
 			check(opened.event == "opened" && opened.url == first.url && opened.generation == 2, "Open should report the workspace link at generation 2: " + haxe.Json.stringify(opened));
+			// Another device that has synced the same workspace saves first; this folder is told, pulls, and syncs again.
+			var account = Sys.getEnv("RAYDE_SYNC_DEV_ACCOUNT"), clone = root + "/clone";
+			function job(config:Dynamic):Dynamic {
+				var id = rayde.sync.NativeSync.start(config), last:Dynamic = null;
+				until(() -> {
+					var events = rayde.sync.NativeSync.poll(id);
+					if (events != null) for (event in events) if (event.event == "published" || event.event == "merged" || event.event == "error") last = event;
+					return last != null;
+				}, "A sync job did not answer");
+				rayde.sync.NativeSync.close(id);
+				return last;
+			}
+			function settled(what:String):Void until(() -> ["synced", "conflict", "failed"].indexOf(feature.state.get().phase) >= 0, what);
+			check(Sys.command("git", ["clone", "-q", workspace, clone]) == 0, "git clone failed");
+			for (name in ["rayde-sync.json", "rayde-sync-base"]) check(Sys.command("cp", ["-R", workspace + "/.git/" + name, clone + "/.git/" + name]) == 0, "copying " + name + " failed");
+			sys.io.File.saveContent(clone + "/notes.txt", "from the other device");
+			check(job({root: clone, gateway: gateway, account: account, device: "other"}).event == "published", "The other device should have synced");
+			sys.io.File.saveContent(workspace + "/Main.hx", "class Main { static function main() {} }\n");
+			feature.sync();
+			settled("The sync did not end");
+			check(feature.state.get().phase == "conflict" && feature.state.get().conflicts == 0, "A newer cloud copy should ask to pull, not fail: " + feature.state.get().phase + " " + feature.state.get().message);
+			feature.pull();
+			settled("The pull did not end");
+			check(feature.state.get().phase == "synced" && feature.state.get().message.indexOf("Pulled generation") == 0, "A pull should say what it did: " + feature.state.get().phase + " " + feature.state.get().message);
+			check(sys.io.File.getContent(workspace + "/notes.txt") == "from the other device" && sys.io.File.getContent(workspace + "/Main.hx").indexOf("static function main()") > 0, "The pull should bring in the other device's file and keep this folder's own");
+			feature.sync();
+			settled("The sync after the pull did not end");
+			check(feature.state.get().phase == "synced", "A pulled folder should sync: " + feature.state.get().message);
+			// Both edit the same file in the same place: the pull lists it, and a choice settles it.
+			check(job({root: clone, gateway: gateway, account: account, action: "pull"}).event == "merged", "The other device should have caught up");
+			sys.io.File.saveContent(clone + "/notes.txt", "other device, again");
+			check(job({root: clone, gateway: gateway, account: account, device: "other"}).event == "published", "The other device should have synced again");
+			sys.io.File.saveContent(workspace + "/notes.txt", "this device, again");
+			feature.sync();
+			settled("The sync did not end");
+			check(feature.state.get().phase == "conflict", "A newer cloud copy should ask to pull");
+			feature.pull();
+			settled("The pull did not end");
+			check(feature.state.get().phase == "conflict" && feature.state.get().conflicts == 1, "The shared edit should be listed: " + feature.state.get().phase + " " + feature.state.get().message);
+			check(sys.io.File.getContent(workspace + "/notes.txt") == "this device, again", "Nothing is changed until a choice is made");
+			feature.resolve("mine");
+			settled("The choice did not settle");
+			check(feature.state.get().phase == "synced", "Keeping this folder's version should settle it: " + feature.state.get().message);
+			feature.sync();
+			settled("The sync after the choice did not end");
+			check(feature.state.get().phase == "synced" && sys.io.File.getContent(workspace + "/notes.txt") == "this device, again", "The kept version should sync: " + feature.state.get().message);
 			Sys.putEnv("RAYDE_SYNC_GATEWAY", "http://127.0.0.1:1");
 			feature.sync();
 			until(() -> feature.state.get().phase == "synced" || feature.state.get().phase == "failed", "An unreachable gateway did not end the upload");

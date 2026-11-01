@@ -23,6 +23,8 @@ class SyncFeature {
 	var push = -1;
 	/** Whether the running job only asks for a browser session, which leaves the panel's state as it is. */
 	var opening = false;
+	/** The files a pull found edited in the same place on both sides, which the next pull settles with a choice. */
+	var conflictPaths:Array<String> = [];
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -59,7 +61,7 @@ class SyncFeature {
 		}
 		#if wasm
 		var session = rayde.workspace.PageHost.session;
-		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false, canMerge:false});
+		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false, canMerge:false, conflicts:[]});
 		return;
 		#else
 		if (push >= 0) return;
@@ -71,7 +73,7 @@ class SyncFeature {
 	}
 
 	function panel():Element
-		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={merge}
+		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
@@ -137,37 +139,86 @@ class SyncFeature {
 		scan and the upload. A cloud copy that has moved on is reported as such and nothing is overwritten.
 	**/
 	public function save():Void {
-		ask("sync.publish", "Saving…", (reply, _) -> {
+		ask("sync.publish", "Saving…", null, (reply, _) -> {
 			var generation:Int = Std.int(reply.generation);
-			return {generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false, canMerge:false};
+			return {generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false, canMerge:false, conflicts:[]};
 		});
 	}
 
-	/** Brings the cloud copy's newer generation into this session's tree: edits in different places combine, and the same lines are listed with nothing changed. */
-	public function merge():Void {
-		ask("sync.merge", "Merging…", (reply, current) -> {
+	/**
+		Brings the cloud copy's newer generation into this session's tree: edits in different places combine, and files edited in the same place are listed
+		with nothing changed until `choice` ("mine" or "theirs") says which side wins them.
+	**/
+	public function merge(?choice:String):Void {
+		var current = saveBack.get();
+		var params:Dynamic = null;
+		if (choice != null && current != null) {
+			var choices:Dynamic = {};
+			for (path in current.conflicts) Reflect.setField(choices, path, choice);
+			params = {choices:choices};
+		}
+		ask("sync.merge", "Merging…", params, (reply, now) -> {
 			var generation:Int = Std.int(reply.generation);
 			var conflicts:Array<Dynamic> = reply.conflicts;
 			if (conflicts.length > 0) {
 				var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ");
-				return {generation:current.generation, busy:false, failed:true, canMerge:false,
-					message:"Nothing was merged. These files need a decision (" + (conflicts.length > 5 ? "first 5 of " + conflicts.length : Std.string(conflicts.length)) + "): " + names};
+				return {generation:now.generation, busy:false, failed:true, canMerge:false, conflicts:[for (c in conflicts) Std.string(c.path)],
+					message:"Nothing was merged. These files were edited in the same place on both sides (" + (conflicts.length > 5 ? "first 5 of " + conflicts.length : Std.string(conflicts.length)) + "): " + names + ". Keep your versions or use the cloud's."};
 			}
 			var changed = (reply.written:Array<Dynamic>).length + (reply.deleted:Array<Dynamic>).length;
-			return {generation:generation, busy:false, failed:false, canMerge:false,
+			return {generation:generation, busy:false, failed:false, canMerge:false, conflicts:[],
 				message:changed == 0 ? "Already up to date with generation " + generation : "Merged generation " + generation + " · " + changed + " files updated. Save to publish your changes."};
 		});
+	}
+
+	/** Settles the files both sides edited in the same place: "mine" keeps this side's version, "theirs" takes the cloud's. */
+	public function resolve(choice:String):Void {
+		#if wasm
+		merge(choice);
+		#else
+		pull(choice);
+		#end
+	}
+
+	/** On the desktop: brings the cloud copy's newer generation into this folder, merging it with the folder's own changes since it last synced. */
+	public function pull(?choice:String):Void {
+		#if !wasm
+		if (push >= 0) return;
+		var url = gateway();
+		if (url == null) return;
+		var before = state.get();
+		var running = Sync.empty(Checking);
+		running.branch = before.branch;
+		running.url = before.url;
+		running.lastSync = before.lastSync;
+		running.used = before.used;
+		running.expiresAt = before.expiresAt;
+		state.set(running);
+		var config:Dynamic = {root: host.cwd, gateway: url, account: account(), device: host.name, action: "pull"};
+		if (choice != null) {
+			var choices:Dynamic = {};
+			for (path in conflictPaths) Reflect.setField(choices, path, choice);
+			config.choices = choices;
+		}
+		try {
+			push = NativeSync.start(config);
+		} catch (error) {
+			failed(Std.string(error));
+			return;
+		}
+		follow();
+		#end
 	}
 
 	/**
 		Runs a session request and shows its outcome in the panel. The answer arrives on the session client's own thread, where nothing may throw and the
 		panel's state is not touched, so it is handed over under a lock and picked up from the UI thread on a timer.
 	**/
-	function ask(op:String, working:String, done:(Dynamic, SaveBack) -> SaveBack):Void {
+	function ask(op:String, working:String, params:Dynamic, done:(Dynamic, SaveBack) -> SaveBack):Void {
 		#if wasm
 		var session = rayde.workspace.PageHost.session, current = saveBack.get();
 		if (session == null || current == null || current.busy) return;
-		saveBack.set({generation:current.generation, busy:true, message:working, failed:false, canMerge:current.canMerge});
+		saveBack.set({generation:current.generation, busy:true, message:working, failed:false, canMerge:current.canMerge, conflicts:current.conflicts});
 		var outcome:Null<SaveBack> = null, lock = new sys.thread.Mutex();
 		function finish(result:SaveBack):Void {
 			lock.acquire();
@@ -177,9 +228,9 @@ class SyncFeature {
 		function failure(error:Dynamic):Void {
 			var message = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) ? cast(error, rayde.workspace.session.SessionClient.SessionFailure).message : Std.string(error) catch (_:Dynamic) "That did not finish.";
 			var moved = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) && cast(error, rayde.workspace.session.SessionClient.SessionFailure).code == "conflict" catch (_:Dynamic) false;
-			finish({generation:current.generation, busy:false, message:message, failed:true, canMerge:moved});
+			finish({generation:current.generation, busy:false, message:message, failed:true, canMerge:moved, conflicts:[]});
 		}
-		session.requestAsync(op, null, 600).then(reply -> {
+		session.requestAsync(op, params, 600).then(reply -> {
 			try {
 				if (Std.isOfType(reply, rayde.workspace.session.SessionClient.SessionFailure) || reply == null || reply.generation == null) {
 					failure(reply);
@@ -253,8 +304,28 @@ class SyncFeature {
 					try host.openExternal(event.url) catch (error) host.say(Std.string(error));
 				case "error" if (opening):
 					host.say(event.message);
+				case "merged":
+					var conflicts:Array<Dynamic> = event.conflicts;
+					if (conflicts.length > 0) {
+						current.phase = Conflict;
+						current.conflicts = conflicts.length;
+						conflictPaths = [for (c in conflicts) Std.string(c.path)];
+						current.message = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ") + (conflicts.length > 5 ? " and " + (conflicts.length - 5) + " more" : "") + ": edited in the same place on both sides. Nothing was changed.";
+					} else {
+						current.phase = Synced;
+						current.conflicts = 0;
+						conflictPaths = [];
+						var changed = (event.written:Array<Dynamic>).length + (event.deleted:Array<Dynamic>).length;
+						current.message = changed == 0 ? "Already up to date." : "Pulled generation " + event.generation + " · " + changed + " files updated. Sync Now to publish the merged folder.";
+					}
 				case "error":
-					if (event.code == "cancelled") current.phase = Ready else {
+					if (event.code == "cancelled") current.phase = Ready
+					else if (event.code == "conflict") {
+						// The cloud has changes this folder has not seen: it asks to pull them instead of failing.
+						current.phase = Conflict;
+						current.conflicts = 0;
+						current.message = event.message;
+					} else {
 						current.phase = Failed;
 						current.message = event.message;
 					}

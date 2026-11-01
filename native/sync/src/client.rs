@@ -173,13 +173,13 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
     };
     let id = status["id"].as_str().ok_or_else(|| Failure::new("protocol", "The gateway did not name a workspace."))?.to_string();
     let current = status["generation"].as_u64().unwrap_or(0);
+    emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
     if let Some(known) = known.filter(|known| *known != current && !config.force) {
         return Err(Failure::new("conflict", format!("The cloud copy is at generation {current}, but this folder last synced generation {known}: another device has saved since, and syncing now would replace those changes. Nothing was sent.")));
     }
     let mut saved = remembered.clone();
     saved[&key] = json!({"workspace": id, "generation": known});
     let _ = fs::write(&state_path, saved.to_string());
-    emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
 
     let snapshot = scan(
         &config.root,
