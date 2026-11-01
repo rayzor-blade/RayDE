@@ -23,6 +23,9 @@ def process_environment():
         stdlib = ROOT.parent / 'rayzor/compiler/haxe-std'
         if stdlib.is_dir():
             environment.setdefault('RAYZOR_STD_PATH', str(stdlib))
+    # The workspace session's previews run the apps headless through these scripts.
+    environment.setdefault('RAYDE_HEAPS_SURFACE', str(ROOT / 'scripts/heaps-surface.sh'))
+    environment.setdefault('RAYDE_ASHUI_SURFACE', str(ROOT / 'scripts/ashui-surface.sh'))
     return environment
 
 def workspace_environment(directory):

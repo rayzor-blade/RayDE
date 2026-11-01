@@ -18,6 +18,6 @@ grep -v '^-hl ' "$hxml" > bin/rayde-ashui-surface.hxml || true
 haxe bin/rayde-ashui-surface.hxml -D ashui_window -cp "$here/shims/ashui" -cp "$here/src" -hl bin/rayde-ashui-surface.hl.next >&2
 mv -f bin/rayde-ashui-surface.hl.next bin/rayde-ashui-surface.hl
 for lib in blinc_abi xgpu xwindow; do
-  [ -e "$natives/$lib.hdll" ] && [ ! -e "bin/$lib.hdll" ] && cp "$natives/$lib.hdll" bin/
+  if [ -e "$natives/$lib.hdll" ] && { [ ! -e "bin/$lib.hdll" ] || [ "$natives/$lib.hdll" -nt "bin/$lib.hdll" ]; }; then cp "$natives/$lib.hdll" bin/; fi
 done
 exec "$ash" --mode hybrid --preset application bin/rayde-ashui-surface.hl
