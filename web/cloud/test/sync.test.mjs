@@ -140,6 +140,13 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   const forged = await fetch(`${base}/api/sync/runner/${id}/manifest`, { headers: { Authorization: "Bearer guess" } });
   assert.equal(forged.status, 403, "only the runner reads a snapshot without an account");
 
+  // The published link works before anyone has pressed Open, for its owner only.
+  const visitor = async account => {
+    const signin = await fetch(`${base}/auth/dev?account=${account}&return=/${id}`, { redirect: "manual" });
+    return fetch(`${base}/${id}`, { headers: { Cookie: signin.headers.getSetCookie()[0].split(";")[0] }, redirect: "manual" });
+  };
+  assert.equal((await visitor("alice")).status, 200, "the owner's first visit makes the browser workspace");
+  assert.equal((await visitor("bob")).status, 403, "another account is refused it");
   const opened = await api(`/api/sync/workspaces/${id}/open`, { method: "POST" });
   assert.equal(opened.status, 200, await opened.text());
   const login = await fetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });

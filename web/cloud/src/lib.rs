@@ -243,14 +243,19 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
             }
             Err(error) => return Err(error),
         };
-        rpc(
-            &env,
-            "WORKSPACES",
-            id,
-            "state",
-            &json!({"owner":session["user"]["id"]}),
-        )
-        .await?;
+        let state = json!({"owner":session["user"]["id"]});
+        match rpc(&env, "WORKSPACES", id, "state", &state).await {
+            // A synced workspace's link works as soon as it is published: its owner visiting it makes the browser workspace.
+            Err(error) if error.status == 404 => {
+                if sync::open_synced(&env, &sync::session_owner(&env, &session), id, &origin).await.is_err() {
+                    return Err(error);
+                }
+                rpc(&env, "WORKSPACES", id, "state", &state).await?;
+            }
+            other => {
+                other?;
+            }
+        }
     }
     // Sign-in for a gateway running on this machine, where there is no GitHub App: `/auth/dev?account=NAME&return=/ID`.
     if path == "/auth/dev" && config(&env, "LOCAL_DEV").as_deref() == Some("1") {
