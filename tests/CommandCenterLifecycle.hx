@@ -77,7 +77,9 @@ class CommandCenterLifecycle {
 		check("line navigation failed",!opened.get() && line==12);
 		check("close retained nodes, text or pointer hooks",rows()==0 && identities()==base && texts()==baseTexts && ashui.input.Pointer.hooks.length==hooks);
 		for (_ in 0...3) {
-			open(">"); @:privateAccess center.choose("action:test"); settle();
+			open(">");
+			check("typing after the carried > would start in front of it",input().editing.caret.get()==1 && input().editing.anchor.get()==1);
+			@:privateAccess center.choose("action:test"); settle();
 			check("command action was lost",chosen=="action");
 			open(""); opened.set(false); settle();
 			check("repeated opens retained rows or text",identities()==base && texts()==baseTexts && rows()==0);

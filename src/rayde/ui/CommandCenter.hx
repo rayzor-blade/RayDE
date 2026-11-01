@@ -269,6 +269,9 @@ class CommandCenter extends Component<CommandCenterProps> {
 			if (field != null && field.value.get() != carry)
 				field.value.set(carry);
 			input.get().focus();
+			// The carried text (the `>` of a command search) is already there, so typing continues after it.
+			var editing = input.get().editing, end = input.get().value.get().length;
+			if (editing != null) { editing.anchor.set(end); editing.caret.set(end); }
 		};
 		LayoutTree.flushHooks.push(hook);
 		Owner.onCleanup(() -> LayoutTree.flushHooks.remove(hook));
