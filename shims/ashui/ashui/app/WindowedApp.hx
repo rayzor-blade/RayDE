@@ -13,12 +13,18 @@ import gpu.GpuTextureView;
 import gpu.GpuTextureViewDescriptor;
 import rayde.preview.SurfaceLink;
 import rayde.preview.SurfaceProtocol;
+import window.Key;
+import window.KeyCode;
+import window.KeyEvent;
+import window.Modifiers;
 import window.MouseButton;
+import window.MouseElementState;
+import window.NamedKey;
 
 /**
  * Stands in for `WindowedApp` in a surface build: `run` draws the app offscreen and streams each frame to RayDE's Surface Preview, with the
  * viewer's pointer, wheel and typed text delivered to the tree. The app's source is unchanged; the surface build puts this class ahead of ashui's.
- * The size is RAYDE_SURFACE_SIZE (WIDTHxHEIGHT) or the window config's, and follows the viewer's resizes. Key presses other than typed text are not delivered yet.
+ * The size is RAYDE_SURFACE_SIZE (WIDTHxHEIGHT) or the window config's, and follows the viewer's resizes. Editing, arrow and navigation keys, letters and digits are delivered as key events; other keys are ignored.
  */
 class WindowedApp {
 	static inline var FRAME_SECONDS = 1 / 60;
@@ -96,8 +102,44 @@ class WindowedApp {
 				ashui.input.Pointer.wheel(tree, input.a / 10, input.b / 10);
 			case SurfaceProtocol.TEXT:
 				ashui.input.Keyboard.text(tree, String.fromCharCode(input.a));
+			case SurfaceProtocol.KEY_DOWN | SurfaceProtocol.KEY_UP:
+				var shift = (input.c & SurfaceProtocol.SHIFT) != 0;
+				var logical = logicalKey(input.a, shift);
+				if (logical == null) continue;
+				var state = input.type == SurfaceProtocol.KEY_DOWN ? MouseElementState.Pressed : MouseElementState.Released;
+				var modifiers = Modifiers.State(shift, (input.c & SurfaceProtocol.CONTROL) != 0, (input.c & SurfaceProtocol.ALT) != 0, (input.c & SurfaceProtocol.META) != 0, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown, Unknown);
+				ashui.input.Keyboard.input(tree, KeyEvent.Input(Code(input.a), logical, None, Standard, state, (input.c & SurfaceProtocol.REPEAT) != 0, Unavailable), modifiers);
 			case _:
 		}
+	}
+
+	/** The key a physical key code stands for, for the keys an app acts on; null for the rest. */
+	static function logicalKey(code:Int, shift:Bool):Null<Key> {
+		var named:Null<NamedKey> = switch (code : KeyCode) {
+			case Enter | NumpadEnter: Enter;
+			case Tab: Tab;
+			case Backspace: Backspace;
+			case Delete: Delete;
+			case Escape: Escape;
+			case Space: Space;
+			case ArrowLeft: ArrowLeft;
+			case ArrowRight: ArrowRight;
+			case ArrowUp: ArrowUp;
+			case ArrowDown: ArrowDown;
+			case Home: Home;
+			case End: End;
+			case PageUp: PageUp;
+			case PageDown: PageDown;
+			case _: null;
+		};
+		if (named != null) return Named(named);
+		var letterA:Int = KeyCode.KeyA, letterZ:Int = KeyCode.KeyZ, digit0:Int = KeyCode.Digit0, digit9:Int = KeyCode.Digit9;
+		if (code >= letterA && code <= letterZ) {
+			var letter = String.fromCharCode(97 + code - letterA);
+			return Character(shift ? letter.toUpperCase() : letter);
+		}
+		if (code >= digit0 && code <= digit9) return Character(String.fromCharCode(48 + code - digit0));
+		return null;
 	}
 
 	static function button(code:Int):MouseButton
