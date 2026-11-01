@@ -71,9 +71,17 @@ async fn owner_of(req: &Request, env: &Env) -> AppResult<String> {
     if req.method() != Method::Get && req.headers().get("X-RayDE-CSRF")?.as_deref() != session["csrf"].as_str() {
         return Err(bad(403, "The request could not be verified."));
     }
-    let owner = format!("github:{}", session["user"]["id"]);
+    let owner = session_owner(env, &session);
     AccountId::parse(&owner).map_err(|_| bad(401, "Sign in to continue."))?;
     Ok(owner)
+}
+
+/// The sync account of a signed-in browser session: a development account (no GitHub token, local gateway only) or the GitHub user.
+pub(crate) fn session_owner(env: &Env, session: &Value) -> String {
+    if config(env, "LOCAL_DEV").as_deref() == Some("1") && session["tokens"]["access"].as_str() == Some("") {
+        return format!("dev:{}", session["user"]["login"].as_str().unwrap_or_default());
+    }
+    format!("github:{}", session["user"]["id"])
 }
 
 fn workspace_request(op: &str, owner: &str, method: Method, headers: &[(&str, &str)], body: Option<Vec<u8>>) -> AppResult<Request> {
@@ -138,6 +146,41 @@ async fn runner_route(req: &Request, env: &Env, parts: &[&str]) -> AppResult<Res
 
 const RUNNER: &str = "@runner";
 
+/// Makes the browser workspace for a synced one, restoring its newest generation on the next visit. Returns the workspace record with the share link and generation.
+pub(crate) async fn open_synced(env: &Env, owner: &str, id: &str, origin: &str) -> AppResult<Value> {
+    let mut status = forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(origin)), owner, Method::Get, &[], None)?).await?;
+    let body: Value = status.json().await?;
+    if status.status_code() >= 400 {
+        return Err(bad(status.status_code(), body["message"].as_str().unwrap_or("That synced workspace cannot be opened.")));
+    }
+    let generation = body["generation"].as_u64().unwrap_or(0);
+    if generation == 0 {
+        return Err(bad(409, "Nothing has been published yet."));
+    }
+    let owner_id = browser_owner(owner);
+    if owner_id.is_null() {
+        return Err(bad(400, "This account cannot open a browser workspace."));
+    }
+    let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
+    let mut record = rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
+    record["url"] = body["url"].clone();
+    record["generation"] = json!(generation);
+    Ok(record)
+}
+
+/// The account's synced workspaces as the repository picker lists them, newest first.
+pub(crate) async fn listing(env: &Env, owner: &str) -> Vec<Value> {
+    let mut entries = rpc(env, "SYNC_ACCOUNTS", owner, "list", &json!({})).await.ok().and_then(|v| v["workspaces"].as_array().cloned()).unwrap_or_default();
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry["updated"].as_u64().unwrap_or(0)));
+    entries
+        .into_iter()
+        .map(|entry| {
+            let name = entry["name"].as_str().unwrap_or("synced folder");
+            json!({"id": entry["id"], "name": name, "fullName": format!("{name} (synced)"), "description": format!("Generation {}", entry["generation"]), "branch": "synced", "private": true})
+        })
+        .collect()
+}
+
 /// `/api/sync/...` for an authenticated account.
 pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult<Response> {
     if let Some(runner) = rest.trim_matches('/').strip_prefix("runner/") {
@@ -160,23 +203,8 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
         }
         (Method::Get, ["workspaces", id]) => forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await,
         (Method::Post, ["workspaces", id, "open"]) => {
-            let status = forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await?;
-            let mut status = status;
-            let body: Value = status.json().await?;
-            if status.status_code() >= 400 {
-                return Ok(reply(&body, status.status_code())?);
-            }
-            let generation = body["generation"].as_u64().unwrap_or(0);
-            if generation == 0 {
-                return Err(bad(409, "Nothing has been published yet."));
-            }
-            let owner_id = browser_owner(&owner);
-            if owner_id.is_null() {
-                return Err(bad(400, "This account cannot open a browser workspace."));
-            }
-            let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
-            rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
-            Ok(reply(&json!({"id": id, "url": body["url"], "generation": generation}), 200)?)
+            let opened = open_synced(env, &owner, id, &origin).await?;
+            Ok(reply(&json!({"id": id, "url": opened["url"], "generation": opened["generation"]}), 200)?)
         }
         (Method::Post, ["workspaces", id, "uploads"]) => {
             let bytes = limited(req, 4 * 1024 * 1024).await?;
@@ -228,7 +256,7 @@ impl DurableObject for SyncWorkspaceSession {
             let garbage = workspace.sweep(now());
             storage.put("ws", &workspace).await?;
             self.delete_chunks(workspace.id.as_str(), &garbage).await;
-            self.report(&workspace).await;
+            self.report(&workspace, None).await;
             let _ = self.schedule(&workspace).await;
         }
         Response::empty()
@@ -253,8 +281,8 @@ impl SyncWorkspaceSession {
         rpc(&self.env, "SYNC_ACCOUNTS", owner, "others", &json!({"workspace": workspace})).await.ok().and_then(|v| v["bytes"].as_u64()).unwrap_or(0)
     }
 
-    async fn report(&self, workspace: &SyncWorkspace) {
-        let _ = rpc(&self.env, "SYNC_ACCOUNTS", workspace.owner.as_str(), "set", &json!({"workspace": workspace.id.as_str(), "bytes": workspace.usage.total()})).await;
+    async fn report(&self, workspace: &SyncWorkspace, name: Option<&str>) {
+        let _ = rpc(&self.env, "SYNC_ACCOUNTS", workspace.owner.as_str(), "set", &json!({"workspace": workspace.id.as_str(), "bytes": workspace.usage.total(), "name": name, "generation": workspace.generation, "updated": now()})).await;
     }
 
     async fn delete_chunks(&self, workspace: &str, hashes: &[String]) {
@@ -288,7 +316,7 @@ impl SyncWorkspaceSession {
             let owner_id = AccountId::parse(&owner).map_err(|_| bad(401, "Sign in to continue."))?;
             let workspace = SyncWorkspace::create(id.clone(), owner_id, &plan, data["allocation"].as_u64().unwrap_or(plan.max_allocation_bytes), data["durationMs"].as_u64().unwrap_or(plan.max_expiry_ms));
             storage.put("ws", &workspace).await?;
-            self.report(&workspace).await;
+            self.report(&workspace, None).await;
             return Ok(reply(&status_body(id.as_str(), &workspace, &origin), 201)?);
         }
 
@@ -306,7 +334,7 @@ impl SyncWorkspaceSession {
                 match workspace.begin(now(), &plan, others, &chunks, &lease) {
                     Ok(info) => {
                         storage.put("ws", &workspace).await?;
-                        self.report(&workspace).await;
+                        self.report(&workspace, None).await;
                         self.schedule(&workspace).await?;
                         Ok(reply(&json!({"lease": lease, "baseGeneration": info.base_generation, "aclVersion": info.acl_version, "missing": info.missing, "reserved": info.reserved}), 200)?)
                     }
@@ -364,7 +392,7 @@ impl SyncWorkspaceSession {
                         bucket.put(format!("{}generations/{:012}.json", prefix(&id), done.generation), manifest.to_bytes()).execute().await?;
                         storage.put("ws", &next).await?;
                         self.delete_chunks(&id, &done.garbage).await;
-                        self.report(&next).await;
+                        self.report(&next, Some(&manifest.name)).await;
                         let mut body = status_body(&id, &next, &origin);
                         body["stored"] = json!(done.stored_bytes);
                         Ok(reply(&body, 200)?)
@@ -382,7 +410,7 @@ impl SyncWorkspaceSession {
                 Ok(garbage) => {
                     storage.put("ws", &workspace).await?;
                     self.delete_chunks(&id, &garbage).await;
-                    self.report(&workspace).await;
+                    self.report(&workspace, None).await;
                     Ok(reply(&json!({"cancelled": true}), 200)?)
                 }
                 Err(error) => refusal(&error),
@@ -434,9 +462,19 @@ impl DurableObject for SyncAccountLedger {
         let workspace = data["workspace"].as_str().unwrap_or_default().to_string();
         match op.as_str() {
             "/set" => {
-                held.insert(workspace, data["bytes"].as_u64().unwrap_or(0));
+                held.insert(workspace.clone(), data["bytes"].as_u64().unwrap_or(0));
                 storage.put("usage", &held).await?;
+                // A publication names the workspace for the picker; other reports leave the listing as it was.
+                if let Some(name) = data["name"].as_str() {
+                    let mut listed: std::collections::BTreeMap<String, Value> = storage.get("listing").await?.unwrap_or_default();
+                    listed.insert(workspace.clone(), json!({"id": workspace, "name": name, "generation": data["generation"], "updated": data["updated"]}));
+                    storage.put("listing", &listed).await?;
+                }
                 reply(&json!({}), 200)
+            }
+            "/list" => {
+                let listed: std::collections::BTreeMap<String, Value> = storage.get("listing").await?.unwrap_or_default();
+                reply(&json!({"workspaces": listed.values().collect::<Vec<_>>()}), 200)
             }
             _ => reply(&json!({"bytes": held.iter().filter(|(id, _)| **id != workspace).map(|(_, bytes)| *bytes).sum::<u64>()}), 200),
         }

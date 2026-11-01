@@ -12,7 +12,7 @@ import ashui.ui.Component;
 typedef RepositoryPickerProps = {
 	opened:Signal<Bool>, closed:Void->Void, ready:(String, Null<String>)->Void
 };
-private typedef Repository = {id:Float, fullName:String, description:Null<String>, branch:String};
+private typedef Repository = {id:Dynamic, fullName:String, description:Null<String>, branch:String};
 
 /** Repository discovery and provisioning run outside the UI fiber. */
 class RepositoryPicker extends Component<RepositoryPickerProps> {

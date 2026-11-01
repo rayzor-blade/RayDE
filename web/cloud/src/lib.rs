@@ -375,6 +375,16 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                 200,
             )?);
         }
+        // A local gateway has no GitHub: the account's synced workspaces are what Open Repository offers.
+        if path == "/api/repositories" && req.method() == Method::Get && config(&env, "LOCAL_DEV").as_deref() == Some("1") && config(&env, "DEV_ACCOUNT").is_some() {
+            return Ok(reply(&json!({"cursor":Value::Null,"repositories":sync::listing(&env,&sync::session_owner(&env,&session)).await}), 200)?);
+        }
+        if path == "/api/workspaces/open" && req.method() == Method::Post && config(&env, "LOCAL_DEV").as_deref() == Some("1") && config(&env, "DEV_ACCOUNT").is_some() {
+            let data: Value = req.json().await?;
+            let id = data["repository"].as_str().filter(|id| workspace_id(id)).ok_or_else(|| bad(400, "Choose a synced workspace."))?;
+            let opened = sync::open_synced(&env, &sync::session_owner(&env, &session), id, &origin).await?;
+            return Ok(reply(&opened, 200)?);
+        }
         if path == "/api/repositories" && req.method() == Method::Get {
             return Ok(reply(
                 &rpc(
