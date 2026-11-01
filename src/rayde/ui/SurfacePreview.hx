@@ -79,7 +79,7 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 					var w = Std.int(Math.max(64, Math.min(4096, Math.round(fitW)))), h = Std.int(Math.max(64, Math.min(4096, Math.round(fitH)))), key = w + "x" + h;
 					steady = key == wanted ? steady + 1 : 0;
 					wanted = key;
-					if (steady >= 2 && key != asked && (Math.abs(w - size.width) > 4 || Math.abs(h - size.height) > 4)) {
+					if (steady >= 2 && key != asked && (w != size.width || h != size.height)) {
 						asked = key;
 						pump.resize(w, h);
 					}
