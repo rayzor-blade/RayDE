@@ -135,8 +135,20 @@ class RunPart {
 		var session=rayde.workspace.PageHost.session;
         var kind=rayde.run.RunPlan.target(wb.props.display.args).kind;
         var rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
-        return session!=null && (kind=="hl"&&!rayzor ? session.appPreviews : session.webPreviews) && wb.extension==null &&
-            (rayzor&&wb.props.display.project.runnable || kind=="js" || runner!=null&&runner.configuration.mode=="browser" || kind=="hl"&&(wb.props.display.args.indexOf("-main")>=0||wb.props.display.args.indexOf("--main")>=0));
+        if(kind=="hl"&&!rayzor)return canPreviewAshui();
+        return session!=null && session.webPreviews && wb.extension==null &&
+            (rayzor&&wb.props.display.project.runnable || kind=="js" || runner!=null&&runner.configuration.mode=="browser");
+	}
+
+	/** An Ashui app is drawn headless in the workspace session and streamed to a Surface Preview tab. */
+	function canPreviewAshui():Bool {
+		#if wasm
+		var session=rayde.workspace.PageHost.session;
+		var args=wb.props.display.args;
+		return session!=null && session.exec && wb.extension==null && (args.indexOf("-main")>=0||args.indexOf("--main")>=0) && Lambda.exists(args,arg -> arg.indexOf("ashui")>=0);
+		#else
+		return false;
+		#end
 	}
 
 	public function previewApp():Void {
@@ -146,6 +158,15 @@ class RunPart {
 		previewAppBuild(true);
 	}
 	function previewAppBuild(force:Bool):Void {
+		#if wasm
+		var target=rayde.run.RunPlan.target(wb.props.display.args).kind, rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
+		if(target=="hl"&&!rayzor&&canPreviewAshui()){
+			// The session host names its own surface script and the shell there expands it; the project's build file picks what is built.
+			var hxml=wb.props.display.project==null ? wb.props.display.hxml : wb.props.display.project.file;
+			saveBefore(() -> previewSurface("env HXML='"+Std.string(hxml).split("'").join("'\\''")+"' \"${RAYDE_ASHUI_SURFACE:?this session host has no Ashui preview}\"", wb.props.display.cwd, wb.props.name));
+			return;
+		}
+		#end
 		if(!canPreviewApp()){wb.say("Choose a browser-compatible Run Configuration and enable preview tooling on the workspace session.");return;}
 		if(runner!=null && runner.active())return;
 		saveBefore(() -> {
