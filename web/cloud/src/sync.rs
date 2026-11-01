@@ -251,10 +251,10 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
     let parts: Vec<&str> = rest.trim_matches('/').split('/').collect();
     let bearer = req.headers().get("Authorization")?.and_then(|value| value.strip_prefix("Bearer ").map(str::to_string)).filter(|token| token.starts_with("rsp1."));
     let owner = match bearer {
-        // A capability is the owner's, for one workspace and only for reading its state and uploading and publishing to it.
+        // A capability is the owner's, for one workspace and only for reading its state, manifest and chunks and uploading and publishing to it.
         Some(token) => {
             let (owner, workspace) = verify_capability(env, &token).ok_or_else(|| bad(401, "Sign in to continue."))?;
-            let allowed = matches!(parts.as_slice(), ["workspaces", id, tail @ ..] if *id == workspace && matches!(tail, [] | ["export", "manifest"] | ["uploads"] | ["uploads", _] | ["uploads", _, "chunks", _] | ["uploads", _, "publish"]));
+            let allowed = matches!(parts.as_slice(), ["workspaces", id, tail @ ..] if *id == workspace && matches!(tail, [] | ["export", "manifest"] | ["export", "chunks", _] | ["uploads"] | ["uploads", _] | ["uploads", _, "chunks", _] | ["uploads", _, "publish"]));
             if !allowed {
                 return Err(bad(403, "This credential cannot do that."));
             }

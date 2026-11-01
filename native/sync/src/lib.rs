@@ -12,6 +12,8 @@ pub mod policy;
 
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "merge")]
+pub mod merge;
 #[cfg(feature = "scan")]
 pub mod scan;
 

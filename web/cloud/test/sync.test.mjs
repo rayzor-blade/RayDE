@@ -325,3 +325,77 @@ test("a restored session saves its edits back through its own socket, and a newe
   assert.equal(conflict.code, "conflict");
   assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 3, "nothing was overwritten");
 });
+
+test("a restored session merges the cloud copy's newer generation: different places combine, the same lines are reported", async t => {
+  const { spawn } = await import("node:child_process");
+  const { readFile } = await import("node:fs/promises");
+  const port = await freePort(), base = `http://127.0.0.1:${port}`, data = await mkdtemp(join(tmpdir(), "rayde-sync-dev-"));
+  const server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
+  let log = "";
+  server.stdout.on("data", chunk => { log += String(chunk); });
+  t.after(async () => {
+    const exited = new Promise(done => server.once("exit", done));
+    server.kill();
+    await exited;
+    server.stdout.destroy();
+    await rm(data, { recursive: true, force: true });
+  });
+  await new Promise((done, fail) => { const wait = setInterval(() => log.includes("Cloud Sync gateway") && (clearInterval(wait), done()), 50); server.once("exit", () => fail(new Error("the dev gateway exited"))); });
+  const lines = edits => Array.from({ length: 12 }, (_, i) => `line ${i + 1}${edits[i + 1] ? " " + edits[i + 1] : ""}\n`).join("");
+  const { root } = await repository({ "main.hx": "class Main {}\n", "doc.txt": lines({}) });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  assert.equal(push(root, base).last.generation, 1);
+  const id = JSON.parse(await readFile(join(root, ".git", "rayde-sync.json"), "utf8"))[base].workspace;
+  const alice = (path, init = {}) => fetch(base + "/api/sync" + path, { ...init, headers: { "X-Dev-Account": "alice", ...(init.headers ?? {}) } });
+  assert.equal((await alice(`/workspaces/${id}/open`, { method: "POST" })).status, 200);
+  const login = await fetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });
+  const cookie = login.headers.getSetCookie()[0].split(";")[0];
+  let state;
+  for (let i = 0; i < 150; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(state.status, "ready", JSON.stringify(state));
+  const [, restoredRoot, sessionPort, sessionToken] = [...log.matchAll(/session for (\S+)\n\s+http:\/\/127\.0\.0\.1:(\d+)\/\n\s+token (\w+)/g)].at(-1);
+  const { default: WebSocket } = await import("ws");
+  const socket = new WebSocket(`ws://127.0.0.1:${sessionPort}/session`);
+  await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); });
+  let next = 0;
+  const pending = new Map();
+  socket.on("message", raw => { const message = JSON.parse(String(raw)); pending.get(message.id)?.(message); });
+  const ask = (op, fields = {}) => new Promise(done => { const id = ++next; pending.set(id, done); socket.send(JSON.stringify({ id, op, ...fields })); });
+  t.after(() => socket.close());
+  assert.equal((await ask("hello", { token: sessionToken })).ok, true);
+  await new Promise(done => setTimeout(done, 1000));
+  const doc = join(restoredRoot, "doc.txt");
+  const read = path => readFile(path, "utf8");
+
+  // The browser edits line 10; the desktop edits line 2 and syncs first.
+  await writeFile(doc, lines({ 10: "(browser)" }));
+  await writeFile(join(root, "doc.txt"), lines({ 2: "(desktop)" }));
+  assert.equal(push(root, base).last.generation, 2);
+  const refused = await ask("sync.publish");
+  assert.equal(refused.code, "conflict", "the cloud copy has moved on, so the save is refused");
+  const merged = await ask("sync.merge");
+  assert.equal(merged.ok, true, JSON.stringify(merged));
+  assert.deepEqual(merged.conflicts, []);
+  assert.deepEqual(merged.written, ["doc.txt"]);
+  assert.equal(merged.generation, 2);
+  assert.equal(await read(doc), lines({ 2: "(desktop)", 10: "(browser)" }), "both edits are in the tree");
+  const saved = await ask("sync.publish");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(saved.generation, 3);
+  const manifest = await (await alice(`/workspaces/${id}/export/manifest`)).json();
+  const entry = manifest.files.find(file => file.path === "doc.txt");
+  assert.equal(Buffer.from(await (await alice(`/workspaces/${id}/export/chunks/${entry.chunks[0].hash}`)).arrayBuffer()).toString(), lines({ 2: "(desktop)", 10: "(browser)" }), "the cloud holds both");
+
+  // Both sides edit line 5: nothing is decided and nothing is changed.
+  await writeFile(join(root, "doc.txt"), lines({ 2: "(desktop)", 5: "(desktop again)" }));
+  const forced = spawnSync(cli, [root, base, "alice"], { encoding: "utf8", env: { ...process.env, RAYDE_SYNC_FORCE: "1" } });
+  assert.equal(JSON.parse(forced.stdout.trim().split("\n").at(-1)).generation, 4);
+  await writeFile(doc, lines({ 2: "(desktop)", 5: "(browser again)", 10: "(browser)" }));
+  const before = await read(doc);
+  const overlap = await ask("sync.merge");
+  assert.equal(overlap.ok, true, JSON.stringify(overlap));
+  assert.deepEqual(overlap.conflicts, [{ path: "doc.txt", reason: "both sides edited the same lines" }]);
+  assert.deepEqual(overlap.written, []);
+  assert.equal(await read(doc), before, "the file is left as it was");
+  assert.equal((await ask("sync.publish")).code, "conflict", "and the save is still refused");
+});

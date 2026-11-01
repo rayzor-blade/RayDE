@@ -1,19 +1,20 @@
 //! The desktop side of an upload: scans a folder, sends the chunks the gateway lacks and publishes. A `Push` runs on its own thread and reports
 //! progress as JSON events that the caller polls, so a UI never waits on the network.
 use crate::{
-    chunk::MAX_CHUNK,
+    chunk::{MAX_CHUNK, sha256_hex},
     exclude::Selection,
     ids::WorkspaceId,
     lifecycle::{DEFAULT_ALLOCATION_BYTES, Limits},
-    manifest::{ChunkRef, Manifest},
+    manifest::{ChunkRef, FileEntry, FileKind, Manifest},
+    merge::{self, Action, Entry, MAX_TEXT, Side},
     scan::{Options, Snapshot, scan, scan_tree},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     fs,
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -244,25 +245,88 @@ fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut
     }
 }
 
-/// Publishes a restored tree, which has no Git directory, into the workspace it came from. Refuses when the cloud copy has moved since the restore, so
-/// nothing is overwritten; the gateway's compare-and-swap catches a push that lands in between.
-fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
-    let gateway = gateway_of(config);
-    let id = config.workspace.clone().ok_or_else(|| Failure::new("usage", "Write-back needs the workspace to save into."))?;
-    let base = config.base_generation.ok_or_else(|| Failure::new("usage", "Write-back needs the generation the tree was restored from."))?;
+/// What a restored tree is a copy of: the cloud manifest of its generation, and the text of its small files, kept so that a merge later has the version
+/// both sides started from. The cloud forgets a generation's chunks once it moves on, so this is the only place that version survives.
+#[derive(Clone)]
+pub struct Base {
+    pub manifest: Manifest,
+    pub texts: BTreeMap<String, Vec<u8>>,
+}
+
+impl Base {
+    pub fn generation(&self) -> u64 {
+        self.manifest.generation
+    }
+}
+
+/// What a merge did, or found it could not decide.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct MergeReport {
+    pub generation: u64,
+    pub written: Vec<String>,
+    pub deleted: Vec<String>,
+    pub conflicts: Vec<(String, String)>,
+}
+
+const MAX_BASE_BYTES: u64 = 32 * 1024 * 1024;
+
+fn mergeable(file: &FileEntry) -> bool {
+    matches!(file.kind, FileKind::Regular | FileKind::Executable)
+}
+
+/// The text of the small files in `manifest` that are on disk under `root` exactly as the manifest says.
+fn read_texts(root: &Path, manifest: &Manifest) -> BTreeMap<String, Vec<u8>> {
+    let (mut texts, mut total) = (BTreeMap::new(), 0u64);
+    for file in manifest.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
+        if total + file.size > MAX_BASE_BYTES {
+            break;
+        }
+        if let Ok(bytes) = fs::read(root.join(&file.path)) {
+            if sha256_hex(&bytes) == file.hash {
+                total += file.size;
+                texts.insert(file.path.clone(), bytes);
+            }
+        }
+    }
+    texts
+}
+
+fn existing_workspace(config: &Config) -> Result<(Gateway, String), Failure> {
+    let id = config.workspace.clone().ok_or_else(|| Failure::new("usage", "This needs the workspace the tree came from."))?;
+    Ok((gateway_of(config), id))
+}
+
+fn cloud_manifest(gateway: &Gateway, id: &str) -> Result<Manifest, Failure> {
+    Manifest::from_bytes(&gateway.call("GET", &format!("/workspaces/{id}/export/manifest"), None)?).map_err(|_| Failure::new("protocol", "The gateway's manifest was not understood."))
+}
+
+/// Records what the tree at `config.root` is a copy of. Call it as soon as the tree is restored, before anything edits it.
+pub fn capture(config: &Config) -> Result<Base, Failure> {
+    let (gateway, id) = existing_workspace(config)?;
+    let manifest = cloud_manifest(&gateway, &id)?;
+    if config.base_generation.is_some_and(|expected| expected != manifest.generation) {
+        return Err(Failure::new("conflict", format!("The cloud copy is at generation {}, not the one this workspace was restored from.", manifest.generation)));
+    }
+    let texts = read_texts(&config.root, &manifest);
+    Ok(Base { manifest, texts })
+}
+
+/// Publishes a restored tree, which has no Git directory, into the workspace it came from, as the next generation after `base`. Refuses when the cloud
+/// copy has moved on, so nothing is overwritten; the gateway's compare-and-swap catches a push that lands in between. Returns what the tree now is a copy of.
+pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<Base, Failure> {
+    let (gateway, id) = existing_workspace(config)?;
     let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
     let current = status["generation"].as_u64().unwrap_or(0);
-    if current != base {
-        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current} and this workspace was restored from generation {base}; nothing was saved.")));
+    if current != base.generation() {
+        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current} and this workspace is based on generation {}; nothing was saved.", base.generation())));
     }
-    let previous = Manifest::from_bytes(&gateway.call("GET", &format!("/workspaces/{id}/export/manifest"), None)?).map_err(|_| Failure::new("protocol", "The gateway's manifest was not understood."))?;
     emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
     let snapshot = scan_tree(
         &config.root,
-        &previous,
+        &base.manifest,
         &Options {
             workspace: WorkspaceId::parse(&id).map_err(|_| Failure::new("protocol", "The workspace id is not valid."))?,
-            base_generation: base,
+            base_generation: base.generation(),
             device: config.device.clone().unwrap_or_else(|| "browser session".into()),
             now_ms: now_ms(),
             limits: Limits::for_allocation(status["allocation"].as_u64().unwrap_or(DEFAULT_ALLOCATION_BYTES)),
@@ -272,7 +336,135 @@ fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() 
         },
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
-    upload(&gateway, &id, &snapshot, emit, cancelled).map(|_| ())
+    upload(&gateway, &id, &snapshot, emit, cancelled)?;
+    let (mut texts, mut total) = (BTreeMap::new(), 0u64);
+    for file in snapshot.manifest.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
+        let mut bytes = Vec::with_capacity(file.size as usize);
+        for chunk in &file.chunks {
+            bytes.extend(snapshot.read_chunk(&chunk.hash).map_err(|e| Failure::new("changed", e.to_string()))?);
+        }
+        if total + file.size <= MAX_BASE_BYTES && sha256_hex(&bytes) == file.hash {
+            total += file.size;
+            texts.insert(file.path.clone(), bytes);
+        }
+    }
+    Ok(Base { manifest: snapshot.manifest.clone(), texts })
+}
+
+/// The CLI's write-back: the tree's base is whatever generation the config says it was restored from.
+fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
+    let base = config.base_generation.ok_or_else(|| Failure::new("usage", "Write-back needs the generation the tree was restored from."))?;
+    let (gateway, id) = existing_workspace(config)?;
+    let manifest = cloud_manifest(&gateway, &id)?;
+    if manifest.generation != base {
+        return Err(Failure::new("conflict", format!("The cloud copy is at generation {} and this workspace was restored from generation {base}; nothing was saved.", manifest.generation)));
+    }
+    save(config, &Base { manifest, texts: BTreeMap::new() }, emit, cancelled).map(|_| ())
+}
+
+fn entries(files: &[FileEntry]) -> BTreeMap<String, Entry> {
+    files.iter().filter(|file| mergeable(file)).map(|file| (file.path.clone(), Entry { hash: file.hash.clone(), executable: file.kind == FileKind::Executable })).collect()
+}
+
+fn safe_path(path: &str) -> bool {
+    let path = Path::new(path);
+    !path.as_os_str().is_empty()
+        && path.components().all(|part| matches!(part, Component::Normal(_)))
+        && !path.components().any(|part| part.as_os_str().eq_ignore_ascii_case(".git"))
+}
+
+/// Brings the cloud copy's newer generation into the tree. Files changed only there move over, files changed only here stay, and text changed on both
+/// sides in different places is merged. If anything cannot be decided for the person, nothing at all is changed and the files are reported.
+pub fn merge_cloud(config: &Config, base: &Base) -> Result<(Base, MergeReport), Failure> {
+    let (gateway, id) = existing_workspace(config)?;
+    let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
+    let current = status["generation"].as_u64().unwrap_or(0);
+    if current == base.generation() {
+        return Ok((base.clone(), MergeReport { generation: current, ..Default::default() }));
+    }
+    let theirs = cloud_manifest(&gateway, &id)?;
+    let ours = scan_tree(
+        &config.root,
+        &base.manifest,
+        &Options { workspace: WorkspaceId::parse(&id).map_err(|_| Failure::new("protocol", "The workspace id is not valid."))?, base_generation: base.generation(), device: "browser session".into(), now_ms: now_ms(), limits: Limits::for_allocation(status["allocation"].as_u64().unwrap_or(DEFAULT_ALLOCATION_BYTES)), selection: Selection::default(), history: false, buffers: vec![] },
+    )
+    .map_err(|e| Failure::new("scan", e.to_string()))?;
+    let mut fetched: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let plan = {
+        let mut content = |side: Side, path: &str| -> Option<Vec<u8>> {
+            match side {
+                Side::Base => base.texts.get(path).cloned(),
+                Side::Ours => fs::read(config.root.join(path)).ok(),
+                Side::Theirs => {
+                    let file = theirs.files.iter().find(|file| file.path == path && mergeable(file))?;
+                    let mut bytes = Vec::with_capacity(file.size as usize);
+                    for chunk in &file.chunks {
+                        let part = gateway.call("GET", &format!("/workspaces/{id}/export/chunks/{}", chunk.hash), None).ok()?;
+                        if sha256_hex(&part) != chunk.hash {
+                            return None;
+                        }
+                        bytes.extend(part);
+                    }
+                    (sha256_hex(&bytes) == file.hash).then(|| {
+                        fetched.insert(path.to_string(), bytes.clone());
+                        bytes
+                    })
+                }
+            }
+        };
+        merge::plan(&entries(&base.manifest.files), &entries(&ours.manifest.files), &entries(&theirs.files), &mut content)
+    };
+    if !plan.conflicts.is_empty() {
+        let conflicts = plan.conflicts.iter().map(|c| (c.path.clone(), c.reason.to_string())).collect();
+        return Ok((base.clone(), MergeReport { generation: current, conflicts, ..Default::default() }));
+    }
+    let mut report = MergeReport { generation: current, ..Default::default() };
+    for action in &plan.actions {
+        let path = match action {
+            Action::Write { path, .. } | Action::Delete { path } => path,
+        };
+        if !safe_path(path) {
+            return Err(Failure::new("protocol", "The cloud copy names a path this tree cannot hold."));
+        }
+    }
+    for action in plan.actions {
+        match action {
+            Action::Write { path, content, executable } => {
+                let target = config.root.join(&path);
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent).map_err(|e| Failure::new("write", e.to_string()))?;
+                }
+                let temporary = target.with_extension(format!("rayde-merge-{}", std::process::id()));
+                fs::write(&temporary, &content).map_err(|e| Failure::new("write", e.to_string()))?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&temporary, fs::Permissions::from_mode(if executable { 0o755 } else { 0o644 }));
+                }
+                #[cfg(not(unix))]
+                let _ = executable;
+                fs::rename(&temporary, &target).map_err(|e| Failure::new("write", e.to_string()))?;
+                report.written.push(path);
+            }
+            Action::Delete { path } => {
+                match fs::remove_file(config.root.join(&path)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(Failure::new("write", e.to_string())),
+                }
+                report.deleted.push(path);
+            }
+        }
+    }
+    // From here the tree is based on the cloud's current generation, and what the next merge starts from is that generation's text.
+    let mut texts = BTreeMap::new();
+    for file in theirs.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
+        let kept = fetched.get(&file.path).cloned().or_else(|| base.manifest.files.iter().find(|b| b.path == file.path && b.hash == file.hash).and_then(|_| base.texts.get(&file.path).cloned()));
+        if let Some(bytes) = kept {
+            texts.insert(file.path.clone(), bytes);
+        }
+    }
+    Ok((Base { manifest: theirs, texts }, report))
 }
 
 /// An upload running on its own thread. Events are read with `poll`; the last one is `published` or `error`.
