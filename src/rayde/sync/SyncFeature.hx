@@ -111,7 +111,9 @@ class SyncFeature {
 	}
 
 	/** Uploads the folder through the native client and follows its events until it publishes, fails or is cancelled. */
-	public function sync():Void {
+	public function sync():Void host.saveBefore(doSync);
+
+	function doSync():Void {
 		#if !wasm
 		if (push >= 0) return;
 		var url = gateway();
@@ -137,7 +139,9 @@ class SyncFeature {
 		Saves a browser session's tree back into the cloud workspace it was restored from, through the session, which holds the credential and does the
 		scan and the upload. A cloud copy that has moved on is reported as such and nothing is overwritten.
 	**/
-	public function save():Void {
+	public function save():Void host.saveBefore(doSave);
+
+	function doSave():Void {
 		ask("sync.publish", "Saving…", null, (reply, _) -> {
 			var generation:Int = Std.int(reply.generation);
 			return {generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false, canMerge:false, conflicts:[]};
@@ -148,7 +152,9 @@ class SyncFeature {
 		Brings the cloud copy's newer generation into this session's tree: edits in different places combine, and files edited in the same place are listed
 		with nothing changed until `choices` (an object of path to "mine" or "theirs") says which side wins each.
 	**/
-	public function merge(?choices:Dynamic):Void {
+	public function merge(?choices:Dynamic):Void host.saveBefore(() -> doMerge(choices));
+
+	function doMerge(choices:Dynamic):Void {
 		ask("sync.merge", "Merging…", choices == null ? null : {choices:choices}, (reply, now) -> {
 			var generation:Int = Std.int(reply.generation);
 			var conflicts:Array<Dynamic> = reply.conflicts;
@@ -265,7 +271,9 @@ class SyncFeature {
 	}
 
 	/** On the desktop: brings the cloud copy's newer generation into this folder, merging it with the folder's own changes since it last synced. */
-	public function pull(?choices:Dynamic):Void {
+	public function pull(?choices:Dynamic):Void host.saveBefore(() -> doPull(choices));
+
+	function doPull(choices:Dynamic):Void {
 		#if !wasm
 		if (push >= 0) return;
 		var url = gateway();

@@ -239,6 +239,7 @@ class ShellPart {
 			edited: wb.documentsPart.edited, releaseDocuments: wb.documentsPart.releaseClosedDocuments,
 			extensionCommand: wb.extensionsPart.runForFeature,
 			openExternal: wb.extensionsPart.openExternal,
+			saveBefore: wb.runPart.saveBefore,
 			openDiff: wb.documentsPart.openSyncDiff,
 			showSidebar: id -> { wb.sideView.set(id); if (!wb.explorerShown.get()) wb.treeWidth.set(Workbench.ACTIVITY + Workbench.EXPLORER_WIDTH); },
 			hideSidebar: () -> wb.treeWidth.set(Workbench.ACTIVITY),
