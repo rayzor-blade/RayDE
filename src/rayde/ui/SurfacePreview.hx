@@ -43,6 +43,8 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 			return <dropdown-menu-item id={"rayde-surface-shape-" + value.split(":").join("x")} onSelect={() -> chooseShape(value)}>
 				<div class="flex items-center gap-2"><div class="size-4 shrink-0"><if {shape.get() == value}><icon document={Icons.CHECK_LINE} class="size-4"/></if></div><text>${label}</text></div>
 			</dropdown-menu-item>;
+		// What the app wrote to stderr, the last lines of it: all there is to say when it never drew or ended.
+		var log:Array<String> = [], lines = Signal.make(([]:Array<String>));
 		var rate = Signal.make(""), shown = 0, ticks = 0, grants = 0, received = pump.feed.frames, since = haxe.Timer.stamp(), due = since, grantAt = since, measure:Null<Void->Null<{width:Float, height:Float}>> = null, checkAt = since, wanted = "", steady = 0, asked = "";
 		// Ticks come twice as fast as the app's frames, so each picture is taken within a few milliseconds of arriving instead of waiting for a tick that drifts against the app's clock.
 		// Each tick is due a fixed step after the last one was due, so slow ticks do not push every later one back.
@@ -90,6 +92,8 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 			}
 			var surface = screen.get();
 			if (surface != null && pump.poll(surface)) shown++;
+			var written = [for (line in pump.takeLog()) if (line.indexOf("[ash]") != 0 && line.indexOf("[promote]") != 0 && line.indexOf(" : Warning : ") < 0) line];
+			if (written.length > 0) { log = log.concat(written).slice(-200); lines.set(log.slice(-14)); }
 			if (pump.finished()) { state.set(pump.failure != null ? "stopped: " + pump.failure : "exited"); return false; }
 			due = Math.max(due + 1 / 120, now);
 			return true;
@@ -119,6 +123,7 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 				</dropdown-menu>
 				<button id="rayde-surface-restart" variant={Ghost} class="shrink-0" size={Sm} onClick={_ -> props.restart()}><icon document={Icons.RESTART_LINE} class="size-4"/>Restart</button>
 			</div>
+			<if {(screen.get() == null || state.get() != "running") && lines.get().length > 0}><div id="rayde-surface-log" class="flex flex-col gap-1 p-3 overflow-auto shrink-0"><for {line in lines}><text class="text-xs text-text-secondary">${line}</text></for></div></if>
 			<if {screen.get() != null}><surface-view pump={pump} source={screen.get()} leave={props.leave} measure={m -> measure = m}/></if>
 		</div>;
 	}
