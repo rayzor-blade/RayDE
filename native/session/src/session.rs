@@ -51,6 +51,8 @@ pub struct Workspace<S: FileStore> {
     sources:OnceLock<crate::read_roots::ReadRoots>,
     #[cfg(feature = "server")]
     previews:OnceLock<Arc<crate::previews::Previews>>,
+    #[cfg(feature = "server")]
+    writeback:OnceLock<Arc<crate::writeback::Writeback>>,
     syntax:OnceLock<Arc<dyn crate::syntax::Syntax>>,
     terminals:OnceLock<Arc<dyn crate::terminal::Terminals>>,
     /// When set, a connection may look at the workspace but changes nothing until it has signed in.
@@ -68,11 +70,17 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), #[cfg(feature = "server")] previews:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), #[cfg(feature = "server")] writeback:OnceLock::new(), #[cfg(feature = "server")] previews:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
     }
 
     #[cfg(feature = "server")]
     pub(crate) fn set_sources(&self, sources:crate::read_roots::ReadRoots) { let _ = self.sources.set(sources); }
+    #[cfg(feature = "server")]
+    pub(crate) fn set_writeback(&self,writeback:Arc<crate::writeback::Writeback>){let _=self.writeback.set(writeback);}
+    fn writeback_state(&self)->Value {
+        #[cfg(feature = "server")] if let Some(writeback)=self.writeback.get(){return writeback.describe();}
+        Value::Null
+    }
     #[cfg(feature = "server")]
     pub(crate) fn set_previews(&self,previews:Arc<crate::previews::Previews>){let _=self.previews.set(previews);}
     fn previews_available(&self)->bool {
@@ -224,6 +232,11 @@ impl<S: FileStore> Connection<S> {
             if let Some(sources) = workspace.sources.get() { return sources.request(op, request).await; }
             return Err(SessionError::new("outside", "The source mount is not available."));
         }
+        if op == "sync.publish" {
+            #[cfg(feature = "server")]
+            if let Some(writeback) = workspace.writeback.get() { return writeback.publish(store.root().into()).await; }
+            return Err(SessionError::new("no-sync", "This workspace has no cloud copy to save into."));
+        }
         if op.starts_with("preview.") {
             #[cfg(feature = "server")]
             if let Some(previews)=workspace.previews.get(){return previews.request(self.id,op,request).await;}
@@ -237,7 +250,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "documentLookup":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "documentLookup":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "syncWriteback":workspace.writeback_state(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;

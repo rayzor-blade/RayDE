@@ -247,3 +247,67 @@ test("a restored session saves back with a capability for its own workspace, and
   assert.equal(stale.last.code, "conflict");
   assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 2);
 });
+
+test("a restored session saves its edits back through its own socket, and a newer cloud copy is a conflict", async t => {
+  const { spawn } = await import("node:child_process");
+  const { readFile } = await import("node:fs/promises");
+  const port = await freePort(), base = `http://127.0.0.1:${port}`, data = await mkdtemp(join(tmpdir(), "rayde-sync-dev-"));
+  const server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
+  let log = "";
+  server.stdout.on("data", chunk => { log += String(chunk); });
+  t.after(async () => {
+    const exited = new Promise(done => server.once("exit", done));
+    server.kill();
+    await exited;
+    server.stdout.destroy();
+    await rm(data, { recursive: true, force: true });
+  });
+  await new Promise((done, fail) => { const wait = setInterval(() => log.includes("Cloud Sync gateway") && (clearInterval(wait), done()), 50); server.once("exit", () => fail(new Error("the dev gateway exited"))); });
+  const { root } = await repository({ "main.hx": "class Main {}\n", "notes.txt": "synced text" });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pushed = push(root, base);
+  assert.equal(pushed.last.event, "published", JSON.stringify(pushed.events));
+  const id = pushed.last.url.split("/").pop();
+  const alice = (path, init = {}) => fetch(base + "/api/sync" + path, { ...init, headers: { "X-Dev-Account": "alice", ...(init.headers ?? {}) } });
+  assert.equal((await alice(`/workspaces/${id}/open`, { method: "POST" })).status, 200);
+  const login = await fetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });
+  const cookie = login.headers.getSetCookie()[0].split(";")[0];
+  let state;
+  for (let i = 0; i < 150; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(state.status, "ready", JSON.stringify(state));
+  const [, restoredRoot, sessionPort, sessionToken] = [...log.matchAll(/session for (\S+)\n\s+http:\/\/127\.0\.0\.1:(\d+)\/\n\s+token (\w+)/g)].at(-1);
+
+  const { default: WebSocket } = await import("ws");
+  const socket = new WebSocket(`ws://127.0.0.1:${sessionPort}/session`);
+  await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); });
+  let next = 0;
+  const pending = new Map();
+  socket.on("message", raw => { const message = JSON.parse(String(raw)); pending.get(message.id)?.(message); });
+  const ask = (op, fields = {}) => new Promise(done => { const id = ++next; pending.set(id, done); socket.send(JSON.stringify({ id, op, ...fields })); });
+  t.after(() => socket.close());
+  const hello = await ask("hello", { token: sessionToken });
+  assert.equal(hello.ok, true, JSON.stringify(hello));
+  assert.deepEqual(hello.syncWriteback, { workspace: id, generation: 1 }, "the session knows what it was restored from and not the credential");
+  assert.ok(!JSON.stringify(hello).includes("rsp1."));
+
+  // Edit in the restored tree, which has no .git, and save it back.
+  await writeFile(join(restoredRoot, "notes.txt"), "edited in the browser");
+  await writeFile(join(restoredRoot, "added.txt"), "new file");
+  const saved = await ask("sync.publish");
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(saved.generation, 2);
+  const manifest = await (await alice(`/workspaces/${id}/export/manifest`)).json();
+  assert.equal(manifest.generation, 2);
+  assert.deepEqual(manifest.files.map(file => file.path).sort(), ["added.txt", "main.hx", "notes.txt"]);
+  const entry = manifest.files.find(file => file.path === "notes.txt");
+  assert.equal(Buffer.from(await (await alice(`/workspaces/${id}/export/chunks/${entry.chunks[0].hash}`)).arrayBuffer()).toString(), "edited in the browser");
+
+  // The desktop pushes in between, so the session's base is stale.
+  await writeFile(join(root, "notes.txt"), "desktop edit");
+  assert.equal(push(root, base).last.generation, 3);
+  await writeFile(join(restoredRoot, "notes.txt"), "browser edit after");
+  const conflict = await ask("sync.publish");
+  assert.equal(conflict.ok, false, JSON.stringify(conflict));
+  assert.equal(conflict.code, "conflict");
+  assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 3, "nothing was overwritten");
+});

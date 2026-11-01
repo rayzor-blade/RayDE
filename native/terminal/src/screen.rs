@@ -54,6 +54,7 @@ impl Session {
         let mut command = CommandBuilder::new(program);
         command.args(args);
         for (key,value) in environment {command.env(key,value);}
+        command.env_remove("RAYDE_SYNC_TOKEN");
         command.env("TERM", "xterm-256color");
         command.env("COLORTERM", "truecolor");
         if let Some(dir) = cwd {

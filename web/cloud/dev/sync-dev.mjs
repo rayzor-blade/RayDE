@@ -52,13 +52,14 @@ const runner = async request => {
   turns.set(body.id, turn.catch(() => {}));
   return turn;
 };
-const restore = async ({ id, repository }) => {
+const restore = async ({ id, repository, publish }) => {
   const source = repository?.sync;
   if (!source) return new Response(JSON.stringify({ message: "This runner only restores synced workspaces." }), { status: 400 });
   const get = path => mf.dispatchFetch(`${base}/api/sync/runner/${id}${path}`, { headers: { Authorization: `Bearer ${secret}` } });
   const response = await get("/manifest");
   if (!response.ok) return new Response(JSON.stringify({ message: "The snapshot is not available." }), { status: 502 });
   const manifest = await response.json();
+  // The session saves back with the capability it is given here; the generation is the one this tree is a copy of.
   // The folder is named after the one that was synced, which is what the editor shows as the workspace's name.
   const name = String(manifest.name ?? "").replace(/[^\w.-]+/g, "-").replace(/^[.-]+/, "") || "workspace";
   const root = join(data, "workspaces", id, String(manifest.generation), name);
@@ -76,7 +77,7 @@ const restore = async ({ id, repository }) => {
   running.get(id)?.kill();
   const sessionPort = await freePort(), token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex");
   // The extension host needs --exec; this stand-in runs on the developer's own machine, as the local session does. The toolchain in bin/ (rayzor) is on its PATH, app previews have their tools, and Heaps and Ashui previews their surface scripts.
-  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base, "--exec", "--extension-host", join(repo, "bin/rayde-extension-host"), "--extensions", join(repo, "extensions"), "--preview-tools", join(repo, "bin/preview-tools")], { stdio: "inherit", env: { ...process.env, PATH: `${join(repo, "bin")}:${process.env.PATH}`, RAYDE_HEAPS_SURFACE: join(repo, "scripts/heaps-surface.sh"), RAYDE_ASHUI_SURFACE: join(repo, "scripts/ashui-surface.sh") } });
+  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base, "--exec", "--extension-host", join(repo, "bin/rayde-extension-host"), "--extensions", join(repo, "extensions"), "--preview-tools", join(repo, "bin/preview-tools")], { stdio: "inherit", env: { ...process.env, PATH: `${join(repo, "bin")}:${process.env.PATH}`, RAYDE_HEAPS_SURFACE: join(repo, "scripts/heaps-surface.sh"), RAYDE_ASHUI_SURFACE: join(repo, "scripts/ashui-surface.sh"), ...(publish ? { RAYDE_SYNC_GATEWAY: base, RAYDE_SYNC_WORKSPACE: publish.workspace, RAYDE_SYNC_TOKEN: publish.token, RAYDE_SYNC_GENERATION: String(manifest.generation) } : {}) } });
   running.set(id, child);
   await listening(sessionPort, child);
   console.log(`restored ${id} generation ${manifest.generation} (${manifest.files.length} files) on :${sessionPort}`);
