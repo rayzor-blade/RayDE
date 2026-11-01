@@ -472,3 +472,56 @@ test("a folder pulls the cloud copy's newer generation, and a choice settles the
   const cloudDoc = manifest.files.find(file => file.path === "doc.txt");
   assert.equal(Buffer.from(await (await alice(`/workspaces/${id}/export/chunks/${cloudDoc.chunks[0].hash}`)).arrayBuffer()).toString(), before[0], "the cloud now holds the version that was kept");
 });
+
+test("a folder synced before bases were kept can still pull: what differs is listed, and a choice settles it", async t => {
+  const { base } = await gateway(t);
+  const { readFile } = await import("node:fs/promises");
+  const { root: a } = await repository({ "doc.txt": "doc\n", "other.txt": "other\n", "main.hx": "class Main {}\n" });
+  t.after(() => rm(a, { recursive: true, force: true }));
+  const run = (folder, action, env = {}) => {
+    const out = spawnSync(cli, [folder, base, "alice", action], { encoding: "utf8", env: { ...process.env, ...env } });
+    const events = out.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    return { events, last: events.at(-1) };
+  };
+  assert.equal(run(a, "push").last.generation, 1);
+
+  // Another device, then this folder as an older version of RayDE left it: it knows its workspace and nothing else.
+  const b = await mkdtemp(join(tmpdir(), "rayde-sync-device-"));
+  t.after(() => rm(b, { recursive: true, force: true }));
+  const two = join(b, "clone");
+  spawnSync("git", ["clone", "-q", a, two]);
+  await cp(join(a, ".git", "rayde-sync.json"), join(two, ".git", "rayde-sync.json"));
+  await cp(join(a, ".git", "rayde-sync-base"), join(two, ".git", "rayde-sync-base"), { recursive: true });
+  await rm(join(a, ".git", "rayde-sync-base"), { recursive: true, force: true });
+  const state = JSON.parse(await readFile(join(a, ".git", "rayde-sync.json"), "utf8"));
+  for (const key of Object.keys(state)) state[key] = { workspace: state[key].workspace };
+  await writeFile(join(a, ".git", "rayde-sync.json"), JSON.stringify(state));
+
+  await writeFile(join(two, "other.txt"), "other, edited on the other device\n");
+  assert.equal(run(two, "push").last.generation, 2);
+  await writeFile(join(a, "main.hx"), "class Main { static function main() {} }\n");
+  const before = [await readFile(join(a, "main.hx"), "utf8"), await readFile(join(a, "other.txt"), "utf8")];
+
+  const listed = run(a, "pull");
+  assert.equal(listed.last.event, "merged", JSON.stringify(listed.events));
+  assert.equal(listed.last.withoutBase, true);
+  assert.deepEqual(listed.last.conflicts.map(c => c.path), ["main.hx", "other.txt"], "everything that differs is listed, since there is no telling who changed it");
+  assert.deepEqual([await readFile(join(a, "main.hx"), "utf8"), await readFile(join(a, "other.txt"), "utf8")], before, "and nothing is changed");
+
+  const settled = run(a, "pull", { RAYDE_SYNC_CHOICES: JSON.stringify({ "main.hx": "mine", "other.txt": "theirs" }) });
+  assert.equal(settled.last.event, "merged", JSON.stringify(settled.events));
+  assert.deepEqual(settled.last.conflicts, []);
+  assert.equal(await readFile(join(a, "main.hx"), "utf8"), before[0], "kept this folder's own change");
+  assert.equal(await readFile(join(a, "other.txt"), "utf8"), "other, edited on the other device\n", "took the other device's");
+  assert.equal(run(a, "push").last.generation, 3, "and the folder syncs");
+
+  // From here it has a base like any other folder: a later pull merges without asking.
+  await writeFile(join(two, "doc.txt"), "doc, from the other device\n");
+  assert.equal(run(two, "pull").last.event, "merged");
+  assert.equal(run(two, "push").last.generation, 4);
+  await writeFile(join(a, "main.hx"), "class Main { static function main() { trace(1); } }\n");
+  const later = run(a, "pull");
+  assert.equal(later.last.withoutBase, false);
+  assert.deepEqual(later.last.conflicts, []);
+  assert.deepEqual(later.last.written, ["doc.txt"]);
+});

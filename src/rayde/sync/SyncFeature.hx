@@ -310,7 +310,10 @@ class SyncFeature {
 						current.phase = Conflict;
 						current.conflicts = conflicts.length;
 						conflictPaths = [for (c in conflicts) Std.string(c.path)];
-						current.message = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ") + (conflicts.length > 5 ? " and " + (conflicts.length - 5) + " more" : "") + ": edited in the same place on both sides. Nothing was changed.";
+						var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ") + (conflicts.length > 5 ? " and " + (conflicts.length - 5) + " more" : "");
+						current.message = event.withoutBase == true
+							? "This folder has no record of what it last synced, so these files differ from the cloud copy and cannot be told apart from edits: " + names + ". Nothing was changed. Choose which version to keep."
+							: names + ": edited in the same place on both sides. Nothing was changed.";
 					} else {
 						current.phase = Synced;
 						current.conflicts = 0;

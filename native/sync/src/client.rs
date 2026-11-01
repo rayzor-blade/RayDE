@@ -411,7 +411,19 @@ fn pull(config: &Config, emit: &mut dyn FnMut(Value)) -> Result<(), Failure> {
     let id = remembered[&key]["workspace"].as_str().ok_or_else(|| Failure::new("not-synced", "This folder has not been synced to this gateway."))?.to_string();
     let dir = base_dir(&state_path, &id);
     let known = remembered[&key]["generation"].as_u64();
-    let base = load_base(&dir).filter(|base| known.is_none_or(|known| known == base.generation())).ok_or_else(|| Failure::new("no-base", "This folder has no record of what it last synced, so the cloud's changes cannot be merged with its own. Sync it once with the cloud copy replaced to start one."))?;
+    // A folder that synced before bases were kept has no record of what it last synced. Its starting version is then taken as empty: a file only one side
+    // has moves over, identical files are fine, and every file that differs is listed for the person to settle, so nothing is replaced silently.
+    let kept = load_base(&dir).filter(|base| known.is_none_or(|known| known == base.generation()));
+    let without_base = kept.is_none();
+    let base = match kept {
+        Some(base) => base,
+        None => {
+            let mut manifest = cloud_manifest(&gateway_of(config), &id)?;
+            manifest.files.clear();
+            manifest.generation = known.unwrap_or(0);
+            Base { manifest, texts: BTreeMap::new() }
+        }
+    };
     let mut with_workspace = config.clone();
     with_workspace.workspace = Some(id.clone());
     let (next, report) = merge_with(&with_workspace, &base, &config.choices)?;
@@ -428,7 +440,8 @@ fn pull(config: &Config, emit: &mut dyn FnMut(Value)) -> Result<(), Failure> {
         "generation": report.generation,
         "written": report.written,
         "deleted": report.deleted,
-        "conflicts": report.conflicts.iter().map(|(path, reason)| json!({"path": path, "reason": reason})).collect::<Vec<_>>(),
+        "withoutBase": without_base,
+        "conflicts": report.conflicts.iter().map(|(path, reason)| json!({"path": path, "reason": if without_base { "differs from the cloud copy" } else { reason.as_str() }})).collect::<Vec<_>>(),
     }));
     Ok(())
 }
