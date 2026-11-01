@@ -4,7 +4,7 @@ use rayde_sync::{
     ids::WorkspaceId,
     lifecycle::Limits,
     manifest::{FileKind, Origin, Reason},
-    scan::{Options, ScanError, UnsavedBuffer, scan},
+    scan::{Options, ScanError, UnsavedBuffer, scan, scan_tree},
 };
 use std::{fs, path::Path, process::Command};
 use tempfile::TempDir;
@@ -358,4 +358,66 @@ fn a_git_operation_in_progress_is_not_scanned_over() {
 fn names_that_collide_on_a_case_insensitive_disk_keep_the_first() {
     let dropped = rayde_sync::scan::case_collisions(&["A.txt".into(), "a.txt".into(), "b.txt".into(), "B.TXT".into()]);
     assert_eq!(dropped, vec!["a.txt", "B.TXT"]);
+}
+
+/// A restored tree has the files and no `.git`: copy one without it.
+fn restored(from: &Path) -> TempDir {
+    let to = tempfile::tempdir().unwrap();
+    fn copy(from: &Path, to: &Path) {
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                fs::create_dir_all(&target).unwrap();
+                copy(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    copy(from, to.path());
+    to
+}
+
+#[test]
+fn a_restored_tree_with_no_git_directory_is_scanned_against_the_previous_generation() {
+    let dir = repo();
+    write(dir.path(), "src/Main.hx", b"class Main {}\n");
+    write(dir.path(), "README.md", b"# game\n");
+    write(dir.path(), "gone.txt", b"soon deleted\n");
+    write(dir.path(), ".gitignore", b"bin/\n*.log\n");
+    commit(dir.path(), "first");
+    let first = scan(dir.path(), &options(false)).unwrap();
+
+    let tree = restored(dir.path());
+    assert!(!tree.path().join(".git").exists());
+    write(tree.path(), "src/Main.hx", b"class Main { static function main() {} }\n");
+    write(tree.path(), "src/New.hx", b"class New {}\n");
+    write(tree.path(), "bin/out.txt", b"build output\n");
+    write(tree.path(), "debug.log", b"noise\n");
+    fs::remove_file(tree.path().join("gone.txt")).unwrap();
+
+    let mut next = options(false);
+    next.base_generation = 1;
+    let second = scan_tree(tree.path(), &first.manifest, &next).unwrap();
+    let names = paths(&second);
+    assert!(names.contains(&"src/Main.hx") && names.contains(&"src/New.hx") && names.contains(&"README.md"), "{names:?}");
+    assert!(!names.contains(&"gone.txt"), "a deleted file is not in the new generation");
+    assert!(!names.iter().any(|p| p.starts_with("bin/") || p.ends_with(".log")), "the tree's own .gitignore keeps output out: {names:?}");
+    assert!(!names.iter().any(|p| p.starts_with(".git/")));
+    let find = |path: &str| second.manifest.files.iter().find(|f| f.path == path).unwrap();
+    assert_eq!(find("src/Main.hx").origin, Origin::Tracked, "a file the last generation tracked stays tracked");
+    assert_eq!(find("src/New.hx").origin, Origin::Untracked);
+    assert_ne!(find("src/Main.hx").hash, first.manifest.files.iter().find(|f| f.path == "src/Main.hx").unwrap().hash, "an edit changes the hash");
+    assert_eq!(second.manifest.git.deleted, vec!["gone.txt".to_string()]);
+    assert_eq!(second.manifest.git.branch, first.manifest.git.branch, "the Git section carries over");
+    assert_eq!((second.manifest.base_generation, second.manifest.generation), (1, 2));
+    assert_eq!(second.manifest.name, first.manifest.name);
+    assert!(second.manifest.validate(&Limits::default()).is_empty());
+    for (hash, _) in second.chunks() {
+        second.read_chunk(hash).unwrap();
+    }
 }

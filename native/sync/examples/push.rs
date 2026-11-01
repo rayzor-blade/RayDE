@@ -7,7 +7,7 @@ fn main() {
         eprintln!("usage: push ROOT GATEWAY [DEV_ACCOUNT [push|open]]");
         std::process::exit(2);
     };
-    let config = Config { root: root.into(), gateway, account: args.next(), device: None, history: false, action: args.next().unwrap_or_default() };
+    let config = Config { root: root.into(), gateway, account: args.next(), device: None, history: false, action: args.next().unwrap_or_default(), workspace: None, token: None, base_generation: None };
     if let Err(failure) = run(&config, &mut |event| println!("{event}"), &|| false) {
         println!("{}", serde_json::json!({"event": "error", "code": failure.code, "message": failure.message}));
         std::process::exit(1);

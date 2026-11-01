@@ -5,8 +5,8 @@ use crate::{
     exclude::Selection,
     ids::WorkspaceId,
     lifecycle::{DEFAULT_ALLOCATION_BYTES, Limits},
-    manifest::ChunkRef,
-    scan::{Options, scan},
+    manifest::{ChunkRef, Manifest},
+    scan::{Options, Snapshot, scan, scan_tree},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -32,9 +32,16 @@ pub struct Config {
     pub device: Option<String>,
     #[serde(default)]
     pub history: bool,
-    /// "push" (the default) or "open".
+    /// "push" (the default), "open" or "writeback".
     #[serde(default)]
     pub action: String,
+    /// Write-back publishes into this existing workspace, as the holder of `token`, against the generation the tree was restored from.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub base_generation: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -52,6 +59,7 @@ impl Failure {
 struct Gateway {
     base: String,
     account: Option<String>,
+    token: Option<String>,
     agent: ureq::Agent,
 }
 
@@ -60,6 +68,9 @@ impl Gateway {
         let mut request = self.agent.request(method, &format!("{}/api/sync{path}", self.base));
         if let Some(account) = &self.account {
             request = request.set("X-Dev-Account", account);
+        }
+        if let Some(token) = &self.token {
+            request = request.set("Authorization", &format!("Bearer {token}"));
         }
         let response = match body {
             Some(bytes) => request.set("Content-Type", "application/octet-stream").send_bytes(bytes),
@@ -97,6 +108,7 @@ fn gateway_of(config: &Config) -> Gateway {
     Gateway {
         base: config.gateway.trim_end_matches('/').to_string(),
         account: config.account.clone(),
+        token: config.token.clone(),
         agent: ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(10)).timeout(Duration::from_secs(300)).build(),
     }
 }
@@ -117,6 +129,7 @@ pub fn run(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() ->
     match config.action.as_str() {
         "" | "push" => push(config, emit, cancelled),
         "open" => open(config, emit),
+        "writeback" => writeback(config, emit, cancelled),
         other => Err(Failure::new("usage", format!("unknown action {other}"))),
     }
 }
@@ -165,6 +178,11 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
         },
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
+    upload(&gateway, &id, &snapshot, emit, cancelled)
+}
+
+/// Sends the chunks the gateway lacks and publishes the snapshot's manifest, dropping the upload if anything fails.
+fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
     let declared: Vec<ChunkRef> = snapshot.chunks().map(|(hash, size)| ChunkRef { hash: hash.to_string(), size }).collect();
     emit(json!({"event": "scanned", "files": snapshot.manifest.files.len(), "bytes": snapshot.manifest.totals.bytes, "chunks": declared.len(), "omitted": snapshot.manifest.omissions.len()}));
 
@@ -208,6 +226,37 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
             Err(failure)
         }
     }
+}
+
+/// Publishes a restored tree, which has no Git directory, into the workspace it came from. Refuses when the cloud copy has moved since the restore, so
+/// nothing is overwritten; the gateway's compare-and-swap catches a push that lands in between.
+fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<(), Failure> {
+    let gateway = gateway_of(config);
+    let id = config.workspace.clone().ok_or_else(|| Failure::new("usage", "Write-back needs the workspace to save into."))?;
+    let base = config.base_generation.ok_or_else(|| Failure::new("usage", "Write-back needs the generation the tree was restored from."))?;
+    let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
+    let current = status["generation"].as_u64().unwrap_or(0);
+    if current != base {
+        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current} and this workspace was restored from generation {base}; nothing was saved.")));
+    }
+    let previous = Manifest::from_bytes(&gateway.call("GET", &format!("/workspaces/{id}/export/manifest"), None)?).map_err(|_| Failure::new("protocol", "The gateway's manifest was not understood."))?;
+    emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
+    let snapshot = scan_tree(
+        &config.root,
+        &previous,
+        &Options {
+            workspace: WorkspaceId::parse(&id).map_err(|_| Failure::new("protocol", "The workspace id is not valid."))?,
+            base_generation: base,
+            device: config.device.clone().unwrap_or_else(|| "browser session".into()),
+            now_ms: now_ms(),
+            limits: Limits::for_allocation(status["allocation"].as_u64().unwrap_or(DEFAULT_ALLOCATION_BYTES)),
+            selection: Selection::default(),
+            history: false,
+            buffers: vec![],
+        },
+    )
+    .map_err(|e| Failure::new("scan", e.to_string()))?;
+    upload(&gateway, &id, &snapshot, emit, cancelled)
 }
 
 /// An upload running on its own thread. Events are read with `poll`; the last one is `published` or `error`.

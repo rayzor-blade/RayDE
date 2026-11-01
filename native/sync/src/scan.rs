@@ -205,43 +205,24 @@ fn read_stable(path: &Path, sources: &mut BTreeMap<String, (Source, u32)>, limit
     Ok(None)
 }
 
-/// Reads the working tree at `root` into a snapshot.
-pub fn scan(root: &Path, options: &Options) -> Result<Snapshot, ScanError> {
-    let root = fs::canonicalize(root)?;
-    let top = git(&root, &["rev-parse", "--show-toplevel"]).map_err(|e| ScanError::NotARepository(e.to_string()))?;
-    let top = fs::canonicalize(text(top))?;
-    if top != root {
-        return Err(ScanError::NotTheTop { top: top.display().to_string() });
-    }
-    let lock = text(git(&root, &["rev-parse", "--git-path", "index.lock"])?);
-    let lock = if Path::new(&lock).is_absolute() { PathBuf::from(lock) } else { root.join(lock) };
-    if lock.exists() {
-        return Err(ScanError::Busy("a Git operation is in progress".into()));
-    }
-    let head_at_start = git(&root, &["rev-parse", "--verify", "-q", "HEAD"]).ok().map(text);
+/// What a walk over candidate paths yields: entries, what was left out and why, where each chunk's bytes are, and tracked files that are gone.
+struct Collected {
+    files: Vec<FileEntry>,
+    omissions: BTreeSet<(String, u8)>,
+    sources: BTreeMap<String, (Source, u32)>,
+    deleted: Vec<String>,
+    reasons: BTreeMap<u8, Reason>,
+}
 
-    let tracked: HashSet<Vec<u8>> = nul_list(&git(&root, &["ls-files", "-z", "--cached"])?).into_iter().collect();
-    let candidates = nul_list(&git(&root, &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?);
-    let index_raw = git(&root, &["ls-files", "-z", "--stage"])?;
-    let mut index = Vec::new();
-    let mut submodules = BTreeSet::new();
-    for entry in nul_list(&index_raw) {
-        let entry = String::from_utf8_lossy(&entry).to_string();
-        let Some((meta, path)) = entry.split_once('\t') else { continue };
-        let mut fields = meta.split(' ');
-        let (mode, oid, stage) = (fields.next().unwrap_or(""), fields.next().unwrap_or(""), fields.next().unwrap_or("0"));
-        if mode == "160000" {
-            submodules.insert(path.to_string());
-        }
-        index.push(IndexEntry { path: path.to_string(), mode: mode.to_string(), oid: oid.to_string(), stage: stage.parse().unwrap_or(0) });
-    }
-
+#[cfg_attr(unix, allow(unused_variables))]
+/// Turns candidate paths under `root` into manifest entries: classifies each, reads it stably and chunks it.
+fn collect(root: &Path, candidates: Vec<Vec<u8>>, tracked: &HashSet<Vec<u8>>, submodules: &BTreeSet<String>, index: &[IndexEntry], options: &Options) -> Collected {
+    let reasons: BTreeMap<u8, Reason> = [Reason::GitInternal, Reason::Secret, Reason::Cache, Reason::SessionState, Reason::OsFile, Reason::TooLarge, Reason::UnsafeLink, Reason::Collision, Reason::Submodule, Reason::Excluded, Reason::Unstable, Reason::BadPath, Reason::Unreadable].into_iter().map(|r| (r as u8, r)).collect();
     let mut files: Vec<FileEntry> = Vec::new();
     let mut omissions: BTreeSet<(String, u8)> = BTreeSet::new();
     let mut omit = |path: String, reason: Reason| {
         omissions.insert((path, reason as u8));
     };
-    let reasons: BTreeMap<u8, Reason> = [Reason::GitInternal, Reason::Secret, Reason::Cache, Reason::SessionState, Reason::OsFile, Reason::TooLarge, Reason::UnsafeLink, Reason::Collision, Reason::Submodule, Reason::Excluded, Reason::Unstable, Reason::BadPath, Reason::Unreadable].into_iter().map(|r| (r as u8, r)).collect();
     let mut sources: BTreeMap<String, (Source, u32)> = BTreeMap::new();
     let mut deleted = Vec::new();
 
@@ -317,6 +298,42 @@ pub fn scan(root: &Path, options: &Options) -> Result<Snapshot, ScanError> {
         files.retain(|f| f.path != dropped);
         omit(dropped, Reason::Collision);
     }
+
+    Collected { files, omissions, sources, deleted, reasons }
+}
+
+/// Reads the working tree at `root` into a snapshot.
+pub fn scan(root: &Path, options: &Options) -> Result<Snapshot, ScanError> {
+    let root = fs::canonicalize(root)?;
+    let top = git(&root, &["rev-parse", "--show-toplevel"]).map_err(|e| ScanError::NotARepository(e.to_string()))?;
+    let top = fs::canonicalize(text(top))?;
+    if top != root {
+        return Err(ScanError::NotTheTop { top: top.display().to_string() });
+    }
+    let lock = text(git(&root, &["rev-parse", "--git-path", "index.lock"])?);
+    let lock = if Path::new(&lock).is_absolute() { PathBuf::from(lock) } else { root.join(lock) };
+    if lock.exists() {
+        return Err(ScanError::Busy("a Git operation is in progress".into()));
+    }
+    let head_at_start = git(&root, &["rev-parse", "--verify", "-q", "HEAD"]).ok().map(text);
+
+    let tracked: HashSet<Vec<u8>> = nul_list(&git(&root, &["ls-files", "-z", "--cached"])?).into_iter().collect();
+    let candidates = nul_list(&git(&root, &["ls-files", "-z", "--cached", "--others", "--exclude-standard"])?);
+    let index_raw = git(&root, &["ls-files", "-z", "--stage"])?;
+    let mut index = Vec::new();
+    let mut submodules = BTreeSet::new();
+    for entry in nul_list(&index_raw) {
+        let entry = String::from_utf8_lossy(&entry).to_string();
+        let Some((meta, path)) = entry.split_once('\t') else { continue };
+        let mut fields = meta.split(' ');
+        let (mode, oid, stage) = (fields.next().unwrap_or(""), fields.next().unwrap_or(""), fields.next().unwrap_or("0"));
+        if mode == "160000" {
+            submodules.insert(path.to_string());
+        }
+        index.push(IndexEntry { path: path.to_string(), mode: mode.to_string(), oid: oid.to_string(), stage: stage.parse().unwrap_or(0) });
+    }
+
+    let Collected { files, omissions, mut sources, mut deleted, reasons } = collect(&root, candidates, &tracked, &submodules, &index, options);
 
     let mut notes = Vec::new();
     let head = git(&root, &["rev-parse", "--verify", "-q", "HEAD"]).ok().map(text);
@@ -401,4 +418,48 @@ pub fn scan(root: &Path, options: &Options) -> Result<Snapshot, ScanError> {
     };
     manifest.finalize();
     Ok(Snapshot { manifest, notes, sources, bundle: bundle_path })
+}
+
+/// Reads a restored working tree, which has no `.git`, into a snapshot taken against `previous`: files are found by walking the tree under its own
+/// `.gitignore` files, the ones `previous` listed as tracked stay tracked, and its Git section carries over with the deletions found now.
+pub fn scan_tree(root: &Path, previous: &Manifest, options: &Options) -> Result<Snapshot, ScanError> {
+    let root = fs::canonicalize(root)?;
+    let tracked: HashSet<Vec<u8>> = previous.files.iter().filter(|f| f.origin == Origin::Tracked).map(|f| f.path.clone().into_bytes()).collect();
+    let mut found: BTreeSet<Vec<u8>> = tracked.iter().cloned().collect();
+    let walk = ignore::WalkBuilder::new(&root)
+        .hidden(false)
+        .parents(false)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .follow_links(false)
+        .filter_entry(|entry| entry.file_name() != ".git")
+        .build();
+    for entry in walk {
+        let entry = entry.map_err(|e| io::Error::other(e.to_string()))?;
+        if entry.file_type().is_none_or(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Ok(relative) = entry.path().strip_prefix(&root) else { continue };
+        found.insert(relative.to_string_lossy().replace('\\', "/").into_bytes());
+    }
+    let Collected { files, omissions, sources, mut deleted, reasons } = collect(&root, found.into_iter().collect(), &tracked, &previous.git.submodules.iter().cloned().collect(), &previous.git.index, options);
+    deleted.sort();
+    let mut manifest = Manifest {
+        format: FORMAT,
+        workspace: options.workspace.clone(),
+        generation: options.base_generation + 1,
+        base_generation: options.base_generation,
+        device: options.device.clone(),
+        taken_at: options.now_ms,
+        name: previous.name.clone(),
+        git: GitState { deleted, ..previous.git.clone() },
+        files,
+        buffers: Vec::new(),
+        omissions: omissions.into_iter().filter_map(|(path, reason)| reasons.get(&reason).map(|r| Omission { path, reason: *r })).collect(),
+        totals: Totals::default(),
+        checksum: String::new(),
+    };
+    manifest.finalize();
+    Ok(Snapshot { manifest, notes: Vec::new(), sources, bundle: None })
 }
