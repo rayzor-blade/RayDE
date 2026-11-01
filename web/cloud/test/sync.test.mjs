@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, cp } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fixture } from "./fixture.mjs";
+import { fixture, json } from "./fixture.mjs";
 
 const cli = resolve("../../native/sync/target/debug/examples/push");
 const freePort = () => new Promise(done => { const server = createServer().listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(() => done(port)); }); });
@@ -190,4 +190,60 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   assert.equal((await api(`/api/sync/workspaces/${id}/open`, { method: "POST" })).status, 200);
   for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready" && (await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8").catch(() => ""))) break; await new Promise(r => setTimeout(r, 100)); }
   assert.equal(await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8"), "changed text", "a newer generation is restored again");
+});
+
+test("a restored session saves back with a capability for its own workspace, and only that", async t => {
+  const port = await freePort(), base = `http://127.0.0.1:${port}`, captured = [];
+  const host = await fixture({ port, appOrigin: base, provision: data => { captured.push(data); return json({ url: "ws://127.0.0.1:1/session", token: "compute-secret", project: "main.hx" }); } });
+  t.after(() => host.mf.dispose());
+  const { root } = await repository({ "main.hx": "class Main {}\n", "notes.txt": "one" });
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const cliRun = (...args) => {
+    const run = spawnSync(cli, args, { encoding: "utf8" });
+    const events = run.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    return { code: run.status, events, last: events.at(-1) };
+  };
+  const first = cliRun(root, base, "alice");
+  assert.equal(first.last.event, "published", JSON.stringify(first.events));
+  const id = first.last.url.split("/").pop();
+  const alice = (path, init = {}) => host.mf.dispatchFetch(base + "/api/sync" + path, { ...init, headers: { "X-Dev-Account": "alice", ...(init.headers ?? {}) } });
+  assert.equal((await alice(`/workspaces/${id}/open`, { method: "POST" })).status, 200);
+  const login = await host.mf.dispatchFetch(`${base}/auth/dev?account=alice&return=/${id}`, { redirect: "manual" });
+  const cookie = login.headers.getSetCookie()[0].split(";")[0];
+  let state;
+  for (let i = 0; i < 100; i++) { state = await (await host.mf.dispatchFetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(done => setTimeout(done, 100)); }
+  assert.equal(state.status, "ready", JSON.stringify(state));
+  assert.ok(!JSON.stringify(state).includes("rsp1."), "the capability is never stored or shown to the page");
+  const grant = captured.at(-1).publish;
+  assert.equal(grant.workspace, id);
+  assert.match(grant.token, /^rsp1\./);
+
+  const bearer = (token, path, init = {}) => host.mf.dispatchFetch(base + "/api/sync" + path, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) } });
+  assert.equal((await bearer(grant.token, `/workspaces/${id}`)).status, 200, "it reads its own workspace");
+  const other = await (await alice("/workspaces", post({}))).json();
+  assert.equal((await bearer(grant.token, `/workspaces/${other.id}`)).status, 403, "not another workspace of the same owner");
+  assert.equal((await bearer(grant.token, "/workspaces", post({}))).status, 403, "it cannot create workspaces");
+  assert.equal((await bearer(grant.token, `/workspaces/${id}/open`, { method: "POST" })).status, 403, "it cannot open them");
+  const forged = grant.token.slice(0, -2) + (grant.token.endsWith("AA") ? "BB" : "AA");
+  assert.equal((await bearer(forged, `/workspaces/${id}`)).status, 401, "a token with a bad signature is refused");
+
+  // The restored tree has no .git. Edit, add and delete, and save it back.
+  const tree = await mkdtemp(join(tmpdir(), "rayde-sync-restored-"));
+  t.after(() => rm(tree, { recursive: true, force: true }));
+  await cp(root, tree, { recursive: true, filter: source => !source.split("/").includes(".git") });
+  await writeFile(join(tree, "main.hx"), "class Main { static function main() {} }\n");
+  await writeFile(join(tree, "added.txt"), "new");
+  await rm(join(tree, "notes.txt"));
+  const saved = cliRun(tree, base, "-", "writeback", id, grant.token, "1");
+  assert.equal(saved.last.event, "published", JSON.stringify(saved.events));
+  assert.equal(saved.last.generation, 2);
+  const manifest = await (await alice(`/workspaces/${id}/export/manifest`)).json();
+  assert.deepEqual(manifest.files.map(file => file.path).sort(), ["added.txt", "main.hx"]);
+  assert.equal(manifest.baseGeneration ?? manifest.base_generation, 1);
+
+  // A second save against the old base is a conflict, and nothing moves.
+  const stale = cliRun(tree, base, "-", "writeback", id, grant.token, "1");
+  assert.equal(stale.last.event, "error", JSON.stringify(stale.events));
+  assert.equal(stale.last.code, "conflict");
+  assert.equal((await (await alice(`/workspaces/${id}`)).json()).generation, 2);
 });

@@ -796,6 +796,14 @@ impl WorkspaceSession {
         Err(bad(404, "Unknown workspace operation."))
     }
 }
+/// What a restored session saves with: a capability for its own workspace, minted fresh for each preparation and never stored.
+fn publish_capability(env: &Env, value: &Value) -> Value {
+    let sync = &value["repository"]["sync"];
+    match (sync["owner"].as_str(), sync["workspace"].as_str()) {
+        (Some(owner), Some(workspace)) => crate::sync::mint_capability(env, owner, workspace).map(|token| json!({"token":token,"workspace":workspace})).unwrap_or(Value::Null),
+        _ => Value::Null,
+    }
+}
 async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     let url = config(env, "RUNNER_URL").unwrap_or_else(|| "https://runner.internal".into());
     let endpoint = Url::parse(&url).map_err(|_| bad(503, "Invalid runner configuration."))?;
@@ -804,7 +812,7 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     }
     let mut req = request(
         &format!("{}/workspaces/open", url.trim_end_matches('/')),
-        &json!({"id":value["id"],"owner":value["owner"],"repository":value["repository"],"checkout":{"accessToken":access}}),
+        &json!({"id":value["id"],"owner":value["owner"],"repository":value["repository"],"checkout":{"accessToken":access},"publish":publish_capability(env,value)}),
     )?;
     req.headers_mut()?.set(
         "Authorization",

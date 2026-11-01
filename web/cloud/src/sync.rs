@@ -131,6 +131,67 @@ pub(crate) fn dev_user_id(name: &str) -> u64 {
     name.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3)) % 1_000_000_000 + 2_000_000_000
 }
 
+// ---- the capability a restored session saves with ----
+
+/// How long a publish capability lives: the session's own lifetime is shorter, and a new one is minted whenever the workspace is prepared.
+const CAPABILITY_MS: u64 = 8 * 60 * 60 * 1000;
+
+fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut block = [0u8; 64];
+    if key.len() > 64 {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let (mut inner, mut outer) = (Sha256::new(), Sha256::new());
+    inner.update(block.map(|b| b ^ 0x36));
+    inner.update(message);
+    outer.update(block.map(|b| b ^ 0x5c));
+    outer.update(inner.finalize());
+    outer.finalize().into()
+}
+
+/// The key capabilities are signed with, derived from the runner secret so it is never used directly.
+fn capability_key(env: &Env) -> Option<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+    let secret = config(env, "RUNNER_SECRET")?;
+    Some(Sha256::digest(format!("rayde-sync-publish\0{secret}")).to_vec())
+}
+
+fn same(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
+}
+
+/// A bearer token that lets its holder upload and publish one workspace as its owner, until it expires: `rsp1.<workspace>.<expiry>.<owner>.<mac>`.
+pub(crate) fn mint_capability(env: &Env, owner: &str, workspace: &str) -> Option<String> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let key = capability_key(env)?;
+    let body = format!("{workspace}.{}.{}", now() + CAPABILITY_MS, URL_SAFE_NO_PAD.encode(owner));
+    let mac = URL_SAFE_NO_PAD.encode(hmac_sha256(&key, format!("rsp1.{body}").as_bytes()));
+    Some(format!("rsp1.{body}.{mac}"))
+}
+
+/// The owner and workspace a capability names, when its signature holds and it has not expired.
+fn verify_capability(env: &Env, token: &str) -> Option<(String, String)> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let rest = token.strip_prefix("rsp1.")?;
+    let (body, mac) = rest.rsplit_once('.')?;
+    let key = capability_key(env)?;
+    let expected = URL_SAFE_NO_PAD.encode(hmac_sha256(&key, format!("rsp1.{body}").as_bytes()));
+    if !same(expected.as_bytes(), mac.as_bytes()) {
+        return None;
+    }
+    let mut parts = body.split('.');
+    let (workspace, expiry, owner) = (parts.next()?, parts.next()?.parse::<u64>().ok()?, parts.next()?);
+    if parts.next().is_some() || expiry <= now() || !workspace_id(workspace) {
+        return None;
+    }
+    let owner = String::from_utf8(URL_SAFE_NO_PAD.decode(owner).ok()?).ok()?;
+    AccountId::parse(&owner).ok()?;
+    Some((owner, workspace.to_string()))
+}
+
 /// What the compute that restores a snapshot may read: the manifest and chunks of a workspace, with the runner's secret and no account.
 async fn runner_route(req: &Request, env: &Env, parts: &[&str]) -> AppResult<Response> {
     let secret = config(env, "RUNNER_SECRET").ok_or_else(|| bad(503, "Workspace compute is not configured."))?;
@@ -161,7 +222,7 @@ pub(crate) async fn open_synced(env: &Env, owner: &str, id: &str, origin: &str) 
     if owner_id.is_null() {
         return Err(bad(400, "This account cannot open a browser workspace."));
     }
-    let repository = json!({"id": 0, "name": "synced", "fullName": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
+    let repository = json!({"id": 0, "name": "synced", "fullName": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "owner": owner, "opened": now()}});
     let mut record = rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
     record["url"] = body["url"].clone();
     record["generation"] = json!(generation);
@@ -187,9 +248,21 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
         let parts: Vec<&str> = runner.split('/').collect();
         return runner_route(req, env, &parts).await;
     }
-    let owner = owner_of(req, env).await?;
-    let method = req.method();
     let parts: Vec<&str> = rest.trim_matches('/').split('/').collect();
+    let bearer = req.headers().get("Authorization")?.and_then(|value| value.strip_prefix("Bearer ").map(str::to_string)).filter(|token| token.starts_with("rsp1."));
+    let owner = match bearer {
+        // A capability is the owner's, for one workspace and only for reading its state and uploading and publishing to it.
+        Some(token) => {
+            let (owner, workspace) = verify_capability(env, &token).ok_or_else(|| bad(401, "Sign in to continue."))?;
+            let allowed = matches!(parts.as_slice(), ["workspaces", id, tail @ ..] if *id == workspace && matches!(tail, [] | ["export", "manifest"] | ["uploads"] | ["uploads", _] | ["uploads", _, "chunks", _] | ["uploads", _, "publish"]));
+            if !allowed {
+                return Err(bad(403, "This credential cannot do that."));
+            }
+            owner
+        }
+        None => owner_of(req, env).await?,
+    };
+    let method = req.method();
     let origin = config(env, "APP_ORIGIN").unwrap_or_default();
     match (method, parts.as_slice()) {
         (Method::Post, ["workspaces"]) => {
