@@ -59,7 +59,7 @@ class SyncFeature {
 		}
 		#if wasm
 		var session = rayde.workspace.PageHost.session;
-		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false});
+		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false, canMerge:false});
 		return;
 		#else
 		if (push >= 0) return;
@@ -71,7 +71,7 @@ class SyncFeature {
 	}
 
 	function panel():Element
-		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save}
+		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={merge}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
@@ -137,37 +137,62 @@ class SyncFeature {
 		scan and the upload. A cloud copy that has moved on is reported as such and nothing is overwritten.
 	**/
 	public function save():Void {
+		ask("sync.publish", "Saving…", (reply, _) -> {
+			var generation:Int = Std.int(reply.generation);
+			return {generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false, canMerge:false};
+		});
+	}
+
+	/** Brings the cloud copy's newer generation into this session's tree: edits in different places combine, and the same lines are listed with nothing changed. */
+	public function merge():Void {
+		ask("sync.merge", "Merging…", (reply, current) -> {
+			var generation:Int = Std.int(reply.generation);
+			var conflicts:Array<Dynamic> = reply.conflicts;
+			if (conflicts.length > 0) {
+				var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ");
+				return {generation:current.generation, busy:false, failed:true, canMerge:false,
+					message:"Nothing was merged. These files need a decision (" + (conflicts.length > 5 ? "first 5 of " + conflicts.length : Std.string(conflicts.length)) + "): " + names};
+			}
+			var changed = (reply.written:Array<Dynamic>).length + (reply.deleted:Array<Dynamic>).length;
+			return {generation:generation, busy:false, failed:false, canMerge:false,
+				message:changed == 0 ? "Already up to date with generation " + generation : "Merged generation " + generation + " · " + changed + " files updated. Save to publish your changes."};
+		});
+	}
+
+	/**
+		Runs a session request and shows its outcome in the panel. The answer arrives on the session client's own thread, where nothing may throw and the
+		panel's state is not touched, so it is handed over under a lock and picked up from the UI thread on a timer.
+	**/
+	function ask(op:String, working:String, done:(Dynamic, SaveBack) -> SaveBack):Void {
 		#if wasm
 		var session = rayde.workspace.PageHost.session, current = saveBack.get();
 		if (session == null || current == null || current.busy) return;
-		saveBack.set({generation:current.generation, busy:true, message:"Saving…", failed:false});
-		// The answer arrives on the session client's own thread; the panel's state is only touched from the UI thread, which looks for it on a timer.
+		saveBack.set({generation:current.generation, busy:true, message:working, failed:false, canMerge:current.canMerge});
 		var outcome:Null<SaveBack> = null, lock = new sys.thread.Mutex();
 		function finish(result:SaveBack):Void {
 			lock.acquire();
 			outcome = result;
 			lock.release();
 		}
-		// Nothing may throw out of these: they run on a thread of their own, where an exception ends the program.
 		function failure(error:Dynamic):Void {
-			var message = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) ? cast(error, rayde.workspace.session.SessionClient.SessionFailure).message : Std.string(error) catch (_:Dynamic) "The save did not finish.";
-			finish({generation:current.generation, busy:false, message:message, failed:true});
+			var message = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) ? cast(error, rayde.workspace.session.SessionClient.SessionFailure).message : Std.string(error) catch (_:Dynamic) "That did not finish.";
+			var moved = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) && cast(error, rayde.workspace.session.SessionClient.SessionFailure).code == "conflict" catch (_:Dynamic) false;
+			finish({generation:current.generation, busy:false, message:message, failed:true, canMerge:moved});
 		}
-		session.requestAsync("sync.publish", null, 600).then(reply -> {
+		session.requestAsync(op, null, 600).then(reply -> {
 			try {
 				if (Std.isOfType(reply, rayde.workspace.session.SessionClient.SessionFailure) || reply == null || reply.generation == null) {
 					failure(reply);
 					return;
 				}
-				var generation:Int = Std.int(reply.generation);
-				finish({generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false});
+				finish(done(reply, current));
 			} catch (error:Dynamic) failure(error);
 		}, error -> failure(error));
 		function look():Void {
 			lock.acquire();
-			var done = outcome;
+			var result = outcome;
 			lock.release();
-			if (done != null) saveBack.set(done);
+			if (result != null) saveBack.set(result);
 			else if (!host.closed()) ashui.animation.AnimationScheduler.main.after(.1, look);
 		}
 		ashui.animation.AnimationScheduler.main.after(.1, look);

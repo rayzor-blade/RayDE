@@ -13,7 +13,7 @@ import rayde.sync.SyncState;
 import rayde.sync.SyncState.Sync;
 
 /** What the panel shows in a browser session that is a restored copy of a cloud workspace: which generation it is a copy of, and how the last save went. */
-typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool};
+typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool, canMerge:Bool};
 
 typedef SyncPanelProps = {
 	workspace:String,
@@ -23,6 +23,7 @@ typedef SyncPanelProps = {
 	?unavailableMessage:String,
 	?saveBack:Signal<Null<SaveBack>>,
 	?onSave:Void->Void,
+	?onMerge:Void->Void,
 	onSignIn:Void->Void,
 	onInitGit:Void->Void,
 	onSync:Void->Void,
@@ -226,7 +227,10 @@ class SyncPanel extends Component<SyncPanelProps> {
 				<if {saved.message != "" && saved.failed}><text id="rayde-sync-save-message" class="rayde-sync-error">${saved.message}</text>
 				<else><if {saved.message != ""}><text id="rayde-sync-save-message" class="rayde-sync-muted">${saved.message}</text></if></if>
 			</div>
-			<div class="rayde-sync-actions"><button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Saving…" : "Save to cloud"}</button></div>
+			<div class="rayde-sync-actions">
+				<if {saved.canMerge}><button id="rayde-sync-merge" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onMerge()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Merge cloud changes</button></if>
+				<button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Working…" : "Save to cloud"}</button>
+			</div>
 		</div>;
 
 	function detail(label:String, value:String, id:String):Element
