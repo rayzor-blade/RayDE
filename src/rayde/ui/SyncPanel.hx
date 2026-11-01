@@ -12,12 +12,17 @@ import ashui.ui.Component;
 import rayde.sync.SyncState;
 import rayde.sync.SyncState.Sync;
 
+/** What the panel shows in a browser session that is a restored copy of a cloud workspace: which generation it is a copy of, and how the last save went. */
+typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool};
+
 typedef SyncPanelProps = {
 	workspace:String,
 	state:Signal<SyncState>,
 	/** The current time in milliseconds, for the time left. */
 	now:Void->Float,
 	?unavailableMessage:String,
+	?saveBack:Signal<Null<SaveBack>>,
+	?onSave:Void->Void,
 	onSignIn:Void->Void,
 	onInitGit:Void->Void,
 	onSync:Void->Void,
@@ -40,14 +45,18 @@ class SyncPanel extends Component<SyncPanelProps> {
 		return <div id="rayde-sync-panel" class="flex flex-col flex-1 min-w-0 min-h-0">
 		<div class="rayde-sync-heading">
 			<icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-4 shrink-0"/><text class="flex-1">Cloud Sync</text>
-			<for {state in [props.state.get()]}>${phaseBadge(state)}</for>
+			<if {props.saveBack == null || props.saveBack.get() == null}><for {state in [props.state.get()]}>${phaseBadge(state)}</for></if>
 		</div>
 		<div class="rayde-sync-scroll">
 			<text id="rayde-sync-workspace" class="rayde-sync-workspace">${props.workspace}</text>
-			<if {props.unavailableMessage != null}>
-				<div class="rayde-sync-section"><text id="rayde-sync-unavailable" class="rayde-sync-muted">${props.unavailableMessage}</text></div>
+			<if {props.saveBack != null && props.saveBack.get() != null}>
+				<for {saved in [props.saveBack.get()]}>${saveBack(saved)}</for>
 			<else>
-				<for {state in [props.state.get()]}>${body(state)}</for>
+				<if {props.unavailableMessage != null}>
+					<div class="rayde-sync-section"><text id="rayde-sync-unavailable" class="rayde-sync-muted">${props.unavailableMessage}</text></div>
+				<else>
+					<for {state in [props.state.get()]}>${body(state)}</for>
+				</if>
 			</if>
 		</div>
 	</div>;
@@ -207,6 +216,18 @@ class SyncPanel extends Component<SyncPanelProps> {
 			</div>
 		</div>;
 	}
+
+	/** A browser session that is a copy of a cloud workspace: saving publishes what is here as the next generation, and never over a cloud copy that has moved on. */
+	function saveBack(saved:SaveBack):Element
+		return <div class="rayde-sync-section">
+			<div class="rayde-sync-card rayde-sync-section">
+				${detail("Cloud copy", "Generation " + saved.generation, "rayde-sync-generation")}
+				<text class="rayde-sync-muted">This workspace is a restored copy of your cloud workspace. Saving publishes what is here as the next generation. If the cloud copy has changed since this one was restored, nothing is overwritten.</text>
+				<if {saved.message != "" && saved.failed}><text id="rayde-sync-save-message" class="rayde-sync-error">${saved.message}</text>
+				<else><if {saved.message != ""}><text id="rayde-sync-save-message" class="rayde-sync-muted">${saved.message}</text></if></if>
+			</div>
+			<div class="rayde-sync-actions"><button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Saving…" : "Save to cloud"}</button></div>
+		</div>;
 
 	function detail(label:String, value:String, id:String):Element
 		return <div class="rayde-sync-detail"><text>${label}</text><text id={id} class="rayde-sync-value">${value}</text></div>;

@@ -7,6 +7,7 @@ import rayde.ui.Contributions;
 import rayde.ui.Host;
 import rayde.ui.Icons;
 import rayde.ui.SyncPanel;
+import rayde.ui.SyncPanel.SaveBack;
 
 /**
 	Cloud Sync as a feature: its icon in the activity bar, its command and its side panel. For now it shows what stands between this folder and a sync
@@ -16,6 +17,8 @@ class SyncFeature {
 	final host:Host;
 	static final installed = new haxe.ds.ObjectMap<Contributions, SyncFeature>();
 	public final state = Signal.make(Sync.empty(SignedOut));
+	/** In a browser session restored from a cloud workspace: the generation it is a copy of and how the last save went; null anywhere else. */
+	public final saveBack = Signal.make((null:Null<SaveBack>));
 	/** The running upload's handle in the native client, or -1. */
 	var push = -1;
 	/** Whether the running job only asks for a browser session, which leaves the panel's state as it is. */
@@ -55,6 +58,8 @@ class SyncFeature {
 			return;
 		}
 		#if wasm
+		var session = rayde.workspace.PageHost.session;
+		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false});
 		return;
 		#else
 		if (push >= 0) return;
@@ -66,7 +71,7 @@ class SyncFeature {
 	}
 
 	function panel():Element
-		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()}
+		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
@@ -124,6 +129,48 @@ class SyncFeature {
 			return;
 		}
 		follow();
+		#end
+	}
+
+	/**
+		Saves a browser session's tree back into the cloud workspace it was restored from, through the session, which holds the credential and does the
+		scan and the upload. A cloud copy that has moved on is reported as such and nothing is overwritten.
+	**/
+	public function save():Void {
+		#if wasm
+		var session = rayde.workspace.PageHost.session, current = saveBack.get();
+		if (session == null || current == null || current.busy) return;
+		saveBack.set({generation:current.generation, busy:true, message:"Saving…", failed:false});
+		// The answer arrives on the session client's own thread; the panel's state is only touched from the UI thread, which looks for it on a timer.
+		var outcome:Null<SaveBack> = null, lock = new sys.thread.Mutex();
+		function finish(result:SaveBack):Void {
+			lock.acquire();
+			outcome = result;
+			lock.release();
+		}
+		// Nothing may throw out of these: they run on a thread of their own, where an exception ends the program.
+		function failure(error:Dynamic):Void {
+			var message = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) ? cast(error, rayde.workspace.session.SessionClient.SessionFailure).message : Std.string(error) catch (_:Dynamic) "The save did not finish.";
+			finish({generation:current.generation, busy:false, message:message, failed:true});
+		}
+		session.requestAsync("sync.publish", null, 600).then(reply -> {
+			try {
+				if (Std.isOfType(reply, rayde.workspace.session.SessionClient.SessionFailure) || reply == null || reply.generation == null) {
+					failure(reply);
+					return;
+				}
+				var generation:Int = Std.int(reply.generation);
+				finish({generation:generation, busy:false, message:"Saved as generation " + generation + " · " + Std.string(reply.files) + " files", failed:false});
+			} catch (error:Dynamic) failure(error);
+		}, error -> failure(error));
+		function look():Void {
+			lock.acquire();
+			var done = outcome;
+			lock.release();
+			if (done != null) saveBack.set(done);
+			else if (!host.closed()) ashui.animation.AnimationScheduler.main.after(.1, look);
+		}
+		ashui.animation.AnimationScheduler.main.after(.1, look);
 		#end
 	}
 

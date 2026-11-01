@@ -18,6 +18,8 @@ class SessionClient {
 	public var exec(default, null) = false;
 	public var syntax(default, null) = false;
 	public var appPreviews(default, null) = false;
+	/** The cloud workspace this session's tree was restored from and the generation it is a copy of, when it can save back to it. */
+	public var syncWriteback(default, null):Null<{workspace:String, generation:Int}>;
     public var webPreviews(default,null) = false;
     public var hostSystem(default,null) = "";
     public var hostArchitecture(default,null) = "";
@@ -71,6 +73,7 @@ class SessionClient {
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
 			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
 			client.appPreviews = hello.appPreviews == true;
+			if (hello.syncWriteback != null) client.syncWriteback = {workspace:hello.syncWriteback.workspace, generation:hello.syncWriteback.generation};
             client.webPreviews=hello.webPreviews==true || client.appPreviews;
             if(hello.host!=null){client.hostSystem=switch(hello.host.os:String){case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};client.hostArchitecture=hello.host.arch;}
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
