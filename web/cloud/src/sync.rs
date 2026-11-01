@@ -161,7 +161,7 @@ pub(crate) async fn open_synced(env: &Env, owner: &str, id: &str, origin: &str) 
     if owner_id.is_null() {
         return Err(bad(400, "This account cannot open a browser workspace."));
     }
-    let repository = json!({"id": 0, "name": "synced", "full_name": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
+    let repository = json!({"id": 0, "name": "synced", "fullName": format!("sync/{id}"), "private": true, "sync": {"workspace": id, "generation": generation, "opened": now()}});
     let mut record = rpc(env, "WORKSPACES", id, "open", &json!({"id": id, "owner": owner_id, "repository": repository, "access": Value::Null})).await?;
     record["url"] = body["url"].clone();
     record["generation"] = json!(generation);
