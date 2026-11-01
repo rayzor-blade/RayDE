@@ -163,7 +163,7 @@ class RunPart {
 		surfaceTitle = title != null && title != "" ? title : "Surface Preview";
 		var folder = dir != null ? dir : wb.props.display.cwd;
 		try {
-			var program = new rayde.workspace.LocalLauncher().start("/bin/sh", ["-c", "cd '" + folder.split("'").join("'\\''") + "' && exec " + command]);
+			var program = rayde.workspace.Procs.current.start("/bin/sh", ["-c", "cd '" + folder.split("'").join("'\\''") + "' && exec " + command]);
 			surfacePreview = new rayde.preview.SurfacePump(program);
 		} catch (error:Dynamic) {wb.say("Could not start the app: " + error);return;}
 		surfaceRevision.set(surfaceRevision.get() + 1);
@@ -172,20 +172,27 @@ class RunPart {
 
 	/** Whether the file with this `text` defines a Heaps app in a project that has a Heaps native build, which the Surface Preview can run. */
 	public function canPreviewHeaps(text:String):Bool {
-		#if wasm
-		return false;
-		#else
 		var hxml = wb.props.display.cwd + "/native.hxml";
-		return wb.extension == null && text.indexOf("extends hxd.App") >= 0 && Fs.exists(hxml) && Fs.getContent(hxml).indexOf("-lib heaps") >= 0;
+		#if wasm
+		// The app runs in the workspace session, which has to run programs.
+		var session = rayde.workspace.PageHost.session;
+		if (session == null || !session.exec) return false;
 		#end
+		return wb.extension == null && text.indexOf("extends hxd.App") >= 0 && Fs.exists(hxml) && Fs.getContent(hxml).indexOf("-lib heaps") >= 0;
 	}
 
 	/** Builds the open Heaps project (its native.hxml) with the surface hook and shows it in a Surface Preview tab. */
 	public function previewHeaps():Void {
+		#if wasm
+		// The session host names its own surface script; the shell there expands it.
+		if (!Fs.exists(wb.props.display.cwd + "/native.hxml")) {wb.say("This project has no native.hxml; the Heaps starter creates one.");return;}
+		saveBefore(() -> previewSurface("\"${RAYDE_HEAPS_SURFACE:?this session host has no Heaps preview}\"", wb.props.display.cwd, wb.props.name));
+		#else
 		var dir = wb.props.display.cwd, script = haxe.io.Path.directory(Fs.fullPath(Sys.programPath())) + "/../scripts/heaps-surface.sh";
 		if (!Fs.exists(script)) {wb.say("Heaps previews need RayDE's scripts folder beside the program.");return;}
 		if (!Fs.exists(dir + "/native.hxml")) {wb.say("This project has no native.hxml; the Heaps starter creates one.");return;}
 		saveBefore(() -> previewSurface("bash '" + Fs.fullPath(script).split("'").join("'\\''") + "'", dir, wb.props.name));
+		#end
 	}
 
 	public function restartSurfacePreview():Void {

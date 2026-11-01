@@ -75,8 +75,8 @@ const restore = async ({ id, repository }) => {
   }
   running.get(id)?.kill();
   const sessionPort = await freePort(), token = Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString("hex");
-  // The extension host needs --exec; this stand-in runs on the developer's own machine, as the local session does. The toolchain in bin/ (rayzor) is on its PATH.
-  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base, "--exec", "--extension-host", join(repo, "bin/rayde-extension-host"), "--extensions", join(repo, "extensions")], { stdio: "inherit", env: { ...process.env, PATH: `${join(repo, "bin")}:${process.env.PATH}` } });
+  // The extension host needs --exec; this stand-in runs on the developer's own machine, as the local session does. The toolchain in bin/ (rayzor) is on its PATH, app previews have their tools, and Heaps previews their surface script.
+  const child = spawn(session, ["--root", root, "--port", String(sessionPort), "--token", token, "--origin", base, "--exec", "--extension-host", join(repo, "bin/rayde-extension-host"), "--extensions", join(repo, "extensions"), "--preview-tools", join(repo, "bin/preview-tools")], { stdio: "inherit", env: { ...process.env, PATH: `${join(repo, "bin")}:${process.env.PATH}`, RAYDE_HEAPS_SURFACE: join(repo, "scripts/heaps-surface.sh") } });
   running.set(id, child);
   await listening(sessionPort, child);
   console.log(`restored ${id} generation ${manifest.generation} (${manifest.files.length} files) on :${sessionPort}`);
