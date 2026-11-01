@@ -154,7 +154,7 @@ class SyncFeature {
 			var conflicts:Array<Dynamic> = reply.conflicts;
 			if (conflicts.length > 0) {
 				return {generation:now.generation, busy:false, failed:true, canMerge:false, conflicts:[for (c in conflicts) ({path:Std.string(c.path), reason:Std.string(c.reason), choice:""}:ConflictItem)],
-					message:conflicts.length + " files were edited in the same place on both sides. Choose local or remote for each."};
+					message:conflicts.length + " files conflict."};
 			}
 			var changed = (reply.written:Array<Dynamic>).length + (reply.deleted:Array<Dynamic>).length;
 			return {generation:generation, busy:false, failed:false, canMerge:false, conflicts:[],
@@ -392,8 +392,8 @@ class SyncFeature {
 						current.items = [for (c in conflicts) ({path:Std.string(c.path), reason:Std.string(c.reason), choice:""}:ConflictItem)];
 						var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ") + (conflicts.length > 5 ? " and " + (conflicts.length - 5) + " more" : "");
 						current.message = event.withoutBase == true
-							? "This folder has no record of what it last synced, so these files differ from the remote copy and cannot be told apart from edits: " + names + ". Nothing was changed. Choose local or remote for each."
-							: names + ": edited in the same place on both sides. Nothing was changed.";
+							? "No sync record here, so these differ from remote: " + names + ". Nothing was changed."
+							: names + ": conflict. Nothing was changed.";
 					} else {
 						current.phase = Synced;
 						current.conflicts = 0;

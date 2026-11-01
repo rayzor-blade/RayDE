@@ -206,10 +206,10 @@ class SyncPanel extends Component<SyncPanelProps> {
 				</div>
 			</div>
 			<if {state.phase == Conflict}><div class="rayde-sync-card rayde-sync-section">
-				<text id="rayde-sync-conflict" class="rayde-sync-error">${state.conflicts == 0 ? "The remote copy has changes from another device" : state.conflicts == 1 ? "1 file changed locally and remotely" : state.conflicts + " files changed locally and remotely"}</text>
-				<text class="rayde-sync-muted">${state.message == "" ? "Choose local or remote for each." : state.message}</text>
+				<text id="rayde-sync-conflict" class="rayde-sync-error">${state.conflicts == 0 ? "Remote has new changes" : state.conflicts == 1 ? "1 file in conflict" : state.conflicts + " files changed locally and remotely"}</text>
+				<text class="rayde-sync-muted">${state.message == "" ? "Pull to bring them in." : state.message}</text>
 				<div class="rayde-sync-actions">
-					<if {state.conflicts == 0}><button id="rayde-sync-pull" size={Sm} onClick={_ -> props.onPull()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Pull cloud changes</button></if>
+					<if {state.conflicts == 0}><button id="rayde-sync-pull" size={Sm} onClick={_ -> props.onPull()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Pull</button></if>
 				</div>
 				<if {state.conflicts > 0 && state.items != null}>${conflictChoices(state.items, false)}</if>
 			</div></if>
@@ -239,13 +239,13 @@ class SyncPanel extends Component<SyncPanelProps> {
 		return <div class="rayde-sync-section">
 			<div class="rayde-sync-card rayde-sync-section">
 				${detail("Cloud copy", "Generation " + saved.generation, "rayde-sync-generation")}
-				<text class="rayde-sync-muted">This workspace is a restored copy of your cloud workspace. Saving publishes what is here as the next generation. If the cloud copy has changed since this one was restored, nothing is overwritten.</text>
+				<text class="rayde-sync-muted">A copy of your cloud workspace. Saving publishes it as the next generation.</text>
 				<if {saved.conflicts.length > 0}>${conflictChoices(saved.conflicts, saved.busy)}</if>
 				<if {saved.message != "" && saved.failed}><text id="rayde-sync-save-message" class="rayde-sync-error">${saved.message}</text>
 				<else><if {saved.message != ""}><text id="rayde-sync-save-message" class="rayde-sync-muted">${saved.message}</text></if></if>
 			</div>
 			<div class="rayde-sync-actions">
-				<if {saved.canMerge && saved.conflicts.length == 0}><button id="rayde-sync-merge" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onMerge()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Merge cloud changes</button></if>
+				<if {saved.canMerge && saved.conflicts.length == 0}><button id="rayde-sync-merge" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onMerge()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Merge</button></if>
 				<button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Working…" : "Save to cloud"}</button>
 			</div>
 		</div>;
@@ -255,12 +255,12 @@ class SyncPanel extends Component<SyncPanelProps> {
 		var undecided = Lambda.count(items, item -> item.choice == "");
 		return <div class="flex flex-col gap-1">
 			<div class="flex items-center gap-1">
-				<text class="rayde-sync-muted flex-1">Local or remote</text>
-				<tooltip label="Keep all local" side="top"><button id="rayde-sync-keep-mine" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("mine")}><icon document={Icons.COMPUTER_LINE} class="size-4"/></button></tooltip>
-				<tooltip label="Use all remote" side="top"><button id="rayde-sync-use-cloud" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("theirs")}><icon document={Icons.CLOUD_LINE} class="size-4"/></button></tooltip>
+				<div class="flex-1"/>
+				<tooltip label="All local" side="top"><button id="rayde-sync-keep-mine" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("mine")}><icon document={Icons.COMPUTER_LINE} class="size-4"/></button></tooltip>
+				<tooltip label="All remote" side="top"><button id="rayde-sync-use-cloud" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("theirs")}><icon document={Icons.CLOUD_LINE} class="size-4"/></button></tooltip>
 			</div>
 			<for {item in items}>${conflictRow(item, Lambda.indexOf(items, item), busy)}</for>
-			<button id="rayde-sync-apply" size={Sm} disabled={busy || undecided > 0} onClick={_ -> props.onApply()}>Apply</button>
+			<button id="rayde-sync-apply" size={Sm} disabled={busy || undecided > 0} onClick={_ -> props.onApply()}><icon document={Icons.CHECK_LINE} class="size-3.5 shrink-0"/>Apply</button>
 		</div>;
 	}
 
@@ -268,7 +268,7 @@ class SyncPanel extends Component<SyncPanelProps> {
 		var local:ashui.components.ButtonVariant = item.choice == "mine" ? Primary : Ghost;
 		var remote:ashui.components.ButtonVariant = item.choice == "theirs" ? Primary : Ghost;
 		return <div class="flex items-center gap-1">
-			<tooltip class="flex-1 min-w-0" label={item.reason + " · compare"} side="top"><button id={"rayde-sync-file-" + index} variant={Link} size={Sm} onClick={_ -> props.onDiff(item.path)}><text class="text-xs" wrap={false}>${item.path}</text></button></tooltip>
+			<tooltip class="flex-1 min-w-0" label="Compare" side="top"><button id={"rayde-sync-file-" + index} variant={Link} size={Sm} onClick={_ -> props.onDiff(item.path)}><text class="text-xs" wrap={false}>${item.path}</text></button></tooltip>
 			<tooltip label="Keep local" side="top"><button id={"rayde-sync-pick-mine-" + index} variant={local} size={Icon} disabled={busy} onClick={_ -> props.onPick(item.path, "mine")}><icon document={Icons.COMPUTER_LINE} class="size-4"/></button></tooltip>
 			<tooltip label="Use remote" side="top"><button id={"rayde-sync-pick-theirs-" + index} variant={remote} size={Icon} disabled={busy} onClick={_ -> props.onPick(item.path, "theirs")}><icon document={Icons.CLOUD_LINE} class="size-4"/></button></tooltip>
 		</div>;
