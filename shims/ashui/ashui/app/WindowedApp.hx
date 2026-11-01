@@ -24,7 +24,8 @@ import window.NamedKey;
 /**
  * Stands in for `WindowedApp` in a surface build: `run` draws the app offscreen and streams each frame to RayDE's Surface Preview, with the
  * viewer's pointer, wheel and typed text delivered to the tree. The app's source is unchanged; the surface build puts this class ahead of ashui's.
- * The size is RAYDE_SURFACE_SIZE (WIDTHxHEIGHT) or the window config's, and follows the viewer's resizes. Editing, arrow and navigation keys, letters and digits are delivered as key events; other keys are ignored.
+ * The layout size is RAYDE_SURFACE_SIZE (WIDTHxHEIGHT) or the window config's, and follows the viewer's resizes; RAYDE_SURFACE_SCALE is the viewer's
+ * pixels per layout unit, so the picture has that many pixels to each unit and stays sharp on a dense display. Editing, arrow and navigation keys, letters and digits are delivered as key events; other keys are ignored.
  */
 class WindowedApp {
 	static inline var FRAME_SECONDS = 1 / 60;
@@ -33,6 +34,10 @@ class WindowedApp {
 		SurfaceLink.redirectTrace();
 		var config:WindowConfig.WindowConfigData = settings;
 		var size = (Sys.getEnv("RAYDE_SURFACE_SIZE") ?? "").split("x");
+		var scale = Std.parseFloat(Sys.getEnv("RAYDE_SURFACE_SCALE") ?? "1");
+		if (Math.isNaN(scale) || scale < 1) scale = 1;
+		if (scale > 4) scale = 4;
+		// The layout's size in units; the picture is `scale` times that in pixels.
 		var width = size.length == 2 ? Std.parseInt(size[0]) : config.width ?? 800;
 		var height = size.length == 2 ? Std.parseInt(size[1]) : config.height ?? 600;
 		// There is no window to ask for the system's scheme, so the theme starts dark.
@@ -43,22 +48,23 @@ class WindowedApp {
 		var background = ThemeState.get().color(Background);
 		offscreen.clear = background.rgb();
 		offscreen.clearAlpha = background.a;
-		var link = new SurfaceLink(width, height);
+		offscreen.scale = scale;
+		var link = new SurfaceLink(Math.round(width * scale), Math.round(height * scale));
 		link.start();
 		var texture:Null<GpuTexture> = null, view:Null<GpuTextureView> = null;
 		var last = haxe.Timer.stamp(), next = 0.;
 		while (!link.viewerGone) {
 			var wanted = link.takeResize();
 			if (wanted != null) {
-				width = wanted.width;
-				height = wanted.height;
-				link.resize(width, height);
+				width = Std.int(Math.max(1, Math.round(wanted.width / scale)));
+				height = Std.int(Math.max(1, Math.round(wanted.height / scale)));
+				link.resize(Math.round(width * scale), Math.round(height * scale));
 				if (view != null) view.destroy();
 				if (texture != null) texture.destroy();
 				texture = null;
 				view = null;
 			}
-			deliver(tree, link);
+			deliver(tree, link, scale);
 			if (link.viewerPaces) {
 				// The viewer is the clock: a frame starts when it grants one.
 				if (!link.takeCredit(.1)) continue;
@@ -75,11 +81,11 @@ class WindowedApp {
 			tree.flush();
 			tree.computeLayout(root.node, width, height);
 			if (texture == null) {
-				texture = offscreen.createTexture(width, height);
+				texture = offscreen.createTexture(Math.round(width * scale), Math.round(height * scale));
 				view = texture.createView(new GpuTextureViewDescriptor());
 			}
 			offscreen.renderTree(tree, root.node, view, width, height);
-			var pixels = offscreen.readRgba8(texture, width, height);
+			var pixels = offscreen.readRgba8(texture, Math.round(width * scale), Math.round(height * scale));
 			var picture = link.buffer();
 			picture.blit(0, pixels, 0, pixels.length);
 			link.submit(picture);
@@ -87,19 +93,20 @@ class WindowedApp {
 		return 0;
 	}
 
-	static function deliver(tree:LayoutTree, link:SurfaceLink):Void {
+	/** Pointer positions arrive in the picture's pixels; the tree's are layout units. */
+	static function deliver(tree:LayoutTree, link:SurfaceLink, scale:Float):Void {
 		for (input in link.takeInputs()) switch input.type {
 			case SurfaceProtocol.POINTER_MOVE:
-				ashui.input.Pointer.move(tree, input.a, input.b);
+				ashui.input.Pointer.move(tree, input.a / scale, input.b / scale);
 			case SurfaceProtocol.POINTER_DOWN:
-				ashui.input.Pointer.move(tree, input.a, input.b);
+				ashui.input.Pointer.move(tree, input.a / scale, input.b / scale);
 				ashui.input.Pointer.press(tree, button(input.c));
 			case SurfaceProtocol.POINTER_UP:
-				ashui.input.Pointer.move(tree, input.a, input.b);
+				ashui.input.Pointer.move(tree, input.a / scale, input.b / scale);
 				ashui.input.Pointer.release(tree, button(input.c));
 			case SurfaceProtocol.WHEEL:
-				// Deltas arrive in tenths of a pixel.
-				ashui.input.Pointer.wheel(tree, input.a / 10, input.b / 10);
+				// Deltas arrive in tenths of a picture pixel.
+				ashui.input.Pointer.wheel(tree, input.a / 10 / scale, input.b / 10 / scale);
 			case SurfaceProtocol.TEXT:
 				ashui.input.Keyboard.text(tree, String.fromCharCode(input.a));
 			case SurfaceProtocol.KEY_DOWN | SurfaceProtocol.KEY_UP:

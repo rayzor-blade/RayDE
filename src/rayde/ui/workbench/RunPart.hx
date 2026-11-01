@@ -161,9 +161,9 @@ class RunPart {
 		#if wasm
 		var target=rayde.run.RunPlan.target(wb.props.display.args).kind, rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
 		if(target=="hl"&&!rayzor&&canPreviewAshui()){
-			// The session host names its own surface script and the shell there expands it; the project's build file picks what is built.
+			// The session host names its own surface script and the shell there expands it; the project's build file picks what is built, and the app draws at this display's pixel ratio.
 			var hxml=wb.props.display.project==null ? wb.props.display.hxml : wb.props.display.project.file;
-			saveBefore(() -> previewSurface("env HXML='"+Std.string(hxml).split("'").join("'\\''")+"' \"${RAYDE_ASHUI_SURFACE:?this session host has no Ashui preview}\"", wb.props.display.cwd, wb.props.name));
+			saveBefore(() -> previewSurface("env RAYDE_SURFACE_SCALE="+rayde.ui.SurfacePreview.deviceScale()+" HXML='"+Std.string(hxml).split("'").join("'\\''")+"' \"${RAYDE_ASHUI_SURFACE:?this session host has no Ashui preview}\"", wb.props.display.cwd, wb.props.name));
 			return;
 		}
 		#end

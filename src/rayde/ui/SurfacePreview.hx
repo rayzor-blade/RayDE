@@ -20,8 +20,8 @@ class SurfacePreview extends Component<SurfacePreviewProps> {
 	public static final shape = Signal.make("16:9");
 
 	/** Device pixels per layout unit of the window this tab is in. */
-	static function deviceScale():Float {
-		#if (ashui_window && !wasm)
+	public static function deviceScale():Float {
+		#if ashui_window
 		var app = ashui.app.WindowedApp.current;
 		return app == null ? 1 : @:privateAccess app.scale();
 		#else
