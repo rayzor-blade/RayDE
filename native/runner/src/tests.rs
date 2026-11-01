@@ -18,6 +18,7 @@ fn request() -> Open {
         checkout: Checkout {
             access_token: Some("fixture-access-must-not-persist".into()),
         },
+        publish: None,
     }
 }
 
@@ -214,6 +215,7 @@ fn sync_request(id: &str) -> Open {
         owner: 1,
         repository: Repository { id: 0, full_name: format!("sync/{id}"), branch: String::new(), clone_url: String::new(), sync: Some(SyncRef { workspace: id.into() }) },
         checkout: Checkout::default(),
+        publish: None,
     }
 }
 
@@ -292,7 +294,8 @@ async fn a_snapshot_is_restored_from_the_gateway_and_a_bad_chunk_is_refused() {
         "syncGateway": {"url": gateway.url, "secret": "gateway-secret-for-the-test"}
     })).unwrap();
     let http = reqwest::Client::new();
-    let project = restore::restore(&config, &http, &temp.path().join("restored"), &sync_request(id.as_str())).await.unwrap_or_else(|failure| panic!("restore failed: {}", failure.1));
+    let (project, generation) = restore::restore(&config, &http, &temp.path().join("restored"), &sync_request(id.as_str())).await.unwrap_or_else(|failure| panic!("restore failed: {}", failure.1));
+    assert_eq!(generation, 1, "the restore says which generation it is a copy of");
     assert_eq!(std::fs::read_to_string(project.join("build.hxml")).unwrap(), "-main Main\n");
     assert_eq!(std::fs::read_to_string(project.join("src/Main.hx")).unwrap(), "class Main { static function main() {} }\n");
     #[cfg(unix)]

@@ -251,6 +251,7 @@ async fn open<P: Backend>(
     if request.owner == 0
         || !valid_id(&request.id)
         || !binds(request.owner, &request.id, &request.repository)
+        || !valid_publish(&request)
     {
         return Err(invalid());
     }
@@ -403,14 +404,19 @@ impl<P: Backend> Service<P> {
         }
         Ok(())
     }
-    async fn launch_session(&self, record: &Record) -> Result<serde_json::Value> {
+    /// `sync` is the gateway, workspace, capability and generation a restored session saves back with; it goes into the session's environment only.
+    async fn launch_session(&self, record: &Record, sync: Option<(String, String, String, u64)>) -> Result<serde_json::Value> {
         let mut args = vec![
             "--root", "/workspace/project", "--state-root", "/state",
             "--host", "127.0.0.1", "--port", "7070", "--raw-port", "7071",
             "--token", tunnel::GUEST_TOKEN, "--exec",
         ];
         args.extend(toolchain::session_args(&self.config));
-        let command = sb::Command { program: "/opt/rayde-session".into(), args: args.into_iter().map(String::from).collect(), env: Default::default() };
+        let mut env = std::collections::BTreeMap::new();
+        if let Some((gateway, workspace, token, generation)) = sync {
+            env.extend([("RAYDE_SYNC_GATEWAY".into(), gateway), ("RAYDE_SYNC_WORKSPACE".into(), workspace), ("RAYDE_SYNC_TOKEN".into(), token), ("RAYDE_SYNC_GENERATION".into(), generation.to_string())]);
+        }
+        let command = sb::Command { program: "/opt/rayde-session".into(), args: args.into_iter().map(String::from).collect(), env };
         self.backend.detach(&record.sandbox, command).await?;
         for _ in 0..20 {
             if let Ok(identity) = tunnel::probe(self.backend.as_ref(), &record.sandbox, self.config.persistent_disks).await {
@@ -474,7 +480,7 @@ impl<P: Backend> Service<P> {
                 Ok(identity) => Some(identity),
                 Err(_) => {
                     if self.backend.ping(&record.sandbox).await.is_ok() {
-                        self.launch_session(&record).await.ok()
+                        self.launch_session(&record, None).await.ok()
                     } else {
                         None
                     }
@@ -569,10 +575,11 @@ impl<P: Backend> Service<P> {
         record.identity = None;
         self.cleanup(&record).await?;
         let root = self.config.state_root.join("checkout").join(&record.id);
-        let project = if request.repository.sync.is_some() {
-            restore::restore(&self.config, &self.http, &root, request).await?
+        let (project, restored) = if request.repository.sync.is_some() {
+            let (project, generation) = restore::restore(&self.config, &self.http, &root, request).await?;
+            (project, Some(generation))
         } else {
-            checkout::prepare(&root, request, local, Some(work)).await?
+            (checkout::prepare(&root, request, local, Some(work)).await?, None)
         };
         for name in ["build.hxml", "rayzor.toml", "haxelib.json"] {
             if tokio::fs::metadata(project.join(name))
@@ -585,7 +592,8 @@ impl<P: Backend> Service<P> {
         }
         self.boot(record, true).await?;
         self.backend.copy_in(&record.sandbox, project, "/workspace/project").await?;
-        record.identity = Some(self.launch_session(record).await?);
+        let grant = request.publish.as_ref().zip(restored).zip(self.config.sync_gateway.as_ref()).map(|((publish, generation), gateway)| (gateway.url.clone(), publish.workspace.clone(), publish.token.clone(), generation));
+        record.identity = Some(self.launch_session(record, grant).await?);
         Ok(())
     }
     async fn boot(&self, record: &Record, initialize: bool) -> Result<()> {
@@ -648,7 +656,7 @@ impl<P: Backend> Service<P> {
         self.registry.save(record).await?;
         let result = async {
             self.boot(record, false).await?;
-            let identity = self.launch_session(record).await?;
+            let identity = self.launch_session(record, None).await?;
             if Some(identity) != record.identity {return Err(Failure(StatusCode::CONFLICT, "The restored document-state identity does not match this workspace."));}
             Ok(())
         }.await;

@@ -48,7 +48,8 @@ fn safe(path: &str) -> bool {
         && !path.components().any(|part| part.as_os_str().as_encoded_bytes().eq_ignore_ascii_case(b".git"))
 }
 
-pub(crate) async fn restore(config: &Config, http: &reqwest::Client, root: &Path, request: &Open) -> Result<PathBuf> {
+/// Returns the project directory and the generation it is a copy of.
+pub(crate) async fn restore(config: &Config, http: &reqwest::Client, root: &Path, request: &Open) -> Result<(PathBuf, u64)> {
     if tokio::fs::try_exists(root).await? {
         tokio::fs::remove_dir_all(root).await?;
     }
@@ -104,5 +105,5 @@ pub(crate) async fn restore(config: &Config, http: &reqwest::Client, root: &Path
             }
         }
     }
-    Ok(project)
+    Ok((project, manifest.generation))
 }

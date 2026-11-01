@@ -93,6 +93,12 @@ pub(crate) struct Repository {
 pub(crate) struct SyncRef {
     workspace: String,
 }
+/// What a restored session saves back with: a capability for its own workspace, given by the gateway and never stored by the runner.
+#[derive(Deserialize)]
+pub(crate) struct Publish {
+    token: String,
+    workspace: String,
+}
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Checkout {
@@ -111,6 +117,8 @@ pub(crate) struct Open {
     repository: Repository,
     #[serde(default)]
     checkout: Checkout,
+    #[serde(default)]
+    publish: Option<Publish>,
 }
 #[derive(Deserialize)]
 pub(crate) struct Delete {
@@ -124,6 +132,15 @@ fn valid_sync(repo: &Repository, id: &str) -> bool {
         && valid_id(id)
         && repo.id == 0
         && repo.full_name == format!("sync/{id}")
+}
+/// A capability belongs to a synced workspace's own request, and is a plain header-safe token.
+fn valid_publish(request: &Open) -> bool {
+    request.publish.as_ref().is_none_or(|publish| {
+        request.repository.sync.as_ref().is_some_and(|sync| sync.workspace == publish.workspace)
+            && !publish.token.is_empty()
+            && publish.token.len() <= 4096
+            && publish.token.bytes().all(|b| b.is_ascii_graphic())
+    })
 }
 /// Whether a workspace id and repository belong together: a GitHub one by the hash of owner and repository, a synced one by its own id.
 fn binds(owner: u64, id: &str, repo: &Repository) -> bool {

@@ -14,6 +14,7 @@ struct World {
     volumes: HashMap<String, VolumeInfo>,
     sandboxes: HashMap<String, (SandboxSpec, State)>,
     snapshots: Vec<String>,
+    detached: Vec<(String, Command)>,
 }
 
 pub struct Fake {
@@ -35,6 +36,11 @@ impl Fake {
     {
         self.programs.insert(program.to_string(), Arc::new(move |name, command, stdin, stdout| Box::pin(handler(name, command, stdin, stdout))));
         self
+    }
+
+    /// The commands started detached, in order, with the sandbox each ran in, so a test can see what a guest was launched with.
+    pub fn detached(&self) -> Vec<(String, Command)> {
+        self.world.lock().unwrap().detached.clone()
     }
 
     fn running(&self, name: &str) -> Result<()> {
@@ -231,8 +237,10 @@ impl SandboxProvider for Fake {
         Ok(output)
     }
 
-    async fn detach(&self, name: &str, _command: Command) -> Result<()> {
-        self.running(name)
+    async fn detach(&self, name: &str, command: Command) -> Result<()> {
+        self.running(name)?;
+        self.world.lock().unwrap().detached.push((name.to_string(), command));
+        Ok(())
     }
 
     async fn copy_in(&self, name: &str, host: PathBuf, _guest: &str) -> Result<()> {

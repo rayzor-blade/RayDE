@@ -14,6 +14,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const SECRET: &str = "provisioning-control-credential-for-local-test";
 
+
 fn git(root: &Path, args: &[&str]) {
     assert!(
         Command::new("git")
@@ -286,8 +287,9 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     let id = rayde_sync::ids::WorkspaceId::from_random(&[4; 32]);
     let url = serve_snapshot(&folder, &id).await;
 
-    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url, secret: GATEWAY_SECRET.into() })).await;
-    let body = sync_body(id.as_str());
+    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url: url.clone(), secret: GATEWAY_SECRET.into() })).await;
+    let mut body = sync_body(id.as_str());
+    body["publish"] = json!({"token": "rsp1.capability-for-the-test", "workspace": id.as_str()});
     let post = |body: &Value| fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(body).send();
     let response = post(&body).await.unwrap();
     let status = response.status().as_u16();
@@ -295,6 +297,14 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     assert_eq!(status, 200, "{connection}");
     assert_eq!(connection["project"], "build.hxml", "the restored folder is the project");
     assert_eq!(fixture.sandboxes().await.len(), 1);
+    let launched = fixture.fake.detached().into_iter().find(|(_, command)| command.program == "/opt/rayde-session").expect("the session was launched").1.env;
+    assert_eq!(launched.get("RAYDE_SYNC_TOKEN").map(String::as_str), Some("rsp1.capability-for-the-test"));
+    assert_eq!(launched.get("RAYDE_SYNC_GATEWAY"), Some(&url));
+    assert_eq!(launched.get("RAYDE_SYNC_GENERATION").map(String::as_str), Some("1"), "the generation the snapshot was restored from");
+    // A capability for some other workspace is refused.
+    let mut foreign = body.clone();
+    foreign["publish"]["workspace"] = json!(rayde_sync::ids::WorkspaceId::from_random(&[8; 32]).as_str());
+    assert_eq!(post(&foreign).await.unwrap().status().as_u16(), 400);
     // Opening again restores afresh into the same workspace.
     assert_eq!(post(&body).await.unwrap().status().as_u16(), 200);
     assert_eq!(fixture.sandboxes().await.len(), 1);
