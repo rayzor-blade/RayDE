@@ -76,7 +76,7 @@ class SurfaceView extends Component<SurfaceViewProps> {
 			};
 		function isLeave(e:ashui.input.Events.KeyEvent):Bool
 			return e.shift && switch e.physicalKey {case Code(c): c == window.KeyCode.Escape; case _: false;};
-		root = <div class="flex-1 min-h-0 min-w-0" focusable={true}
+		root = <div class="flex flex-1 min-h-0 min-w-0 items-center justify-center overflow-hidden" focusable={true}
 			onPointerDown={pointer(SurfaceProtocol.POINTER_DOWN)} onPointerUp={pointer(SurfaceProtocol.POINTER_UP)} onPointerMove={pointer(SurfaceProtocol.POINTER_MOVE)}
 			onWheel={e -> {pump.send(SurfaceProtocol.WHEEL, Math.round(e.deltaX * 10), Math.round(e.deltaY * 10)); }}
 			onKeyDown={e -> {
@@ -87,7 +87,7 @@ class SurfaceView extends Component<SurfaceViewProps> {
 			onKeyUp={e -> {if (!isLeave(e)) pump.send(SurfaceProtocol.KEY_UP, code(e), 0, flags(e));}}
 			onTextInput={e -> {for (i in 0...e.text.length) { var c = e.text.charCodeAt(i); if (c != null) pump.send(SurfaceProtocol.TEXT, c); }}}
 			onFocus={_ -> pump.send(SurfaceProtocol.FOCUS, 1)} onBlur={_ -> pump.send(SurfaceProtocol.FOCUS, 0)}>
-			<surface source={source} fit={ashui.types.ObjectFit.Contain} class="w-full h-full"/>
+			<surface source={source} fit={ashui.types.ObjectFit.Fill} width={source.width / SurfacePreview.deviceScale()} height={source.height / SurfacePreview.deviceScale()} class="shrink-0"/>
 		</div>;
 		return root;
 	}

@@ -17,7 +17,13 @@ typedef SurfacePreviewProps = {pump:SurfacePump, title:String, leave:Void->Void,
 /** A headless app's picture in a tab: its title and state above the surface, which takes pointer and keys while focused. */
 class SurfacePreview extends Component<SurfacePreviewProps> {
 	/** The screen size the app is asked to draw at, kept while the app restarts: an aspect ratio, or "fit" for the tab's own. */
-	public static final shape = Signal.make("16:9");
+	public static final shape = Signal.make(startingShape());
+
+	/** `RAYDE_SURFACE_SHAPE` (16:9, 4:3, 1:1, 9:16 or fit) starts the tab in that shape, for tests and screenshots. */
+	static function startingShape():String {
+		var value = Sys.getEnv("RAYDE_SURFACE_SHAPE");
+		return value != null && ["16:9", "4:3", "1:1", "9:16", "fit"].indexOf(value) >= 0 ? value : "16:9";
+	}
 
 	/** Device pixels per layout unit of the window this tab is in. */
 	public static function deviceScale():Float {
