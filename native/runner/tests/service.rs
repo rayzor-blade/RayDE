@@ -1,7 +1,7 @@
 //! The runner's open, reuse, recovery, isolation and delete flows against an in-memory sandbox backend, so they need no VM.
 //! A stand-in program plays the session bridge that runs inside a guest.
 
-use rayde_runner::{Config, LocalRepository, start_with, workspace_id};
+use rayde_runner::{Config, LocalRepository, SyncGateway, start_with, workspace_id};
 use rayde_sandbox::{Capabilities, Labels, SandboxProvider, fake::Fake};
 use serde_json::{Value, json};
 use std::{
@@ -61,6 +61,10 @@ struct Fixture {
 
 impl Fixture {
     async fn new(max_workspaces: usize) -> Self {
+        Self::with_gateway(max_workspaces, None).await
+    }
+
+    async fn with_gateway(max_workspaces: usize, sync_gateway: Option<SyncGateway>) -> Self {
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("repository");
         std::fs::create_dir(&source).unwrap();
@@ -96,6 +100,7 @@ impl Fixture {
             max_workspaces,
             max_duration_seconds: 300,
             local_repositories: vec![local(1, 111), local(2, 111), local(1, 222)],
+            sync_gateway,
         };
         let fake = Arc::new(guest());
         let running = start_with(config, fake.clone()).await.unwrap();
@@ -234,5 +239,78 @@ async fn the_workspace_limit_is_enforced() {
     assert_eq!(fixture.open(1, 111).await.0, 200);
     assert_eq!(fixture.open(2, 111).await.0, 200);
     assert_eq!(fixture.open(1, 222).await.0, 429);
+    fixture.stop().await;
+}
+
+const GATEWAY_SECRET: &str = "gateway-credential-for-the-local-test";
+
+/// A stand-in for the sync gateway's runner routes serving one scanned folder.
+async fn serve_snapshot(folder: &Path, id: &rayde_sync::ids::WorkspaceId) -> String {
+    use axum::{Router, extract::{Path as Param, State}, http::{HeaderMap, StatusCode}, routing::get};
+    use rayde_sync::{exclude::Selection, lifecycle::Limits, scan::{Options, Snapshot, scan}};
+    let snapshot: Arc<Snapshot> = Arc::new(scan(folder, &Options { workspace: id.clone(), base_generation: 0, device: "test".into(), now_ms: 1, limits: Limits::default(), selection: Selection::default(), history: false, buffers: vec![] }).unwrap());
+    fn allowed(headers: &HeaderMap) -> bool {
+        headers.get("authorization").and_then(|value| value.to_str().ok()) == Some(&format!("Bearer {GATEWAY_SECRET}"))
+    }
+    let app = Router::new()
+        .route("/api/sync/runner/:id/manifest", get(|State(snapshot): State<Arc<Snapshot>>, headers: HeaderMap, Param(_): Param<String>| async move {
+            if allowed(&headers) { Ok(snapshot.manifest.to_bytes()) } else { Err(StatusCode::FORBIDDEN) }
+        }))
+        .route("/api/sync/runner/:id/chunks/:hash", get(|State(snapshot): State<Arc<Snapshot>>, headers: HeaderMap, Param((_, hash)): Param<(String, String)>| async move {
+            if !allowed(&headers) { return Err(StatusCode::FORBIDDEN); }
+            snapshot.read_chunk(&hash).map_err(|_| StatusCode::NOT_FOUND)
+        }))
+        .with_state(snapshot);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+fn sync_body(id: &str) -> Value {
+    json!({"id":id,"owner":1,"repository":{"id":0,"name":"synced","fullName":format!("sync/{id}"),"private":true,"sync":{"workspace":id,"generation":1,"opened":1}},"checkout":{"accessToken":null}})
+}
+
+#[tokio::test]
+async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_other() {
+    let temp = tempfile::tempdir().unwrap();
+    let folder = temp.path().join("folder");
+    std::fs::create_dir_all(folder.join("src")).unwrap();
+    std::fs::write(folder.join("build.hxml"), "-cp src\n-main Main\n--interp\n").unwrap();
+    std::fs::write(folder.join("src/Main.hx"), "class Main { static function main() trace(1); }\n").unwrap();
+    git(&folder, &["init", "-b", "main"]);
+    git(&folder, &["config", "user.name", "Fixture"]);
+    git(&folder, &["config", "user.email", "fixture@example.invalid"]);
+    git(&folder, &["add", "."]);
+    git(&folder, &["commit", "-m", "fixture"]);
+    let id = rayde_sync::ids::WorkspaceId::from_random(&[4; 32]);
+    let url = serve_snapshot(&folder, &id).await;
+
+    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url, secret: GATEWAY_SECRET.into() })).await;
+    let body = sync_body(id.as_str());
+    let post = |body: &Value| fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(body).send();
+    let response = post(&body).await.unwrap();
+    let status = response.status().as_u16();
+    let connection: Value = response.json().await.unwrap_or(Value::Null);
+    assert_eq!(status, 200, "{connection}");
+    assert_eq!(connection["project"], "build.hxml", "the restored folder is the project");
+    assert_eq!(fixture.sandboxes().await.len(), 1);
+    // Opening again restores afresh into the same workspace.
+    assert_eq!(post(&body).await.unwrap().status().as_u16(), 200);
+    assert_eq!(fixture.sandboxes().await.len(), 1);
+    // The workspace is named by its own id: another id with the same repository block is refused.
+    let mut wrong = body.clone();
+    wrong["id"] = json!(workspace_id(1, 111));
+    assert_eq!(post(&wrong).await.unwrap().status().as_u16(), 400);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn a_synced_workspace_cannot_open_on_a_runner_with_no_gateway() {
+    let fixture = Fixture::new(2).await;
+    let id = rayde_sync::ids::WorkspaceId::from_random(&[5; 32]);
+    let response = fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(&sync_body(id.as_str())).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 503);
+    assert!(fixture.sandboxes().await.is_empty());
     fixture.stop().await;
 }

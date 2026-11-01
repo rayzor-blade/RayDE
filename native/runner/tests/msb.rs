@@ -222,6 +222,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
                 path: source,
             },
         ],
+        sync_gateway: None,
     };
     if let Some(path) = std::env::var_os("RAYDE_TEST_TOOLCHAIN") {
         config.toolchain = Some(serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap());

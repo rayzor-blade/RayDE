@@ -250,10 +250,12 @@ async fn open<P: Backend>(
     })?;
     if request.owner == 0
         || !valid_id(&request.id)
-        || request.id != workspace_id(request.owner, request.repository.id)
-        || !valid_repository(&request.repository)
+        || !binds(request.owner, &request.id, &request.repository)
     {
         return Err(invalid());
+    }
+    if request.repository.sync.is_some() && service.config.sync_gateway.is_none() {
+        return Err(unavailable());
     }
     let mut halt = service.halt.subscribe();
     if *halt.borrow() {
@@ -566,13 +568,12 @@ impl<P: Backend> Service<P> {
         record.project = None;
         record.identity = None;
         self.cleanup(&record).await?;
-        let project = checkout::prepare(
-            &self.config.state_root.join("checkout").join(&record.id),
-            request,
-            local,
-            Some(work),
-        )
-        .await?;
+        let root = self.config.state_root.join("checkout").join(&record.id);
+        let project = if request.repository.sync.is_some() {
+            restore::restore(&self.config, &self.http, &root, request).await?
+        } else {
+            checkout::prepare(&root, request, local, Some(work)).await?
+        };
         for name in ["build.hxml", "rayzor.toml", "haxelib.json"] {
             if tokio::fs::metadata(project.join(name))
                 .await

@@ -95,8 +95,7 @@ impl Registry {
                 .map_err(|_| unavailable())?;
             if record.version != 1
                 || record.owner == 0
-                || workspace_id(record.owner, record.repository.id) != record.id
-                || !valid_repository(&record.repository)
+                || !binds(record.owner, &record.id, &record.repository)
                 || record.token.len() != 64
                 || record.generation == 0
                 || record.sandbox

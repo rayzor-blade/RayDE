@@ -3,13 +3,14 @@ mod command;
 mod config;
 mod msb;
 mod registry;
+mod restore;
 mod service;
 #[cfg(test)]
 mod tests;
 mod tunnel;
 mod toolchain;
 mod volumes;
-pub use config::{Config, LocalRepository, Toolchain};
+pub use config::{Config, LocalRepository, SyncGateway, Toolchain};
 pub use msb::Msb;
 pub use service::{Backend, Running, start, start_with};
 
@@ -80,19 +81,35 @@ fn matches_secret(a: &str, b: &str) -> bool {
 pub(crate) struct Repository {
     id: u64,
     full_name: String,
+    #[serde(default)]
     branch: String,
+    #[serde(default)]
     clone_url: String,
+    /// A Cloud Sync snapshot stands in for the Git repository: the workspace is restored from the gateway, not cloned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync: Option<SyncRef>,
 }
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct SyncRef {
+    workspace: String,
+}
+#[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Checkout {
-    access_token: String,
+    #[serde(default)]
+    access_token: Option<String>,
+}
+impl Checkout {
+    fn token(&self) -> &str {
+        self.access_token.as_deref().unwrap_or("")
+    }
 }
 #[derive(Deserialize)]
 pub(crate) struct Open {
     id: String,
     owner: u64,
     repository: Repository,
+    #[serde(default)]
     checkout: Checkout,
 }
 #[derive(Deserialize)]
@@ -101,6 +118,21 @@ pub(crate) struct Delete {
     owner: u64,
 }
 
+/// A synced workspace is named by its own id and has no Git repository behind it.
+fn valid_sync(repo: &Repository, id: &str) -> bool {
+    repo.sync.as_ref().is_some_and(|sync| sync.workspace == id)
+        && valid_id(id)
+        && repo.id == 0
+        && repo.full_name == format!("sync/{id}")
+}
+/// Whether a workspace id and repository belong together: a GitHub one by the hash of owner and repository, a synced one by its own id.
+fn binds(owner: u64, id: &str, repo: &Repository) -> bool {
+    if repo.sync.is_some() {
+        valid_sync(repo, id)
+    } else {
+        id == workspace_id(owner, repo.id) && valid_repository(repo)
+    }
+}
 fn valid_repository(repo: &Repository) -> bool {
     let parts: Vec<_> = repo.full_name.split('/').collect();
     repo.id > 0

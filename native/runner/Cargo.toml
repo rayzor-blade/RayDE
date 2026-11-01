@@ -21,8 +21,10 @@ reqwest = { version = "=0.12.28", default-features = false, features = ["json", 
 tar = "0.4"
 rayde-session = { path = "../session", default-features = false }
 rayde-sandbox = { path = "../sandbox" }
+rayde-sync = { path = "../sync", default-features = false }
 
 [dev-dependencies]
+rayde-sync = { path = "../sync", features = ["scan"], default-features = false }
 tempfile = "3"
 tokio-tungstenite = "=0.28.0"
 yrs = { version = "=0.28.0", features = ["sync"] }

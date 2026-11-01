@@ -38,6 +38,15 @@ pub struct Config {
     /// Fixed local Git fixtures are allowed only on this loopback development service.
     #[serde(default)]
     pub local_repositories: Vec<LocalRepository>,
+    /// Where Cloud Sync snapshots are restored from. Without it a synced workspace cannot be opened.
+    #[serde(default)]
+    pub sync_gateway: Option<SyncGateway>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SyncGateway {
+    pub url: String,
+    pub secret: String,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -97,6 +106,17 @@ impl Config {
                 || !toolchain.snapshot.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
                 || toolchain.digest.len() != 64
                 || !toolchain.digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
+            return Err(invalid());
+        }
+        if self.sync_gateway.as_ref().is_some_and(|gateway| {
+            let loopback = gateway.url.starts_with("http://127.0.0.1") || gateway.url.starts_with("http://localhost");
+            !(gateway.url.starts_with("https://") || loopback)
+                || gateway.url.len() > 512
+                || gateway.url.contains(['?', '#', ' '])
+                || gateway.secret.len() < 16
+                || gateway.secret.len() > 4096
+                || gateway.secret.contains(['\r', '\n', '\0', ' '])
         }) {
             return Err(invalid());
         }

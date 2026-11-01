@@ -7,6 +7,7 @@ fn repository() -> Repository {
         full_name: "alice/demo".into(),
         branch: "main".into(),
         clone_url: "https://github.com/alice/demo.git".into(),
+        sync: None,
     }
 }
 fn request() -> Open {
@@ -15,7 +16,7 @@ fn request() -> Open {
         owner: 1,
         repository: repository(),
         checkout: Checkout {
-            access_token: "fixture-access-must-not-persist".into(),
+            access_token: Some("fixture-access-must-not-persist".into()),
         },
     }
 }
@@ -205,4 +206,105 @@ fn toolchain_selectors_and_persistent_disk_bindings_are_operator_scoped() {
     assert!(storage.valid(&instance,&id));
     assert!(!storage.valid(&"c".repeat(64),&id));
     assert!(!storage.valid(&instance,&workspace_id(2,111)));
+}
+
+fn sync_request(id: &str) -> Open {
+    Open {
+        id: id.into(),
+        owner: 1,
+        repository: Repository { id: 0, full_name: format!("sync/{id}"), branch: String::new(), clone_url: String::new(), sync: Some(SyncRef { workspace: id.into() }) },
+        checkout: Checkout::default(),
+    }
+}
+
+#[test]
+fn a_synced_workspace_is_bound_to_its_own_id() {
+    let id = rayde_sync::ids::WorkspaceId::from_random(&[7; 32]);
+    let id = id.as_str();
+    assert!(binds(1, id, &sync_request(id).repository));
+    assert!(!binds(1, &workspace_id(1, 111), &sync_request(id).repository), "another workspace's id does not bind it");
+    let mut other = sync_request(id).repository;
+    other.full_name = "sync/elsewhere".into();
+    assert!(!binds(1, id, &other));
+    other = sync_request(id).repository;
+    other.id = 5;
+    assert!(!binds(1, id, &other));
+    assert!(binds(1, &workspace_id(1, 111), &repository()), "a GitHub workspace binds as before");
+}
+
+struct Gateway {
+    url: String,
+    corrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// A stand-in for the sync gateway's runner routes, serving one scanned snapshot.
+async fn gateway(snapshot: rayde_sync::scan::Snapshot, secret: &'static str) -> Gateway {
+    use axum::{Router, extract::{Path as Param, State}, http::{HeaderMap, StatusCode as Status}, routing::get};
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    struct Held {
+        snapshot: rayde_sync::scan::Snapshot,
+        corrupt: Arc<AtomicBool>,
+    }
+    fn allowed(headers: &HeaderMap, secret: &str) -> bool {
+        headers.get("authorization").and_then(|value| value.to_str().ok()) == Some(&format!("Bearer {secret}"))
+    }
+    let corrupt = Arc::new(AtomicBool::new(false));
+    let held = Arc::new(Held { snapshot, corrupt: corrupt.clone() });
+    let manifest = move |State(held): State<Arc<Held>>, headers: HeaderMap, Param(_id): Param<String>| async move {
+        if !allowed(&headers, secret) { return Err(Status::FORBIDDEN); }
+        Ok(held.snapshot.manifest.to_bytes())
+    };
+    let chunk = move |State(held): State<Arc<Held>>, headers: HeaderMap, Param((_id, hash)): Param<(String, String)>| async move {
+        if !allowed(&headers, secret) { return Err(Status::FORBIDDEN); }
+        let mut bytes = held.snapshot.read_chunk(&hash).map_err(|_| Status::NOT_FOUND)?;
+        if held.corrupt.load(Ordering::SeqCst) { bytes[0] ^= 1; }
+        Ok(bytes)
+    };
+    let app = Router::new().route("/api/sync/runner/:id/manifest", get(manifest)).route("/api/sync/runner/:id/chunks/:hash", get(chunk)).with_state(held);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    Gateway { url, corrupt }
+}
+
+#[tokio::test]
+async fn a_snapshot_is_restored_from_the_gateway_and_a_bad_chunk_is_refused() {
+    use rayde_sync::{exclude::Selection, ids::WorkspaceId, lifecycle::Limits, scan::{Options, scan}};
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    std::fs::create_dir_all(source.join("src")).unwrap();
+    std::fs::write(source.join("build.hxml"), "-main Main\n").unwrap();
+    std::fs::write(source.join("src/Main.hx"), "class Main { static function main() {} }\n").unwrap();
+    std::fs::write(source.join("run.sh"), "#!/bin/sh\necho hi\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(source.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    git(&source, &["init", "-q", "-b", "main"]);
+    git(&source, &["add", "-A"]);
+    git(&source, &["-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "first"]);
+    let id = WorkspaceId::from_random(&[9; 32]);
+    let snapshot = scan(&source, &Options { workspace: id.clone(), base_generation: 0, device: "test".into(), now_ms: 1, limits: Limits::default(), selection: Selection::default(), history: false, buffers: vec![] }).unwrap();
+    let gateway = gateway(snapshot, "gateway-secret-for-the-test").await;
+    let config: Config = serde_json::from_value(serde_json::json!({
+        "listen": "127.0.0.1:0", "stateRoot": temp.path(), "msb": "/bin/true", "sessionBinary": "/bin/true", "secretFile": temp.path().join("secret"),
+        "syncGateway": {"url": gateway.url, "secret": "gateway-secret-for-the-test"}
+    })).unwrap();
+    let http = reqwest::Client::new();
+    let project = restore::restore(&config, &http, &temp.path().join("restored"), &sync_request(id.as_str())).await.unwrap_or_else(|failure| panic!("restore failed: {}", failure.1));
+    assert_eq!(std::fs::read_to_string(project.join("build.hxml")).unwrap(), "-main Main\n");
+    assert_eq!(std::fs::read_to_string(project.join("src/Main.hx")).unwrap(), "class Main { static function main() {} }\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(project.join("run.sh")).unwrap().permissions().mode() & 0o111, 0o111, "the executable bit survives");
+        assert_eq!(std::fs::metadata(project.join("build.hxml")).unwrap().permissions().mode() & 0o111, 0, "other files are not executable");
+    }
+    assert!(!project.join(".git").exists(), "no Git directory is restored");
+    gateway.corrupt.store(true, std::sync::atomic::Ordering::SeqCst);
+    let refused = restore::restore(&config, &http, &temp.path().join("tampered"), &sync_request(id.as_str())).await;
+    assert!(matches!(refused, Err(Failure(StatusCode::UNPROCESSABLE_ENTITY, _))), "a chunk that fails its hash stops the restore");
+    let wrong = restore::restore(&config, &http, &temp.path().join("wrong"), &sync_request(WorkspaceId::from_random(&[3; 32]).as_str())).await;
+    assert!(wrong.is_err(), "a snapshot of another workspace is not restored under this id");
 }

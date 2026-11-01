@@ -54,6 +54,10 @@ pub(crate) async fn authorize(
     request: &Open,
     http: &reqwest::Client,
 ) -> Result<Option<PathBuf>> {
+    // A synced workspace was authorised by the gateway, which signs the open request; there is no GitHub repository to verify.
+    if request.repository.sync.is_some() {
+        return Ok(None);
+    }
     if let Some(source) = config
         .local_repositories
         .iter()
@@ -61,9 +65,9 @@ pub(crate) async fn authorize(
     {
         return Ok(Some(tokio::fs::canonicalize(&source.path).await?));
     }
-    if request.checkout.access_token.is_empty()
-        || request.checkout.access_token.len() > 4096
-        || request.checkout.access_token.contains(['\r', '\n', '\0'])
+    if request.checkout.token().is_empty()
+        || request.checkout.token().len() > 4096
+        || request.checkout.token().contains(['\r', '\n', '\0'])
     {
         return Err(invalid());
     }
@@ -92,10 +96,10 @@ pub(crate) async fn authorize(
         }
         serde_json::from_slice(&bytes).map_err(|_| unavailable())
     }
-    let user = api(http, &request.checkout.access_token, "/user").await?;
+    let user = api(http, request.checkout.token(), "/user").await?;
     let repo = api(
         http,
-        &request.checkout.access_token,
+        request.checkout.token(),
         &format!("/repos/{}", request.repository.full_name),
     )
     .await?;
@@ -141,7 +145,7 @@ pub(crate) async fn prepare(
                 "GIT_CONFIG_VALUE_0",
                 format!(
                     "Authorization: Basic {}",
-                    STANDARD.encode(format!("x-access-token:{}", request.checkout.access_token))
+                    STANDARD.encode(format!("x-access-token:{}", request.checkout.token()))
                 ),
             );
     }
