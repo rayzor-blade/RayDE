@@ -179,7 +179,7 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
     let current = status["generation"].as_u64().unwrap_or(0);
     emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
     if let Some(known) = known.filter(|known| *known != current && !config.force) {
-        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current}, but this folder last synced generation {known}: another device has saved since, and syncing now would replace those changes. Nothing was sent.")));
+        return Err(Failure::new("conflict", format!("Remote is at generation {current}; this folder last synced {known}. Pull first. Nothing was sent.")));
     }
     let mut saved = remembered.clone();
     saved[&key] = json!({"workspace": id, "generation": known});
@@ -316,7 +316,7 @@ pub fn capture(config: &Config) -> Result<Base, Failure> {
     let (gateway, id) = existing_workspace(config)?;
     let manifest = cloud_manifest(&gateway, &id)?;
     if config.base_generation.is_some_and(|expected| expected != manifest.generation) {
-        return Err(Failure::new("conflict", format!("The cloud copy is at generation {}, not the one this workspace was restored from.", manifest.generation)));
+        return Err(Failure::new("conflict", format!("Remote moved to generation {}. Merge first.", manifest.generation)));
     }
     let texts = read_texts(&config.root, &manifest);
     Ok(Base { manifest, texts })
@@ -329,7 +329,7 @@ pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled
     let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
     let current = status["generation"].as_u64().unwrap_or(0);
     if current != base.generation() {
-        return Err(Failure::new("conflict", format!("The cloud copy is at generation {current} and this workspace is based on generation {}; nothing was saved.", base.generation())));
+        return Err(Failure::new("conflict", format!("Remote is at generation {current}; this copy is {}. Merge first. Nothing was saved.", base.generation())));
     }
     emit(json!({"event": "workspace", "id": id, "url": status["url"]}));
     let snapshot = scan_tree(
@@ -481,7 +481,7 @@ fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() 
     let (gateway, id) = existing_workspace(config)?;
     let manifest = cloud_manifest(&gateway, &id)?;
     if manifest.generation != base {
-        return Err(Failure::new("conflict", format!("The cloud copy is at generation {} and this workspace was restored from generation {base}; nothing was saved.", manifest.generation)));
+        return Err(Failure::new("conflict", format!("Remote is at generation {}; this copy is {base}. Merge first. Nothing was saved.", manifest.generation)));
     }
     save(config, &Base { manifest, texts: BTreeMap::new() }, emit, cancelled).map(|_| ())
 }
