@@ -437,6 +437,10 @@ test("a folder pulls the cloud copy's newer generation, and a choice settles the
   await writeFile(join(two, "doc.txt"), lines({ 10: "(other device)" }));
   assert.equal(run(two, "push").last.generation, 2);
   await writeFile(join(a, "doc.txt"), lines({ 2: "(this device)" }));
+  const remote = run(a, "remote", { RAYDE_SYNC_PATH: "doc.txt" });
+  assert.equal(remote.last.event, "remote", JSON.stringify(remote.events));
+  assert.equal(remote.last.text, lines({ 10: "(other device)" }), "the cloud's version of a file can be read to compare with the local one");
+  assert.equal(run(a, "remote", { RAYDE_SYNC_PATH: "nope.txt" }).last.code, "missing");
   const refused = run(a, "push");
   assert.equal(refused.last.code, "conflict", "it will not replace what the other device saved");
 

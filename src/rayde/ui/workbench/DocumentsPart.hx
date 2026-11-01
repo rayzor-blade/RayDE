@@ -285,6 +285,21 @@ class DocumentsPart {
 		for (id in [for (id => comparison in comparisonTabs) if (FileOps.inside(path,comparison.file)) id]) wb.closeFile(id);
 	}
 
+	/** The tabs that show a file of the cloud copy against the local one, with the cloud's text as it was when they were opened. */
+	public final syncDiffs = new Map<String, {file:String, remote:String}>();
+
+	public function openSyncDiff(file:String, remote:String):Void {
+		var id = Workbench.SYNC_DIFF_TAB + file;
+		syncDiffs.set(id, {file:file, remote:remote});
+		wb.openFile(id);
+	}
+
+	function syncDiffPage(id:String):Element {
+		var shown = syncDiffs.get(id);
+		if (shown == null) return <div/>;
+		return new SyncDiff({file:shown.file, remote:shown.remote, buffer:buffer(shown.file), onOpen:() -> wb.openFile(shown.file)});
+	}
+
 	function comparisonPage(id:String):Element {
 		var comparison=comparisonTabs.get(id);
 		if (comparison == null) return <div/>;

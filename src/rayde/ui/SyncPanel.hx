@@ -6,14 +6,16 @@ import ashui.components.DropdownMenu;
 import ashui.components.Icon;
 import ashui.components.Progress;
 import ashui.components.Select;
+import ashui.components.Tooltip;
 import ashui.layout.Element;
 import ashui.reactive.Signal;
 import ashui.ui.Component;
 import rayde.sync.SyncState;
+import rayde.sync.SyncState.ConflictItem;
 import rayde.sync.SyncState.Sync;
 
 /** What the panel shows in a browser session that is a restored copy of a cloud workspace: which generation it is a copy of, and how the last save went. */
-typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool, canMerge:Bool, conflicts:Array<String>};
+typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool, canMerge:Bool, conflicts:Array<ConflictItem>};
 
 typedef SyncPanelProps = {
 	workspace:String,
@@ -25,8 +27,14 @@ typedef SyncPanelProps = {
 	?onSave:Void->Void,
 	?onMerge:Void->Void,
 	onPull:Void->Void,
-	/** Settles the files both sides edited in the same place: "mine" keeps this side's version, "theirs" takes the cloud's. */
+	/** Settles the files both sides edited in the same place: "mine" keeps the local file, "theirs" takes the remote one. */
 	onResolve:String->Void,
+	/** Picks a side for one file: "mine" or "theirs". */
+	onPick:(String, String) -> Void,
+	/** Settles the files with the picks made; only offered once every file has one. */
+	onApply:Void->Void,
+	/** Opens a conflicted file as local against remote. */
+	onDiff:String->Void,
 	onSignIn:Void->Void,
 	onInitGit:Void->Void,
 	onSync:Void->Void,
@@ -198,13 +206,12 @@ class SyncPanel extends Component<SyncPanelProps> {
 				</div>
 			</div>
 			<if {state.phase == Conflict}><div class="rayde-sync-card rayde-sync-section">
-				<text id="rayde-sync-conflict" class="rayde-sync-error">${state.conflicts == 0 ? "The cloud copy has changes from another device" : state.conflicts == 1 ? "1 file changed in both places" : state.conflicts + " files changed in both places"}</text>
-				<text class="rayde-sync-muted">${state.message == "" ? "Choose which version to keep." : state.message}</text>
+				<text id="rayde-sync-conflict" class="rayde-sync-error">${state.conflicts == 0 ? "The remote copy has changes from another device" : state.conflicts == 1 ? "1 file changed locally and remotely" : state.conflicts + " files changed locally and remotely"}</text>
+				<text class="rayde-sync-muted">${state.message == "" ? "Choose local or remote for each." : state.message}</text>
 				<div class="rayde-sync-actions">
-					<if {state.conflicts == 0}><button id="rayde-sync-pull" size={Sm} onClick={_ -> props.onPull()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Pull cloud changes</button>
-					<else><button id="rayde-sync-keep-mine" variant={Outline} size={Sm} onClick={_ -> props.onResolve("mine")}>Keep my versions</button>
-						<button id="rayde-sync-use-cloud" size={Sm} onClick={_ -> props.onResolve("theirs")}>Use the cloud's</button></if>
+					<if {state.conflicts == 0}><button id="rayde-sync-pull" size={Sm} onClick={_ -> props.onPull()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Pull cloud changes</button></if>
 				</div>
+				<if {state.conflicts > 0 && state.items != null}>${conflictChoices(state.items, false)}</if>
 			</div></if>
 			<if {state.phase == Synced && state.message != ""}><text id="rayde-sync-note" class="rayde-sync-muted">${state.message}</text></if>
 			<if {state.phase == Pending}><text id="rayde-sync-offline" class="rayde-sync-muted">You are offline. Changes will sync when the connection returns.</text></if>
@@ -233,16 +240,39 @@ class SyncPanel extends Component<SyncPanelProps> {
 			<div class="rayde-sync-card rayde-sync-section">
 				${detail("Cloud copy", "Generation " + saved.generation, "rayde-sync-generation")}
 				<text class="rayde-sync-muted">This workspace is a restored copy of your cloud workspace. Saving publishes what is here as the next generation. If the cloud copy has changed since this one was restored, nothing is overwritten.</text>
+				<if {saved.conflicts.length > 0}>${conflictChoices(saved.conflicts, saved.busy)}</if>
 				<if {saved.message != "" && saved.failed}><text id="rayde-sync-save-message" class="rayde-sync-error">${saved.message}</text>
 				<else><if {saved.message != ""}><text id="rayde-sync-save-message" class="rayde-sync-muted">${saved.message}</text></if></if>
 			</div>
 			<div class="rayde-sync-actions">
-				<if {saved.conflicts.length > 0}><button id="rayde-sync-keep-mine" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onResolve("mine")}>Keep my versions</button>
-					<button id="rayde-sync-use-cloud" size={Sm} disabled={saved.busy} onClick={_ -> props.onResolve("theirs")}>Use the cloud's</button></if>
 				<if {saved.canMerge && saved.conflicts.length == 0}><button id="rayde-sync-merge" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onMerge()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Merge cloud changes</button></if>
 				<button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Working…" : "Save to cloud"}</button>
 			</div>
 		</div>;
+
+	/** The files edited in the same place on both sides: a path that opens the two side by side, and an icon each for keeping the local file or taking the remote one. */
+	function conflictChoices(items:Array<ConflictItem>, busy:Bool):Element {
+		var undecided = Lambda.count(items, item -> item.choice == "");
+		return <div class="flex flex-col gap-1">
+			<div class="flex items-center gap-1">
+				<text class="rayde-sync-muted flex-1">Local or remote</text>
+				<tooltip label="Keep all local" side="top"><button id="rayde-sync-keep-mine" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("mine")}><icon document={Icons.COMPUTER_LINE} class="size-4"/></button></tooltip>
+				<tooltip label="Use all remote" side="top"><button id="rayde-sync-use-cloud" variant={Ghost} size={Icon} disabled={busy} onClick={_ -> props.onResolve("theirs")}><icon document={Icons.CLOUD_LINE} class="size-4"/></button></tooltip>
+			</div>
+			<for {item in items}>${conflictRow(item, Lambda.indexOf(items, item), busy)}</for>
+			<button id="rayde-sync-apply" size={Sm} disabled={busy || undecided > 0} onClick={_ -> props.onApply()}>Apply</button>
+		</div>;
+	}
+
+	function conflictRow(item:ConflictItem, index:Int, busy:Bool):Element {
+		var local:ashui.components.ButtonVariant = item.choice == "mine" ? Primary : Ghost;
+		var remote:ashui.components.ButtonVariant = item.choice == "theirs" ? Primary : Ghost;
+		return <div class="flex items-center gap-1">
+			<tooltip class="flex-1 min-w-0" label={item.reason + " · compare"} side="top"><button id={"rayde-sync-file-" + index} variant={Link} size={Sm} onClick={_ -> props.onDiff(item.path)}><text class="text-xs" wrap={false}>${item.path}</text></button></tooltip>
+			<tooltip label="Keep local" side="top"><button id={"rayde-sync-pick-mine-" + index} variant={local} size={Icon} disabled={busy} onClick={_ -> props.onPick(item.path, "mine")}><icon document={Icons.COMPUTER_LINE} class="size-4"/></button></tooltip>
+			<tooltip label="Use remote" side="top"><button id={"rayde-sync-pick-theirs-" + index} variant={remote} size={Icon} disabled={busy} onClick={_ -> props.onPick(item.path, "theirs")}><icon document={Icons.CLOUD_LINE} class="size-4"/></button></tooltip>
+		</div>;
+	}
 
 	function detail(label:String, value:String, id:String):Element
 		return <div class="rayde-sync-detail"><text>${label}</text><text id={id} class="rayde-sync-value">${value}</text></div>;

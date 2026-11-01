@@ -232,6 +232,11 @@ impl<S: FileStore> Connection<S> {
             if let Some(sources) = workspace.sources.get() { return sources.request(op, request).await; }
             return Err(SessionError::new("outside", "The source mount is not available."));
         }
+        if op == "sync.remote" {
+            #[cfg(feature = "server")]
+            if let Some(writeback) = workspace.writeback.get() { return writeback.remote(store.root().into(), text(request, "path")?.to_string()).await; }
+            return Err(SessionError::new("no-sync", "This workspace has no cloud copy to read."));
+        }
         if op == "sync.publish" || op == "sync.merge" {
             #[cfg(feature = "server")]
             if let Some(writeback) = workspace.writeback.get() { return if op == "sync.publish" { writeback.publish(store.root().into()).await } else { writeback.merge(store.root().into(), request.get("choices").and_then(Value::as_object).map(|choices| choices.iter().filter_map(|(path, choice)| choice.as_str().map(|choice| (path.clone(), choice.to_string()))).collect()).unwrap_or_default()).await }; }

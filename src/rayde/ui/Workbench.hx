@@ -197,7 +197,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** A page of the workbench that is not a file: Settings, a view of the extension in a tab, or a tab an extension presented. */
 	static function isVirtual(file:String):Bool
-		return file == SETTINGS || file == THEME_TAB || file == APP_PREVIEW || file == SURFACE_PREVIEW || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || isViewTab(file) || isTab(file);
+		return file == SETTINGS || file == THEME_TAB || file == APP_PREVIEW || file == SURFACE_PREVIEW || file.startsWith(HISTORY_TAB) || file.startsWith(DIFF_TAB) || file.startsWith(SYNC_DIFF_TAB) || isViewTab(file) || isTab(file);
 
 	/** The width the right side bar opens to. */
 	static inline var SECONDARY_WIDTH = 320.;
@@ -234,6 +234,8 @@ class Workbench extends Component<WorkbenchProps> {
 	final restoredTabs = new Map<String, Bool>();
 
 	static inline var DIFF_TAB = "@history-diff:";
+	/** A file of the cloud copy against the local one. */
+	static inline var SYNC_DIFF_TAB = "@sync-diff:";
 	static inline var APP_PREVIEW = "@app-preview";
 	static inline var SURFACE_PREVIEW = "@surface-preview";
 
@@ -578,7 +580,7 @@ class Workbench extends Component<WorkbenchProps> {
 
 	/** The file a page stands for, null for the pages that are not files. */
 	function realFile(file:String):Null<String>
-		return file.startsWith(DIFF_TAB) && documentsPart.comparisonTabs.exists(file) ? documentsPart.comparisonTabs.get(file).file : file.startsWith(HISTORY_TAB) && documentsPart.historyTabs.exists(file) ? documentsPart.historyTabs.get(file).file : file == "" || isVirtual(file) ? null : file;
+		return file.startsWith(SYNC_DIFF_TAB) && documentsPart.syncDiffs.exists(file) ? documentsPart.syncDiffs.get(file).file : file.startsWith(DIFF_TAB) && documentsPart.comparisonTabs.exists(file) ? documentsPart.comparisonTabs.get(file).file : file.startsWith(HISTORY_TAB) && documentsPart.historyTabs.exists(file) ? documentsPart.historyTabs.get(file).file : file == "" || isVirtual(file) ? null : file;
 
 	/** Adds the tabs of an extension to the editor, and takes those it has unmounted away. */
 	function syncTabs(studio:Studio, list:Array<TabView>):Void {

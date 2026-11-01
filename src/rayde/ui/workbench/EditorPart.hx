@@ -214,7 +214,7 @@ class EditorPart {
 		return file == Workbench.SURFACE_PREVIEW ? wb.runPart.surfaceTitle : file == Workbench.APP_PREVIEW ? (wb.runPart.appPreview==null || wb.runPart.appPreview.title.get()=="" ? "App Preview" : wb.runPart.appPreview.title.get()) : fileLabel(file);
 
 	function fileLabel(file:String):String
-		return file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
+		return file.startsWith(Workbench.SYNC_DIFF_TAB) && wb.documentsPart.syncDiffs.exists(file) ? "Local vs remote: " + haxe.io.Path.withoutDirectory(wb.documentsPart.syncDiffs.get(file).file) : file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file) ? "History: " + haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file) : file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file) ? "Local: " + haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file) + " #" + wb.documentsPart.historyTabs.get(file).revision : file == Workbench.THEME_TAB ? (wb.themePart.themeStudio == null ? "Theme" : wb.themePart.themeStudio.theme.get().name) : Workbench.isTab(file) ? wb.tabTitle(file) : file == Workbench.SETTINGS ? "Settings" : Workbench.isViewTab(file) ? viewTabTitle(file) : haxe.io.Path.withoutDirectory(file);
 
 	function viewTabTitle(file:String):String {
 		var v = wb.viewOfTab(file);
@@ -223,6 +223,7 @@ class EditorPart {
 
 	function tabIcon(file:String):ashui.svg.SvgDocument {
 		if (file == Workbench.APP_PREVIEW || file == Workbench.SURFACE_PREVIEW) return Icons.EYE_LINE;
+		if (file.startsWith(Workbench.SYNC_DIFF_TAB)) return Icons.CONTRAST_2_LINE;
 		if (file.startsWith(Workbench.DIFF_TAB)) return Icons.FILE_HISTORY_LINE;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return Icons.HISTORY_LINE;
 		if (Workbench.isTab(file)) {
@@ -289,6 +290,7 @@ class EditorPart {
 
 	/** Where `file` sits in the project, folder by folder. */
 	function breadcrumb(file:String):Element {
+		if (file.startsWith(Workbench.SYNC_DIFF_TAB) && wb.documentsPart.syncDiffs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(wb.documentsPart.syncDiffs.get(file).file), "Local vs remote"])}</breadcrumb>;
 		if (file.startsWith(Workbench.DIFF_TAB) && wb.documentsPart.comparisonTabs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(wb.documentsPart.comparisonTabs.get(file).file), "History diff"])}</breadcrumb>;
 		if (file.startsWith(Workbench.HISTORY_TAB) && wb.documentsPart.historyTabs.exists(file)) return <breadcrumb id="rayde-breadcrumb" size={Sm} class="rayde-crumbs">{crumbs([haxe.io.Path.withoutDirectory(wb.documentsPart.historyTabs.get(file).file), "Local history"])}</breadcrumb>;
 		if (file == Workbench.SETTINGS)
@@ -320,6 +322,7 @@ class EditorPart {
 	function page(file:String, selected:Signal<String>):Element {
 		if (file == Workbench.SURFACE_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {wb.runPart.surfaceRevision.get() >= 0 && selected.get() == file && wb.runPart.surfacePreview != null}><surface-preview pump={wb.runPart.surfacePreview} title={wb.runPart.surfaceTitle} leave={focusCurrent} restart={wb.runPart.restartSurfacePreview}/></if></tabs-content>;
 		if (file == Workbench.APP_PREVIEW) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file && wb.runPart.appPreview != null}><app-preview build={wb.runPart.appPreview} rebuild={wb.runPart.previewApp} shown={() -> !wb.quickOpen.get() && wb.prompt.get() == null && !Lambda.exists([for (opened in wb.extensionsPart.previewSheets) opened], opened -> opened.get())}/></if></tabs-content>;
+		if (file.startsWith(Workbench.SYNC_DIFF_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.syncDiffPage(file)}</if></tabs-content>;
 		if (file.startsWith(Workbench.DIFF_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.comparisonPage(file)}</if></tabs-content>;
 		if (file.startsWith(Workbench.HISTORY_TAB)) return <tabs-content value={file} class="flex-1 min-h-0"><if {selected.get() == file}>${wb.documentsPart.historyPage(file)}</if></tabs-content>;
 		if (file == Workbench.THEME_TAB && wb.themePart.themeStudio != null)

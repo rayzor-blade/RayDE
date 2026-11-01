@@ -1,7 +1,7 @@
 //! Saves the workspace's tree back into the cloud copy it was restored from, and brings the cloud copy's newer generation into it, as the holder of the
 //! capability the runner gave this session. It keeps what the tree was a copy of, so a merge has the version both sides started from.
 use crate::error::{Result, SessionError};
-use rayde_sync::client::{Base, Config, capture, merge_with, save};
+use rayde_sync::client::{Base, Config, capture, merge_with, remote_text, save};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -46,6 +46,7 @@ impl Writeback {
             base_generation: Some(self.restored),
             force: false,
             choices: BTreeMap::new(),
+            path: None,
         }
     }
 
@@ -82,6 +83,17 @@ impl Writeback {
                 Ok(answer)
             }
             Err(failure) if failure.code == "conflict" => Err(SessionError::new("conflict", failure.message)),
+            Err(failure) => Err(SessionError::new("sync-failed", failure.message)),
+        }
+    }
+
+    /// The text of one file in the cloud copy, for showing next to the local one.
+    pub async fn remote(self: &Arc<Self>, root: PathBuf, path: String) -> Result<Value> {
+        let mut config = self.config(root);
+        config.path = Some(path);
+        let text = tokio::task::spawn_blocking(move || remote_text(&config)).await.map_err(|_| SessionError::new("sync-failed", "The read stopped before it finished."))?;
+        match text {
+            Ok(text) => Ok(json!({"text": text})),
             Err(failure) => Err(SessionError::new("sync-failed", failure.message)),
         }
     }

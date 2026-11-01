@@ -21,6 +21,7 @@ fn main() {
         token: args.next(),
         base_generation: args.next().and_then(|base| base.parse().ok()),
         force: std::env::var("RAYDE_SYNC_FORCE").is_ok_and(|value| value == "1"),
+        path: std::env::var("RAYDE_SYNC_PATH").ok(),
         choices: std::env::var("RAYDE_SYNC_CHOICES").ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default(),
     };
     if let Err(failure) = run(&config, &mut |event| println!("{event}"), &|| false) {

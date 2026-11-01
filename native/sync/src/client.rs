@@ -33,7 +33,7 @@ pub struct Config {
     pub device: Option<String>,
     #[serde(default)]
     pub history: bool,
-    /// "push" (the default), "open", "pull" or "writeback".
+    /// "push" (the default), "open", "pull", "remote" or "writeback".
     #[serde(default)]
     pub action: String,
     /// Publish over a cloud copy that has moved on since this folder last synced. Nothing merges the two yet, so this replaces the other device's changes.
@@ -42,6 +42,9 @@ pub struct Config {
     /// For `pull` and for a session's merge: which side wins a file both sides edited in the same place, `mine` or `theirs`, by path.
     #[serde(default)]
     pub choices: BTreeMap<String, String>,
+    /// The one file `remote` reads from the cloud copy.
+    #[serde(default)]
+    pub path: Option<String>,
     /// Write-back publishes into this existing workspace, as the holder of `token`, against the generation the tree was restored from.
     #[serde(default)]
     pub workspace: Option<String>,
@@ -138,6 +141,7 @@ pub fn run(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() ->
         "open" => open(config, emit),
         "writeback" => writeback(config, emit, cancelled),
         "pull" => pull(config, emit),
+        "remote" => remote(config, emit),
         other => Err(Failure::new("usage", format!("unknown action {other}"))),
     }
 }
@@ -401,6 +405,31 @@ fn load_base(dir: &Path) -> Option<Base> {
         }
     }
     Some(Base { manifest, texts })
+}
+
+/// The text of one file in the cloud copy's current generation, for showing next to the local one. Errors when it is missing, binary or too large to show.
+pub fn remote_text(config: &Config) -> Result<String, Failure> {
+    let (gateway, id) = existing_workspace(config)?;
+    let path = config.path.as_deref().ok_or_else(|| Failure::new("usage", "Say which file to read."))?;
+    let manifest = cloud_manifest(&gateway, &id)?;
+    let file = manifest.files.iter().find(|file| file.path == path && mergeable(file)).ok_or_else(|| Failure::new("missing", "The cloud copy has no such file."))?;
+    if file.size as usize > MAX_TEXT {
+        return Err(Failure::new("too-large", "That file is too large to compare."));
+    }
+    let bytes = fetch_file(&gateway, &id, file).ok_or_else(|| Failure::new("network", "The cloud copy's file could not be read."))?;
+    String::from_utf8(bytes).map_err(|_| Failure::new("binary", "That file is not text."))
+}
+
+/// The CLI and the desktop's `remote` action: reads a file of the folder's workspace from the cloud copy.
+fn remote(config: &Config, emit: &mut dyn FnMut(Value)) -> Result<(), Failure> {
+    let (_, remembered) = remembered(config)?;
+    let key = gateway_of(config).base;
+    let id = remembered[&key]["workspace"].as_str().ok_or_else(|| Failure::new("not-synced", "This folder has not been synced to this gateway."))?.to_string();
+    let mut with_workspace = config.clone();
+    with_workspace.workspace = Some(id);
+    let text = remote_text(&with_workspace)?;
+    emit(json!({"event": "remote", "path": config.path, "text": text}));
+    Ok(())
 }
 
 /// Brings the cloud copy's newer generation into this folder, merging it with the folder's own changes since it last synced. With files both sides

@@ -7,6 +7,7 @@ import rayde.ui.Contributions;
 import rayde.ui.Host;
 import rayde.ui.Icons;
 import rayde.ui.SyncPanel;
+import rayde.sync.SyncState.ConflictItem;
 import rayde.ui.SyncPanel.SaveBack;
 
 /**
@@ -23,8 +24,6 @@ class SyncFeature {
 	var push = -1;
 	/** Whether the running job only asks for a browser session, which leaves the panel's state as it is. */
 	var opening = false;
-	/** The files a pull found edited in the same place on both sides, which the next pull settles with a choice. */
-	var conflictPaths:Array<String> = [];
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -73,7 +72,7 @@ class SyncFeature {
 	}
 
 	function panel():Element
-		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve}
+		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve} onPick={pick} onApply={apply} onDiff={showDiff}
 			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
@@ -147,23 +146,15 @@ class SyncFeature {
 
 	/**
 		Brings the cloud copy's newer generation into this session's tree: edits in different places combine, and files edited in the same place are listed
-		with nothing changed until `choice` ("mine" or "theirs") says which side wins them.
+		with nothing changed until `choices` (an object of path to "mine" or "theirs") says which side wins each.
 	**/
-	public function merge(?choice:String):Void {
-		var current = saveBack.get();
-		var params:Dynamic = null;
-		if (choice != null && current != null) {
-			var choices:Dynamic = {};
-			for (path in current.conflicts) Reflect.setField(choices, path, choice);
-			params = {choices:choices};
-		}
-		ask("sync.merge", "Merging…", params, (reply, now) -> {
+	public function merge(?choices:Dynamic):Void {
+		ask("sync.merge", "Merging…", choices == null ? null : {choices:choices}, (reply, now) -> {
 			var generation:Int = Std.int(reply.generation);
 			var conflicts:Array<Dynamic> = reply.conflicts;
 			if (conflicts.length > 0) {
-				var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ");
-				return {generation:now.generation, busy:false, failed:true, canMerge:false, conflicts:[for (c in conflicts) Std.string(c.path)],
-					message:"Nothing was merged. These files were edited in the same place on both sides (" + (conflicts.length > 5 ? "first 5 of " + conflicts.length : Std.string(conflicts.length)) + "): " + names + ". Keep your versions or use the cloud's."};
+				return {generation:now.generation, busy:false, failed:true, canMerge:false, conflicts:[for (c in conflicts) ({path:Std.string(c.path), reason:Std.string(c.reason), choice:""}:ConflictItem)],
+					message:conflicts.length + " files were edited in the same place on both sides. Choose local or remote for each."};
 			}
 			var changed = (reply.written:Array<Dynamic>).length + (reply.deleted:Array<Dynamic>).length;
 			return {generation:generation, busy:false, failed:false, canMerge:false, conflicts:[],
@@ -171,17 +162,110 @@ class SyncFeature {
 		});
 	}
 
-	/** Settles the files both sides edited in the same place: "mine" keeps this side's version, "theirs" takes the cloud's. */
-	public function resolve(choice:String):Void {
+	/** The picks made so far as an object of path to "mine" or "theirs", or null while a file has none. */
+	function picks(items:Null<Array<ConflictItem>>):Null<Dynamic> {
+		if (items == null || items.length == 0 || Lambda.exists(items, item -> item.choice == "")) return null;
+		var choices:Dynamic = {};
+		for (item in items) Reflect.setField(choices, item.path, item.choice);
+		return choices;
+	}
+
+	function items():Null<Array<ConflictItem>> {
 		#if wasm
-		merge(choice);
+		var saved = saveBack.get();
+		return saved == null ? null : saved.conflicts;
 		#else
-		pull(choice);
+		return state.get().items;
 		#end
 	}
 
+	function setItems(next:Array<ConflictItem>):Void {
+		#if wasm
+		var saved = saveBack.get();
+		if (saved != null) saveBack.set({generation:saved.generation, busy:saved.busy, message:saved.message, failed:saved.failed, canMerge:saved.canMerge, conflicts:next});
+		#else
+		var s = state.get();
+		state.set({phase:s.phase, branch:s.branch, files:s.files, bytes:s.bytes, excluded:s.excluded, allocation:s.allocation, expiryHours:s.expiryHours,
+			sent:s.sent, total:s.total, url:s.url, lastSync:s.lastSync, used:s.used, expiresAt:s.expiresAt, compute:s.compute, message:s.message, conflicts:s.conflicts, items:next});
+		#end
+	}
+
+	/** Picks a side for one file. */
+	public function pick(path:String, choice:String):Void {
+		var current = items();
+		if (current != null) setItems([for (item in current) item.path == path ? {path:item.path, reason:item.reason, choice:choice} : item]);
+	}
+
+	/** Settles the files with the picks made; nothing happens until every file has one. */
+	public function apply():Void {
+		var choices = picks(items());
+		if (choices == null) {
+			host.say("Choose local or remote for every file first.");
+			return;
+		}
+		#if wasm
+		merge(choices);
+		#else
+		pull(choices);
+		#end
+	}
+
+	/** Opens the file beside the cloud copy's text of it, in the editor's diff view. */
+	public function showDiff(path:String):Void {
+		var file = host.cwd + "/" + path;
+		#if wasm
+		var session = rayde.workspace.PageHost.session;
+		if (session == null) return;
+		var text:Null<String> = null, lock = new sys.thread.Mutex();
+		function finish(value:String):Void {
+			lock.acquire();
+			text = value;
+			lock.release();
+		}
+		session.requestAsync("sync.remote", {path:path}, 60).then(reply -> {
+			try finish(Std.isOfType(reply, rayde.workspace.session.SessionClient.SessionFailure) || reply == null || reply.text == null ? "" : Std.string(reply.text)) catch (_:Dynamic) finish("");
+		}, _ -> finish(""));
+		function look():Void {
+			lock.acquire();
+			var value = text;
+			lock.release();
+			if (value != null) host.openDiff(file, value);
+			else if (!host.closed()) ashui.animation.AnimationScheduler.main.after(.1, look);
+		}
+		ashui.animation.AnimationScheduler.main.after(.1, look);
+		#else
+		var url = gateway();
+		if (url == null) return;
+		var job = try NativeSync.start({root: host.cwd, gateway: url, account: account(), action: "remote", path: path}) catch (error) {
+			host.say(Std.string(error));
+			return;
+		}
+		function look():Void {
+			var shown = false;
+			var events = NativeSync.poll(job);
+			if (events != null) for (event in events) {
+				if (event.event == "remote") {
+					host.openDiff(file, Std.string(event.text));
+					shown = true;
+				} else if (event.event == "error") host.say(event.message);
+			}
+			if (!shown && NativeSync.pending(job) && !host.closed()) ashui.animation.AnimationScheduler.main.after(.1, look);
+			else NativeSync.close(job);
+		}
+		look();
+		#end
+	}
+
+	/** Settles every listed file the same way: "mine" keeps this side's versions, "theirs" takes the cloud's. */
+	public function resolve(choice:String):Void {
+		var current = items();
+		if (current == null) return;
+		setItems([for (item in current) {path:item.path, reason:item.reason, choice:choice}]);
+		apply();
+	}
+
 	/** On the desktop: brings the cloud copy's newer generation into this folder, merging it with the folder's own changes since it last synced. */
-	public function pull(?choice:String):Void {
+	public function pull(?choices:Dynamic):Void {
 		#if !wasm
 		if (push >= 0) return;
 		var url = gateway();
@@ -195,11 +279,7 @@ class SyncFeature {
 		running.expiresAt = before.expiresAt;
 		state.set(running);
 		var config:Dynamic = {root: host.cwd, gateway: url, account: account(), device: host.name, action: "pull"};
-		if (choice != null) {
-			var choices:Dynamic = {};
-			for (path in conflictPaths) Reflect.setField(choices, path, choice);
-			config.choices = choices;
-		}
+		if (choices != null) config.choices = choices;
 		try {
 			push = NativeSync.start(config);
 		} catch (error) {
@@ -309,15 +389,15 @@ class SyncFeature {
 					if (conflicts.length > 0) {
 						current.phase = Conflict;
 						current.conflicts = conflicts.length;
-						conflictPaths = [for (c in conflicts) Std.string(c.path)];
+						current.items = [for (c in conflicts) ({path:Std.string(c.path), reason:Std.string(c.reason), choice:""}:ConflictItem)];
 						var names = [for (c in conflicts.slice(0, 5)) Std.string(c.path)].join(", ") + (conflicts.length > 5 ? " and " + (conflicts.length - 5) + " more" : "");
 						current.message = event.withoutBase == true
-							? "This folder has no record of what it last synced, so these files differ from the cloud copy and cannot be told apart from edits: " + names + ". Nothing was changed. Choose which version to keep."
+							? "This folder has no record of what it last synced, so these files differ from the remote copy and cannot be told apart from edits: " + names + ". Nothing was changed. Choose local or remote for each."
 							: names + ": edited in the same place on both sides. Nothing was changed.";
 					} else {
 						current.phase = Synced;
 						current.conflicts = 0;
-						conflictPaths = [];
+						current.items = null;
 						var changed = (event.written:Array<Dynamic>).length + (event.deleted:Array<Dynamic>).length;
 						current.message = changed == 0 ? "Already up to date." : "Pulled generation " + event.generation + " · " + changed + " files updated. Sync Now to publish the merged folder.";
 					}
@@ -336,7 +416,7 @@ class SyncFeature {
 		}
 		state.set({phase:current.phase, branch:current.branch, files:current.files, bytes:current.bytes, excluded:current.excluded, allocation:current.allocation,
 			expiryHours:current.expiryHours, sent:current.sent, total:current.total, url:current.url, lastSync:current.lastSync, used:current.used,
-			expiresAt:current.expiresAt, compute:current.compute, message:current.message, conflicts:current.conflicts});
+			expiresAt:current.expiresAt, compute:current.compute, message:current.message, conflicts:current.conflicts, items:current.items});
 		if (NativeSync.pending(id) && !host.closed()) {
 			ashui.animation.AnimationScheduler.main.after(.2, follow);
 			return;
@@ -413,7 +493,7 @@ class SyncFeature {
 			case Expiring: s.expiresAt = now + 0.75 * hour;
 			case Expired: s.expiresAt = now - hour;
 			case Failed: s.message = "The connection dropped while uploading. Check your network and retry.";
-			case Conflict: s.conflicts = 2; s.message = "src/Main.hx and README.md changed on this device and in the browser.";
+			case Conflict: s.conflicts = 2; s.message = "src/Main.hx and README.md changed on this device and in the browser."; s.items = [{path:"src/Main.hx", reason:"edited in the same place on both sides", choice:"mine"}, {path:"README.md", reason:"edited in the same place on both sides", choice:""}];
 			case _:
 		}
 		return s;

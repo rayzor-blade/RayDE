@@ -22,6 +22,9 @@ enum abstract SyncPhase(String) to String {
 }
 
 /** Everything the Cloud Sync panel shows. Bytes are decimal: 1 GB is 1,000,000,000. Times are milliseconds since the epoch, from the server where they come from it. */
+/** A file both sides edited in the same place, and which side's version was picked for it: "mine", "theirs" or "" while undecided. */
+typedef ConflictItem = {path:String, reason:String, choice:String};
+
 typedef SyncState = {
 	phase:SyncPhase,
 	branch:String,
@@ -44,7 +47,9 @@ typedef SyncState = {
 	compute:String,
 	/** What went wrong, for Failed, or what conflicts, for Conflict. */
 	message:String,
-	conflicts:Int
+	conflicts:Int,
+	/** The files behind `conflicts`, with the picks made so far. */
+	?items:Array<ConflictItem>
 };
 
 class Sync {

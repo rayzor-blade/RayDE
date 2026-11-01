@@ -33,6 +33,8 @@ typedef Host = {
 	extensionCommand:String->String->Bool,
 	/** Opens a link in the system's browser or mail handler. */
 	openExternal:String->Void,
+	/** Opens a file of the cloud copy against the local file at a path, given the cloud's text. */
+	openDiff:(String, String) -> Void,
 	showSidebar:String->Void,
 	hideSidebar:Void->Void,
 	sidebarShown:String->Bool
