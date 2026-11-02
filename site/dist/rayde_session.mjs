@@ -71,10 +71,11 @@ function seedSample(database, value) {
 
 // src/accounts.js
 var Accounts = class {
-  constructor({ fetch: fetch2 = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60) } = {}) {
+  constructor({ fetch: fetch2 = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60), pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
     this.fetch = fetch2;
     this.location = location2;
     this.later = later;
+    this.pause = pause;
     this.csrf = null;
     this.installUrl = null;
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location2?.href ?? "http://localhost").hostname);
@@ -103,6 +104,17 @@ var Accounts = class {
     if (op === "account.repositories") return this.api("/api/repositories" + (params2.cursor ? "?cursor=" + encodeURIComponent(params2.cursor) : ""));
     if (op === "account.open") return this.api("/api/workspaces/open", { repository: params2.repository });
     if (op === "account.workspace") return this.api("/api/workspaces/" + encodeURIComponent(params2.workspace));
+    if (op === "account.sync-reopen") {
+      if (!/^[\w-]{43}$/.test(params2.workspace)) throw new Error("Choose a synced workspace.");
+      await this.request("account.status", {});
+      let workspace = await this.api("/api/sync/workspaces/" + params2.workspace + "/open", {});
+      for (let attempt = 0; workspace.status === "preparing" && attempt < 100; attempt++) {
+        await this.pause(100);
+        workspace = await this.request("account.workspace", params2);
+      }
+      if (workspace.status !== "ready") throw new Error(workspace.message ?? "The workspace is still starting. Try reopening again.");
+      return workspace;
+    }
     if (op === "account.signin") {
       this.later(() => this.location.assign(this.landing ? "https://app.rayde.org/auth/github/start" : "/auth/github/start"));
       return {};
@@ -10010,6 +10022,7 @@ var SessionClient = class {
         doc2.listeners.forEach((listener) => listener("remote"));
       }
     } else if (message.ev) {
+      if (message.ev === "sync.status" && this.hello) this.hello = { ...this.hello, syncWriteback: message.syncWriteback ?? null };
       this.emit(message.ev, message);
     }
   }
@@ -11793,17 +11806,21 @@ function documentation(source) {
 }
 
 // src/reopen.js
-async function reopenWorkspace(client, flushStorage, { reload = () => location.reload(), later = (fn) => setTimeout(fn, 60), timeout = 15e3 } = {}) {
-  if (client?.invalidated?.code !== "workspace-changed") throw new Error("This workspace does not need to be reopened.");
-  let timer;
+async function reopenWorkspace(client, flushStorage, { renew, reload = () => location.reload(), later = (fn) => setTimeout(fn, 60), timeout = 15e3 } = {}) {
+  if (client?.invalidated?.code !== "workspace-changed" && typeof renew !== "function") throw new Error("This workspace does not need to be reopened.");
+  let timer, expired = false;
   try {
     await Promise.race([
       (async () => {
         await Promise.all([...client.docs.values()].map((doc2) => doc2.checkpoint()));
         await flushStorage();
+        if (!expired) await renew?.();
       })(),
       new Promise((_2, reject) => {
-        timer = setTimeout(() => reject(new Error("Browser storage is taking too long. Try reopening again.")), timeout);
+        timer = setTimeout(() => {
+          expired = true;
+          reject(new Error("Reopening is taking too long. Try again."));
+        }, timeout);
       })
     ]);
   } finally {
@@ -12099,7 +12116,13 @@ var start = (ask) => serve(ask, {
     };
     const documents = client ? new EditorDocuments(client, answer) : null;
     const previews = client ? new AppPreviews(client, void 0, answer) : null;
-    for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
+    for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update", "sync.status"]) client?.on(event, answer);
+    const syncStatus = () => {
+      void client?.request("sync.status").then((reply) => {
+        if (Object.hasOwn(reply, "syncWriteback")) client.receive({ ev: "sync.status", syncWriteback: reply.syncWriteback });
+      }).catch(() => {
+      });
+    };
     client?.on("disconnected", () => {
       previews?.connection(false);
       answer({ ev: "session.disconnected", generation: client.generation });
@@ -12111,8 +12134,10 @@ var start = (ask) => serve(ask, {
     });
     client?.on("connected", () => {
       previews?.connection(true);
-      answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves });
+      answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves, syncWriteback: client.hello?.syncWriteback ?? null });
+      syncStatus();
     });
+    if (client) syncStatus();
     const localPath = (path2) => typeof path2 === "string" && (path2 === "/home/web" || path2.startsWith("/home/web/") || !client && demo && (path2 === "/work" || path2.startsWith("/work/"))) && !path2.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -12137,11 +12162,14 @@ var start = (ask) => serve(ask, {
             if (!previews) throw new Error("Connect an app preview session first.");
             reply = previews.update(request);
             if (request.id === void 0) return;
-          } else if (request.op === "page.reopen") reply = await reopenWorkspace(client, async () => {
-            await files("readonly", (store) => store.count());
-            if (storageFailure) throw storageFailure;
-          });
-          else if (request.op === "page.external") {
+          } else if (request.op === "page.reopen") {
+            const status = client && !client.invalidated ? (await client.request("sync.status")).syncWriteback : null;
+            const renew = status?.error === "sync-auth" && status.workspace === entry.workspace ? () => accounts.request("account.sync-reopen", { workspace: status.workspace }) : void 0;
+            reply = await reopenWorkspace(client, async () => {
+              await files("readonly", (store) => store.count());
+              if (storageFailure) throw storageFailure;
+            }, { renew });
+          } else if (request.op === "page.external") {
             if (typeof request.url !== "string" || !/^(https?:\/\/|mailto:)/i.test(request.url)) throw new Error("Unsupported link.");
             globalThis.open(request.url, "_blank", "noopener,noreferrer");
             return;
