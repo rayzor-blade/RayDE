@@ -46,6 +46,19 @@ if [ -z "${ASHUI:-}" ]; then
   fi
 fi
 
+# An explicit triple keeps distributed AOT code independent of the build machine's CPU features.
+build_distribution() {
+  local arch=${PACKAGE_ARCH:-$(uname -m)} platform=${PACKAGE_PLATFORM:-$(uname -s)} target
+  case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
+  case "$platform" in
+    Darwin|macos) target="$arch-apple-darwin" ;;
+    Linux|linux) target="$arch-unknown-linux-gnu" ;;
+    MINGW*|MSYS*|CYGWIN*|windows) target="$arch-pc-windows-msvc" ;;
+    *) fail "unsupported distribution platform: $platform" ;;
+  esac
+  "$ash" --target "$target" --build "$1" "$2"
+}
+
 # Copies the native libraries a UI program loads beside it, under the names it loads them by.
 stage_natives() {
   local out=$1 lib

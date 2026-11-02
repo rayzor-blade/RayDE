@@ -21,7 +21,7 @@ stage_natives "$res"
 for library in "$res/"*.hdll; do mv "$library" "$mac/"; done
 mv "$res/rayde-extension-host" "$mac/"
 haxe "${ui_args[@]}" -D ashui_window -main rayde.Main -hl "$mac/rayde.hl"
-"$ash" --build "$mac/RayDE" "$mac/rayde.hl"
+build_distribution "$mac/RayDE" "$mac/rayde.hl"
 rm "$mac/rayde.hl"
 RAYDE_PLIST_VERSION="$version" python3 - "$app/Contents/Info.plist" <<'PY'
 import os, pathlib, plistlib, re, sys

@@ -291,6 +291,28 @@ stage_natives "$lib"
             for name in ("blinc_abi.hdll", "xgpu.hdll", "xwindow.hdll", "cterm.hdll", "rayscript.hdll", "rayde-extension-host"):
                 self.assertTrue((root / "package with spaces/lib/rayde" / name).is_file(), name)
 
+    def test_distribution_build_names_the_target_and_preserves_arguments(self):
+        cases = [("Darwin", "arm64", "aarch64-apple-darwin"), ("Darwin", "x86_64", "x86_64-apple-darwin"),
+                 ("Linux", "x86_64", "x86_64-unknown-linux-gnu"), ("MINGW64_NT-10.0", "x86_64", "x86_64-pc-windows-msvc")]
+        script = r'''set -euo pipefail
+platform=$2
+arch=$3
+uname() { case "$1" in -s) printf '%s' "$platform" ;; -m) printf '%s' "$arch" ;; esac; }
+source "$1"
+record() { printf '%s\n' "$@"; }
+ash=record
+build_distribution 'package with spaces/RayDE' 'package with spaces/rayde.hl'
+'''
+        env = {**os.environ, "ASH": "/usr/bin/true", "ASHUI": "/unused", "RAYDE_BUILD_TARGET": "web"}
+        env.pop("PACKAGE_PLATFORM", None)
+        env.pop("PACKAGE_ARCH", None)
+        for platform, arch, triple in cases:
+            with self.subTest(platform=platform, arch=arch):
+                actual = subprocess.check_output(["bash", "-c", script, "aot-check", str(ROOT / "scripts/deps.sh"), platform, arch], env=env, text=True)
+                self.assertEqual(actual.splitlines(), ["--target", triple, "--build", "package with spaces/RayDE", "package with spaces/rayde.hl"])
+        for platform in ("macos", "linux", "windows"):
+            self.assertIn("build_distribution ", (ROOT / f"scripts/package-{platform}.sh").read_text())
+
     def test_locked_toolchains_and_source_revisions(self):
         lock = json.loads((ROOT / "packaging/dependencies.json").read_text())
         workflow = (ROOT / ".github/workflows/distribution.yml").read_text()

@@ -17,7 +17,7 @@ printf '1 ICON "%s"\n' "$(cygpath -m "$out/rayde.ico")" > "$out/rayde.rc"
 MSYS2_ARG_CONV_EXCL='*' rc.exe /nologo "/fo$(cygpath -w "$resource/app.res")" "$(cygpath -w "$out/rayde.rc")"
 export CC=${CC:-cl}
 export ASH_LINK_ARGS="${resource#"$here/"}/app.res /link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup ${ASH_LINK_ARGS:-}"
-"$ash" --build "$out/RayDE.exe" "$out/rayde.hl"
+build_distribution "$out/RayDE.exe" "$out/rayde.hl"
 rm "$out/rayde.hl" "$out/rayde.rc"
 mkdir -p "$out/extensions"
 cp -R extensions/. "$out/extensions/"
