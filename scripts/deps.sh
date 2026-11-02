@@ -19,7 +19,8 @@ ash=${ASH:-$siblings/ash/target/release/ash}
 fail() { echo "$(basename "$0"): $*" >&2; exit 1; }
 [ -x "$ash" ] || fail "put ash on PATH or set ASH"
 # Browser entrypoints need compiler classpaths and WASM libraries, not the desktop renderer.
-case "${RAYDE_BUILD_TARGET:-${BASH_SOURCE[1]##*/}}" in
+caller=${BASH_SOURCE[1]:-}
+case "${RAYDE_BUILD_TARGET:-${caller##*/}}" in
   web|build-web.sh|build-web-abi.sh) build_desktop_renderer=false ;;
   *) build_desktop_renderer=true ;;
 esac
