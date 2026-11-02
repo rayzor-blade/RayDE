@@ -7,6 +7,7 @@ pub mod exclude;
 pub mod gateway;
 pub mod ids;
 pub mod lifecycle;
+pub mod links;
 pub mod manifest;
 pub mod policy;
 

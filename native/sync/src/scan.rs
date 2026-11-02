@@ -262,7 +262,7 @@ fn collect(root: &Path, candidates: Vec<Vec<u8>>, tracked: &HashSet<Vec<u8>>, su
         };
         let origin = if is_tracked { Origin::Tracked } else { Origin::Untracked };
         if meta.file_type().is_symlink() {
-            let target = fs::read_link(&full).ok().and_then(|t| t.to_str().map(String::from));
+            let target = fs::read_link(&full).ok().and_then(|t| t.to_str().map(crate::links::manifest_target));
             match target {
                 Some(target) if link_problem(&path, &target).is_none() => {
                     let size = target.len() as u64;

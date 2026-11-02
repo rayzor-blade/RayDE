@@ -77,10 +77,7 @@ pub(crate) async fn restore(config: &Config, http: &reqwest::Client, root: &Path
         match file.kind {
             FileKind::Symlink => {
                 // The manifest check keeps the target relative and inside the tree; the link is never followed here.
-                #[cfg(unix)]
-                tokio::fs::symlink(file.link.as_deref().ok_or_else(|| refused("The snapshot has a link with no target."))?, &target).await?;
-                #[cfg(not(unix))]
-                return Err(refused("The snapshot contains a link this host cannot restore."));
+                rayde_sync::links::place(&target, file.link.as_deref().ok_or_else(|| refused("The snapshot has a link with no target."))?)?;
             }
             FileKind::Regular | FileKind::Executable => {
                 let mut content = Vec::with_capacity(file.size as usize);

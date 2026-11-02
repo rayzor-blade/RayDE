@@ -609,23 +609,8 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
                 report.written.push(path);
             }
             Action::Link { path, target } => {
-                #[cfg(unix)]
-                {
-                    let place = config.root.join(&path);
-                    if let Some(parent) = place.parent() {
-                        fs::create_dir_all(parent).map_err(|e| Failure::new("write", e.to_string()))?;
-                    }
-                    let temporary = place.with_extension(format!("rayde-merge-{}", std::process::id()));
-                    let _ = fs::remove_file(&temporary);
-                    std::os::unix::fs::symlink(&target, &temporary).map_err(|e| Failure::new("write", e.to_string()))?;
-                    fs::rename(&temporary, &place).map_err(|e| Failure::new("write", e.to_string()))?;
-                    report.written.push(path);
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = target;
-                    return Err(Failure::new("write", format!("{path} is a link, which this system cannot create.")));
-                }
+                crate::links::place(&config.root.join(&path), &target).map_err(|e| Failure::new("write", e.to_string()))?;
+                report.written.push(path);
             }
             Action::Delete { path } => {
                 match fs::remove_file(config.root.join(&path)) {
