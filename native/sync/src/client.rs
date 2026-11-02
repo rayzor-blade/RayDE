@@ -74,8 +74,15 @@ struct Gateway {
     agent: ureq::Agent,
 }
 
+#[path = "client_documents.rs"]
+pub mod documents;
+
 impl Gateway {
     fn call(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<Vec<u8>, Failure> {
+        self.call_limited(method,path,body,None)
+    }
+
+    fn call_limited(&self, method:&str,path:&str,body:Option<&[u8]>,limit:Option<usize>)->Result<Vec<u8>,Failure>{
         let mut request = self.agent.request(method, &format!("{}/api/sync{path}", self.base));
         if let Some(account) = &self.account {
             request = request.set("X-Dev-Account", account);
@@ -90,7 +97,9 @@ impl Gateway {
         match response {
             Ok(response) => {
                 let mut bytes = Vec::new();
-                std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes).map_err(|e| Failure::new("network", e.to_string()))?;
+                let mut reader=std::io::Read::take(response.into_reader(),limit.map_or(u64::MAX,|n|n.saturating_add(1) as u64));
+                std::io::Read::read_to_end(&mut reader, &mut bytes).map_err(|e| Failure::new("network", e.to_string()))?;
+                if limit.is_some_and(|n|bytes.len()>n){return Err(Failure::new("protocol","The gateway response exceeds its size limit."));}
                 Ok(bytes)
             }
             Err(ureq::Error::Status(status, response)) => {

@@ -254,7 +254,7 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
         // A capability is the owner's, for one workspace and only for reading its state, manifest and chunks and uploading and publishing to it.
         Some(token) => {
             let (owner, workspace) = verify_capability(env, &token).ok_or_else(|| bad(401, "Sign in to continue."))?;
-            let allowed = matches!(parts.as_slice(), ["workspaces", id, tail @ ..] if *id == workspace && matches!(tail, [] | ["export", "manifest"] | ["export", "chunks", _] | ["uploads"] | ["uploads", _] | ["uploads", _, "chunks", _] | ["uploads", _, "publish"]));
+            let allowed = matches!(parts.as_slice(), ["workspaces", id, tail @ ..] if *id == workspace && matches!(tail, [] | ["export", "manifest"] | ["export", "chunks", _] | ["uploads"] | ["uploads", _] | ["uploads", _, "chunks", _] | ["uploads", _, "publish"] | ["documents", "open" | "exchange"]));
             if !allowed {
                 return Err(bad(403, "This credential cannot do that."));
             }
@@ -278,6 +278,10 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
         (Method::Post, ["workspaces", id, "open"]) => {
             let opened = open_synced(env, &owner, id, &origin).await?;
             Ok(reply(&json!({"id": id, "url": opened["url"], "generation": opened["generation"]}), 200)?)
+        }
+        (Method::Post, ["workspaces", id, "documents", operation @ ("open" | "exchange")]) => {
+            let bytes=limited(req,rayde_sync::live::MAX_STATE.div_ceil(3)*4+128*1024).await?;
+            forward(env,id,workspace_request(&format!("/document-{operation}"),&owner,Method::Post,&[],Some(bytes))?).await
         }
         (Method::Post, ["workspaces", id, "uploads"]) => {
             let bytes = limited(req, 4 * 1024 * 1024).await?;
@@ -355,7 +359,8 @@ impl SyncWorkspaceSession {
     }
 
     async fn report(&self, workspace: &SyncWorkspace, name: Option<&str>) {
-        let _ = rpc(&self.env, "SYNC_ACCOUNTS", workspace.owner.as_str(), "set", &json!({"workspace": workspace.id.as_str(), "bytes": workspace.usage.total(), "name": name, "generation": workspace.generation, "updated": now()})).await;
+        let live=crate::sync_documents::Documents::new(self.state.storage()).usage().await.unwrap_or(crate::sync_documents::MAX_BYTES) as u64;
+        let _ = rpc(&self.env, "SYNC_ACCOUNTS", workspace.owner.as_str(), "set", &json!({"workspace": workspace.id.as_str(), "bytes": workspace.usage.total().saturating_add(live), "name": name, "generation": workspace.generation, "updated": now()})).await;
     }
 
     async fn delete_chunks(&self, workspace: &str, hashes: &[String]) {
@@ -398,14 +403,27 @@ impl SyncWorkspaceSession {
         let mut workspace = stored.filter(|w| reads_only || w.owner.as_str() == owner).ok_or_else(|| bad(404, "No such synced workspace."))?;
         let id = workspace.id.as_str().to_string();
         match op.as_str() {
-            "/status" => Ok(reply(&status_body(&id, &workspace, &origin), 200)?),
+            "/status" => {let mut body=status_body(&id,&workspace,&origin);body["usage"]["documents"]=json!(crate::sync_documents::Documents::new(self.state.storage()).usage().await?);Ok(reply(&body,200)?)},
+            "/document-open" | "/document-exchange" => {
+                if workspace.expiry.is_expired(now()){return refusal(&SyncError::Expired)}
+                let object=self.bucket()?.get(format!("{}generations/{:012}.json",prefix(&id),workspace.generation)).execute().await?.ok_or_else(||bad(404,"Nothing has been published yet."))?;
+                let bytes=object.body().ok_or_else(||bad(404,"The snapshot is not available."))?.bytes().await?;
+                let manifest=Manifest::from_bytes(&bytes).map_err(|_|bad(503,"The published snapshot is invalid."))?;
+                if manifest.workspace.as_str()!=id||manifest.generation!=workspace.generation{return Err(bad(503,"The published snapshot does not match this workspace."))}
+                let data:Value=req.json().await?;let bucket=self.bucket()?;
+                let budget=workspace.allocation_bytes.saturating_sub(workspace.usage.total()).min(plan.max_account_bytes.saturating_sub(self.others(&owner,&id).await).saturating_sub(workspace.usage.total())) as usize;
+                let result=crate::sync_documents::Documents::new(self.state.storage()).request(&op,&data,&manifest,&bucket,budget).await?;
+                self.report(&workspace,None).await;Ok(reply(&result,200)?)
+            }
             "/begin" => {
                 let data: Value = req.json().await?;
                 let chunks: Vec<ChunkRef> = serde_json::from_value(data["chunks"].clone()).map_err(|_| bad(400, "The chunk list is not valid."))?;
-                let others = self.others(&owner, &id).await;
+                let live=crate::sync_documents::Documents::new(self.state.storage()).usage().await? as u64;
+                let others = self.others(&owner, &id).await.saturating_add(live);
                 let lease = random()?;
                 match workspace.begin(now(), &plan, others, &chunks, &lease) {
                     Ok(info) => {
+                        if workspace.usage.total().saturating_add(live)>workspace.allocation_bytes{return Err(bad(413,"The workspace has no room for this upload and its shared document history."))}
                         storage.put("ws", &workspace).await?;
                         self.report(&workspace, None).await;
                         self.schedule(&workspace).await?;
@@ -461,9 +479,12 @@ impl SyncWorkspaceSession {
                 let limits = Limits::for_allocation(workspace.allocation_bytes);
                 match next.publish(now(), &lease, &manifest, &limits, &|h| present.contains(h)) {
                     Ok(done) => {
+                        let mut values=match crate::sync_documents::Documents::new(self.state.storage()).publication(&manifest).await {
+                            Ok(values)=>values,Err(error) if error.status==409=>return Ok(reply(&json!({"code":"conflict","message":error.message}),409)?),Err(error)=>return Err(error),
+                        };
                         // The manifest is stored before the generation advances, so a failure here leaves the last valid generation as it was.
                         bucket.put(format!("{}generations/{:012}.json", prefix(&id), done.generation), manifest.to_bytes()).execute().await?;
-                        storage.put("ws", &next).await?;
+                        values.insert("ws".into(),json!(&next));crate::checkpoints::put(&storage,values).await?;
                         self.delete_chunks(&id, &done.garbage).await;
                         self.report(&next, Some(&manifest.name)).await;
                         let mut body = status_body(&id, &next, &origin);

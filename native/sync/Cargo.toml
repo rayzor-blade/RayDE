@@ -16,21 +16,28 @@ default = ["scan", "client"]
 # The desktop side: reads a working tree and runs `git`. Left out, the crate is pure data and rules and builds for wasm32 for the Worker.
 scan = ["dep:ignore", "merge"]
 # Three-way merging of two edited versions of a working tree, with Yrs doing the text merge.
-merge = ["dep:yrs", "dep:similar"]
+merge = ["live", "dep:similar"]
+# Shared text histories also run in the gateway, without filesystem or upload dependencies.
+live = ["dep:yrs"]
 # The upload client: scans a folder and sends it to a gateway.
-client = ["scan", "dep:ureq"]
+client = ["scan", "dep:ureq", "dep:base64"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 ureq = { version = "=2.12.1", default-features = false, features = ["tls", "json"], optional = true }
+base64 = { version = "0.22", optional = true }
 ignore = { version = "=0.4.23", optional = true }
 similar = { version = "=2.7.0", optional = true }
 yrs = { version = "=0.28.0", optional = true }
 
 [[example]]
 name = "push"
+required-features = ["client"]
+
+[[example]]
+name = "document"
 required-features = ["client"]
 
 [dev-dependencies]

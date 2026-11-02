@@ -1441,6 +1441,7 @@ dependencies = [
 name = "rayde-sync"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "ignore",
  "serde",
  "serde_json",
