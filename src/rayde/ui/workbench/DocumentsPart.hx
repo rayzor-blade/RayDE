@@ -169,7 +169,7 @@ class DocumentsPart {
 		Toaster.show({title:"Workspace sync paused", description:message, variant:Warning, duration:0,
 			action:{label:"Reopen Workspace", run:reopenSession}});
 
-	function reopenSession():Void {
+    public function reopenSession():Void {
 		if (wb.gone || reopening != null) return;
 		try {
 			for (file in wb.dirty.get()) if (sessionDocs.owns(file)) checkpointHistory(file);

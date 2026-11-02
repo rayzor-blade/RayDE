@@ -45,3 +45,17 @@ test("the public demo sends sign-in to the app without querying private account 
   await account.request("account.signin",{});
   assert.deepEqual(navigations,["https://app.rayde.org/auth/github/start"]);
 });
+
+test("Cloud Sync renewal obtains current CSRF authority without handling a publish credential", async () => {
+  const calls=[];
+  const account=new Accounts({location:{href:"https://app.rayde.org/"},pause:async()=>{},fetch:async(url,init)=>{
+    calls.push({url,init});return Response.json(url==="/api/session"?{user:{id:1},csrf:"renew-csrf"}:{id:"a".repeat(43),status:url.endsWith("/open")?"preparing":"ready"});
+  }});
+  await account.request("account.sync-reopen",{workspace:"a".repeat(43)});
+  assert.deepEqual(calls.map(call=>call.url),["/api/session","/api/sync/workspaces/"+"a".repeat(43)+"/open","/api/workspaces/"+"a".repeat(43)]);
+  assert.equal(calls[1].init.credentials,"same-origin");
+  assert.equal(calls[1].init.headers["X-RayDE-CSRF"],"renew-csrf");
+  assert.deepEqual(JSON.parse(calls[1].init.body),{});
+  await assert.rejects(account.request("account.sync-reopen",{workspace:"../other"}),/Choose a synced workspace/);
+  assert.equal(calls.length,3);
+});

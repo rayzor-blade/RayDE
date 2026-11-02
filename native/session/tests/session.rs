@@ -310,7 +310,7 @@ async fn nobody_edits_before_signing_in_with_a_credential_the_edge_signed() {
     peer.apply(c.request(json!({"op": "doc.open", "path": "a.txt"})).await["update"].as_str().unwrap());
     // Changing is not, and the refusal says where to sign in.
     let update = peer.edit(0, 0, "x");
-    for request in [json!({"op": "doc.update", "path": "a.txt", "update": update}), json!({"op": "fs.write", "path": "b.txt", "data": "no"}), json!({"op": "proc.spawn", "command": "true"})] {
+    for request in [json!({"op": "doc.update", "path": "a.txt", "update": update}), json!({"op": "fs.write", "path": "b.txt", "data": "no"}), json!({"op": "proc.spawn", "command": "true"}),json!({"op":"sync.publish"}),json!({"op":"sync.merge"})] {
         let reply = c.request(request).await;
         assert_eq!((reply["code"].as_str(), reply["login"].as_str()), (Some("auth-required"), Some("https://play.example/login")), "{reply}");
     }

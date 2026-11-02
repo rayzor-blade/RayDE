@@ -30,6 +30,8 @@ Hiding Terminal leaves commands running. Losing the session connection closes it
 
 Reconnecting to the same workspace restores document synchronization. Active extensions and language servers restart as needed; a language server you explicitly stopped stays stopped. A loaded app preview stays visible during an interruption and recovers automatically after reconnecting. Recovery can reload the app.
 
+Cloud Sync preserves saved edits and its merge base across session recovery. If publish access expires, choose **Reopen workspace** in Cloud Sync. Recovery errors pause saving to the cloud and keep your local files.
+
 If the workspace or signed-in account changes, RayDE pauses the old editor bindings and shows a warning. Choose **Reopen Workspace** to preserve local recovery data and reload the current workspace. If storage fails, the page stays open and reports the problem. Previous recovery data is kept separately from the new workspace.
 
 Avoid clearing browser storage when recovering unsaved edits: it contains local drafts, personal history and tab layout.

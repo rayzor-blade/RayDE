@@ -82,6 +82,7 @@ impl Programs for ChildPrograms {
             .envs(&self.environment)
             .envs(env)
             .env_remove("RAYDE_SYNC_TOKEN")
+            .env_remove("RAYDE_SYNC_CONTROL")
             .current_dir(directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

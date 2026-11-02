@@ -24,6 +24,7 @@ class SyncFeature {
 	var push = -1;
 	/** Whether the running job only asks for a browser session, which leaves the panel's state as it is. */
 	var opening = false;
+    var lastSyncStatus:Dynamic;
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -40,6 +41,7 @@ class SyncFeature {
 			run:() -> if (host.sidebarShown("sync")) host.hideSidebar() else show()});
 		c.sidebar("sync", panel);
 		c.onClose(() -> installed.remove(c));
+        c.onFrame(receiveSyncStatus);
 		refresh();
 	}
 
@@ -60,7 +62,7 @@ class SyncFeature {
 		}
 		#if wasm
 		var session = rayde.workspace.PageHost.session;
-		if (session != null && session.syncWriteback != null && saveBack.get() == null) saveBack.set({generation:session.syncWriteback.generation, busy:false, message:"", failed:false, canMerge:false, conflicts:[]});
+        receiveSyncStatus();
 		return;
 		#else
 		if (push >= 0) return;
@@ -71,9 +73,23 @@ class SyncFeature {
 		#end
 	}
 
+    function receiveSyncStatus():Void {
+        #if wasm
+        var session=rayde.workspace.PageHost.session;
+        var info:Dynamic=session==null ? null : session.cloudSyncStatus();
+        var current=saveBack.get();
+        if (info==lastSyncStatus || current!=null && current.busy) return;
+        lastSyncStatus=info;
+        if (info==null) {saveBack.set(null);return;}
+        saveBack.set({generation:info.generation,busy:false,message:info.message??"",failed:info.error!=null,canMerge:info.error=="conflict",conflicts:[],
+            available:info.ready!=false || info.error!=null && info.error!="sync-recovery",canReopen:info.error=="sync-auth"});
+        #end
+    }
+
 	function panel():Element
 		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve} onPick={pick} onApply={apply} onDiff={showDiff}
-			unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
+            onReopen={() -> {if (host.reopenWorkspace!=null) host.reopenWorkspace();}}
+            unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
 			onSync={sync} onCancel={cancel} onRetry={sync} onCopy={copy} onOpen={open} onShare={unavailable} onPause={unavailable}
 			onExport={unavailable} onExtend={unavailable} onDisconnect={unavailable} onDelete={unavailable}
@@ -316,7 +332,8 @@ class SyncFeature {
 		function failure(error:Dynamic):Void {
 			var message = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) ? cast(error, rayde.workspace.session.SessionClient.SessionFailure).message : Std.string(error) catch (_:Dynamic) "That did not finish.";
 			var moved = try Std.isOfType(error, rayde.workspace.session.SessionClient.SessionFailure) && cast(error, rayde.workspace.session.SessionClient.SessionFailure).code == "conflict" catch (_:Dynamic) false;
-			finish({generation:current.generation, busy:false, message:message, failed:true, canMerge:moved, conflicts:[]});
+            var code=try Std.isOfType(error,rayde.workspace.session.SessionClient.SessionFailure) ? cast(error,rayde.workspace.session.SessionClient.SessionFailure).code : "" catch (_:Dynamic) "";
+            finish({generation:current.generation, busy:false, message:message, failed:true, canMerge:moved, conflicts:[],available:code!="sync-recovery",canReopen:code=="sync-auth"});
 		}
 		session.requestAsync(op, params, 600).then(reply -> {
 			try {

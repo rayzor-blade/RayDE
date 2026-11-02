@@ -29,6 +29,7 @@ struct Service<P: Backend> {
     base: String,
     halt: watch::Sender<bool>,
 }
+struct SyncGrant {gateway:String,workspace:String,token:String,control:String,restored:Option<u64>}
 pub struct Running<P: Backend = Msb> {
     pub address: SocketAddr,
     service: Arc<Service<P>>,
@@ -405,8 +406,17 @@ impl<P: Backend> Service<P> {
         }
         Ok(())
     }
-    /// `sync` is the gateway, workspace, capability and generation a restored session saves back with; it goes into the session's environment only.
-    async fn launch_session(&self, record: &Record, sync: Option<(String, String, String, u64)>) -> Result<serde_json::Value> {
+    fn sync_grant(&self,record:&Record,request:&Open,restored:Option<u64>)->Result<Option<SyncGrant>> {
+        let Some(publish)=&request.publish else{return Ok(None)};
+        use hmac::{Hmac,Mac};
+        let mut mac=Hmac::<Sha256>::new_from_slice(self.secret.as_bytes()).map_err(|_|unavailable())?;
+        mac.update(format!("rayde-sync-control-v1\0{}\0{}\0{}",record.id,record.generation,record.token).as_bytes());
+        let control=mac.finalize().into_bytes().iter().map(|byte|format!("{byte:02x}")).collect();
+        let gateway=self.config.sync_gateway.as_ref().ok_or_else(unavailable)?.guest_address()?.as_str().trim_end_matches('/').to_string();
+        Ok(Some(SyncGrant{gateway,workspace:publish.workspace.clone(),token:publish.token.clone(),control,restored}))
+    }
+    /// Credentials enter only the session's environment; recovery loads its base from the private state disk.
+    async fn launch_session(&self, record: &Record, sync: Option<SyncGrant>) -> Result<serde_json::Value> {
         let mut args = vec![
             "--root", "/workspace/project", "--state-root", "/state",
             "--host", "127.0.0.1", "--port", "7070", "--raw-port", "7071",
@@ -414,8 +424,10 @@ impl<P: Backend> Service<P> {
         ];
         args.extend(toolchain::session_args(&self.config));
         let mut env = std::collections::BTreeMap::new();
-        if let Some((gateway, workspace, token, generation)) = sync {
-            env.extend([("RAYDE_SYNC_GATEWAY".into(), gateway), ("RAYDE_SYNC_WORKSPACE".into(), workspace), ("RAYDE_SYNC_TOKEN".into(), token), ("RAYDE_SYNC_GENERATION".into(), generation.to_string())]);
+        if let Some(grant) = sync {
+            env.extend([("RAYDE_SYNC_GATEWAY".into(), grant.gateway), ("RAYDE_SYNC_WORKSPACE".into(), grant.workspace), ("RAYDE_SYNC_TOKEN".into(), grant.token),
+                ("RAYDE_SYNC_CONTROL".into(),grant.control),("RAYDE_SYNC_FRESH".into(),if grant.restored.is_some(){"1"}else{"0"}.into()),
+                ("RAYDE_SYNC_GENERATION".into(),grant.restored.unwrap_or(0).to_string())]);
         }
         let command = sb::Command { program: "/opt/rayde-session".into(), args: args.into_iter().map(String::from).collect(), env };
         self.backend.detach(&record.sandbox, command).await?;
@@ -481,22 +493,25 @@ impl<P: Backend> Service<P> {
                 Ok(identity) => Some(identity),
                 Err(_) => {
                     if self.backend.ping(&record.sandbox).await.is_ok() {
-                        self.launch_session(&record, None).await.ok()
+                        self.launch_session(&record, self.sync_grant(&record,&request,None)?).await.ok()
                     } else {
                         None
                     }
                 }
             };
             if identity.is_none() || identity != record.identity {
-                if identity.is_none() && record.storage.is_some() {return self.recover(&cell, &mut record).await;}
+                if identity.is_none() && record.storage.is_some() {return self.recover(&cell, &mut record,&request).await;}
                 record.phase = "recovery-required".into();
                 self.registry.save(&record).await?;
                 return Err(Failure(StatusCode::CONFLICT, "The workspace needs recovery; its checkout will not be replaced."));
             }
+            if let Some(grant)=self.sync_grant(&record,&request,None)? {
+                tunnel::authorize(self.backend.as_ref(),&record.sandbox,&grant.control,&grant.gateway,&grant.workspace,&grant.token).await?;
+            }
             self.registry.save(&record).await?;
             return Ok(self.connection(&record));
         }
-        if record.phase == "recovering" || record.phase == "recovery-required" && record.storage.is_some() && record.identity.is_some() {return self.recover(&cell, &mut record).await;}
+        if record.phase == "recovering" || record.phase == "recovery-required" && record.storage.is_some() && record.identity.is_some() {return self.recover(&cell, &mut record,&request).await;}
         if record.phase == "recovery-required" {
             return Err(Failure(
                 StatusCode::CONFLICT,
@@ -593,10 +608,7 @@ impl<P: Backend> Service<P> {
         }
         self.boot(record, true).await?;
         self.backend.copy_in(&record.sandbox, project, "/workspace/project").await?;
-        let grant = match request.publish.as_ref().zip(restored).zip(self.config.sync_gateway.as_ref()) {
-            Some(((publish, generation), gateway)) => Some((gateway.guest_address()?.as_str().trim_end_matches('/').to_string(), publish.workspace.clone(), publish.token.clone(), generation)),
-            None => None,
-        };
+        let grant = self.sync_grant(record,request,restored)?;
         record.identity = Some(self.launch_session(record, grant).await?);
         Ok(())
     }
@@ -640,7 +652,7 @@ impl<P: Backend> Service<P> {
         Ok(())
     }
 
-    async fn recover(&self, cell: &Cell, record: &mut Record) -> Result<serde_json::Value> {
+    async fn recover(&self, cell: &Cell, record: &mut Record,request:&Open) -> Result<serde_json::Value> {
         if record.storage.is_none() || record.identity.is_none() {return Err(Failure(StatusCode::CONFLICT, "The workspace needs recovery; its checkout will not be replaced."));}
         let _work = self.registry.work(cell)?;
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_| unavailable())?.as_secs();
@@ -661,7 +673,7 @@ impl<P: Backend> Service<P> {
         self.registry.save(record).await?;
         let result = async {
             self.boot(record, false).await?;
-            let identity = self.launch_session(record, None).await?;
+            let identity = self.launch_session(record, self.sync_grant(record,request,None)?).await?;
             if Some(identity) != record.identity {return Err(Failure(StatusCode::CONFLICT, "The restored document-state identity does not match this workspace."));}
             Ok(())
         }.await;

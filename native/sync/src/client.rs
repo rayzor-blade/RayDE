@@ -58,11 +58,12 @@ pub struct Config {
 pub struct Failure {
     pub code: String,
     pub message: String,
+    pub status: Option<u16>,
 }
 
 impl Failure {
     fn new(code: &str, message: impl Into<String>) -> Self {
-        Failure { code: code.into(), message: message.into() }
+        Failure { code: code.into(), message: message.into(), status: None }
     }
 }
 
@@ -92,9 +93,10 @@ impl Gateway {
                 std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes).map_err(|e| Failure::new("network", e.to_string()))?;
                 Ok(bytes)
             }
-            Err(ureq::Error::Status(_, response)) => {
+            Err(ureq::Error::Status(status, response)) => {
                 let body: Value = response.into_json().unwrap_or(json!({}));
-                Err(Failure::new(body["code"].as_str().unwrap_or("refused"), body["message"].as_str().unwrap_or("The gateway refused the request.")))
+                let mut failure=Failure::new(if status == 401 { "auth-required" } else { body["code"].as_str().unwrap_or("refused") }, body["message"].as_str().unwrap_or("The gateway refused the request."));
+                failure.status=Some(status);Err(failure)
             }
             Err(error) => Err(Failure::new("network", format!("The gateway could not be reached: {error}"))),
         }
@@ -211,6 +213,10 @@ fn push(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bo
 
 /// Sends the chunks the gateway lacks and publishes the snapshot's manifest, dropping the upload if anything fails.
 fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<u64, Failure> {
+    upload_before(gateway, id, snapshot, emit, cancelled, &mut || Ok(()))
+}
+
+fn upload_before(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool, before: &mut dyn FnMut() -> Result<(), Failure>) -> Result<u64, Failure> {
     let declared: Vec<ChunkRef> = snapshot.chunks().map(|(hash, size)| ChunkRef { hash: hash.to_string(), size }).collect();
     emit(json!({"event": "scanned", "files": snapshot.manifest.files.len(), "bytes": snapshot.manifest.totals.bytes, "chunks": declared.len(), "omitted": snapshot.manifest.omissions.len()}));
 
@@ -241,6 +247,7 @@ fn upload(gateway: &Gateway, id: &str, snapshot: &Snapshot, emit: &mut dyn FnMut
                 Err(failure) => return Err(failure),
             }
         }
+        before()?;
         let published = gateway.call("POST", &format!("/workspaces/{id}/uploads/{lease}/publish"), Some(&snapshot.manifest.to_bytes()))?;
         serde_json::from_slice::<Value>(&published).map_err(|_| Failure::new("protocol", "The gateway's answer was not understood."))
     })();
@@ -311,6 +318,29 @@ fn cloud_manifest(gateway: &Gateway, id: &str) -> Result<Manifest, Failure> {
     Manifest::from_bytes(&gateway.call("GET", &format!("/workspaces/{id}/export/manifest"), None)?).map_err(|_| Failure::new("protocol", "The gateway's manifest was not understood."))
 }
 
+pub fn current_manifest(config: &Config) -> Result<Manifest, Failure> {
+    let (gateway, id) = existing_workspace(config)?;
+    cloud_manifest(&gateway, &id)
+}
+
+/// Captures a fresh restore's common base from the cloud, independently of edits arriving in its working tree.
+pub fn capture_cloud(config: &Config) -> Result<Base, Failure> {
+    let (gateway, id) = existing_workspace(config)?;
+    let manifest = cloud_manifest(&gateway, &id)?;
+    if config.base_generation.is_some_and(|expected| expected != manifest.generation) {
+        return Err(Failure::new("conflict", "The cloud copy changed before its merge base was captured. Reopen this workspace."));
+    }
+    let mut texts = BTreeMap::new();
+    let mut bytes = 0;
+    for file in manifest.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
+        if bytes + file.size > MAX_BASE_BYTES { break; }
+        let content = fetch_file(&gateway, &id, file).ok_or_else(|| Failure::new("network", "The common base could not be read."))?;
+        bytes += file.size;
+        texts.insert(file.path.clone(), content);
+    }
+    Ok(Base { manifest, texts })
+}
+
 /// Records what the tree at `config.root` is a copy of. Call it as soon as the tree is restored, before anything edits it.
 pub fn capture(config: &Config) -> Result<Base, Failure> {
     let (gateway, id) = existing_workspace(config)?;
@@ -325,6 +355,11 @@ pub fn capture(config: &Config) -> Result<Base, Failure> {
 /// Publishes a restored tree, which has no Git directory, into the workspace it came from, as the next generation after `base`. Refuses when the cloud
 /// copy has moved on, so nothing is overwritten; the gateway's compare-and-swap catches a push that lands in between. Returns what the tree now is a copy of.
 pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool) -> Result<Base, Failure> {
+    save_before(config, base, emit, cancelled, &mut |_| Ok(()))
+}
+
+/// Calls `before` with the complete prospective base before the publish request can advance the cloud generation.
+pub fn save_before(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() -> bool, before: &mut dyn FnMut(&Base) -> Result<(), Failure>) -> Result<Base, Failure> {
     let (gateway, id) = existing_workspace(config)?;
     let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
     let current = status["generation"].as_u64().unwrap_or(0);
@@ -347,8 +382,10 @@ pub fn save(config: &Config, base: &Base, emit: &mut dyn FnMut(Value), cancelled
         },
     )
     .map_err(|e| Failure::new("scan", e.to_string()))?;
-    upload(&gateway, &id, &snapshot, emit, cancelled)?;
-    base_from(&snapshot)
+    let next = base_from(&snapshot)?;
+    let generation = upload_before(&gateway, &id, &snapshot, emit, cancelled, &mut || before(&next))?;
+    if generation != next.generation() { return Err(Failure::new("protocol", "The gateway acknowledged another generation.")); }
+    Ok(next)
 }
 
 /// What a published snapshot is a copy of: its manifest and the text of its small files, read back from where the scan found them.
@@ -519,6 +556,11 @@ pub fn merge_cloud(config: &Config, base: &Base) -> Result<(Base, MergeReport), 
 /// `merge_cloud`, where `choices` says which side wins each file both sides edited in the same place. With a choice for every such file the merge goes
 /// through; without, nothing is changed and they are listed.
 pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, String>) -> Result<(Base, MergeReport), Failure> {
+    merge_before(config, base, choices, &mut |_, _| Ok(()))
+}
+
+/// Calls `before` with the new common base and final writes before changing the working tree.
+pub fn merge_before(config: &Config, base: &Base, choices: &BTreeMap<String, String>, before: &mut dyn FnMut(&Base, &[Action]) -> Result<(), Failure>) -> Result<(Base, MergeReport), Failure> {
     let (gateway, id) = existing_workspace(config)?;
     let status = gateway.json("GET", &format!("/workspaces/{id}"), None)?;
     let current = status["generation"].as_u64().unwrap_or(0);
@@ -589,6 +631,15 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
             return Err(Failure::new("protocol", "The cloud copy names a path this tree cannot hold."));
         }
     }
+    let mut texts = BTreeMap::new();
+    let mut kept_bytes = 0;
+    for file in theirs.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
+        if kept_bytes + file.size > MAX_BASE_BYTES { break; }
+        let kept = fetched.get(&file.path).cloned().or_else(|| base.manifest.files.iter().find(|b| b.path == file.path && b.hash == file.hash).and_then(|_| base.texts.get(&file.path).cloned()));
+        if let Some(bytes) = kept { kept_bytes += file.size; texts.insert(file.path.clone(), bytes); }
+    }
+    let next = Base { manifest: theirs, texts };
+    before(&next, &actions)?;
     for action in actions {
         match action {
             Action::Write { path, content, executable } => {
@@ -622,15 +673,7 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
             }
         }
     }
-    // From here the tree is based on the cloud's current generation, and what the next merge starts from is that generation's text.
-    let mut texts = BTreeMap::new();
-    for file in theirs.files.iter().filter(|file| mergeable(file) && file.size as usize <= MAX_TEXT) {
-        let kept = fetched.get(&file.path).cloned().or_else(|| base.manifest.files.iter().find(|b| b.path == file.path && b.hash == file.hash).and_then(|_| base.texts.get(&file.path).cloned()));
-        if let Some(bytes) = kept {
-            texts.insert(file.path.clone(), bytes);
-        }
-    }
-    Ok((Base { manifest: theirs, texts }, report))
+    Ok((next, report))
 }
 
 /// An upload running on its own thread. Events are read with `poll`; the last one is `published` or `error`.

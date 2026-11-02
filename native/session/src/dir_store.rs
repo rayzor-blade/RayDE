@@ -108,6 +108,15 @@ impl DirStore {
         self.state.join(digest.iter().map(|b| format!("{b:02x}")).collect::<String>() + ".ydoc")
     }
 
+    pub(crate) async fn read_sync_state(&self,key:&str,limit:usize)->Result<Option<Vec<u8>>> {
+        use tokio::io::AsyncReadExt;
+        let file=match tokio::fs::File::open(self.state_file(key)).await {
+            Ok(file)=>file,Err(error) if error.kind()==io::ErrorKind::NotFound=>return Ok(None),Err(error)=>return Err(io_error(error)),
+        };
+        let mut bytes=Vec::new();file.take(limit as u64+1).read_to_end(&mut bytes).await.map_err(io_error)?;
+        if bytes.len()>limit{return Err(crate::sync_state::invalid());}Ok(Some(bytes))
+    }
+
     fn temporary(&self, target: &Path) -> PathBuf {
         let mut name = target.file_name().map(|n| n.to_os_string()).unwrap_or_default();
         name.push(format!(".{}.{}.tmp", std::process::id(), self.counter.fetch_add(1, Ordering::Relaxed)));

@@ -81,6 +81,11 @@ impl<S: FileStore> Workspace<S> {
         #[cfg(feature = "server")] if let Some(writeback)=self.writeback.get(){return writeback.describe();}
         Value::Null
     }
+    #[cfg(feature="server")]
+    pub(crate) fn sync_changed(&self) {
+        let message=json!({"ev":"sync.status","syncWriteback":self.writeback_state()}).to_string();
+        for subscriber in self.connections.lock().unwrap().values(){(subscriber.out)(message.clone());}
+    }
     #[cfg(feature = "server")]
     pub(crate) fn set_previews(&self,previews:Arc<crate::previews::Previews>){let _=self.previews.set(previews);}
     fn previews_available(&self)->bool {
@@ -223,7 +228,7 @@ impl<S: FileStore> Connection<S> {
         let workspace = self.workspace.clone();
         let store = &workspace.store;
         // Looking is open; changing, saving and running are for someone who has signed in.
-        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "doc.restore" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill") || op.starts_with("term.") || op.starts_with("preview.");
+        let changes = matches!(op, "fs.write" | "fs.mkdir" | "fs.remove" | "fs.rename" | "doc.update" | "doc.save" | "doc.restore" | "proc.spawn" | "proc.write" | "proc.close-input" | "proc.kill" | "sync.publish" | "sync.merge") || op.starts_with("term.") || op.starts_with("preview.");
         if changes && workspace.authority.is_some() && self.identity.is_none() {
             return Err(SessionError::new("auth-required", "Sign in with GitHub to make changes."));
         }
@@ -237,6 +242,17 @@ impl<S: FileStore> Connection<S> {
             if let Some(writeback) = workspace.writeback.get() { return writeback.remote(store.root().into(), text(request, "path")?.to_string()).await; }
             return Err(SessionError::new("no-sync", "This workspace has no cloud copy to read."));
         }
+        if op == "sync.authorize" {
+            #[cfg(feature = "server")]
+            if let Some(writeback)=workspace.writeback.get(){
+                let reply=writeback.authorize(text(request,"control")?,text(request,"gateway")?,text(request,"workspace")?,text(request,"token")?)?;
+                let weak=Arc::downgrade(&workspace);let writeback=writeback.clone();
+                tokio::spawn(async move{writeback.initialize().await;if let Some(workspace)=weak.upgrade(){workspace.sync_changed();}});
+                return Ok(reply);
+            }
+            return Err(SessionError::new("no-sync","This workspace has no cloud copy to authorize."));
+        }
+        if op == "sync.status" {return Ok(json!({"syncWriteback":workspace.writeback_state()}));}
         if op == "sync.publish" || op == "sync.merge" {
             #[cfg(feature = "server")]
             if let Some(writeback) = workspace.writeback.get() { return if op == "sync.publish" { writeback.publish(store.root().into()).await } else { writeback.merge(store.root().into(), request.get("choices").and_then(Value::as_object).map(|choices| choices.iter().filter_map(|(path, choice)| choice.as_str().map(|choice| (path.clone(), choice.to_string()))).collect()).unwrap_or_default()).await }; }

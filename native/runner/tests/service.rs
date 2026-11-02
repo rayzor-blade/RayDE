@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Arc,
+    sync::{Arc,Mutex},
     time::Duration,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -32,10 +32,10 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 /// What a guest runs: a shell that accepts the volume identity check, and a session bridge that answers the hello frame.
-fn guest() -> Fake {
+fn guest(controls:Arc<Mutex<Vec<Value>>>) -> Fake {
     Fake::new(Capabilities { persistent_volumes: true, network_allowlist: true, ..Default::default() })
         .with_program("/bin/sh", |_, _, _, _| async { 0 })
-        .with_program("/opt/rayde-session", |_, command, mut stdin, mut stdout| async move {
+        .with_program("/opt/rayde-session", move |_, command, mut stdin, mut stdout| {let controls=controls.clone();async move {
             if command.args.first().map(String::as_str) != Some("bridge") {
                 return 0;
             }
@@ -45,11 +45,17 @@ fn guest() -> Fake {
                 return 1;
             }
             let reply = json!({"id":1,"ok":true,"root":"/workspace/project","privateJournals":1,"cacheIdentity":{"version":1,"authority":"fixture","workspace":"fixture"}});
+            let event=json!({"ev":"sync.status","syncWriteback":{"workspace":"fixture","ready":true}});
+            let _ = stdout.write_all(&rayde_session::framing::frame(&event.to_string())).await;
             let _ = stdout.write_all(&rayde_session::framing::frame(&reply.to_string())).await;
-            let mut rest = Vec::new();
-            let _ = stdin.read_to_end(&mut rest).await;
+            while let Ok(length)=stdin.read_u32().await {
+                let mut bytes=vec![0;length as usize];if stdin.read_exact(&mut bytes).await.is_err(){return 1;}
+                let request:Value=serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(request["op"],"sync.authorize");controls.lock().unwrap().push(request.clone());
+                stdout.write_all(&rayde_session::framing::frame(&json!({"id":request["id"],"ok":true}).to_string())).await.unwrap();
+            }
             0
-        })
+        }})
 }
 
 struct Fixture {
@@ -58,6 +64,8 @@ struct Fixture {
     base: String,
     http: reqwest::Client,
     running: Option<rayde_runner::Running<Fake>>,
+    controls:Arc<Mutex<Vec<Value>>>,
+    config: Config,
 }
 
 impl Fixture {
@@ -103,11 +111,12 @@ impl Fixture {
             local_repositories: vec![local(1, 111), local(2, 111), local(1, 222)],
             sync_gateway,
         };
-        let fake = Arc::new(guest());
-        let running = start_with(config, fake.clone()).await.unwrap();
+        let controls=Arc::new(Mutex::new(vec![]));
+        let fake = Arc::new(guest(controls.clone()));
+        let running = start_with(config.clone(), fake.clone()).await.unwrap();
         let base = format!("http://{}", running.address);
         let http = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().unwrap();
-        Self { _temp: temp, fake, base, http, running: Some(running) }
+        Self { _temp: temp, fake, base, http, running: Some(running),controls,config }
     }
 
     async fn open(&self, owner: u64, repository: u64) -> (u16, Value) {
@@ -147,6 +156,13 @@ impl Fixture {
         if let Some(running) = self.running.take() {
             running.shutdown().await;
         }
+    }
+
+    async fn restart(&mut self) {
+        self.running.take().unwrap().shutdown().await;
+        let running=start_with(self.config.clone(),self.fake.clone()).await.unwrap();
+        self.base=format!("http://{}",running.address);
+        self.running=Some(running);
     }
 }
 
@@ -288,7 +304,7 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     let url = serve_snapshot(&folder, &id).await;
 
     let guest_url = "https://sync.example.test:9443";
-    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url: url.clone(), secret: GATEWAY_SECRET.into(), guest_url: Some(guest_url.into()) })).await;
+    let mut fixture = Fixture::with_gateway(2, Some(SyncGateway { url: url.clone(), secret: GATEWAY_SECRET.into(), guest_url: Some(guest_url.into()) })).await;
     let mut body = sync_body(id.as_str());
     body["publish"] = json!({"token": "rsp1.capability-for-the-test", "workspace": id.as_str()});
     let post = |body: &Value| fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(body).send();
@@ -304,19 +320,60 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     assert_eq!(launched.get("RAYDE_SYNC_TOKEN").map(String::as_str), Some("rsp1.capability-for-the-test"));
     assert_eq!(launched.get("RAYDE_SYNC_GATEWAY").map(String::as_str), Some(guest_url));
     assert_eq!(launched.get("RAYDE_SYNC_GENERATION").map(String::as_str), Some("1"), "the generation the snapshot was restored from");
+    assert_eq!(launched.get("RAYDE_SYNC_FRESH").map(String::as_str),Some("1"));
+    let control=launched["RAYDE_SYNC_CONTROL"].clone();assert_eq!(control.len(),64);
+    assert!(!connection.to_string().contains(&control));
+    {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::{connect_async, tungstenite::{client::IntoClientRequest, Message}};
+        let mut request=format!("{}/workspaces/{id}/session",fixture.base.replace("http:","ws:")).into_client_request().unwrap();
+        request.headers_mut().insert("Authorization",format!("Bearer {SECRET}").parse().unwrap());
+        let (mut socket,_)=connect_async(request).await.unwrap();
+        socket.send(Message::Text(json!({"id":1,"op":"hello","token":connection["token"]}).to_string().into())).await.unwrap();
+        let event=socket.next().await.unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(event.to_text().unwrap()).unwrap()["ev"],"sync.status");
+        let hello=socket.next().await.unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(hello.to_text().unwrap()).unwrap()["ok"],true);
+        socket.send(Message::Text(json!({"id":2,"op":"sync.authorize","control":control,"token":"not-a-runner-grant"}).to_string().into())).await.unwrap();
+        let refused=socket.next().await.unwrap().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(refused.to_text().unwrap()).unwrap()["code"],"forbidden");
+        assert!(fixture.controls.lock().unwrap().is_empty());
+        socket.close(None).await.unwrap();
+    }
     // A capability for some other workspace is refused.
     let mut foreign = body.clone();
     foreign["publish"]["workspace"] = json!(rayde_sync::ids::WorkspaceId::from_random(&[8; 32]).as_str());
     assert_eq!(post(&foreign).await.unwrap().status().as_u16(), 400);
-    // Opening again restores afresh into the same workspace.
+    // Reopening a live workspace renews access without replacing its files.
+    body["publish"]["token"]=json!("rsp1.renewed-capability-for-the-test");
     assert_eq!(post(&body).await.unwrap().status().as_u16(), 200);
+    assert_eq!(fixture.controls.lock().unwrap().last().unwrap()["token"],body["publish"]["token"]);
+    assert_eq!(fixture.controls.lock().unwrap().last().unwrap()["control"],control);
     assert_eq!(fixture.sandboxes().await.len(), 1);
     let sandbox = fixture.sandboxes().await.pop().unwrap();
     assert_eq!(fixture.fake.spec(&sandbox).unwrap().network, rayde_sandbox::Network::Allow(vec!["sync.example.test".into()]));
+    fixture.fake.remove(&sandbox).await.unwrap();
+    let recovered=post(&body).await.unwrap();assert_eq!(recovered.status().as_u16(),200);
+    let relaunched=fixture.fake.detached().into_iter().filter(|(_,command)|command.program=="/opt/rayde-session").last().unwrap().1.env;
+    assert_eq!(relaunched["RAYDE_SYNC_FRESH"],"0");assert_eq!(relaunched["RAYDE_SYNC_GENERATION"],"0");
+    assert_eq!(relaunched["RAYDE_SYNC_TOKEN"],"rsp1.renewed-capability-for-the-test");
+    assert_ne!(relaunched["RAYDE_SYNC_CONTROL"],control);
+    let records=fixture._temp.path().join("state/records");
+    for file in std::fs::read_dir(records).unwrap(){let value=std::fs::read_to_string(file.unwrap().path()).unwrap();assert!(!value.contains("capability-for-the-test")&&!value.contains(&control));}
     // The workspace is named by its own id: another id with the same repository block is refused.
     let mut wrong = body.clone();
     wrong["id"] = json!(workspace_id(1, 111));
     assert_eq!(post(&wrong).await.unwrap().status().as_u16(), 400);
+    let before=fixture.fake.detached().len();
+    fixture.restart().await;
+    body["publish"]["token"]=json!("rsp1.after-runner-restart");
+    let reopened=fixture.http.post(format!("{}/workspaces/open",fixture.base)).bearer_auth(SECRET).json(&body).send().await.unwrap();
+    assert_eq!(reopened.status().as_u16(),200);
+    assert_eq!(fixture.fake.detached().len(),before,"runner restart reuses the live guest");
+    let controls=fixture.controls.lock().unwrap();
+    assert_eq!(controls.last().unwrap()["token"],"rsp1.after-runner-restart");
+    assert_eq!(controls.last().unwrap()["control"],relaunched["RAYDE_SYNC_CONTROL"]);
+    drop(controls);
     fixture.stop().await;
 }
 

@@ -189,20 +189,22 @@ async fn session_environment_reaches_processes_and_terminals_with_explicit_proce
     options
         .environment
         .insert("RAYDE_SESSION_ENV_TEST".into(), "configured".into());
+    options.environment.insert("RAYDE_SYNC_TOKEN".into(),"private-publish-token".into());
+    options.environment.insert("RAYDE_SYNC_CONTROL".into(),"private-control-token".into());
     let running = start(options).await.unwrap();
     let mut client = Client::hello(&running).await;
-    let process=client.request(json!({"op":"proc.spawn","command":"/bin/sh","args":["-c","printf '%s' \"$RAYDE_SESSION_ENV_TEST\""],"env":{"RAYDE_SESSION_ENV_TEST":"override"}})).await;
+    let process=client.request(json!({"op":"proc.spawn","command":"/bin/sh","args":["-c","printf '%s' \"$RAYDE_SESSION_ENV_TEST,$RAYDE_SYNC_TOKEN,$RAYDE_SYNC_CONTROL\""],"env":{"RAYDE_SESSION_ENV_TEST":"override","RAYDE_SYNC_CONTROL":"request-control-token"}})).await;
     assert_eq!(process["ok"], true);
     let event = client.event("proc.out").await;
     assert_eq!(
         B64.decode(event["data"].as_str().unwrap()).unwrap(),
-        b"override"
+        b"override,,"
     );
-    let opened=client.request(json!({"op":"term.open","key":"environment","program":"/bin/sh","args":["-c","printf 'env:%s\\n' \"$RAYDE_SESSION_ENV_TEST\"; sleep 1"]})).await;
+    let opened=client.request(json!({"op":"term.open","key":"environment","program":"/bin/sh","args":["-c","printf 'env:%s token:%s control:%s\\n' \"$RAYDE_SESSION_ENV_TEST\" \"$RAYDE_SYNC_TOKEN\" \"$RAYDE_SYNC_CONTROL\"; sleep 1"]})).await;
     screen(
         &mut client,
         opened["tid"].as_u64().unwrap(),
-        "env:configured",
+        "env:configured token: control:",
     )
     .await;
     client.close().await;

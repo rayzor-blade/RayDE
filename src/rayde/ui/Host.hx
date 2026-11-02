@@ -35,6 +35,7 @@ typedef Host = {
 	openExternal:String->Void,
 	/** Writes every unsaved editor buffer, then runs the callback; it does not run if a file changed while saving. */
 	saveBefore:(Void->Void) -> Void,
+    ?reopenWorkspace:Void->Void,
 	/** Opens a file of the cloud copy against the local file at a path, given the cloud's text. */
 	openDiff:(String, String) -> Void,
 	showSidebar:String->Void,

@@ -15,7 +15,7 @@ import rayde.sync.SyncState.ConflictItem;
 import rayde.sync.SyncState.Sync;
 
 /** What the panel shows in a browser session that is a restored copy of a cloud workspace: which generation it is a copy of, and how the last save went. */
-typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool, canMerge:Bool, conflicts:Array<ConflictItem>};
+typedef SaveBack = {generation:Int, busy:Bool, message:String, failed:Bool, canMerge:Bool, conflicts:Array<ConflictItem>, ?available:Bool, ?canReopen:Bool};
 
 typedef SyncPanelProps = {
 	workspace:String,
@@ -25,6 +25,7 @@ typedef SyncPanelProps = {
 	?unavailableMessage:String,
 	?saveBack:Signal<Null<SaveBack>>,
 	?onSave:Void->Void,
+    ?onReopen:Void->Void,
 	?onMerge:Void->Void,
 	onPull:Void->Void,
 	/** Settles the files both sides edited in the same place: "mine" keeps the local file, "theirs" takes the remote one. */
@@ -246,7 +247,8 @@ class SyncPanel extends Component<SyncPanelProps> {
 			</div>
 			<div class="rayde-sync-actions">
 				<if {saved.canMerge && saved.conflicts.length == 0}><button id="rayde-sync-merge" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onMerge()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Merge</button></if>
-				<button id="rayde-sync-save" size={Sm} disabled={saved.busy} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Working…" : "Save to cloud"}</button>
+                <if {saved.canReopen == true}><button id="rayde-sync-reopen" variant={Outline} size={Sm} disabled={saved.busy} onClick={_ -> props.onReopen()}><icon document={Icons.REFRESH_LINE} class="size-3.5 shrink-0"/>Reopen workspace</button></if>
+                <button id="rayde-sync-save" size={Sm} disabled={saved.busy || saved.available == false} onClick={_ -> props.onSave()}><icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-3.5 shrink-0"/>${saved.busy ? "Working…" : "Save to cloud"}</button>
 			</div>
 		</div>;
 

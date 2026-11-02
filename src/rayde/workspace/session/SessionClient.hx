@@ -19,7 +19,7 @@ class SessionClient {
 	public var syntax(default, null) = false;
 	public var appPreviews(default, null) = false;
 	/** The cloud workspace this session's tree was restored from and the generation it is a copy of, when it can save back to it. */
-	public var syncWriteback(default, null):Null<{workspace:String, generation:Int}>;
+    public var syncWriteback(default, null):Null<{workspace:String, generation:Int, ?ready:Bool, ?message:String, ?error:String}>;
     public var webPreviews(default,null) = false;
     public var hostSystem(default,null) = "";
     public var hostArchitecture(default,null) = "";
@@ -73,7 +73,7 @@ class SessionClient {
 			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
 			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
 			client.appPreviews = hello.appPreviews == true;
-			if (hello.syncWriteback != null) client.syncWriteback = {workspace:hello.syncWriteback.workspace, generation:hello.syncWriteback.generation};
+        if (hello.syncWriteback != null) client.syncWriteback = cast hello.syncWriteback;
             client.webPreviews=hello.webPreviews==true || client.appPreviews;
             if(hello.host!=null){client.hostSystem=switch(hello.host.os:String){case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};client.hostArchitecture=hello.host.arch;}
 			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
@@ -98,6 +98,7 @@ class SessionClient {
 	public function isClosed():Bool { mutex.acquire(); var value = closed; mutex.release(); return value; }
 	public function isOnline():Bool { mutex.acquire(); var value = !closed && online; mutex.release(); return value; }
 	public function connectionEpoch():Int { mutex.acquire(); var value = generation; mutex.release(); return value; }
+    public function cloudSyncStatus() { mutex.acquire(); var value = syncWriteback; mutex.release(); return value; }
 
 	public function subscribe(listener:Dynamic->Void):Void->Void {
 		mutex.acquire(); listeners.push(listener); mutex.release();
@@ -176,6 +177,9 @@ class SessionClient {
 				if (Std.isOfType(message.generation,Int)) generation = message.generation;
 				if (Std.isOfType(message.documentMoves,Bool)) documentMoves = documentBridge && message.documentMoves == true;
 				online = true;
+                if (Reflect.hasField(message,"syncWriteback")) syncWriteback = cast message.syncWriteback;
+            } else if (message.ev == "sync.status") {
+                syncWriteback = cast message.syncWriteback;
 			}
 			if (message.id != null) {
 				var pending = waiting.get(message.id); waiting.remove(message.id); mutex.release(); changed.release();

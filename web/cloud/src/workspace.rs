@@ -750,7 +750,7 @@ impl WorkspaceSession {
                 value = Some(record);
             }
             let mut record = value.unwrap();
-            // Opening a synced workspace restores it again: a newer generation replaces an older copy, and a compute that has gone away is replaced.
+            // Opening reauthorizes a synced workspace and recovers its compute without replacing its working files.
             let wanted = &data["repository"]["sync"];
             if wanted.is_object() && record["repository"]["sync"] != *wanted {
                 record["repository"] = data["repository"].clone();

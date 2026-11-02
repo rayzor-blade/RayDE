@@ -1,9 +1,10 @@
 /** Browser account controls. Credentials and workspace authority stay at the Rust edge. */
 export class Accounts {
-  constructor({ fetch = globalThis.fetch.bind(globalThis), location = globalThis.location, later = fn => setTimeout(fn, 60) } = {}) {
+  constructor({ fetch = globalThis.fetch.bind(globalThis), location = globalThis.location, later = fn => setTimeout(fn, 60), pause = ms => new Promise(resolve => setTimeout(resolve,ms)) } = {}) {
     this.fetch = fetch;
     this.location = location;
     this.later = later;
+    this.pause = pause;
     this.csrf = null;
     this.installUrl = null;
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location?.href ?? "http://localhost").hostname);
@@ -34,6 +35,17 @@ export class Accounts {
     if (op === "account.repositories") return this.api("/api/repositories" + (params.cursor ? "?cursor=" + encodeURIComponent(params.cursor) : ""));
     if (op === "account.open") return this.api("/api/workspaces/open", { repository: params.repository });
     if (op === "account.workspace") return this.api("/api/workspaces/" + encodeURIComponent(params.workspace));
+    if (op === "account.sync-reopen") {
+      if (!/^[\w-]{43}$/.test(params.workspace)) throw new Error("Choose a synced workspace.");
+      await this.request("account.status", {});
+      let workspace=await this.api("/api/sync/workspaces/" + params.workspace + "/open", {});
+      for (let attempt=0; workspace.status==="preparing" && attempt<100; attempt++) {
+        await this.pause(100);
+        workspace=await this.request("account.workspace",params);
+      }
+      if (workspace.status!=="ready") throw new Error(workspace.message??"The workspace is still starting. Try reopening again.");
+      return workspace;
+    }
     if (op === "account.signin") { this.later(() => this.location.assign(this.landing ? "https://app.rayde.org/auth/github/start" : "/auth/github/start")); return {}; }
     if (op === "account.install") {
       const url = new URL(this.installUrl ?? "https://github.com");

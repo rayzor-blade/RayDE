@@ -21,6 +21,8 @@ mod previews;
 #[cfg(feature = "server")]
 mod writeback;
 #[cfg(feature = "server")]
+mod sync_state;
+#[cfg(feature = "server")]
 mod preview_cache;
 #[cfg(feature = "server")]
 mod cache_identity;

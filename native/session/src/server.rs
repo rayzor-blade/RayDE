@@ -190,11 +190,10 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
     let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools,&options.environment).await?)} else {None};
     if let Some(previews)=&previews {workspace.set_previews(previews.registry.clone());}
-    if let Some(writeback)=crate::writeback::Writeback::from_env() {
-        // What the tree is a copy of has to be recorded before anything edits it.
-        let (recorder, root) = (writeback.clone(), store.root().to_path_buf());
-        tokio::task::spawn_blocking(move || recorder.capture(root));
-        workspace.set_writeback(writeback);
+    if let Some(writeback)=crate::writeback::Writeback::from_env(store.clone()) {
+        workspace.set_writeback(writeback.clone());
+        let weak=Arc::downgrade(&workspace);
+        tokio::spawn(async move{writeback.initialize().await;if let Some(workspace)=weak.upgrade(){workspace.sync_changed();}});
     }
     workspace.set_sources(sources);
     workspace.set_syntax(Arc::new(crate::syntax::NativeSyntax::new()));

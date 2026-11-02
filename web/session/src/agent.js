@@ -61,10 +61,14 @@ export const start = ask => serve(ask, {
     };
     const documents = client ? new EditorDocuments(client, answer) : null;
     const previews = client ? new AppPreviews(client,undefined,answer) : null;
-    for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update"]) client?.on(event, answer);
+    for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update", "sync.status"]) client?.on(event, answer);
+    const syncStatus = () => { void client?.request("sync.status").then(reply => {
+      if (Object.hasOwn(reply,"syncWriteback")) client.receive({ev:"sync.status",syncWriteback:reply.syncWriteback});
+    }).catch(()=>{}); };
     client?.on("disconnected", () => {previews?.connection(false);answer({ ev: "session.disconnected", generation:client.generation });});
     client?.on("context-changed", ({message}) => {previews?.connection(false);previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
-    client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves });});
+    client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves, syncWriteback:client.hello?.syncWriteback??null });syncStatus();});
+    if (client) syncStatus();
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
@@ -91,10 +95,15 @@ export const start = ask => serve(ask, {
             reply = previews.update(request);
             if (request.id === undefined) return;
           }
-          else if (request.op === "page.reopen") reply = await reopenWorkspace(client, async () => {
-            await files("readonly", store => store.count());
-            if (storageFailure) throw storageFailure;
-          });
+          else if (request.op === "page.reopen") {
+            const status = client && !client.invalidated ? (await client.request("sync.status")).syncWriteback : null;
+            const renew = status?.error === "sync-auth" && status.workspace === entry.workspace
+              ? () => accounts.request("account.sync-reopen", {workspace:status.workspace}) : undefined;
+            reply = await reopenWorkspace(client, async () => {
+              await files("readonly", store => store.count());
+              if (storageFailure) throw storageFailure;
+            }, {renew});
+          }
           else if (request.op === "page.external") {
             if (typeof request.url !== "string" || !/^(https?:\/\/|mailto:)/i.test(request.url)) throw new Error("Unsupported link.");
             globalThis.open(request.url,"_blank","noopener,noreferrer"); return;

@@ -456,6 +456,7 @@ export class SessionClient {
         doc.listeners.forEach((listener) => listener("remote"));
       }
     } else if (message.ev) {
+      if (message.ev === "sync.status" && this.hello) this.hello = {...this.hello, syncWriteback:message.syncWriteback??null};
       this.emit(message.ev, message);
     }
   }

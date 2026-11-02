@@ -185,11 +185,14 @@ test("a synced workspace opens in a browser session on the restored files", asyn
   await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); socket.once("unexpected-response", (_, response) => fail(new Error(`socket ${response.statusCode}`))); setTimeout(() => fail(new Error("the socket did not open")), 10000); });
   socket.close();
 
+  const restored = join(data, "workspaces", id, "1", name, "notes.txt");
+  await writeFile(restored, "local saved edit");
   await writeFile(join(root, "notes.txt"), "changed text");
   assert.equal(push(root, base).last.generation, 2);
   assert.equal((await api(`/api/sync/workspaces/${id}/open`, { method: "POST" })).status, 200);
-  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready" && (await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8").catch(() => ""))) break; await new Promise(r => setTimeout(r, 100)); }
-  assert.equal(await readFile(join(data, "workspaces", id, "2", name, "notes.txt"), "utf8"), "changed text", "a newer generation is restored again");
+  for (let i = 0; i < 100; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status === "ready") break; await new Promise(r => setTimeout(r, 100)); }
+  assert.equal(state.status,"ready",JSON.stringify(state));
+  assert.equal(await readFile(restored,"utf8"),"local saved edit","reopening renews access without replacing working files with the newer snapshot");
 });
 
 test("a restored session saves back with a capability for its own workspace, and only that", async t => {
@@ -299,7 +302,8 @@ test("a restored session saves its edits back through its own socket, and a newe
   t.after(() => socket.close());
   const hello = await ask("hello", { token: sessionToken });
   assert.equal(hello.ok, true, JSON.stringify(hello));
-  assert.deepEqual(hello.syncWriteback, { workspace: id, generation: 1 }, "the session knows what it was restored from and not the credential");
+  assert.equal(hello.syncWriteback.workspace,id);
+  assert.equal(hello.syncWriteback.generation,1,"the session knows what it was restored from and not the credential");
   assert.ok(!JSON.stringify(hello).includes("rsp1."));
 
   // Edit in the restored tree, which has no .git, and save it back.
@@ -330,17 +334,24 @@ test("a restored session merges the cloud copy's newer generation: different pla
   const { spawn } = await import("node:child_process");
   const { readFile } = await import("node:fs/promises");
   const port = await freePort(), base = `http://127.0.0.1:${port}`, data = await mkdtemp(join(tmpdir(), "rayde-sync-dev-"));
-  const server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
-  let log = "";
-  server.stdout.on("data", chunk => { log += String(chunk); });
-  t.after(async () => {
+  let server, log = "";
+  const stop = async () => {
+    if (!server || server.exitCode !== null || server.signalCode !== null) return;
     const exited = new Promise(done => server.once("exit", done));
-    server.kill();
-    await exited;
-    server.stdout.destroy();
-    await rm(data, { recursive: true, force: true });
-  });
-  await new Promise((done, fail) => { const wait = setInterval(() => log.includes("Cloud Sync gateway") && (clearInterval(wait), done()), 50); server.once("exit", () => fail(new Error("the dev gateway exited"))); });
+    server.kill(); await exited; server.stdout.destroy();
+  };
+  const start = async () => {
+    log = "";
+    server = spawn("node", ["dev/sync-dev.mjs", "--port", String(port), "--data", data], { stdio: ["ignore", "pipe", "inherit"] });
+    server.stdout.on("data", chunk => { log += String(chunk); });
+    await new Promise((done, fail) => {
+      const timer = setTimeout(() => fail(Error("The dev gateway did not start")), 10000);
+      const output = () => { if (log.includes("Cloud Sync gateway")) { clearTimeout(timer); server.stdout.off("data", output); done(); } };
+      server.stdout.on("data", output); server.once("exit", () => { clearTimeout(timer); fail(Error("The dev gateway exited")); });
+    });
+  };
+  t.after(async () => { await stop(); await rm(data, { recursive: true, force: true }); });
+  await start();
   const lines = edits => Array.from({ length: 12 }, (_, i) => `line ${i + 1}${edits[i + 1] ? " " + edits[i + 1] : ""}\n`).join("");
   const { root } = await repository({ "main.hx": "class Main {}\n", "doc.txt": lines({}) });
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -353,17 +364,27 @@ test("a restored session merges the cloud copy's newer generation: different pla
   let state;
   for (let i = 0; i < 150; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(r => setTimeout(r, 100)); }
   assert.equal(state.status, "ready", JSON.stringify(state));
-  const [, restoredRoot, sessionPort, sessionToken] = [...log.matchAll(/session for (\S+)\n\s+http:\/\/127\.0\.0\.1:(\d+)\/\n\s+token (\w+)/g)].at(-1);
   const { default: WebSocket } = await import("ws");
-  const socket = new WebSocket(`ws://127.0.0.1:${sessionPort}/session`);
-  await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); });
-  let next = 0;
-  const pending = new Map();
-  socket.on("message", raw => { const message = JSON.parse(String(raw)); pending.get(message.id)?.(message); });
-  const ask = (op, fields = {}) => new Promise(done => { const id = ++next; pending.set(id, done); socket.send(JSON.stringify({ id, op, ...fields })); });
-  t.after(() => socket.close());
-  assert.equal((await ask("hello", { token: sessionToken })).ok, true);
-  await new Promise(done => setTimeout(done, 1000));
+  let socket, ask;
+  const connect = async () => {
+    const [, restoredRoot, sessionPort, sessionToken] = [...log.matchAll(/session for (\S+)\n\s+http:\/\/127\.0\.0\.1:(\d+)\/\n\s+token (\w+)/g)].at(-1);
+    socket = new WebSocket(`ws://127.0.0.1:${sessionPort}/session`);
+    await new Promise((done, fail) => { socket.once("open", done); socket.once("error", fail); });
+    let next = 0;
+    const pending = new Map();
+    socket.on("message", raw => { const message = JSON.parse(String(raw)); pending.get(message.id)?.(message); pending.delete(message.id); });
+    ask = (op, fields = {}) => new Promise((done, fail) => {
+      const id = ++next, timer = setTimeout(() => { pending.delete(id); fail(Error("Session timeout: " + op)); }, 10000);
+      pending.set(id, reply => { clearTimeout(timer); done(reply); }); socket.send(JSON.stringify({ id, op, ...fields }));
+    });
+    assert.equal((await ask("hello", { token: sessionToken })).ok, true);
+    let status;
+    for (let i = 0; i < 150; i++) { status = await ask("sync.status"); if (status.syncWriteback?.ready) break; await new Promise(done => setTimeout(done, 20)); }
+    assert.equal(status.syncWriteback?.ready, true, JSON.stringify(status));
+    return restoredRoot;
+  };
+  t.after(() => socket?.close());
+  const restoredRoot = await connect();
   const doc = join(restoredRoot, "doc.txt");
   const read = path => readFile(path, "utf8");
 
@@ -373,6 +394,14 @@ test("a restored session merges the cloud copy's newer generation: different pla
   assert.equal(push(root, base).last.generation, 2);
   const refused = await ask("sync.publish");
   assert.equal(refused.code, "conflict", "the cloud copy has moved on, so the save is refused");
+  socket.close();
+  await stop(); await start();
+  assert.equal((await alice(`/workspaces/${id}/open`, { method: "POST" })).status, 200);
+  for (let i = 0; i < 150; i++) { state = await (await fetch(`${base}/api/workspaces/${id}`, { headers: { Cookie: cookie } })).json(); if (state.status !== "preparing") break; await new Promise(done => setTimeout(done, 100)); }
+  assert.equal(state.status, "ready", JSON.stringify(state));
+  assert.equal(await connect(), restoredRoot, "recovery keeps the existing working tree");
+  assert.equal(await read(doc), lines({10:"(browser)"}), "recovery preserves the local saved edit");
+  assert.equal((await ask("sync.status")).syncWriteback.generation, 1, "recovery keeps the original common base, although the cloud is at generation 2");
   const merged = await ask("sync.merge");
   assert.equal(merged.ok, true, JSON.stringify(merged));
   assert.deepEqual(merged.conflicts, []);

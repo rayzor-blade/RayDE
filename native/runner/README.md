@@ -72,6 +72,10 @@ Authenticated `POST /workspaces/delete { "id": "…", "owner": 1 }` closes conne
 
 Session journal replies follow private graph persistence, and file/identity directory entries are flushed before acknowledgements. The Cloudflare gateway still commits its own durable recovery barriers. Explicit workspace deletion removes the labelled compute and its verified disks; ordinary runner shutdown preserves them.
 
+Cloud Sync retains its common manifest and bounded merge text in checksummed private `/state` records. Publication and merge record an intent before changing the cloud generation or local files, then persist the new base before replying. Restart reconciles a confirmed outcome; missing, corrupt or ambiguous lineage pauses write-back and preserves working files. It never reconstructs the common base from edited files. This covers saved-file sync; unsaved document graphs retain their separate recovery records.
+
+Each authorized Open supplies a fresh workspace-scoped publish capability, including session restart and VM replacement. A live session accepts renewal through a private runner control credential. Neither credential enters registry records, browser replies or child processes; the public relay refuses the control operation. Expiry offers **Reopen workspace** in Cloud Sync. Reopening reauthorizes the existing working tree rather than restoring another snapshot over it.
+
 Missing disks, changed identities, unexpected inventory and unverifiable runtime ownership require reconciliation. Legacy records without disk bindings retain their refusal behavior. Host reboots with unverifiable runtime state, lost host storage and cross-host restoration remain separate work. Recovery never substitutes a fresh Git clone for a used workspace.
 
 ## Verification

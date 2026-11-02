@@ -29,6 +29,11 @@ async fn read_frame(reader: &mut (impl AsyncRead + Unpin)) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| unavailable())
 }
 
+async fn reply(reader:&mut(impl AsyncRead+Unpin),id:u64)->Result<serde_json::Value>{
+    loop{let message:serde_json::Value=serde_json::from_str(&read_frame(reader).await?).map_err(|_|unavailable())?;
+        if message["id"]==id{return Ok(message);}}
+}
+
 pub(crate) async fn probe(backend: &impl sb::SandboxProvider, sandbox: &str, persistent_disks: bool) -> Result<serde_json::Value> {
     let work = async {
         let sb::Process { stdin: mut input, stdout: mut output, exit } = backend.spawn(sandbox, bridge()).await?;
@@ -37,8 +42,7 @@ pub(crate) async fn probe(backend: &impl sb::SandboxProvider, sandbox: &str, per
                 &serde_json::json!({"id":1,"op":"hello","token":GUEST_TOKEN}).to_string(),
             ))
             .await?;
-        let response: serde_json::Value =
-            serde_json::from_str(&read_frame(&mut output).await?).map_err(|_| unavailable())?;
+        let response=reply(&mut output,1).await?;
         drop(input);
         if exit.await != Ok(0) {
             return Err(unavailable());
@@ -52,6 +56,22 @@ pub(crate) async fn probe(backend: &impl sb::SandboxProvider, sandbox: &str, per
     tokio::time::timeout(Duration::from_secs(5), work)
         .await
         .map_err(|_| unavailable())?
+}
+
+pub(crate) async fn authorize(backend:&impl sb::SandboxProvider,sandbox:&str,control:&str,gateway:&str,workspace:&str,token:&str)->Result<()> {
+    let work=async {
+        let sb::Process{stdin:mut input,stdout:mut output,exit}=backend.spawn(sandbox,bridge()).await?;
+        input.write_all(&rayde_session::framing::frame(&serde_json::json!({"id":1,"op":"hello","token":GUEST_TOKEN}).to_string())).await?;
+        let hello=reply(&mut output,1).await?;
+        if hello["ok"]!=true{return Err(unavailable());}
+        input.write_all(&rayde_session::framing::frame(&serde_json::json!({"id":2,"op":"sync.authorize","control":control,"gateway":gateway,"workspace":workspace,"token":token}).to_string())).await?;
+        loop {
+            let reply:serde_json::Value=serde_json::from_str(&read_frame(&mut output).await?).map_err(|_|unavailable())?;
+            if reply["id"]==2 {if reply["ok"]!=true{return Err(unavailable());}break;}
+        }
+        drop(input);if exit.await!=Ok(0){return Err(unavailable());}Ok(())
+    };
+    tokio::time::timeout(Duration::from_secs(5),work).await.map_err(|_|unavailable())?
 }
 
 pub(crate) fn identity(response: &serde_json::Value) -> Result<serde_json::Value> {
@@ -94,6 +114,10 @@ pub(crate) async fn relay<P: sb::SandboxProvider + 'static>(mut socket: WebSocke
                         Some(Ok(Message::Text(text)))=>{
                             if text.len()>MAX_MESSAGE {return Err(invalid());}
                             let mut value:serde_json::Value=serde_json::from_str(&text).map_err(|_|invalid())?;
+                            if value["op"]=="sync.authorize" {
+                                socket.send(Message::Text(serde_json::json!({"id":value["id"],"ok":false,"code":"forbidden","message":"This operation belongs to the workspace runner."}).to_string())).await.map_err(|_|unavailable())?;
+                                continue;
+                            }
                             let text=if value["op"]=="hello" {
                                 if !value["token"].as_str().is_some_and(|token|matches_secret(token,&record.token)) {return Err(invalid());}
                                 value["token"]=serde_json::json!(GUEST_TOKEN);value.to_string()
@@ -107,7 +131,13 @@ pub(crate) async fn relay<P: sb::SandboxProvider + 'static>(mut socket: WebSocke
                 count=output.read(&mut buffer)=>{
                     let count=count?;if count==0 {break;}
                     for response in frames.push(&buffer[..count]).map_err(|_|unavailable())? {
-                        if first_response {let hello=serde_json::from_str(&response).map_err(|_|unavailable())?;if Some(identity(&hello)?)!=record.identity {return Err(unavailable());}first_response=false;}
+                        if first_response {
+                            let value:serde_json::Value=serde_json::from_str(&response).map_err(|_|unavailable())?;
+                            if value["id"]==hello["id"] {
+                                if Some(identity(&value)?)!=record.identity {return Err(unavailable());}
+                                first_response=false;
+                            }
+                        }
                         socket.send(Message::Text(response)).await.map_err(|_|unavailable())?;
                     }
                 }
