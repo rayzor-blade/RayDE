@@ -33,7 +33,7 @@ fn git(root: &Path, args: &[&str]) {
 
 /// What a guest runs: a shell that accepts the volume identity check, and a session bridge that answers the hello frame.
 fn guest() -> Fake {
-    Fake::new(Capabilities { persistent_volumes: true, ..Default::default() })
+    Fake::new(Capabilities { persistent_volumes: true, network_allowlist: true, ..Default::default() })
         .with_program("/bin/sh", |_, _, _, _| async { 0 })
         .with_program("/opt/rayde-session", |_, command, mut stdin, mut stdout| async move {
             if command.args.first().map(String::as_str) != Some("bridge") {
@@ -287,7 +287,8 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     let id = rayde_sync::ids::WorkspaceId::from_random(&[4; 32]);
     let url = serve_snapshot(&folder, &id).await;
 
-    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url: url.clone(), secret: GATEWAY_SECRET.into() })).await;
+    let guest_url = "https://sync.example.test:9443";
+    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url: url.clone(), secret: GATEWAY_SECRET.into(), guest_url: Some(guest_url.into()) })).await;
     let mut body = sync_body(id.as_str());
     body["publish"] = json!({"token": "rsp1.capability-for-the-test", "workspace": id.as_str()});
     let post = |body: &Value| fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(body).send();
@@ -297,9 +298,11 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     assert_eq!(status, 200, "{connection}");
     assert_eq!(connection["project"], "build.hxml", "the restored folder is the project");
     assert_eq!(fixture.sandboxes().await.len(), 1);
+    let sandbox = fixture.sandboxes().await.pop().unwrap();
+    assert_eq!(fixture.fake.spec(&sandbox).unwrap().network, rayde_sandbox::Network::Allow(vec!["sync.example.test".into()]));
     let launched = fixture.fake.detached().into_iter().find(|(_, command)| command.program == "/opt/rayde-session").expect("the session was launched").1.env;
     assert_eq!(launched.get("RAYDE_SYNC_TOKEN").map(String::as_str), Some("rsp1.capability-for-the-test"));
-    assert_eq!(launched.get("RAYDE_SYNC_GATEWAY"), Some(&url));
+    assert_eq!(launched.get("RAYDE_SYNC_GATEWAY").map(String::as_str), Some(guest_url));
     assert_eq!(launched.get("RAYDE_SYNC_GENERATION").map(String::as_str), Some("1"), "the generation the snapshot was restored from");
     // A capability for some other workspace is refused.
     let mut foreign = body.clone();
@@ -308,10 +311,26 @@ async fn a_synced_workspace_is_restored_from_the_gateway_and_opens_like_any_othe
     // Opening again restores afresh into the same workspace.
     assert_eq!(post(&body).await.unwrap().status().as_u16(), 200);
     assert_eq!(fixture.sandboxes().await.len(), 1);
+    let sandbox = fixture.sandboxes().await.pop().unwrap();
+    assert_eq!(fixture.fake.spec(&sandbox).unwrap().network, rayde_sandbox::Network::Allow(vec!["sync.example.test".into()]));
     // The workspace is named by its own id: another id with the same repository block is refused.
     let mut wrong = body.clone();
     wrong["id"] = json!(workspace_id(1, 111));
     assert_eq!(post(&wrong).await.unwrap().status().as_u16(), 400);
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn a_loopback_gateway_is_refused_before_any_guest_is_created() {
+    let fixture = Fixture::with_gateway(2, Some(SyncGateway { url: "http://127.0.0.1:9792".into(), secret: GATEWAY_SECRET.into(), guest_url: None })).await;
+    let id = rayde_sync::ids::WorkspaceId::from_random(&[6; 32]);
+    let response = fixture.http.post(format!("{}/workspaces/open", fixture.base)).bearer_auth(SECRET).json(&sync_body(id.as_str())).send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 400);
+    assert!(response.json::<Value>().await.unwrap()["message"].as_str().unwrap().contains("guestUrl"));
+    assert!(fixture.sandboxes().await.is_empty());
+    assert_eq!(fixture.open(1, 111).await.0, 200, "ordinary Git workspaces do not need gateway egress");
+    let sandbox = fixture.sandboxes().await.pop().unwrap();
+    assert_eq!(fixture.fake.spec(&sandbox).unwrap().network, rayde_sandbox::Network::None);
     fixture.stop().await;
 }
 

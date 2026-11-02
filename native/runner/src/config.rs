@@ -47,6 +47,76 @@ pub struct Config {
 pub struct SyncGateway {
     pub url: String,
     pub secret: String,
+    /// The same gateway as reached from the guest, when the runner uses a loopback development endpoint.
+    #[serde(default)]
+    pub guest_url: Option<String>,
+}
+
+impl SyncGateway {
+    fn address(value: &str) -> Option<reqwest::Url> {
+        let url = reqwest::Url::parse(value).ok()?;
+        let host = url.host_str()?.trim_matches(['[', ']']);
+        let loopback = host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback());
+        (value.len() <= 512 && !value.chars().any(char::is_whitespace)
+            && host.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
+            && url.username().is_empty() && url.password().is_none()
+            && url.query().is_none() && url.fragment().is_none()
+            && (url.scheme() == "https" || url.scheme() == "http" && loopback))
+            .then_some(url)
+    }
+
+    pub(crate) fn guest_address(&self) -> Result<reqwest::Url> {
+        let url = Self::address(self.guest_url.as_deref().unwrap_or(&self.url)).ok_or_else(invalid)?;
+        let host = url.host_str().ok_or_else(invalid)?.trim_matches(['[', ']']);
+        if host.trim_end_matches('.') == "localhost" || host.trim_end_matches('.').ends_with(".localhost")
+            || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified()) {
+            return Err(Failure(axum::http::StatusCode::BAD_REQUEST, "Cloud Sync needs a gateway URL reachable from the sandbox. Set syncGateway.guestUrl to its HTTPS address."));
+        }
+        Ok(url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(url: &str, guest: Option<&str>) -> Config {
+        serde_json::from_value(serde_json::json!({
+            "listen":"127.0.0.1:0", "stateRoot":"/tmp/state", "msb":"/bin/msb", "sessionBinary":"/bin/session", "secretFile":"/tmp/secret",
+            "syncGateway":{"url":url, "guestUrl":guest, "secret":"gateway-test-secret"}
+        })).unwrap()
+    }
+
+    #[test]
+    fn only_sync_guests_get_the_exact_configured_gateway_host() {
+        for url in ["https://sync.example.test", "https://sync.example.test:9443/api", "https://[2001:db8::1]:9443"] {
+            let config = config(url, None);
+            config.validate().unwrap();
+            assert_eq!(config.workspace_network(false).unwrap(), rayde_sandbox::Network::None);
+            let host = if url.contains("2001:db8") { "2001:db8::1" } else { "sync.example.test" };
+            assert_eq!(config.workspace_network(true).unwrap(), rayde_sandbox::Network::Allow(vec![host.into()]));
+        }
+        let config = config("http://127.0.0.1:9792", Some("https://gateway.example.test/sync"));
+        config.validate().unwrap();
+        assert_eq!(config.workspace_network(true).unwrap(), rayde_sandbox::Network::Allow(vec!["gateway.example.test".into()]));
+        assert_eq!(config.sync_gateway.unwrap().guest_address().unwrap().as_str(), "https://gateway.example.test/sync");
+    }
+
+    #[test]
+    fn invalid_gateway_addresses_cannot_change_the_egress_policy() {
+        for url in ["file:///tmp/gateway", "http://localhost.evil.test", "http://127.0.0.1.evil.test", "http://sync.example.test",
+            "https://owner:token@sync.example.test", "https://sync.example.test/?token=secret", "https://sync.example.test/#token",
+            "https://sync.example.test\n", "https://*.example.test"] {
+            let config = config(url, None);
+            assert!(config.validate().is_err(), "{url}");
+        }
+        for url in ["http://127.0.0.1:9792", "https://localhost:9792", "https://[::1]:9792", "https://0.0.0.0:9792"] {
+            let config = config(url, None);
+            assert!(config.workspace_network(true).is_err(), "{url} points inside the guest");
+            assert_eq!(config.workspace_network(false).unwrap(), rayde_sandbox::Network::None);
+        }
+        assert!(config("http://127.0.0.1:9792", Some("http://127.0.0.1:9793")).validate().is_err());
+    }
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -110,10 +180,8 @@ impl Config {
             return Err(invalid());
         }
         if self.sync_gateway.as_ref().is_some_and(|gateway| {
-            let loopback = gateway.url.starts_with("http://127.0.0.1") || gateway.url.starts_with("http://localhost");
-            !(gateway.url.starts_with("https://") || loopback)
-                || gateway.url.len() > 512
-                || gateway.url.contains(['?', '#', ' '])
+            SyncGateway::address(&gateway.url).is_none()
+                || gateway.guest_url.as_ref().is_some_and(|_| gateway.guest_address().is_err())
                 || gateway.secret.len() < 16
                 || gateway.secret.len() > 4096
                 || gateway.secret.contains(['\r', '\n', '\0', ' '])
@@ -128,5 +196,13 @@ impl Config {
             return Err(invalid());
         }
         Ok(())
+    }
+
+    /// Only synced workspaces need egress, and only to the gateway the operator configured.
+    pub(crate) fn workspace_network(&self, synced: bool) -> Result<rayde_sandbox::Network> {
+        if !synced { return Ok(rayde_sandbox::Network::None); }
+        let address = self.sync_gateway.as_ref().ok_or_else(unavailable)?.guest_address()?;
+        let host = address.host_str().ok_or_else(invalid)?.trim_matches(['[', ']']).to_string();
+        Ok(rayde_sandbox::Network::Allow(vec![host]))
     }
 }

@@ -455,6 +455,11 @@ mod tests {
         assert!(args.contains("--no-net --label") || args.contains("--no-net --net-rule"), "{args}");
         assert!(args.contains("--net-rule allow@api.example.com --net-rule allow@*.models.example.org --net-rule allow@10.0.0.0/8"), "{args}");
         assert_eq!(args.matches("--no-net").count(), 1);
+        allow.template = sb::Template::Snapshot(sb::SnapshotRef("toolchain".into()));
+        allow.mounts.retain(|mount| matches!(mount.source, sb::Source::Volume(_)));
+        let restored = create_args(&allow, &sizes()).unwrap().join(" ");
+        assert!(restored.starts_with("snapshot restore toolchain "));
+        assert!(restored.contains("--no-net --net-rule allow@api.example.com --net-rule allow@*.models.example.org --net-rule allow@10.0.0.0/8"), "{restored}");
     }
 
     #[test]

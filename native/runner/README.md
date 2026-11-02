@@ -34,6 +34,8 @@ Run `rayde-runner --config /private/config.json`. Only loopback listeners and We
 
 For test repositories, `localRepositories` can explicitly bind `{ "owner": 1, "repository": 111, "path": "/absolute/git/repository" }`. This bypasses GitHub authorization only for that operator-configured pairing. Leave it empty for real repository access.
 
+Cloud Sync uses `syncGateway: { "url": "https://gateway.example.org", "secret": "…" }`. Synced guests can reach only that gateway's host. If the runner fetches from a local development gateway, set `guestUrl` in the same object to the gateway's HTTPS address reachable from the VM; guest loopback addresses are refused before compute starts. The provisioning secret stays on the runner. A session receives its workspace's publish capability.
+
 ## Toolchain template
 
 Prepare a disk template on a compatible **Ubuntu 26.04 x86_64** KVM host. Supply Linux Ash, Rayzor and `rayde-extension-host` binaries, Rayzor's matching `compiler/haxe-std`, and the official Haxe **4.3.6 Linux64** archive. The script checks the pinned Haxe archive hash, ELF architecture, native dependencies and guest file checksums. Use binaries built for the guest ABI.
@@ -60,7 +62,7 @@ The service implements the [Worker's provisioning contract](../../web/cloud/READ
 
 Git runs on the host with ambient configuration, hooks and filters disabled. A bare clone and bounded archive extraction avoid running project programs there. GitHub credentials are used only for authorized host requests and clone authentication; they do not enter guest files, arguments or configuration. The pilot accepts up to 10,000 entries and 64 MiB of tracked file contents. Symlinks, submodules and other unsupported entries are refused.
 
-Guests use restricted, multi-tenant mode, no network, private owned `/workspace` and `/state` volumes, CPU/memory bounds and a maximum lifetime. The Alpine profile supplies session, filesystem and shell services. The prepared template also supplies Haxe, Ash, Rayzor, standard libraries, published Ashui packages and supervised built-in extension hosts. User guests have no network; dependency installation requires a prepared template or a future controlled package service.
+Guests use restricted, multi-tenant mode, private owned `/workspace` and `/state` volumes, CPU/memory bounds and a maximum lifetime. Ordinary repository guests have no network; synced guests have a deny-by-default allowlist for their configured gateway host, on both image and toolchain-snapshot boots. Dependency installation requires a prepared template or a future controlled package service. Existing guests keep their network policy until explicitly replaced; installing a runner update does not discard them. The Alpine profile supplies session, filesystem and shell services. The prepared template also supplies Haxe, Ash, Rayzor, standard libraries, published Ashui packages and supervised built-in extension hosts.
 
 No guest port is published. The runner authenticates WebSockets before creating an MSB command-stream bridge to the guest's loopback session port. The gateway credential stays on the host; guest-local authentication is separate. Closing a socket releases its bridge. `rayde-session bridge --port N` is a byte-faithful stdin/stdout adapter for the existing framed transport and exits on EOF.
 

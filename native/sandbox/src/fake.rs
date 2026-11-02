@@ -43,6 +43,10 @@ impl Fake {
         self.world.lock().unwrap().detached.clone()
     }
 
+    pub fn spec(&self, name: &str) -> Option<SandboxSpec> {
+        self.world.lock().unwrap().sandboxes.get(name).map(|(spec, _)| spec.clone())
+    }
+
     fn running(&self, name: &str) -> Result<()> {
         match self.world.lock().unwrap().sandboxes.get(name) {
             None => Err(Error::NotFound),

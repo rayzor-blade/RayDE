@@ -258,6 +258,7 @@ async fn open<P: Backend>(
     if request.repository.sync.is_some() && service.config.sync_gateway.is_none() {
         return Err(unavailable());
     }
+    service.config.workspace_network(request.repository.sync.is_some())?;
     let mut halt = service.halt.subscribe();
     if *halt.borrow() {
         return Err(unavailable());
@@ -592,12 +593,16 @@ impl<P: Backend> Service<P> {
         }
         self.boot(record, true).await?;
         self.backend.copy_in(&record.sandbox, project, "/workspace/project").await?;
-        let grant = request.publish.as_ref().zip(restored).zip(self.config.sync_gateway.as_ref()).map(|((publish, generation), gateway)| (gateway.url.clone(), publish.workspace.clone(), publish.token.clone(), generation));
+        let grant = match request.publish.as_ref().zip(restored).zip(self.config.sync_gateway.as_ref()) {
+            Some(((publish, generation), gateway)) => Some((gateway.guest_address()?.as_str().trim_end_matches('/').to_string(), publish.workspace.clone(), publish.token.clone(), generation)),
+            None => None,
+        };
         record.identity = Some(self.launch_session(record, grant).await?);
         Ok(())
     }
     async fn boot(&self, record: &Record, initialize: bool) -> Result<()> {
         let labels = self.workspace_labels(&record.id);
+        let network = self.config.workspace_network(record.repository.sync.is_some())?;
         let mounts = match &record.storage {
             Some(storage) => {
                 if initialize {
@@ -608,7 +613,7 @@ impl<P: Backend> Service<P> {
             None => Vec::new(),
         };
         if self.config.toolchain.is_some() {
-            toolchain::restore(self.backend.as_ref(), &self.config, &record.sandbox, labels, mounts).await?;
+            toolchain::restore(self.backend.as_ref(), &self.config, &record.sandbox, labels, mounts, network).await?;
         } else {
             let mounts = if record.storage.is_some() {
                 mounts
@@ -622,7 +627,7 @@ impl<P: Backend> Service<P> {
                     cpus: self.config.cpus as u32,
                     memory_mib: self.config.memory_mib,
                     security: sb::Security::Restricted,
-                    network: sb::Network::None,
+                    network,
                     gpu: None,
                     labels,
                     mounts,

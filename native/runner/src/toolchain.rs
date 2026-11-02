@@ -15,7 +15,7 @@ async fn guest(backend: &impl sb::SandboxProvider, sandbox: &str, script: &str, 
     Ok(output.stdout)
 }
 
-pub(crate) async fn restore(backend: &impl sb::SandboxProvider, config: &Config, sandbox: &str, labels: sb::Labels, mounts: Vec<sb::Mount>) -> Result<()> {
+pub(crate) async fn restore(backend: &impl sb::SandboxProvider, config: &Config, sandbox: &str, labels: sb::Labels, mounts: Vec<sb::Mount>, network: sb::Network) -> Result<()> {
     let toolchain = config.toolchain.as_ref().ok_or_else(invalid)?;
     let snapshot = sb::SnapshotRef(toolchain.snapshot.clone());
     backend.verify_snapshot(&snapshot).await?;
@@ -26,7 +26,7 @@ pub(crate) async fn restore(backend: &impl sb::SandboxProvider, config: &Config,
             cpus: config.cpus as u32,
             memory_mib: config.memory_mib,
             security: sb::Security::Restricted,
-            network: sb::Network::None,
+            network,
             gpu: None,
             labels,
             mounts,
@@ -46,4 +46,42 @@ pub(crate) fn session_args(config: &Config) -> Vec<&'static str> {
     let mut args=vec!["--env-file", "/opt/rayde/environment.json", "--extension-host", "/opt/rayde/bin/rayde-extension-host", "--extensions", "/opt/rayde/extensions", "--read-root", "/opt/rayde/haxelib", "--read-root", "/opt/rayde/haxe-std", "--read-root", "/opt/rayde/haxe/std"];
     if config.toolchain.as_ref().is_some_and(|toolchain|toolchain.app_previews){args.extend(["--preview-tools","/opt/rayde/preview"]);}
     args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sb::SandboxProvider;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn toolchain_guests_keep_the_workspaces_network_policy() {
+        let digest = "a".repeat(64);
+        let output = digest.clone();
+        let fake = sb::fake::Fake::new(sb::Capabilities { snapshots: true, network_allowlist: true, ..Default::default() })
+            .with_program("/bin/sh", move |_, command, _, mut stdout| {
+                let output = output.clone();
+                async move {
+                    if command.args.iter().any(|arg| arg.contains("sha256sum toolchain.json")) {
+                        stdout.write_all(format!("{output}  toolchain.json\n").as_bytes()).await.unwrap();
+                    }
+                    0
+                }
+            });
+        fake.create(sb::SandboxSpec {
+            name: "seed".into(), template: sb::Template::Image("fixture".into()), cpus: 1, memory_mib: 512,
+            security: sb::Security::Restricted, network: sb::Network::None, gpu: None, labels: Default::default(), mounts: vec![], max_duration: None,
+        }).await.unwrap();
+        let snapshot = fake.snapshot("seed").await.unwrap();
+        let config: Config = serde_json::from_value(serde_json::json!({
+            "listen":"127.0.0.1:0", "stateRoot":"/tmp/state", "msb":"/bin/msb", "sessionBinary":"/bin/session", "secretFile":"/tmp/secret",
+            "toolchain":{"snapshot":snapshot.0,"digest":digest},
+            "syncGateway":{"url":"https://sync.example.test","secret":"gateway-test-secret"}
+        })).unwrap();
+        for (name, synced) in [("code", false), ("synced", true)] {
+            let network = config.workspace_network(synced).unwrap();
+            restore(&fake, &config, name, Default::default(), vec![], network.clone()).await.unwrap();
+            assert_eq!(fake.spec(name).unwrap().network, network);
+        }
+    }
 }
