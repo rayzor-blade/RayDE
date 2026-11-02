@@ -487,7 +487,7 @@ fn writeback(config: &Config, emit: &mut dyn FnMut(Value), cancelled: &dyn Fn() 
 }
 
 fn entries(files: &[FileEntry]) -> BTreeMap<String, Entry> {
-    files.iter().filter(|file| mergeable(file)).map(|file| (file.path.clone(), Entry { hash: file.hash.clone(), executable: file.kind == FileKind::Executable })).collect()
+    files.iter().filter(|file| mergeable(file) || file.kind == FileKind::Symlink).map(|file| (file.path.clone(), Entry { hash: file.hash.clone(), executable: file.kind == FileKind::Executable, link: file.link.clone() })).collect()
 }
 
 fn safe_path(path: &str) -> bool {
@@ -554,8 +554,10 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
     }
     let mut actions = plan.actions;
     for conflict in &plan.conflicts {
-        let theirs_file = theirs.files.iter().find(|file| file.path == conflict.path && mergeable(file));
+        let theirs_file = theirs.files.iter().find(|file| file.path == conflict.path && (mergeable(file) || file.kind == FileKind::Symlink));
         match (choices[&conflict.path].as_str(), theirs_file) {
+            ("theirs", Some(file)) if file.kind == FileKind::Symlink => actions.push(Action::Link { path: conflict.path.clone(), target: file.link.clone().unwrap_or_default() }),
+            ("mine", Some(file)) if file.kind == FileKind::Symlink => {}
             // Keeping our version leaves the tree as it is; the cloud's text is still kept for the next merge when it is small enough to merge.
             ("mine", Some(file)) if file.size as usize <= MAX_TEXT => {
                 if let Some(bytes) = fetch_file(&gateway, &id, file) {
@@ -576,8 +578,13 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
     let mut report = MergeReport { generation: current, ..Default::default() };
     for action in &actions {
         let path = match action {
-            Action::Write { path, .. } | Action::Delete { path } => path,
+            Action::Write { path, .. } | Action::Link { path, .. } | Action::Delete { path } => path,
         };
+        if let Action::Link { path, target } = action {
+            if crate::manifest::link_problem(path, target).is_some() {
+                return Err(Failure::new("protocol", "The cloud copy has a link this tree cannot hold."));
+            }
+        }
         if !safe_path(path) {
             return Err(Failure::new("protocol", "The cloud copy names a path this tree cannot hold."));
         }
@@ -600,6 +607,25 @@ pub fn merge_with(config: &Config, base: &Base, choices: &BTreeMap<String, Strin
                 let _ = executable;
                 fs::rename(&temporary, &target).map_err(|e| Failure::new("write", e.to_string()))?;
                 report.written.push(path);
+            }
+            Action::Link { path, target } => {
+                #[cfg(unix)]
+                {
+                    let place = config.root.join(&path);
+                    if let Some(parent) = place.parent() {
+                        fs::create_dir_all(parent).map_err(|e| Failure::new("write", e.to_string()))?;
+                    }
+                    let temporary = place.with_extension(format!("rayde-merge-{}", std::process::id()));
+                    let _ = fs::remove_file(&temporary);
+                    std::os::unix::fs::symlink(&target, &temporary).map_err(|e| Failure::new("write", e.to_string()))?;
+                    fs::rename(&temporary, &place).map_err(|e| Failure::new("write", e.to_string()))?;
+                    report.written.push(path);
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = target;
+                    return Err(Failure::new("write", format!("{path} is a link, which this system cannot create.")));
+                }
             }
             Action::Delete { path } => {
                 match fs::remove_file(config.root.join(&path)) {

@@ -108,16 +108,19 @@ pub fn text(base: &str, ours: &str, theirs: &str) -> Merged {
     Merged::Text(result)
 }
 
-/// What a file is on one side of a merge: the hash of its content and whether it is executable.
+/// What a file is on one side of a merge: the hash of its content and whether it is executable, or where a link points.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub hash: String,
     pub executable: bool,
+    /// The target, for a symbolic link; its hash is the target's.
+    pub link: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Action {
     Write { path: String, content: Vec<u8>, executable: bool },
+    Link { path: String, target: String },
     Delete { path: String },
 }
 
@@ -158,10 +161,11 @@ pub fn plan(base: &BTreeMap<String, Entry>, ours: &BTreeMap<String, Entry>, thei
         if o == t {
             continue;
         }
-        let same = |x: Option<&Entry>, y: Option<&Entry>| x.map(|e| &e.hash) == y.map(|e| &e.hash);
+        let same = |x: Option<&Entry>, y: Option<&Entry>| x.map(|e| (&e.hash, e.link.is_some())) == y.map(|e| (&e.hash, e.link.is_some()));
         if same(o, b) {
             // Only they changed it: it moves over.
             plan.actions.push(match t {
+                Some(Entry { link: Some(target), .. }) => Action::Link { path: path.clone(), target: target.clone() },
                 Some(entry) => match content(Side::Theirs, path) {
                     Some(bytes) => Action::Write { path: path.clone(), content: bytes, executable: entry.executable },
                     None => {
@@ -178,6 +182,10 @@ pub fn plan(base: &BTreeMap<String, Entry>, ours: &BTreeMap<String, Entry>, thei
             continue;
         }
         // Both sides changed it, differently.
+        if [b, o, t].iter().any(|entry| entry.is_some_and(|e| e.link.is_some())) && o.is_some() && t.is_some() {
+            plan.conflicts.push(Conflict { path: path.clone(), reason: "a link changed on both sides" });
+            continue;
+        }
         let (Some(_), Some(o), Some(t)) = (b, o, t) else {
             plan.conflicts.push(Conflict { path: path.clone(), reason: if o.is_none() || t.is_none() { "edited on one side and deleted on the other" } else { "added on both sides with different content" } });
             continue;
@@ -268,7 +276,27 @@ mod tests {
     }
 
     fn entry(bytes: &[u8]) -> Entry {
-        Entry { hash: crate::chunk::sha256_hex(bytes), executable: false }
+        Entry { hash: crate::chunk::sha256_hex(bytes), executable: false, link: None }
+    }
+
+    fn link(target: &str) -> Entry {
+        Entry { hash: crate::chunk::sha256_hex(target.as_bytes()), executable: false, link: Some(target.into()) }
+    }
+
+    #[test]
+    fn a_link_moves_over_when_only_the_other_side_changed_it_and_conflicts_when_both_did() {
+        let one = |path: &str, entry: Option<Entry>| entry.map(|e| (path.to_string(), e)).into_iter().collect::<BTreeMap<_, _>>();
+        let none = |_: Side, _: &str| None;
+        let moved = plan(&one("l", Some(link("a"))), &one("l", Some(link("a"))), &one("l", Some(link("b"))), &mut |s, p| none(s, p));
+        assert_eq!(moved.actions, vec![Action::Link { path: "l".into(), target: "b".into() }]);
+        let removed = plan(&one("l", Some(link("a"))), &one("l", Some(link("a"))), &one("l", None), &mut |s, p| none(s, p));
+        assert_eq!(removed.actions, vec![Action::Delete { path: "l".into() }]);
+        let clash = plan(&one("l", Some(link("a"))), &one("l", Some(link("x"))), &one("l", Some(link("y"))), &mut |s, p| none(s, p));
+        assert_eq!(clash.conflicts, vec![Conflict { path: "l".into(), reason: "a link changed on both sides" }]);
+        let added = plan(&BTreeMap::new(), &one("l", Some(link("x"))), &one("l", Some(link("y"))), &mut |s, p| none(s, p));
+        assert_eq!(added.conflicts.len(), 1);
+        let same = plan(&BTreeMap::new(), &one("l", Some(link("x"))), &one("l", Some(link("x"))), &mut |s, p| none(s, p));
+        assert!(same.actions.is_empty() && same.conflicts.is_empty());
     }
 
     #[test]

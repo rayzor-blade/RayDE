@@ -529,3 +529,51 @@ test("a folder synced before bases were kept can still pull: what differs is lis
   assert.deepEqual(later.last.conflicts, []);
   assert.deepEqual(later.last.written, ["doc.txt"]);
 });
+
+test("a folder pulls a link another device added or retargeted, and two retargets of one link are a conflict", async t => {
+  const { base } = await gateway(t);
+  const { root: a } = await repository({ "doc.txt": "one\n", "two.txt": "two\n" });
+  t.after(() => rm(a, { recursive: true, force: true }));
+  const run = (folder, action, env = {}) => {
+    const out = spawnSync(cli, [folder, base, "alice", action], { encoding: "utf8", env: { ...process.env, ...env } });
+    const events = out.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    return { events, last: events.at(-1) };
+  };
+  assert.equal(run(a, "push").last.generation, 1);
+  const b = await mkdtemp(join(tmpdir(), "rayde-sync-device-"));
+  t.after(() => rm(b, { recursive: true, force: true }));
+  spawnSync("git", ["clone", "-q", a, join(b, "clone")]);
+  const two = join(b, "clone");
+  await cp(join(a, ".git", "rayde-sync.json"), join(two, ".git", "rayde-sync.json"));
+  await cp(join(a, ".git", "rayde-sync-base"), join(two, ".git", "rayde-sync-base"), { recursive: true });
+  const { symlink, readlink } = await import("node:fs/promises");
+
+  await symlink("doc.txt", join(two, "latest"));
+  assert.equal(run(two, "push").last.generation, 2);
+  const added = run(a, "pull");
+  assert.equal(added.last.event, "merged", JSON.stringify(added.events));
+  assert.deepEqual(added.last.written, ["latest"]);
+  assert.equal(await readlink(join(a, "latest")), "doc.txt", "the link came over as a link");
+
+  assert.equal(run(a, "push").last.generation, 3);
+  assert.equal(run(two, "pull").last.event, "merged");
+  await rm(join(two, "latest"));
+  await symlink("two.txt", join(two, "latest"));
+  assert.equal(run(two, "push").last.generation, 4);
+  assert.equal(run(a, "pull").last.written[0], "latest");
+  assert.equal(await readlink(join(a, "latest")), "two.txt", "a retargeted link moves over");
+
+  assert.equal(run(a, "push").last.generation, 5);
+  assert.equal(run(two, "pull").last.event, "merged");
+  await rm(join(two, "latest"));
+  await symlink("doc.txt", join(two, "latest"));
+  assert.equal(run(two, "push").last.generation, 6);
+  await rm(join(a, "latest"));
+  await symlink("other", join(a, "latest"));
+  const stuck = run(a, "pull");
+  assert.deepEqual(stuck.last.conflicts.map(c => c.reason), ["a link changed on both sides"]);
+  assert.equal(await readlink(join(a, "latest")), "other", "nothing was changed");
+  const settled = run(a, "pull", { RAYDE_SYNC_CHOICES: JSON.stringify({ latest: "theirs" }) });
+  assert.deepEqual(settled.last.conflicts, [], JSON.stringify(settled.events));
+  assert.equal(await readlink(join(a, "latest")), "doc.txt", "choosing the remote link replaces ours");
+});
