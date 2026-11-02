@@ -51,13 +51,9 @@ pub fn place(at: &Path, target: &str) -> io::Result<Placed> {
         }
         Err(error) => return Err(error),
     };
-    // A link, or a directory link on Windows, is not replaced by a rename over it.
+    // A directory link on Windows is removed as a directory, not as a file; a real directory is only ever removed when empty.
     if fs::symlink_metadata(at).is_ok() {
-        if fs::symlink_metadata(at).is_ok_and(|meta| meta.is_dir()) {
-            fs::remove_dir(at).or_else(|_| fs::remove_file(at))?;
-        } else {
-            fs::remove_file(at)?;
-        }
+        fs::remove_file(at).or_else(|_| fs::remove_dir(at))?;
     }
     fs::rename(&temporary, at)?;
     Ok(placed)
