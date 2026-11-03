@@ -92,7 +92,15 @@ var Accounts = class {
     this.signin = null;
     this.csrf = null;
     this.installUrl = null;
+    this.listeners = /* @__PURE__ */ new Set();
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location2?.href ?? "http://localhost").hostname);
+  }
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  changed(user) {
+    for (const listener of this.listeners) listener({ user });
   }
   signIn() {
     if (this.signin) return this.signin.promise;
@@ -166,10 +174,14 @@ var Accounts = class {
   }
   async request(op, params2) {
     if (op === "account.status") {
-      if (this.landing) return { user: null, installable: false };
+      if (this.landing) {
+        this.changed(null);
+        return { user: null, installable: false };
+      }
       const session = await this.api("/api/session");
       this.csrf = session.csrf ?? null;
       this.installUrl = session.installUrl ?? null;
+      this.changed(session.user);
       return { user: session.user, installable: !!this.installUrl };
     }
     if (op === "account.repositories") return this.api("/api/repositories" + (params2.cursor ? "?cursor=" + encodeURIComponent(params2.cursor) : ""));
@@ -208,8 +220,11 @@ var Accounts = class {
       return {};
     }
     if (op === "account.signout") {
+      await this.request("account.status", {});
       await this.api("/api/logout", {});
       this.csrf = null;
+      this.installUrl = null;
+      this.changed(null);
       this.later(() => this.location.assign(this.location.origin));
       return {};
     }
@@ -12381,6 +12396,7 @@ var start = (ask) => serve(ask, {
         }
       })();
     });
+    const stopAccounts = accounts.subscribe((status) => answer({ ev: "account.changed", user: status.user }));
     return {
       send(bytes) {
         try {
@@ -12391,6 +12407,7 @@ var start = (ask) => serve(ask, {
         }
       },
       close() {
+        stopAccounts();
         accounts.signin?.cancel();
         previews?.dispose();
         documents?.close();
