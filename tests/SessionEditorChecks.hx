@@ -111,7 +111,19 @@ class SessionEditorChecks {
 			restoredWire.sent.pop(true);
 			restoredDocs.close(); restoredClient.close();
 		}
-		Sys.println("session editor: readiness, projections, edits, undo, save failure, context warning deduplication and release passed");
+		var localWire=new EditorChannel(),localClient=SessionClient.over(localWire),localState=new CodeEditorState();localState.value.set("saved");
+		rayde.ui.DocumentHistory.edit(localState,"saved draft",[{from:5,removed:"",inserted:" draft"}]);
+		var history=haxe.Json.stringify(rayde.ui.DocumentHistory.snapshot(localState));
+		var localDocs=new EditorDocuments(localClient,(_,_) -> {},message -> {throw message;},_ -> {caret:0,anchor:0},_ -> false);
+		localDocs.attach("/work/legacy.txt",localState,"saved");var legacy=localWire.sent.pop(true);
+		localWire.reply({id:legacy.id,ok:true,result:{passthrough:true,syncMessage:"Live sync needs recovery reconciliation"}});
+		settle(localClient,localDocs,() -> !localDocs.readOnly("/work/legacy.txt"));
+		check(!localDocs.owns("/work/legacy.txt")&&localState.onTransaction==null&&localState.onUndo==null,"legacy documents retain their original transaction owner");
+		check(haxe.Json.stringify(rayde.ui.DocumentHistory.snapshot(localState))==history,"passthrough preserves legacy undo and unsaved text");
+		check(!localDocs.save("/work/legacy.txt",(_,_,_) -> {throw "unexpected shared Save";}),"unbound documents use their ordinary save path");
+		var jamUndo:Bool->Void=_ -> {};localState.onUndo=jamUndo;localDocs.release("/work/legacy.txt");check(localState.onUndo==jamUndo,"closing a passive cloud binding cannot erase a later Jam owner");
+		localDocs.close();localClient.close();
+		Sys.println("session editor: readiness, projections, edits, undo, save failure, legacy passthrough and release passed");
 	}
 	static function settle(client:SessionClient, docs:EditorDocuments, ready:Void->Bool):Void {
 		var end = haxe.Timer.stamp() + 3;

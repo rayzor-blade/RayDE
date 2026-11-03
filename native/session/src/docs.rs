@@ -112,6 +112,7 @@ impl<S: FileStore> DocHub<S> {
 
     pub fn set_cloud(&self,provider:Arc<dyn crate::cloud::Provider>){let _=self.cloud.set(provider);}
     pub fn cloud_available(&self)->bool{self.cloud.get().is_some()}
+    pub fn snapshot(&self,path:&str)->Result<Vec<u8>>{self.get(path).map(|open|state_of(&open.doc)).ok_or_else(||SessionError::new("not-open","The document is not open."))}
 
     fn get(&self, path: &str) -> Option<Arc<OpenDoc>> {
         self.open.lock().unwrap().get(path).cloned()

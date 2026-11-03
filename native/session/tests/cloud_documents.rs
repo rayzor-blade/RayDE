@@ -17,6 +17,19 @@ use yrs::{
     Doc, GetString, OffsetKind, Options, ReadTxn, StateVector, Text, Transact, Update,
     updates::decoder::Decode,
 };
+use serde_json::{json,Value};
+
+async fn eventually(mut check:impl FnMut()->bool){
+    tokio::time::timeout(std::time::Duration::from_secs(5),async {while !check(){tokio::time::sleep(std::time::Duration::from_millis(1)).await;}}).await.unwrap();
+}
+fn editors(hub:Arc<DocHub<DirStore>>)->(Arc<rayde_session::editor::Editors<DirStore>>,Arc<Mutex<Vec<Value>>>){
+    let events=Arc::new(Mutex::new(Vec::new()));let out=events.clone();
+    (rayde_session::editor::Editors::new(hub,Arc::new(move|text|out.lock().unwrap().push(serde_json::from_str(&text).unwrap()))),events)
+}
+async fn project(editor:&Arc<rayde_session::editor::Editors<DirStore>>,events:&Arc<Mutex<Vec<Value>>>,expected:&str,serial:u64)->Value{
+    let mut found=None;eventually(||{let mut queue=events.lock().unwrap();if let Some(i)=queue.iter().position(|v|v["ev"]=="view.remote"&&v["text"]==expected&&v["serial"]==serial){found=Some(queue.remove(i));true}else{false}}).await;
+    let offer=found.unwrap();editor.request("view.ack",&json!({"handle":"a","epoch":offer["epoch"],"accept":true})).await.unwrap();offer
+}
 
 struct Remote {
     seed: live::Seed,
@@ -463,4 +476,76 @@ async fn old_clients_do_not_create_a_cloud_graph_without_negotiating_its_recover
             .code,
         "cloud-client-required"
     );
+}
+
+#[tokio::test]
+async fn native_editor_preserves_author_undo_when_remote_projection_races_with_typing(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let (_,hub)=make_hub(root.path(),private.path(),remote.clone());let (editor,events)=editors(hub.clone());
+    let opened=editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();assert_eq!(opened["text"],"one 🦀 two");
+    editor.request("view.ready",&json!({"handle":"a"})).await.unwrap();
+    editor.request("view.edit",&json!({"handle":"a","epoch":0,"serial":1,"parts":[{"from":0,"removed":"","inserted":"local "}]})).await.unwrap();
+    eventually(||remote.doc().text()=="local one 🦀 two").await;
+    remote.remote_edit(" peer");editor.request("view.sync",&json!({"handle":"a"})).await.unwrap();
+    eventually(||events.lock().unwrap().iter().any(|v|v["ev"]=="view.remote"&&v["text"]=="local one 🦀 two peer")).await;
+    editor.request("view.edit",&json!({"handle":"a","epoch":0,"serial":2,"parts":[{"from":6,"removed":"one","inserted":"1"}]})).await.unwrap();
+    editor.request("view.ack",&json!({"handle":"a","epoch":1,"accept":false})).await.unwrap();
+    let offer=project(&editor,&events,"local 1 🦀 two peer",2).await;
+    assert_eq!(offer["parts"][0]["from"],14);
+    let undone=editor.request("view.undo",&json!({"handle":"a","epoch":1,"serial":3})).await.unwrap();assert_eq!(undone["text"],"local one 🦀 two peer");
+    let undone=editor.request("view.undo",&json!({"handle":"a","epoch":1,"serial":4})).await.unwrap();assert_eq!(undone["text"],"one 🦀 two peer");
+    assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
+    let saved=editor.request("view.save",&json!({"handle":"a"})).await.unwrap();assert_eq!(saved["text"],"one 🦀 two peer");
+    assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two peer");
+    editor.request("view.close",&json!({"handle":"a"})).await.unwrap();assert!(hub.snapshot("a.txt").is_err());editor.close().await;
+}
+
+#[tokio::test]
+async fn native_save_keeps_later_editor_transactions_dirty_and_private(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let (_,hub)=make_hub(root.path(),private.path(),remote.clone());let (editor,_)=editors(hub.clone());
+    editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();editor.request("view.ready",&json!({"handle":"a"})).await.unwrap();
+    hub.sync_cloud("a.txt").await.unwrap();
+    eventually(||!editor.pending()).await;
+    let gate=Arc::new(Gate{entered:Default::default(),release:Default::default()});*remote.gate.lock().unwrap()=Some(gate.clone());
+    let saving=editor.clone();let save=tokio::spawn(async move{saving.request("view.save",&json!({"handle":"a"})).await.unwrap()});
+    tokio::time::timeout(std::time::Duration::from_secs(5),gate.entered.notified()).await.unwrap();
+    editor.request("view.edit",&json!({"handle":"a","epoch":0,"serial":1,"parts":[{"from":0,"removed":"","inserted":"later "}]})).await.unwrap();
+    gate.release.notify_one();let saved=save.await.unwrap();assert_eq!(saved["text"],"one 🦀 two");
+    assert_eq!(hub.text("a.txt").unwrap(),"later one 🦀 two");assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
+    editor.close().await;let opened=hub.attach("a.txt","again",None,Arc::new(|_|{})).await.unwrap();assert!(opened.dirty);assert_eq!(opened.text,"later one 🦀 two");
+}
+
+#[tokio::test]
+async fn independent_native_windows_share_history_but_not_author_undo(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let (_,hub)=make_hub(root.path(),private.path(),remote.clone());let (one,_)=editors(hub.clone());let (two,events)=editors(hub.clone());
+    for editor in [&one,&two]{editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();editor.request("view.ready",&json!({"handle":"a"})).await.unwrap();}
+    one.request("view.edit",&json!({"handle":"a","epoch":0,"serial":1,"parts":[{"from":0,"removed":"","inserted":"first "}]})).await.unwrap();
+    project(&two,&events,"first one 🦀 two",0).await;
+    two.request("view.edit",&json!({"handle":"a","epoch":1,"serial":1,"parts":[{"from":16,"removed":"","inserted":" second"}]})).await.unwrap();
+    let undo=two.request("view.undo",&json!({"handle":"a","epoch":1,"serial":2})).await.unwrap();assert_eq!(undo["text"],"first one 🦀 two");
+    one.close().await;assert!(hub.snapshot("a.txt").is_ok());two.close().await;assert!(hub.snapshot("a.txt").is_err());
+}
+
+#[tokio::test]
+async fn native_editor_rejects_surrogates_without_mutation_and_passes_legacy_history_through(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let (_,hub)=make_hub(root.path(),private.path(),remote.clone());let (editor,_)=editors(hub.clone());
+    editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();editor.request("view.ready",&json!({"handle":"a"})).await.unwrap();
+    assert!(editor.request("view.edit",&json!({"handle":"a","epoch":0,"serial":1,"parts":[{"from":5,"removed":"","inserted":"split"}]})).await.is_err());
+    assert_eq!(hub.text("a.txt").unwrap(),"one 🦀 two");editor.close().await;
+    let other=tempfile::tempdir().unwrap();let state=tempfile::tempdir().unwrap();std::fs::write(other.path().join("a.txt"),"one 🦀 two").unwrap();
+    let store=Arc::new(DirStore::with_state_root(other.path(),state.path()).unwrap());let legacy=Arc::new(DocHub::new(store,Arc::new(|_|{})));
+    legacy.attach("a.txt","old",None,Arc::new(|_|{})).await.unwrap();legacy.detach("a.txt","old");legacy.release("a.txt").await.unwrap();legacy.set_cloud(remote.clone());
+    let (editor,_)=editors(legacy);let result=editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();assert_eq!(result["passthrough"],true);assert!(result["syncMessage"].as_str().unwrap().contains("reconciliation"));editor.close().await;
+}
+
+#[tokio::test]
+async fn fresh_native_files_stay_editable_when_the_cloud_cannot_provide_a_history(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();remote.offline.store(true,Ordering::SeqCst);let (store,hub)=make_hub(root.path(),private.path(),remote);
+    let (editor,_)=editors(hub.clone());let opened=editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();
+    assert_eq!(opened["passthrough"],true);assert!(hub.snapshot("a.txt").is_err());assert!(store.read_state("doc:a.txt").await.unwrap().is_none());
+    editor.close().await;assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
 }

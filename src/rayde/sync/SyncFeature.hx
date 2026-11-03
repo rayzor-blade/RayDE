@@ -400,6 +400,7 @@ class SyncFeature {
 					current.sent = event.bytes;
 					current.total = event.bytesTotal;
 				case "published":
+					if(host.cloudSynced!=null)host.cloudSynced();
 					current.phase = Synced;
 					current.url = event.url;
 					current.lastSync = Date.now().getTime();

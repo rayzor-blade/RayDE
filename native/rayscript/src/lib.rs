@@ -1,5 +1,6 @@
 //! An embedded extension VM, confined to one thread; only owned messages cross the ABI.
 use rayscript_host::{Config, Host, PROTOCOL};
+mod sync_editor;
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,

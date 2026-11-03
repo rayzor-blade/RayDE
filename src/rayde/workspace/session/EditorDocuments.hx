@@ -59,7 +59,8 @@ class EditorDocuments {
 		for (entry in retained) { entry.binding.file = entry.file; bindings.set(entry.file,entry.binding); }
 		if (retained.length > 0) revision.set(revision.get() + 1);
 	}
-	public function owns(file:String):Bool return bindings.exists(file);
+	public function owns(file:String):Bool {var binding=bindings.get(file);return binding!=null&&binding.active;}
+	public function refresh(file:String):Void {var binding=bindings.get(file);if(binding!=null&&binding.active)binding.refresh();}
 	public function readOnly(file:String):Bool { revision.get(); var binding = bindings.get(file); return binding != null && (binding.blocked.get() || binding.moving.get()); }
 	/** Hold projection callbacks until the workbench has remapped every path-based owner. */
 	public function hold(from:String):Void->Void {
@@ -69,13 +70,13 @@ class EditorDocuments {
 	}
 	public function message(file:String):String {
 		revision.get(); var binding = bindings.get(file);
-		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.moving.get() ? "Moving document…" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept in browser" : binding.status.get();
+		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.moving.get() ? "Moving document…" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept locally" : binding.status.get();
 	}
 	public function acceptBuffer(file:String):Void { var binding = bindings.get(file); if (binding != null) binding.acceptBuffer(); }
 	public function pause(message:String):Void for (binding in bindings) binding.fail(message,false);
 	public function frame():Void for (binding in bindings) binding.frame();
 	public function save(file:String, done:(Null<String>, String, String)->Void):Bool {
-		var binding = bindings.get(file); if (binding == null) return false;
+		var binding = bindings.get(file); if (binding == null || !binding.active) return false;
 		binding.save(done);
 		return true;
 	}
@@ -84,6 +85,7 @@ class EditorDocuments {
 }
 
 private class EditorBinding {
+	public var active(default,null)=true;
 	public final handle:String;
 	public final blocked = Signal.make(true);
 	public final failure = Signal.make("");
@@ -115,7 +117,6 @@ private class EditorBinding {
 		this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
 		known = initial = state.value.get();
 		if (state.onTransaction != null || state.onUndo != null) throw "This document already belongs to a collaboration session.";
-		state.history.clear();
 		state.onTransaction = transaction;
 		state.onUndo = undo;
 		pending = client.requestAsync("view.open", {handle:handle, path:rayde.files.FileOps.relative(client.root, file)});
@@ -132,10 +133,11 @@ private class EditorBinding {
 		notify("view.edit", {epoch:epoch, serial:++serial, parts:edit.parts});
 	}
 	public function acceptBuffer():Void {
-		if (closed || broken || moving.get() || state.value.get() == known) return;
+		if (!active || closed || broken || moving.get() || state.value.get() == known) return;
 		var next = state.value.get(), position = selection();
 		transaction({before:known, after:next, parts:CodeHistory.difference(known,next), selection:position, next:position});
 	}
+	public function refresh():Void {if(!opening&&!closed&&!broken)notify("view.sync",{});}
 	function undo(redo:Bool):Void {
 		if (blocked.get() || moving.get() || closed) return;
 		acceptBuffer(); blocked.set(true);
@@ -170,10 +172,10 @@ private class EditorBinding {
 	public function frame():Void {
 		if(statusPending!=null){status.set(statusPending);statusPending=null;}
 		if (closed || broken || moving.get()) return;
-		if (saving != null && saving.future.isReady()) {
+		if (saving != null && (saving.future.isReady() || saving.future.isRejected())) {
 			var completed = saving; saving = null;
 			var error:Null<String> = null;
-			try completed.future.await() catch (failure:Dynamic) error = Std.string(failure);
+			try {var envelope:Dynamic=completed.future.await();var result:Dynamic=envelope==null?null:Reflect.hasField(envelope,"result")?envelope.result:envelope;if(result!=null&&Std.isOfType(result.text,String))completed.text=result.text;} catch (failure:Dynamic) error = Std.string(failure);
 			completed.done(error,completed.text,file);
 			if (closed) return;
 		}
@@ -182,10 +184,15 @@ private class EditorBinding {
 			var result:Dynamic;
 			try result = pending.await().result catch (error:Dynamic) { pending = null; fail(Std.string(error)); return; }
 			pending = null;
+			if(opening&&result!=null&&result.passthrough==true){
+				opening=false;active=false;blocked.set(false);state.onTransaction=null;state.onUndo=null;
+				status.set(Std.isOfType(result.syncMessage,String)?result.syncMessage:"");return;
+			}
 			if (result == null || !Std.isOfType(result.text,String)) { fail("The workspace returned an invalid document."); return; }
 			if(Std.isOfType(result.syncMessage,String))status.set(result.syncMessage);
 			var previous = state.value.get();
 			if (opening) {
+				state.history.clear();
 				opening = false; known = result.text; state.applyRemote(known);
 				blocked.set(false); notify("view.ready", {});
 				if (initial != disk && initial != known) {
@@ -216,7 +223,7 @@ private class EditorBinding {
 	public function dispose():Void {
 		if (closed) return;
 		closed = true;
-		state.onTransaction = null; state.onUndo = null; state.history.clear();
+		if(active){state.onTransaction = null; state.onUndo = null; state.history.clear();}
 		notify("view.close", {}); pending = null; saving = null; remote = null;
 	}
 }

@@ -96,7 +96,7 @@ Deployment also needs a real GitHub App, secrets configured with Wrangler, a san
 
 ## Shared Cloud Sync document histories
 
-The Rust gateway supports shared text histories. Restored browser sessions attach fresh supported documents to those histories through the existing editor bridge. Open/edit/Save barriers exchange updates; pushed delivery and desktop editor attachment remain separate work. Existing unbound session graphs remain on snapshot sync; untagged browser caches pause before mixing with a cloud history.
+The Rust gateway supports shared text histories. Restored browser sessions and configured desktop development workspaces attach fresh supported documents through the existing editor bridge. Open/edit/Save barriers exchange updates; pushed delivery and production desktop sign-in remain separate work. Existing unbound session graphs remain on snapshot sync; untagged browser caches pause before mixing with a cloud history.
 
 An authenticated owner or that workspace's publish capability can POST to `/api/sync/workspaces/{id}/documents/open` with `{path,generation}`. The file must be published UTF-8 text. The response contains a complete Yrs update, `seed`, `lineage`, `sequence`, `vector`, current text `sha256`, and saved-file `anchor`. Independent replicas apply that update before making edits. The seed is deterministic and bound to workspace, path and the generation where its lineage began. Recreating a retired path allocates another lineage.
 

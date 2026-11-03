@@ -5,6 +5,10 @@ pub mod cloud;
 pub mod framing;
 mod buffer_state;
 pub mod docs;
+#[cfg(feature = "server")]
+pub mod editor;
+#[cfg(feature = "server")]
+pub mod desktop;
 pub mod error;
 pub mod session;
 pub mod store;

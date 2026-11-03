@@ -7,6 +7,9 @@ bash scripts/build-rayscript.sh
 (cd web/cloud && worker-build --release >/dev/null)
 stage_natives bin
 haxe "${ui_args[@]}" -cp tests -main SyncPushChecks -hl bin/sync-push-checks.hl
+haxe "${ui_args[@]}" -cp tests -main DesktopSyncChecks -hl bin/desktop-sync-checks.hl
+cargo build --manifest-path native/session/Cargo.toml --bin rayde-session --locked --quiet
+cargo build --manifest-path native/sync/Cargo.toml --example push --locked --quiet
 log=$(mktemp)
 node web/cloud/test/serve-gateway.mjs > "$log" &
 gateway=$!
@@ -16,3 +19,4 @@ url=$(sed -n 's/^READY //p' "$log")
 [ -n "$url" ] || { echo "the gateway did not start" >&2; exit 1; }
 export ASH="$ash" RAYDE_SYNC_GATEWAY="$url" RAYDE_SYNC_DEV_ACCOUNT=alice
 "$ash" --preset application bin/sync-push-checks.hl
+(cd web/cloud && node test/desktop-bindings.mjs)

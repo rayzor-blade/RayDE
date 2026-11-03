@@ -85,6 +85,13 @@ pub fn manifest(config:&Config)->Result<Manifest,Failure>{
     let (gateway,workspace)=connection(config)?;
     Manifest::from_bytes(&gateway.call_limited("GET",&format!("/workspaces/{workspace}/export/manifest"),None,Some(16*1024*1024))?).map_err(|_|invalid())
 }
+/// Resolve this Git folder's previously published workspace without publishing or reading the network.
+pub fn desktop_config(config:&Config)->Result<Config,Failure>{
+    let (_,held)=remembered(config)?;let key=config.gateway.trim_end_matches('/');
+    let id=held[key]["workspace"].as_str().ok_or_else(||Failure::new("not-synced","Sync this folder before enabling live cloud documents."))?;
+    WorkspaceId::parse(id).map_err(|_|invalid())?;
+    let mut config=config.clone();config.workspace=Some(id.into());Ok(config)
+}
 pub fn open(config: &Config, path: &str, generation: u64) -> Result<Reply, Failure> {
     let reply = request(
         config,

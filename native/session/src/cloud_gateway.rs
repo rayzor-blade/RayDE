@@ -14,16 +14,19 @@ use rayde_sync::{
 use std::sync::Arc;
 
 pub struct Gateway {
-    writeback: Arc<Writeback>,
+    source: Source,
     permits: tokio::sync::Semaphore,
 }
+enum Source{Session(Arc<Writeback>),Desktop(client::Config)}
 impl Gateway {
     pub fn new(writeback: Arc<Writeback>) -> Self {
         Self {
-            writeback,
+            source:Source::Session(writeback),
             permits: tokio::sync::Semaphore::new(8),
         }
     }
+    pub fn desktop(config:client::Config)->Self{Self{source:Source::Desktop(config),permits:tokio::sync::Semaphore::new(8)}}
+    fn config(&self)->client::Config{match &self.source{Source::Session(writeback)=>writeback.config(),Source::Desktop(config)=>config.clone()}}
 }
 fn failure(failure: client::Failure) -> SessionError {
     let code = match failure.status {
@@ -64,7 +67,7 @@ impl Provider for Gateway {
     ) -> BoxFuture<'a, Result<Option<Opened>>> {
         Box::pin(async move {
             let _permit = self.permits.acquire().await.map_err(|_| cloud::lineage())?;
-            let config = self.writeback.config();
+            let config = self.config();
             let (path, disk) = (path.to_string(), disk.to_string());
             tokio::task::spawn_blocking(move||{
    if let Some(old)=&previous{old.validate()?;if old.gateway!=config.gateway||old.seed["path"]!=path||old.seed["workspace"].as_str()!=config.workspace.as_deref(){return Err(cloud::lineage())}}
@@ -85,7 +88,7 @@ impl Provider for Gateway {
     ) -> BoxFuture<'a, Result<Exchanged>> {
         Box::pin(async move {
             let _permit = self.permits.acquire().await.map_err(|_| cloud::lineage())?;
-            let config = self.writeback.config();
+            let config = self.config();
             tokio::task::spawn_blocking(move || {
                 previous.validate()?;
                 let seed: Seed =

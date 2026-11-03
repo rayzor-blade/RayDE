@@ -106,6 +106,9 @@ class DocumentsPart {
 	final documents = new Map<String, DocumentState>();
 	final initialDisk = new Map<String, String>();
 	var sessionDocs:Null<rayde.workspace.session.EditorDocuments>;
+	var documentClient:Null<rayde.workspace.session.SessionClient>;
+	var desktopConnecting:Null<ash.Future<rayde.workspace.session.SessionClient>>;
+	var desktopActive="";
 	var reopening:Null<ash.Future<Dynamic>>;
 	final sessionMoves:Array<{from:String,to:String}> = [];
 	var applyingSessionMove = false;
@@ -113,7 +116,44 @@ class DocumentsPart {
 
 	function setupSession():Void {
 		var client = rayde.workspace.PageHost.session;
-		if (client == null) return;
+		if (client == null) {
+			#if !wasm
+			wb.contributions.onFrame(receiveDesktopSession);
+			wb.contributions.onClose(() -> {if(documentClient!=null)documentClient.close();if(desktopConnecting!=null)desktopConnecting.then(client -> client.close(),_ -> {});});
+			setupDesktopSession();
+			#end
+			return;
+		}
+		bindSession(client);
+	}
+	public function setupDesktopSession():Void {
+		#if !wasm
+		if(wb.gone||sessionDocs!=null||desktopConnecting!=null)return;
+		var gateway=Sys.getEnv("RAYDE_SYNC_GATEWAY"),account=Sys.getEnv("RAYDE_SYNC_DEV_ACCOUNT");
+		if(gateway==null||gateway==""||account==null||account=="")return;
+		var future=new ash.Future<rayde.workspace.session.SessionClient>();desktopConnecting=future;
+		sys.thread.Thread.create(() -> {
+			try future.resolve(rayde.sync.DesktopChannel.connect(wb.props.display.cwd,gateway,account)) catch(error:Dynamic) future.reject(error);
+			ashui.animation.AnimationScheduler.main.after(.001,() -> {});
+		});
+		#end
+	}
+	function receiveDesktopSession():Void {
+		if(sessionDocs!=null&&documentClient!=null&&!documentClient.remote&&desktopActive!=wb.active.get()){desktopActive=wb.active.get();sessionDocs.refresh(desktopActive);}
+		if(desktopConnecting==null||!desktopConnecting.isReady()&&!desktopConnecting.isRejected())return;
+		var future=desktopConnecting;desktopConnecting=null;
+		try {
+			var client=future.await();if(wb.gone){client.close();return;}
+			client.onWake=() -> ashui.animation.AnimationScheduler.main.after(.001,() -> {});
+			wb.contributions.onFrame(client.drain);bindSession(client);
+			for(file=>state in documents)attachSessionDocument(file,state,Fs.getContent(file));
+		} catch(error:Dynamic) {
+			if(Std.isOfType(error,rayde.workspace.session.SessionClient.SessionFailure)&&cast(error,rayde.workspace.session.SessionClient.SessionFailure).code=="not-synced")return;
+			if(!wb.gone)wb.say("Cloud document sync: "+Std.string(error));
+		}
+	}
+	function bindSession(client:rayde.workspace.session.SessionClient):Void {
+		documentClient=client;
 		wb.contributions.readOnlyWhen(client.readOnly);
 		if (!client.documentBridge) return;
 		sessionDocs = new rayde.workspace.session.EditorDocuments(client, (file, local) -> {
@@ -138,7 +178,7 @@ class DocumentsPart {
 			}
 			sessionMoves.push({from:haxe.io.Path.join([client.root,event.from]),to:haxe.io.Path.join([client.root,event.to])});
 		}));
-		wb.contributions.onFrame(receiveReopen);
+		if(client.remote)wb.contributions.onFrame(receiveReopen);
 		wb.contributions.onClose(sessionDocs.close);
 		wb.contributions.onEdited(sessionDocs.acceptBuffer);
 		wb.contributions.refuses((path, doing) -> {
@@ -148,6 +188,11 @@ class DocumentsPart {
 		});
 		wb.contributions.status({id:"workspace.document", place:"right", order:1, build:() ->
 			<if {sessionDocs.message(wb.active.get()) != ""}><text class="text-xs text-text-secondary px-2">${sessionDocs.message(wb.active.get())}</text></if>});
+	}
+	function attachSessionDocument(file:String,state:DocumentState,disk:String):Void {
+		if(sessionDocs==null||documentClient==null||!FileOps.inside(documentClient.root,file)||state.value.get().indexOf("\x00")>=0)return;
+		if(!documentClient.remote&&(state.onTransaction!=null||state.onUndo!=null||state.value.get()!=disk||DocumentHistory.canUndo(state)||DocumentHistory.canUndo(state,true)))return;
+		sessionDocs.attach(file,state,disk);
 	}
 
 	function receiveSessionMoves():Void {
@@ -210,8 +255,7 @@ class DocumentsPart {
 			state = new DocumentState(buffer(file));
 			DocumentHistory.restore(state, localHistory.undo(file, state.value.get()));
 			documents.set(file, state);
-			if (sessionDocs != null && FileOps.inside(rayde.workspace.PageHost.session.root,file) && state.value.get().indexOf("\x00") < 0)
-				sessionDocs.attach(file,state,initialDisk.get(file) ?? state.value.get());
+			attachSessionDocument(file,state,initialDisk.get(file) ?? state.value.get());
 			initialDisk.remove(file);
 		}
 		return state;
