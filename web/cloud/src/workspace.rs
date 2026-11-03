@@ -804,6 +804,21 @@ fn publish_capability(env: &Env, value: &Value) -> Value {
         _ => Value::Null,
     }
 }
+fn runner_session_origin(env: &Env, endpoint: &Url) -> AppResult<()> {
+    let Some(configured) = config(env,"RUNNER_SESSION_ORIGIN") else { return Ok(()); };
+    let mut expected = Url::parse(&configured).map_err(|_|bad(503,"Invalid runner session origin."))?;
+    let mut target = endpoint.clone();
+    for url in [&mut expected,&mut target] {
+        let scheme = match url.scheme() {"wss"|"https"=>"https","ws"|"http" if config(env,"LOCAL_DEV").as_deref()==Some("1")=>"http",_=>return Err(bad(503,"Invalid runner session origin."))};
+        url.set_scheme(scheme).map_err(|_|bad(503,"Invalid runner session origin."))?;
+    }
+    if expected.path()!="/" || expected.query().is_some() || expected.fragment().is_some()
+        || !expected.username().is_empty() || expected.password().is_some()
+        || expected.origin()!=target.origin() || !target.username().is_empty() || target.password().is_some() {
+        return Err(bad(502,"The workspace endpoint does not match the configured runner."));
+    }
+    Ok(())
+}
 async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     let url = config(env, "RUNNER_URL").unwrap_or_else(|| "https://runner.internal".into());
     let endpoint = Url::parse(&url).map_err(|_| bad(503, "Invalid runner configuration."))?;
@@ -838,6 +853,7 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     {
         return Err(bad(502, "The workspace requires a secure connection."));
     }
+    runner_session_origin(env,&endpoint)?;
     let token =
         text(&connection, "token").map_err(|_| bad(502, "The workspace credential is missing."))?;
     if token.is_empty() || token.len() > 4096 {
@@ -851,6 +867,7 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
 
 async fn connect_backend(env: &Env, connection: &Value, data: &Value, signal: &worker::AbortSignal) -> AppResult<Response> {
     let mut endpoint = Url::parse(text(connection,"url")?).map_err(|_|bad(502,"Invalid workspace endpoint."))?;
+    runner_session_origin(env,&endpoint)?;
     let scheme = if endpoint.scheme()=="wss" {"https"} else {"http"};
     endpoint.set_scheme(scheme).map_err(|_|bad(502,"Invalid workspace endpoint."))?;
     let headers = Headers::new();

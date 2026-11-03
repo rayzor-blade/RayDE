@@ -58,6 +58,8 @@
   "vars": {
     "ASSETS_ORIGIN": "https://assets-staging.rayde.org",
     "APP_ORIGIN": "https://app-staging.rayde.org",
+    "RUNNER_URL": "https://runner-staging.rayde.org",
+    "RUNNER_SESSION_ORIGIN": "https://runner-staging.rayde.org",
     "GITHUB_APP_SLUG": "rayde-staging",
     "PREVIEW_ORIGIN": "https://preview-staging.rayde.org"
   },

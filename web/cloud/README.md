@@ -70,6 +70,8 @@ response: { url: "wss://private-compute/session", token: "private token",
 
 The provider must reuse the workspace ID on retry, authorize the owner/repository pairing, and perform checkout in its trusted control plane. Never expose the GitHub token to guest programs, arguments, logs, disk configuration or a public preview. Return a private connection credential, accessible only to the gateway.
 
+For a tunnel-backed runner, configure `RUNNER_SESSION_ORIGIN` with its HTTPS origin alongside `RUNNER_URL` and the private `RUNNER_SECRET`. Both provisioning and session WebSockets require that credential. The origin setting refuses a returned session on another host before any credential is sent there. The native runner continues listening on loopback and advertises its explicit `wss://` ingress address.
+
 The Rust [MSB runner](../../native/runner/README.md) supplies this contract for local Linux/KVM testing, including the NUC. It uses labelled, bounded guests and private command-stream transport without publishing guest ports. Its `409` recovery-required response preserves used workspace state rather than recloning it. Local GitHub/DO/R2 emulation can exercise the real runner without a Cloudflare account; this is not yet a production provisioning deployment.
 
 The gateway supplies the compute token in the session handshake and relays the existing protocol. Its account/workspace metadata persists in Durable Objects; repository-session documents remain in the Rust session process. Cloud Sync text uses the shared journals described below. It closes upstream connections when clients disconnect. An interrupted upstream requires reconnecting. A running upstream socket keeps its actor active; this is not a fully hibernating document runner.

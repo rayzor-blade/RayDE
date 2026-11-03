@@ -160,23 +160,7 @@ pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<R
     drop(records);
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     let address = listener.local_addr()?;
-    let base = config
-        .public_url
-        .clone()
-        .unwrap_or_else(|| format!("ws://{address}"));
-    let endpoint = reqwest::Url::parse(&base).map_err(|_| invalid())?;
-    if endpoint.scheme() != "ws"
-        || endpoint
-            .host_str()
-            .is_none_or(|host| !matches!(host, "127.0.0.1" | "localhost" | "[::1]" | "::1"))
-        || endpoint.path() != "/"
-        || endpoint.query().is_some()
-        || endpoint.fragment().is_some()
-        || !endpoint.username().is_empty()
-        || endpoint.password().is_some()
-    {
-        return Err(invalid());
-    }
+    let base = config.session_base(address)?;
     let http = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(5))

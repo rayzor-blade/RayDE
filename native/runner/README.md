@@ -30,7 +30,9 @@ Create a private random control credential in a file with mode `0600`. Keep the 
 }
 ```
 
-Run `rayde-runner --config /private/config.json`. Only loopback listeners and WebSocket addresses are accepted. Forward the port over SSH when the local Worker runs on another machine. `publicUrl`, when needed, is the loopback `ws://` base address visible through that forwarding. Configure the local Worker's `RUNNER_URL` and private `RUNNER_SECRET` accordingly. Never send either credential to browser code.
+Run `rayde-runner --config /private/config.json`. The listener always stays on loopback. For local testing, forward its port over SSH and use the forwarded loopback `ws://` address as `publicUrl`.
+
+For hosted sessions, set `publicUrl` to the root `wss://` address of authenticated TLS ingress, such as a Cloudflare Tunnel forwarding to the loopback listener. The runner requires its private Bearer credential for provisioning and session WebSockets; guest ports stay private. Secure external endpoints refuse `localRepositories` fixtures. Configure the Worker with `RUNNER_URL=https://<runner-host>`, `RUNNER_SESSION_ORIGIN=https://<runner-host>` and the matching private `RUNNER_SECRET`. The origin setting refuses replacement session destinations before forwarding the credential. Keep credentials outside the repository and browser code.
 
 For test repositories, `localRepositories` can explicitly bind `{ "owner": 1, "repository": 111, "path": "/absolute/git/repository" }`. This bypasses GitHub authorization only for that operator-configured pairing. Leave it empty for real repository access.
 

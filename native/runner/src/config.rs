@@ -117,6 +117,32 @@ mod tests {
         }
         assert!(config("http://127.0.0.1:9792", Some("http://127.0.0.1:9793")).validate().is_err());
     }
+
+    #[test]
+    fn secure_ingress_changes_only_the_advertised_session_address() {
+        let mut value = config("https://gateway.example.test",None);
+        value.public_url = Some("wss://runner.example.test/".into());
+        value.validate().unwrap();
+        assert_eq!(value.session_base("127.0.0.1:9791".parse().unwrap()).unwrap(),"wss://runner.example.test");
+        assert!(value.listen.ip().is_loopback());
+        value.listen = "0.0.0.0:9791".parse().unwrap();
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn advertised_ingress_refuses_plaintext_remote_urls_credentials_and_fixture_bypasses() {
+        for url in ["ws://runner.example.test", "https://runner.example.test", "wss://user:secret@runner.example.test",
+            "wss://runner.example.test/session", "wss://runner.example.test/?token=secret", "wss://runner.example.test/#fragment", "wss://runner.example.test\n"] {
+            let mut value = config("https://gateway.example.test",None);value.public_url=Some(url.into());
+            assert!(value.validate().is_err(),"{url}");
+        }
+        let mut value = config("https://gateway.example.test",None);
+        value.public_url=Some("wss://runner.example.test".into());
+        value.local_repositories.push(LocalRepository{owner:1,repository:111,path:"/fixture".into()});
+        assert!(value.validate().is_err());
+        value.public_url=Some("ws://127.0.0.1:9791".into());
+        value.validate().unwrap();
+    }
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -143,6 +169,22 @@ fn lifetime() -> u64 {
     3600
 }
 impl Config {
+    /// The advertised transport may use TLS ingress while the service stays on loopback.
+    pub(crate) fn session_base(&self, address: SocketAddr) -> Result<String> {
+        let base = self.public_url.clone().unwrap_or_else(||format!("ws://{address}"));
+        let endpoint = reqwest::Url::parse(&base).map_err(|_|invalid())?;
+        let loopback = endpoint.host_str().is_some_and(|host|
+            host == "localhost" || host.trim_matches(['[',']']).parse::<std::net::IpAddr>().is_ok_and(|ip|ip.is_loopback()));
+        if base.len() > 512 || base.chars().any(char::is_whitespace)
+            || !(endpoint.scheme() == "wss" || endpoint.scheme() == "ws" && loopback)
+            || endpoint.host_str().is_none() || endpoint.path() != "/"
+            || endpoint.query().is_some() || endpoint.fragment().is_some()
+            || !endpoint.username().is_empty() || endpoint.password().is_some()
+            || endpoint.scheme() == "wss" && !self.local_repositories.is_empty()
+        { return Err(invalid()); }
+        Ok(endpoint.as_str().trim_end_matches('/').to_owned())
+    }
+
     pub async fn load(path: &Path) -> Result<Self> {
         let bytes = tokio::fs::read(path).await?;
         if bytes.len() > 64 * 1024 {
@@ -151,6 +193,7 @@ impl Config {
         serde_json::from_slice(&bytes).map_err(|_| invalid())
     }
     pub(crate) fn validate(&self) -> Result<()> {
+        self.session_base(self.listen)?;
         if !self.listen.ip().is_loopback()
             || !self.state_root.is_absolute()
             || !self.msb.is_absolute()
