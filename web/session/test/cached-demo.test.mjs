@@ -21,6 +21,8 @@ test('edited, missing, added inputs and changed runner flags cannot reuse a stal
   assert.equal((await instance([entry]).open(root,{...configuration,buildFlags:['-O0']})).available,false);
   assert.equal((await instance([entry]).open('/another-workspace',configuration)).available,false);
   assert.equal((await instance([entry,{path:root+'/data/tasks.json',directory:false,data:encode('[]')}]).open(root,configuration)).available,true);
+  for(const name of ['README.md','.gitignore'])
+    assert.equal((await instance([entry,{path:root+'/'+name,directory:false,data:encode('local notes')}]).open(root,configuration)).available,true);
 });
 test('the artifact must have a distinct trusted origin and a bounded manifest',()=>{
   assert.throws(()=>new CachedDemo(preset,'https://rayde.org/dist/sample.json','https://rayde.org',()=>[],{}));

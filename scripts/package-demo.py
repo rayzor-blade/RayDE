@@ -6,6 +6,7 @@ import pathlib
 import hashlib
 import shutil
 import sys
+from demo_inputs import inputs
 
 source = pathlib.Path(__file__).resolve().parent.parent / 'site/demo'
 output = pathlib.Path(sys.argv[1])
@@ -23,11 +24,7 @@ bundle={'version':1,'name':'Pocket Studio','root':root,'project':'pocket-studio/
 prepared=source.parent.parent / 'bin/demo-preview/manifest.json'
 if prepared.is_file():
     preview=json.loads(prepared.read_text())
-    inputs={path.relative_to(source).as_posix():hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in source.rglob('*') if path.is_file() and path.relative_to(source).as_posix()!='data/tasks.json'
-            and path.relative_to(source).parts[0] not in ('bin','build','Export')
-            and not any(part in ('.git','.rayde','.rayzor','.haxelib','.rayde-session') for part in path.relative_to(source).parts)}
-    if inputs!=preview['inputs']:
+    if inputs(source)!=preview['inputs']:
         raise SystemExit('Pocket Studio sources changed; prepare its public preview before packaging')
     release=preview['release']
     if len(release)!=64 or any(char not in '0123456789abcdef' for char in release):

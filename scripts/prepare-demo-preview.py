@@ -10,14 +10,9 @@ import shutil
 import subprocess
 import tempfile
 import urllib.parse
+from demo_inputs import inputs
 
 ROOT=Path(__file__).resolve().parent.parent
-
-def inputs(root):
-    return {path.relative_to(root).as_posix():hashlib.sha256(path.read_bytes()).hexdigest()
-            for path in root.rglob('*') if path.is_file() and path.relative_to(root).as_posix()!='data/tasks.json'
-            and path.relative_to(root).parts[0] not in ('bin','build','Export')
-            and not any(part in ('.git','.rayde','.rayzor','.haxelib','.rayde-session') for part in path.relative_to(root).parts)}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

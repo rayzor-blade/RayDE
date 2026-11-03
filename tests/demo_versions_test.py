@@ -27,5 +27,30 @@ class DemoVersions(unittest.TestCase):
         for custom in [previous + '-cp custom\n', previous + '-dce no\n', previous.replace('-main Main', '-main Custom')]:
             self.assertEqual(site.demo_build(custom), custom)
 
+    def test_managed_demo_adds_preview_defaults_without_replacing_custom_choices(self):
+        template = json.loads((ROOT / 'site/demo/haxelib.json').read_text())
+        previous = {key: value for key, value in template.items() if key != 'rayde'}
+        upgraded = site.demo_manifest(previous)
+        self.assertEqual(upgraded, template)
+        self.assertEqual(json.dumps(upgraded, indent=2) + '\n', (ROOT / 'site/demo/haxelib.json').read_text())
+        custom = json.loads(json.dumps(previous))
+        custom['rayde'] = {'other': True, 'run': {'previews': {'hl': {'mode': 'process', 'compilerFlags': ['-D', 'custom']}}}}
+        upgraded = site.demo_manifest(custom)
+        self.assertEqual(upgraded['rayde']['run']['previews']['hl']['mode'], 'process')
+        self.assertEqual(upgraded['rayde']['run']['previews']['hl']['compilerFlags'], ['-D', 'custom'])
+        self.assertTrue(upgraded['rayde']['other'])
+
+    def test_managed_demo_upgrades_published_versions_and_preserves_custom_sources(self):
+        current = (ROOT / 'site/demo/build.hxml').read_text()
+        for version in site.PREVIOUS_ASHUI:
+            previous = current.replace(':0.2.3', ':' + version)
+            self.assertEqual(site.demo_build(previous), current)
+            self.assertEqual(site.demo_build(previous + '-cp custom\n'), current + '-cp custom\n')
+            manifest = json.loads((ROOT / 'site/demo/haxelib.json').read_text())
+            manifest['dependencies'] = {name: version for name in manifest['dependencies']}
+            self.assertEqual(set(site.demo_manifest(manifest)['dependencies'].values()), {'0.2.3'})
+            guide = (ROOT / 'site/demo/README.md').read_text()
+            self.assertEqual(site.demo_readme(guide.replace('0.2.3', version) + '\nMy notes\n'), guide + '\nMy notes\n')
+
 if __name__ == '__main__':
     unittest.main()

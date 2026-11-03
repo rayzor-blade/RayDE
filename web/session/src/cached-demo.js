@@ -1,6 +1,6 @@
 const digest = /^[a-f0-9]{64}$/;
 const privatePart = path => path.split('/').some(part => ['.git','.rayde','.rayzor','.haxelib','.rayde-session'].includes(part));
-export const demoInput = path => !privatePart(path) && path!=='data/tasks.json' && !['bin','build','Export'].includes(path.split('/')[0]);
+export const demoInput = path => !privatePart(path) && !['data/tasks.json','README.md','.gitignore'].includes(path) && !['bin','build','Export'].includes(path.split('/')[0]);
 const sha = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('');
 const canonical = value => JSON.stringify(value,(_,item)=>item && typeof item==='object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))) : item);
 const decode = data => Uint8Array.from(atob(data),char=>char.charCodeAt(0));

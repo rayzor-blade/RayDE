@@ -13,6 +13,7 @@ import tempfile
 import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+PREVIOUS_ASHUI = ('0.1.5', '0.2.0', '0.2.1', '0.2.2')
 
 def process_environment():
     environment = dict(os.environ)
@@ -40,8 +41,34 @@ def workspace_environment(directory):
 
 def demo_build(contents):
     template = (ROOT / 'site/demo/build.hxml').read_text()
+    dependencies = json.loads((ROOT / 'site/demo/haxelib.json').read_text())['dependencies']
+    for name, version in dependencies.items():
+        for previous in PREVIOUS_ASHUI:
+            contents = contents.replace('-L '+name+':'+previous+'\n', '-L '+name+':'+version+'\n')
     previous = template.replace('-dce full\n', '', 1)
     return template if contents == previous else contents
+
+def demo_manifest(definition):
+    template = json.loads((ROOT / 'site/demo/haxelib.json').read_text())
+    updated = json.loads(json.dumps(definition))
+    for name, version in template['dependencies'].items():
+        if updated.get('dependencies', {}).get(name) in PREVIOUS_ASHUI:
+            updated['dependencies'][name] = version
+    def defaults(current, values):
+        for key, value in values.items():
+            if key not in current:
+                current[key] = value
+            elif isinstance(current[key], dict) and isinstance(value, dict):
+                defaults(current[key], value)
+    defaults(updated, {'rayde': template['rayde']})
+    return {key: updated[key] for key in [*template, *updated] if key in updated}
+
+def demo_readme(contents):
+    dependencies = json.loads((ROOT / 'site/demo/haxelib.json').read_text())['dependencies']
+    for name, version in dependencies.items():
+        for previous in PREVIOUS_ASHUI:
+            contents = contents.replace('haxelib install '+name+' '+previous+'\n', 'haxelib install '+name+' '+version+'\n')
+    return contents
 
 def main():
     def stop(_signal, _frame):
@@ -82,32 +109,35 @@ def main():
             ignore.write_text(contents.rstrip('\n') + '\n.rayde/\n')
         if not (demo / '.haxelib').exists():
             subprocess.run(['haxelib','newrepo'],cwd=demo,check=True)
+        dependencies = json.loads((ROOT / 'site/demo/haxelib.json').read_text())['dependencies']
         for name in ['ashui-components','ashui-icons']:
-            ready = subprocess.run(['haxelib','path',name+':0.2.2'],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            version = dependencies[name]
+            ready = subprocess.run(['haxelib','path',name+':'+version],cwd=demo,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             if ready.returncode:
-                subprocess.run(['haxelib','install',name,'0.2.2','--always','--quiet'],cwd=demo,check=True)
+                subprocess.run(['haxelib','install',name,version,'--always','--quiet'],cwd=demo,check=True)
         for name in ['ashui','ashui-components','ashui-icons']:
             current = demo / '.haxelib' / name / '.current'
-            if current.is_file() and current.read_text().strip() in ['0.1.5','0.2.0','0.2.1']:
-                subprocess.run(['haxelib','set',name,'0.2.2'],cwd=demo,check=True,stdout=subprocess.DEVNULL)
+            if current.is_file() and current.read_text().strip() in PREVIOUS_ASHUI:
+                subprocess.run(['haxelib','set',name,dependencies[name]],cwd=demo,check=True,stdout=subprocess.DEVNULL)
         build = demo / 'build.hxml'
         contents = build.read_text()
-        for name in ['ashui','ashui-components','ashui-icons']:
-            for version in ['0.2.0','0.2.1']:
-                contents = contents.replace('-L '+name+':'+version+'\n','-L '+name+':0.2.2\n')
         contents = demo_build(contents)
         if contents != build.read_text():
             build.write_text(contents)
         manifest = demo / 'haxelib.json'
         if manifest.is_file():
             definition = json.loads(manifest.read_text())
-            changed = False
-            for name in ['ashui','ashui-components','ashui-icons']:
-                if definition.get('dependencies', {}).get(name) in ['0.1.5','0.2.0','0.2.1']:
-                    definition['dependencies'][name] = '0.2.2'
-                    changed = True
+            upgraded = demo_manifest(definition)
+            changed = upgraded != definition
+            definition = upgraded
             if changed:
                 manifest.write_text(json.dumps(definition, indent=2) + '\n')
+        guide = demo / 'README.md'
+        if guide.is_file():
+            contents = guide.read_text()
+            updated = demo_readme(contents)
+            if contents != updated:
+                guide.write_text(updated)
         args.workspace = build
     workspace = args.workspace.resolve() if args.workspace else None
     if workspace and not workspace.exists():

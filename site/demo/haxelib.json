@@ -10,14 +10,19 @@
       "previews": {
         "hl": {
           "mode": "browser",
-          "runner": "ash"
+          "runner": "ash",
+          "framework": "ashui",
+          "compilerFlags": [
+            "-dce",
+            "full"
+          ]
         }
       }
     }
   },
   "dependencies": {
-    "ashui": "0.2.2",
-    "ashui-components": "0.2.2",
-    "ashui-icons": "0.2.2"
+    "ashui": "0.2.3",
+    "ashui-components": "0.2.3",
+    "ashui-icons": "0.2.3"
   }
 }

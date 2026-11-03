@@ -155,7 +155,12 @@ class RunPart {
 	}
 
 	function browserPreviewSelected(target:String):Bool
-		return rayde.run.RunConfigurations.explicitBrowser(rayde.run.RunConfigurations.section(wb.props.display.cwd),target);
+		return target == "hl" && cachedDemo() || rayde.run.RunConfigurations.explicitBrowser(rayde.run.RunConfigurations.section(wb.props.display.cwd),target);
+
+	function cachedDemo():Bool {
+		var session = rayde.workspace.PageHost.session;
+		return session != null && session.demoPreview && haxe.io.Path.normalize(session.root) == haxe.io.Path.normalize(wb.props.display.cwd);
+	}
 
 	public function previewApp():Void {
 		previewAppBuild(false);
@@ -353,7 +358,7 @@ class RunPart {
 			return;
 		}
         #if (wasm || rayde_page)
-        if(canPreviewApp() && runner.configuration.mode=="browser"){previewApp();return;}
+        if(canPreviewApp() && (cachedDemo() || runner.configuration.mode=="browser")){previewApp();return;}
         #end
 		runner.start();
 		wb.panelsPart.showPanel("console");
