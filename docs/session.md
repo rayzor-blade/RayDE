@@ -10,7 +10,7 @@ In the browser, **Open Project** and **Open Folder** open the GitHub repository 
 
 **New Project** starts with the template grid. Select a starter, continue to **Create a repository**, and choose its name and visibility. GitHub sign-in opens a separate window so your editor and selected starter stay open. Repositories are private by default; after creation, RayDE prepares their remote workspace.
 
-Your GitHub account appears at the top right of the editor. Use **Sign in** or the **Sign out** icon there. RayDE asks you to save edited files before signing out and returning to Welcome.
+Your GitHub account appears at the top right of the editor. Click the GitHub icon and username for **Manage access** and **Sign out**. Manage access opens GitHub in another tab. RayDE asks you to save edited files before signing out and returning to Welcome. When signed out, use **Sign in** in the same place.
 
 ## Editing and saving
 

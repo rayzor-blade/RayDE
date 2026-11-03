@@ -108,10 +108,10 @@ export class Accounts {
       return this.signIn();
     }
     if (op === "account.cancel-signin") { this.signin?.cancel(); return {}; }
-    if (op === "account.install") {
+    if (op === "account.install" || op === "account.manage-access") {
       const url = new URL(this.installUrl ?? "https://github.com");
       if (!this.installUrl || url.origin !== "https://github.com" || !url.pathname.startsWith("/apps/")) throw new Error("The GitHub App is not configured.");
-      this.later(() => this.location.assign(url.href)); return {};
+      this.open(url.href,"_blank","noopener,noreferrer"); return {};
     }
     if (op === "account.signout") {
       await this.request("account.status", {});

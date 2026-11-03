@@ -129,3 +129,12 @@ test("a failed sign-out keeps the account and does not navigate away",async()=>{
   await assert.rejects(account.request("account.signout",{}),/Sign out failed/);
   assert.deepEqual(changes,[{user:{login:"alice"}}]);assert.deepEqual(navigations,[]);assert.equal(account.csrf,"csrf");
 });
+
+test("Manage access opens the GitHub App separately and preserves the editor",async()=>{
+  const opened=[],navigations=[];
+  const account=new Accounts({location:{href:"https://app.example/workspace",assign:url=>navigations.push(url)},open:(...args)=>opened.push(args),fetch:async()=>Response.json({user:{login:"alice"},csrf:"csrf",installUrl:"https://github.com/apps/rayde-staging/installations/new"})});
+  await account.request("account.status",{});await account.request("account.manage-access",{});
+  assert.deepEqual(opened,[["https://github.com/apps/rayde-staging/installations/new","_blank","noopener,noreferrer"]]);assert.deepEqual(navigations,[]);
+  account.installUrl="https://evil.invalid/apps/rayde";
+  await assert.rejects(account.request("account.manage-access",{}),/not configured/);assert.equal(opened.length,1);
+});

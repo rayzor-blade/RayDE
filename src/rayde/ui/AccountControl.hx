@@ -1,6 +1,7 @@
 package rayde.ui;
 
 import ashui.components.Button;
+import ashui.components.DropdownMenu;
 import ashui.components.Icon;
 import ashui.components.Tooltip;
 import ashui.layout.Element;
@@ -23,6 +24,7 @@ class AccountControl extends Component<AccountControlProps> {
 	final busy = Signal.make(true);
 	final failure = Signal.make("");
 	final cancelling = Signal.make(false);
+	final menu = Signal.make(false);
 	var pending:Null<ash.Future<Dynamic>>;
 	var operation = "";
 	var timer:Null<ashui.animation.AnimationScheduler.Timer>;
@@ -39,14 +41,31 @@ class AccountControl extends Component<AccountControlProps> {
 		});
 		timer = ashui.animation.AnimationScheduler.main.after(.016, () -> { timer = null; if (!gone) request("account.status"); });
 		var root = <div id="rayde-account" class="rayde-header-account flex items-center" onPointerDown={e -> e.stopPropagation()}>
-			<if {user.get() != null}><icon document={Icons.GITHUB_FILL} class="size-4 shrink-0 text-text-secondary"/><text id="rayde-account-name" class="rayde-account-name text-xs">${user.get() == null ? "" : user.get().login}</text></if>
-			<tooltip label={label()} side="bottom">
+			<if {user.get() != null}>
+				<dropdown-menu id="rayde-account-dropdown" open={menu}>
+					<dropdown-menu-trigger id="rayde-account-trigger" variant={Outline} size={Sm} class="rayde-account-action">
+						<if {busy.get()}><icon document={Icons.LOADER_4_LINE} class="size-4 animate-spin"/><else><icon document={Icons.GITHUB_FILL} class="size-4"/></if>
+						<text id="rayde-account-name" class="rayde-account-name">${user.get() == null ? "" : user.get().login}</text>
+					</dropdown-menu-trigger>
+					<dropdown-menu-content id="rayde-account-menu">
+						<if {failure.get() != ""}><dropdown-menu-item id="rayde-account-retry" disabled={busy.get()} onSelect={() -> request("account.status")}><icon document={Icons.RESTART_LINE} class="size-4"/>Retry connection</dropdown-menu-item><dropdown-menu-separator/></if>
+						<dropdown-menu-item id="rayde-account-manage" disabled={busy.get()} onSelect={() -> request("account.manage-access")}><icon document={Icons.SETTINGS_3_LINE} class="size-4"/>Manage access</dropdown-menu-item>
+						<dropdown-menu-item id="rayde-account-signout" disabled={busy.get()} onSelect={signOut}><icon document={Icons.LOGOUT_BOX_R_LINE} class="size-4"/>Sign out</dropdown-menu-item>
+					</dropdown-menu-content>
+				</dropdown-menu>
+			<else>
+				${signInControl()}
+			</if>
+		</div>;
+		return root;
+	}
+	function signInControl():Element {
+		var root = <tooltip label={label()} side="bottom">
 				<button id="rayde-account-action" variant={Outline} size={Sm} class="rayde-account-action" disabled={busy.get() && (operation != "account.signin" || cancelling.get())} onClick={_ -> activate()}>
 					<if {busy.get() && operation == "account.signin" && !cancelling.get()}><icon document={Icons.CLOSE_LINE} class="size-4"/><else><if {busy.get()}><icon document={Icons.LOADER_4_LINE} class="size-4 animate-spin"/><else><icon document={failure.get() != "" ? Icons.RESTART_LINE : user.get() == null ? Icons.GITHUB_FILL : Icons.LOGOUT_BOX_R_LINE} class="size-4"/></if></if>
 					<if {user.get() == null}><text class="rayde-account-action-label">${busy.get() && operation == "account.signin" ? "Cancel" : failure.get() != "" ? "Retry" : "Sign in"}</text></if>
 				</button>
-			</tooltip>
-		</div>;
+			</tooltip>;
 		for (node in ashui.css.Css.query(root.tree,root.node.id,"#rayde-account-action"))
 			ashui.css.Identity.of(root.tree,node).bindAttribute("aria-label", Computed.make(label));
 		return root;
@@ -59,6 +78,9 @@ class AccountControl extends Component<AccountControlProps> {
 		if (gone || event.ev != null && event.ev != "account.changed") return;
 		user.set(event.user); failure.set("");
 	}
+	function signOut():Void {
+		if (!busy.get()) props.beforeSignOut(() -> { if (!gone && !busy.get()) request("account.signout"); });
+	}
 	function activate():Void {
 		if (busy.get()) {
 			if (operation == "account.signin" && !cancelling.get()) {
@@ -69,10 +91,9 @@ class AccountControl extends Component<AccountControlProps> {
 		}
 		if (failure.get() != "") { request("account.status"); return; }
 		if (user.get() == null) request("account.signin");
-		else props.beforeSignOut(() -> { if (!gone && !busy.get()) request("account.signout"); });
 	}
 	function request(op:String):Void {
-		operation = op; cancelling.set(false); busy.set(true); failure.set("");
+		menu.set(false); operation = op; cancelling.set(false); busy.set(true); failure.set("");
 		pending = props.request == null ? PageHost.requestAccount(op) : props.request(op, {});
 		schedule();
 	}
@@ -85,7 +106,7 @@ class AccountControl extends Component<AccountControlProps> {
 			var result:Dynamic = reply.await().result;
 			if (result == null) throw "The account service returned an invalid response.";
 			if (operation == "account.signout") user.set(null);
-			else user.set(result.user);
+			else if (operation == "account.status" || operation == "account.signin") user.set(result.user);
 		} catch (error:Dynamic) { if (!cancelling.get()) { var message = PageHost.accountError(error); failure.set(message); props.say(message); } }
 	}
 }
