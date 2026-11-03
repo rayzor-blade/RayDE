@@ -6,7 +6,7 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "worker-build --release"
+    "build": "bash build.sh"
   },
   "devDependencies": {
     "miniflare": "4.20260730.0",

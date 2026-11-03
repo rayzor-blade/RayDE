@@ -1,5 +1,5 @@
 {
-  "name": "rayde-workspaces",
+  "name": "rayde-workspaces-staging",
   "main": "build/index.js",
   "compatibility_date": "2026-07-30",
   "durable_objects": {
@@ -22,6 +22,14 @@
       }
     ]
   },
+
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true
+    }
+  },
   "migrations": [
     {
       "tag": "v1",
@@ -39,13 +47,38 @@
     }
   ],
   "r2_buckets": [
-    { "binding": "WORKSPACE_FILES", "bucket_name": "rayde-workspace-files" }
+    {
+      "binding": "WORKSPACE_FILES",
+      "bucket_name": "rayde-workspace-files-staging"
+    },
+    {
+      "binding": "EDITOR_ASSETS",
+      "bucket_name": "rayde-editor-assets-staging"
+    }
   ],
   "vars": {
-    "ASSETS_ORIGIN": "http://127.0.0.1:8731",
-    "APP_ORIGIN": "http://127.0.0.1:8787"
+    "ASSETS_ORIGIN": "https://assets-staging.rayde.org",
+    "APP_ORIGIN": "https://app-staging.rayde.org",
+    "GITHUB_APP_SLUG": "rayde-staging",
+    "PREVIEW_ORIGIN": "https://preview-staging.rayde.org"
   },
   "build": {
-    "command": "worker-build --release"
-  }
+    "command": "npm run build"
+  },
+  "account_id": "5692cbcf61baf8b51b9b5981611e5d4b",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "app-staging.rayde.org",
+      "custom_domain": true
+    },
+    {
+      "pattern": "assets-staging.rayde.org",
+      "custom_domain": true
+    },
+    {
+      "pattern": "preview-staging.rayde.org",
+      "custom_domain": true
+    }
+  ]
 }

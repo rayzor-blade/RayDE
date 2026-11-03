@@ -4,3 +4,6 @@ GITHUB_APP_SLUG=your-rayde-app
 RUNNER_URL=http://127.0.0.1:8790
 RUNNER_SECRET=replace-with-a-random-shared-secret
 LOCAL_DEV=1
+APP_ORIGIN=http://127.0.0.1:8787
+ASSETS_ORIGIN=http://127.0.0.1:8731
+EDITOR_ASSETS_SOURCE=origin

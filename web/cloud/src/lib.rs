@@ -1,4 +1,5 @@
 mod account;
+mod assets;
 mod workspace;
 mod checkpoints;
 mod journal;
@@ -202,6 +203,9 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         return Ok(stub.fetch_with_request(Request::new(&format!("https://workspace/preview/{}/{}",parts[1],parts[2]),Method::Get)?).await?);
     }
     if path.starts_with("/previews/"){return Err(bad(404,"This app preview is unavailable."));}
+    if assets::is_origin(&env,&url){
+        return assets::get(&req,&env,&path).await?.ok_or_else(||bad(503,"Editor asset storage is not configured."));
+    }
     if url.scheme() != "https" && config(&env, "LOCAL_DEV").as_deref() != Some("1") {
         return Err(bad(400, "HTTPS is required."));
     }
@@ -500,7 +504,10 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
             url.path()
         });
         asset.set_query(url.query());
-        let response = Fetch::Url(asset).send().await?;
+        let response = match assets::get(&req,&env,asset.path()).await? {
+            Some(response)=>response,
+            None=>Fetch::Url(asset).send().await?,
+        };
         let headers = response.headers().clone();
         let mut response = response.with_headers(headers);
         if workspace_page.is_some() {

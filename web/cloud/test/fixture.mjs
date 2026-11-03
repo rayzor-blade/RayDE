@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", provision } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", provision } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -33,9 +33,9 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     host: "127.0.0.1",
     durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true } },
     durableObjectsPersist: persist,
-    r2Buckets: files ? ["WORKSPACE_FILES"] : [],
+    r2Buckets: [...(files ? ["WORKSPACE_FILES"] : []), ...(editorAssets ? ["EDITOR_ASSETS"] : [])],
     r2Persist: persist,
-    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(asset ? { ASSETS_ORIGIN: asset } : {}) },
+    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}) },
     serviceBindings: {
       GITHUB: async request => {
         const url = new URL(request.url);

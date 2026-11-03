@@ -10,11 +10,9 @@ Set the account Worker's `APP_ORIGIN` to `https://app.rayde.org` for deployment.
 
 ## Local checks
 
-Install Rust's `wasm32-unknown-unknown` target and `worker-build` **0.8.7**, matching the pinned Workers SDK:
+The build script installs the repository's pinned Rust nightly, the `wasm32-unknown-unknown` target and `worker-build` **0.8.7**. Build tools are cached under Cargo's home, separately from other installed versions. npm dependencies are build/test tooling only.
 
 ```sh
-rustup target add wasm32-unknown-unknown
-cargo install worker-build --version 0.8.7 --locked
 npm ci
 npm test
 ```
@@ -22,6 +20,16 @@ npm test
 Build `native/session` before running tests. The gateway test starts an isolated Rust workspace server. GitHub and compute provisioning are mocked; tests cover OAuth/PKCE, CSRF, repository access/pagination, token refresh, Durable Object persistence, ownership checks, recovery identity across compute restarts/replacements, real workspace reads and logout disconnection. To exercise the full browser UI after building `bin/web/repositories`, run `node test/browser-flow.mjs`. It needs Chrome and the development dependencies in `web/session`.
 
 For a locally configured GitHub App, copy `.dev.vars.example` to `.dev.vars`, fill it outside version control and run `npm run dev`. Configure the App callback to `http://127.0.0.1:8787/auth/github/callback`. Set its post-install setup URL to `http://127.0.0.1:8787/?repositories=1`. Grant repository Contents read access and allow users to choose installations/repositories. An expired user token can be refreshed if expiring tokens are enabled for the App. `APP_ORIGIN` is the editor origin; `ASSETS_ORIGIN` serves the built browser assets behind the same origin. `LOCAL_DEV=1` permits local HTTP/WS; omit it for deployment and use HTTPS/WSS.
+
+## Staging deployment
+
+The checked-in configuration targets `rayde-workspaces-staging` and its app, assets and preview custom domains. In Cloudflare Workers Builds, use repository root directory `web/cloud`, build command `npm run build`, and deploy command `npx wrangler deploy`. The build bootstrap supplies Rust and `worker-build` even on a fresh build image. The dashboard Worker name must match the Wrangler name.
+
+Store `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `RUNNER_SECRET` as Cloudflare Worker secrets so Git deployments preserve them. `GITHUB_APP_SLUG` is already a normal variable. Enable expiring user tokens on the GitHub App; leave authorization during installation disabled because RayDE starts its own state/PKCE flow. Webhooks and device flow are not implemented. Do not deploy `LOCAL_DEV`.
+
+`WORKSPACE_FILES` binds the private `rayde-workspace-files-staging` bucket. `EDITOR_ASSETS` binds the separate `rayde-editor-assets-staging` bucket. Upload the contents of the built `site/dist` directory to the editor bucket's root, including workers, modules, WASM, fonts and other resources. The Rust Worker streams that bucket on `assets-staging.rayde.org` and through app-origin asset paths; the bucket itself needs no public access. This supports editor files above the Workers Static Assets per-file limit without proxying the assets hostname back into the same Worker. ETags revalidate updated files; workspace pages remain uncached and owner-authorized.
+
+App previews use `preview-staging.rayde.org`, isolated from the authenticated editor origin. Production runner HTTPS/WSS ingress, GitHub secrets, asset publication and deployed runtime checks must be ready before testing a complete repository workspace. Domain creation alone does not provision compute. Local development uses the localhost origin overrides and `EDITOR_ASSETS_SOURCE=origin` in `.dev.vars.example`, retaining its external asset server even when Wrangler binds emulated R2.
 
 `WORKSPACE_FILES` binds private R2 payload storage. Local tests and `wrangler dev` use emulated R2; they need no Cloudflare account. Before deployment, create the bucket named in `wrangler.jsonc` and keep public bucket access disabled. A missing binding refuses hosted file writes before compute executes them.
 
