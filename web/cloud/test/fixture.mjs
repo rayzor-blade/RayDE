@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", provision } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", provision, github } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -47,6 +47,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
         const token = request.headers.get("Authorization");
         const bob = token === "Bearer access-bob";
         calls.api.push({ path: url.pathname, query: url.search, token });
+        if (github) { const response = await github(request); if (response) return response; }
         if (url.pathname === "/user") return json({ id: bob ? 2 : 1, login: bob ? "bob" : "alice", avatar_url: "https://avatars.githubusercontent.com/u/1" });
         if (url.pathname === "/user/installations") return json({ installations: [{ id: 17 }] });
         if (url.pathname === "/user/installations/17/repositories") {

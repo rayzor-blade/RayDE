@@ -34,7 +34,7 @@ impl DurableObject for AccountSession {
 impl AccountSession {
     async fn handle(&self, mut req: Request) -> AppResult<Response> {
         let op = req.path();
-        let data: Value = req.json().await?;
+        let data: Value = if op.starts_with("/api/projects/create/") { crate::projects::input(&mut req).await? } else { req.json().await? };
         let storage = self.state.storage();
         if op == "/put" {
             let expires = data["expires"].as_u64().unwrap_or(now());
@@ -116,6 +116,9 @@ impl AccountSession {
             storage.put("session", &saved).await?;
         }
         let access = text(&saved["tokens"], "access")?;
+        if let Some(key)=op.strip_prefix("/api/projects/create/") {
+            return Ok(reply(&crate::projects::create(&self.state,&self.env,&saved,key,&data).await?,200)?);
+        }
         if op == "/repository" {
             let id = data["id"]
                 .as_u64()

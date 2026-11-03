@@ -580,6 +580,10 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde-workspace-browser { width: 600px; max-width: 92vw; }
 
 #rayde-repository-dialog { width: 580px; max-width: 92vw; }
+#rayde-create-repository-dialog { width: 540px; max-width: 92vw; max-height: 92vh; overflow: auto; }
+#rayde-create-repository-dialog label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+#rayde-create-repository-dialog input { width: 100%; min-width: 0; }
+.rayde-repository-starter { flex-direction: row; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .rayde-repository-row {
   height: 60px;
   min-height: 60px;

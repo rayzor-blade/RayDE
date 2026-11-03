@@ -22,6 +22,34 @@ test("Rust edge binds GitHub PKCE/state to the browser and consumes it once", as
   assert.equal((await fetch(callback)).status, 403);
 });
 
+test("popup OAuth completes without serving or redirecting to the editor",async t=>{
+  const {mf,fetch,calls}=await fixture();t.after(()=>mf.dispose());
+  const channel="a".repeat(64);
+  assert.equal((await fetch("/auth/github/start?popup=invalid")).status,400);
+  const start=await fetch("/auth/github/start?popup="+channel,{redirect:"manual"});
+  const authorize=new URL(start.headers.get("Location")),cookie=start.headers.get("Set-Cookie").split(";")[0];
+  const callback="/auth/github/callback?state="+authorize.searchParams.get("state")+"&code=alice";
+  const complete=await fetch(callback,{headers:{Cookie:cookie},redirect:"manual"});
+  assert.equal(complete.status,200);assert.equal(complete.headers.get("Location"),null);
+  assert.equal(complete.headers.get("Cache-Control"),"no-store");assert.equal(complete.headers.get("Cross-Origin-Opener-Policy"),"same-origin");
+  const html=await complete.text(),nonce=html.match(/<script nonce="([a-f0-9]+)">/)[1];
+  assert.ok(complete.headers.get("Content-Security-Policy").includes("'nonce-"+nonce+"'"));
+  assert.ok(html.includes(channel)&&html.includes("BroadcastChannel"));assert.ok(!/access-alice|refresh-alice|rayde\.wasm|ashui-host/.test(html));
+  assert.equal(calls.exchanges.length,1);
+  assert.equal((await fetch(callback,{headers:{Cookie:cookie}})).status,401);
+});
+
+test("a verified cancelled popup notifies failure without an account cookie or token exchange",async t=>{
+  const {mf,fetch,calls}=await fixture();t.after(()=>mf.dispose());
+  const start=await fetch("/auth/github/start?popup="+"b".repeat(64),{redirect:"manual"});
+  const authorize=new URL(start.headers.get("Location")),cookie=start.headers.get("Set-Cookie").split(";")[0];
+  const callback="/auth/github/callback?state="+authorize.searchParams.get("state")+"&error=access_denied";
+  assert.equal((await fetch(callback)).status,403);
+  const response=await fetch(callback,{headers:{Cookie:cookie}});
+  assert.equal(response.status,200);assert.ok((await response.text()).includes("const status = 'failed'"));
+  assert.ok(!response.headers.get("Set-Cookie").includes("rayde_session="));assert.equal(calls.exchanges.length,0);
+});
+
 test("repository access, pagination, CSRF, and workspace ownership are enforced at the Rust edge", async t => {
   const { mf, fetch, calls } = await fixture(); t.after(() => mf.dispose());
   const alice = await signin(fetch), bob = await signin(fetch, "bob");

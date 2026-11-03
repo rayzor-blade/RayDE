@@ -11,6 +11,7 @@ import ashui.reactive.Watch;
 import ashui.ui.Component;
 import ashui.ui.Ref;
 import rayde.ui.ProjectLogo;
+import rayde.ui.CreateRepository;
 import rayde.project.ProjectFile;
 import rayde.project.ProjectTemplates;
 import rayde.project.ProjectTemplates.ProjectTemplate;
@@ -19,6 +20,8 @@ typedef NewProjectProps = {
 	opened:Signal<Bool>,
 	directory:String,
 	?templates:Void->Array<ProjectTemplate>,
+	?cloud:Bool,
+	?repositoryReady:(String, Null<String>)->Void,
 	onCreate:String->Void
 };
 
@@ -26,6 +29,8 @@ typedef NewProjectProps = {
 class NewProject extends Component<NewProjectProps> {
 	static final categories = ["All", "Applications", "Games", "Libraries"];
 	final selected = Signal.make("hxml");
+	final visible = Signal.make(false);
+	final repository = Signal.make((null:Null<ProjectTemplate>));
 	final category = Signal.make("All");
 	final name = Signal.make("my-project");
 	final directory = Signal.make("");
@@ -50,6 +55,7 @@ class NewProject extends Component<NewProjectProps> {
 			cancelDialog = null;
 			jobs.dispose();
 		});
+		ashui.animation.AnimationScheduler.main.after(0, () -> { if (!gone) visible.set(true); });
 		ashui.animation.AnimationScheduler.main.after(.05, () -> {
 			if (!gone && input.get() != null) {
 				input.get().focus();
@@ -57,7 +63,7 @@ class NewProject extends Component<NewProjectProps> {
 				input.get().editing.caret.set(name.get().length);
 			}
 		});
-		var dialog = <dialog id="rayde-new-project" open={props.opened}>
+		var dialog = <dialog id="rayde-new-project" open={Computed.make(() -> visible.get() && repository.get() == null)} onOpenChange={on -> if (!on && repository.get() == null) close()}>
 			<dialog-content id="rayde-project-modal" size={Full} onCancel={e -> if (locked()) e.preventDefault()}>
 				<div class="rayde-project-heading">
 					<div class="rayde-project-title">
@@ -84,23 +90,25 @@ class NewProject extends Component<NewProjectProps> {
 						<label for="rayde-project-name">Project name</label>
 						<input ref={input} id="rayde-project-name" value={name} maxlength={64} disabled={busy.get() || browsing.get()} placeholder="my-project" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
 					</div>
-					<div class="rayde-project-location-field">
+					<if {props.cloud != true}><div class="rayde-project-location-field">
 						<label for="rayde-project-directory">Location</label>
 						<div class="rayde-project-location">
 							<input id="rayde-project-directory" value={directory} disabled={busy.get() || browsing.get()} placeholder="Parent folder" onInput={_ -> error.set("")} onKeyDown={e -> if (e.key.match(Named(Enter))) create()}/>
 							<button id="rayde-project-browse" variant={Outline} disabled={busy.get() || browsing.get()} onClick={_ -> browse()}>Browse…</button>
 						</div>
-					</div>
+					</div></if>
 				</div>
 				<if {error.get() != ""}><text id="rayde-project-error" class="text-xs text-error">${error.get()}</text></if>
 				<dialog-footer id="rayde-project-footer">
-					<div class="rayde-project-destination"><icon document={Icons.FOLDER_ADD_LINE} class="size-4 shrink-0"/><text id="rayde-project-destination">${destinationPath.get()}</text></div>
+					<div class="rayde-project-destination"><icon document={props.cloud == true ? Icons.GITHUB_FILL : Icons.FOLDER_ADD_LINE} class="size-4 shrink-0"/><text id="rayde-project-destination">${props.cloud == true ? "Next: create a GitHub repository" : destinationPath.get()}</text></div>
 					<button id="rayde-project-cancel" variant={Outline} disabled={busy.get() || browsing.get()} onClick={_ -> close()}>Cancel</button>
-					<button id="rayde-project-create" disabled={busy.get() || browsing.get()} onClick={_ -> create()}><icon document={Icons.ADD_LINE} class="size-4"/>${busy.get() ? "Creating…" : "Create Project"}</button>
+					<button id="rayde-project-create" disabled={busy.get() || browsing.get()} onClick={_ -> create()}><icon document={props.cloud == true ? Icons.ARROW_RIGHT_LINE : Icons.ADD_LINE} class="size-4"/>${props.cloud == true ? "Continue" : busy.get() ? "Creating…" : "Create Project"}</button>
 				</dialog-footer>
 			</dialog-content>
 		</dialog>;
-		return <div>${dialog}<if {workspaceBrowsing.get()}><workspace-picker opened={workspaceBrowsing} root={rayde.workspace.PageHost.workspaceRoot()} directory={directory.get()} folder={true} title="Choose a parent folder" complete={path -> {
+		return <div>${dialog}<if {repository.get() != null}><create-repository opened={props.opened} template={repository.get()} name={name.get()} back={() -> repository.set(null)} ready={(id, project) -> {
+			props.opened.set(false); if (props.repositoryReady != null) props.repositoryReady(id, project);
+		}}/></if><if {workspaceBrowsing.get()}><workspace-picker opened={workspaceBrowsing} root={rayde.workspace.PageHost.workspaceRoot()} directory={directory.get()} folder={true} title="Choose a parent folder" complete={path -> {
 			browsing.set(false); if (path != null) directory.set(path);
 		}}/></if></div>;
 	}
@@ -168,6 +176,7 @@ class NewProject extends Component<NewProjectProps> {
 		if (locked()) return;
 		var projectName = StringTools.trim(name.get()), parent = StringTools.trim(directory.get());
 		if (!ProjectFile.validName(projectName)) { error.set("Start with a letter; use letters, numbers, hyphens or underscores (up to 64 characters)."); return; }
+		if (props.cloud == true) { name.set(projectName); error.set(""); repository.set(choice()); return; }
 		if (parent == "") { error.set("Choose a location for your project."); return; }
 		name.set(projectName); directory.set(parent); error.set(""); busy.set(true);
 		var template = choice();

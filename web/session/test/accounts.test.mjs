@@ -19,6 +19,11 @@ test("the browser keeps credentials in same-origin cookies and sends CSRF only t
   assert.equal(calls[1].init.credentials, "same-origin");
   assert.equal(calls[1].init.headers["X-RayDE-CSRF"], "test-csrf");
   assert.equal(JSON.parse(calls[1].init.body).repository, 111);
+  await account.request("account.create",{key:"a".repeat(64),project:{name:"my-project",private:true}});
+  assert.equal(calls[2].url,"/api/projects/create/"+"a".repeat(64));
+  assert.equal(calls[2].init.headers["X-RayDE-CSRF"],"test-csrf");
+  assert.deepEqual(JSON.parse(calls[2].init.body),{name:"my-project",private:true});
+  await assert.rejects(account.request("account.create",{key:"../outside"}),/Invalid project request/);
   await account.request("account.connect", { workspace: "a".repeat(43), project: "build.hxml" });
   const url = new URL(navigations[0]);
   assert.equal(url.origin, "https://editor.example");
@@ -29,13 +34,42 @@ test("the browser keeps credentials in same-origin cookies and sends CSRF only t
   await assert.rejects(() => account.request("account.connect", { workspace: "https://evil.invalid" }));
 });
 
-test("a browser without an account can show sign-in without fabricating a local workspace", async () => {
-  const navigations = [];
-  const account = new Accounts({ fetch: async () => new Response("", { status: 401 }), later: fn => fn(), location: { assign: url => navigations.push(url) } });
-  assert.deepEqual(await account.request("account.status", {}), { user: null, installable: false });
-  await account.request("account.signin", {});
-  assert.deepEqual(navigations, ["/auth/github/start"]);
+test("sign-in preserves the editor and verifies the cookie session after a popup notification", async () => {
+  const opened=[],navigations=[];let channel,authenticated=false;
+  const account=new Accounts({location:{href:"https://editor.example/",assign:url=>navigations.push(url)},
+    fetch:async()=>authenticated?Response.json({user:{login:"alice"},csrf:"verified-csrf"}):new Response("",{status:401}),
+    open:(url,...rest)=>{opened.push({url,rest});return{closed:true};},
+    broadcast:name=>channel={name,closed:false,close(){this.closed=true;}}
+  });
+  assert.deepEqual(await account.request("account.status",{}),{user:null,installable:false});
+  const pending=account.request("account.signin",{});
+  assert.equal(opened.length,1);assert.deepEqual(navigations,[]);
+  const id=new URL(opened[0].url,"https://editor.example").searchParams.get("popup");
+  assert.match(id,/^[a-f0-9]{64}$/);assert.equal(channel.name,"rayde-auth:"+id);
+  await channel.onmessage({data:{type:"rayde-auth-complete",channel:"wrong",status:"success"}});
+  assert.equal(channel.closed,false);
+  authenticated=true;
+  await channel.onmessage({data:{type:"rayde-auth-complete",channel:id,status:"success",user:{login:"forged"}}});
+  assert.deepEqual(await pending,{user:{login:"alice"},installable:false});
+  assert.equal(account.csrf,"verified-csrf");assert.equal(channel.closed,true);assert.deepEqual(navigations,[]);
 });
+
+test("blocked and cancelled sign-in windows report errors without navigating the editor",async()=>{
+  const channels=[];const broadcast=name=>{const channel={name,close(){this.closed=true;}};channels.push(channel);return channel;};
+  const blocked=new Accounts({open:()=>null,broadcast});
+  await assert.rejects(blocked.request("account.signin",{}),/Allow the GitHub sign-in window/);assert.equal(channels[0].closed,true);
+  const account=new Accounts({open:()=>({close(){}}),broadcast});
+  const pending=account.request("account.signin",{});const failure=assert.rejects(pending,/cancelled/);
+  await account.request("account.cancel-signin",{});await failure;assert.equal(channels[1].closed,true);
+});
+
+test("a popup notification cannot supply account authority and sign-in has a deadline",async()=>{
+  let channel;const account=new Accounts({authTimeout:20,open:()=>({}),broadcast:name=>channel={name,close(){}},fetch:async()=>new Response("",{status:401})});
+  const pending=account.request("account.signin",{});const denied=assert.rejects(pending,/not completed/);
+  await channel.onmessage({data:{type:"rayde-auth-complete",channel:channel.name.slice("rayde-auth:".length),status:"success",user:{login:"forged"}}});await denied;
+  await assert.rejects(account.request("account.signin",{}),/timed out/);
+});
+
 
 test("an unresponsive account request aborts and reports a retryable failure", async () => {
   let aborted=false;

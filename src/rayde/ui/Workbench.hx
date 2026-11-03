@@ -1056,7 +1056,7 @@ class Workbench extends Component<WorkbenchProps> {
 			${shellPart.statusBar()}
 			<prompt request={prompt}/>
 			<if {projectPart.browsingWorkspace.get()}><repository-picker opened={projectPart.browsingWorkspace} closed={projectPart.repositoryClosed} ready={projectPart.repositoryReady}/></if>
-			<if {projectPart.creatingProject.get()}><new-project opened={projectPart.creatingProject} directory={props.display.cwd} templates={projectPart.projectTemplates} onCreate={projectPart.openWorkspace}/></if>
+			<if {projectPart.creatingProject.get()}><new-project opened={projectPart.creatingProject} directory={props.display.cwd} templates={projectPart.projectTemplates} cloud={projectPart.cloudProjects()} repositoryReady={projectPart.repositoryReady} onCreate={projectPart.openWorkspace}/></if>
 			<for {direction in (chrome.resizable() ? EDGES : [])}>${shellPart.edge(direction)}</for>
 			<command-center opened={quickOpen} request={centerRequest} anchor={pill} files={explorerPart.recentFiles} refreshFiles={explorerPart.refreshFileIndex} filesLimited={explorerPart.filesLimited} root={props.display.cwd} actions={commandList} tasks={runPart.taskChoices}
 				onOpenFile={path -> openFile(path)} onLine={goToLine}/>

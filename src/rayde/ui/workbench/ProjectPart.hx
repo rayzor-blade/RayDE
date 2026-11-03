@@ -168,7 +168,7 @@ class ProjectPart {
 				try {
 					if (pending.await().result == null) throw "The account service returned an invalid response.";
 					if (wb.notice.get() == message) wb.notice.set("");
-				} catch (error:Dynamic) wb.say(Std.string(error));
+				} catch (error:Dynamic) wb.say(rayde.workspace.PageHost.accountError(error));
 			}
 			ashui.animation.AnimationScheduler.main.after(.02,poll);
 		}
@@ -187,9 +187,6 @@ class ProjectPart {
 	}
 
 	function newProject():Void {
-		#if wasm
-		if (rayde.workspace.PageHost.session == null) { pickProject("project"); return; }
-		#end
 		wb.quickOpen.set(false);
 		creatingProject.set(true);
 		ashui.animation.AnimationScheduler.main.after(.016, () -> {
@@ -197,6 +194,14 @@ class ProjectPart {
 			wb.extensionsPart.discoverExtensions(false);
 			wb.extensionsPart.extensionManager.newProject();
 		});
+	}
+
+	function cloudProjects():Bool {
+		#if wasm
+		return true;
+		#else
+		return false;
+		#end
 	}
 
 	function projectTemplates():Array<rayde.project.ProjectTemplates.ProjectTemplate> {

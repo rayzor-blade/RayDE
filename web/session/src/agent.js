@@ -153,7 +153,7 @@ export const start = ask => serve(ask, {
     });
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
+      close() { accounts.signin?.cancel(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

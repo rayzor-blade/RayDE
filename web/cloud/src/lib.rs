@@ -1,5 +1,7 @@
 mod account;
 mod assets;
+mod auth_popup;
+mod projects;
 mod workspace;
 mod checkpoints;
 mod journal;
@@ -265,13 +267,15 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
     }
     // Sign-in for a gateway running on this machine, where there is no GitHub App: `/auth/dev?account=NAME&return=/ID`.
     if path == "/auth/dev" && config(&env, "LOCAL_DEV").as_deref() == Some("1") {
+        let popup = query("popup");
+        if popup.as_ref().is_some_and(|value| !opaque(value)) { return Err(bad(400, "Invalid sign-in window.")); }
         let name = query("account").filter(|n| rayde_sync::ids::AccountId::parse(&format!("dev:{n}")).is_ok()).ok_or_else(|| bad(400, "That development account name is not valid."))?;
         let sid = random()?;
         rpc(&env, "ACCOUNTS", &sid, "put", &json!({"kind":"account","user":{"id":sync::dev_user_id(&name),"login":name,"avatarUrl":Value::Null},"csrf":random()?,"expires":now()+7*DAY,"tokens":{"access":"","refresh":Value::Null,"expires":Value::Null}})).await?;
         let destination = Url::parse(&origin).map_err(|_| bad(503, "Sign-in is not configured."))?;
         let back = query("return").filter(|r| r.starts_with('/') && !r.starts_with("//")).unwrap_or_else(|| "/".into());
         let destination = destination.join(&back).map_err(|_| bad(400, "That return path is not valid."))?;
-        let mut response = redirect_response(destination)?;
+        let mut response = if let Some(channel) = popup { auth_popup::completion(&channel, true)? } else { redirect_response(destination)? };
         response.headers_mut().append("Set-Cookie", &cookie("rayde_session", &sid, &url, 7 * 86400))?;
         return Ok(response);
     }
@@ -279,9 +283,15 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         let mut destination = Url::parse(&format!("{origin}/auth/dev")).map_err(|_| bad(503, "Sign-in is not configured."))?;
         let back = query("workspace").filter(|id| workspace_id(id)).map(|id| format!("/{id}")).unwrap_or_else(|| "/?repositories=1".into());
         destination.query_pairs_mut().append_pair("account", &config(&env, "DEV_ACCOUNT").unwrap_or_default()).append_pair("return", &back);
+        if let Some(channel) = query("popup") {
+            if !opaque(&channel) { return Err(bad(400, "Invalid sign-in window.")); }
+            destination.query_pairs_mut().append_pair("popup", &channel);
+        }
         return redirect_response(destination);
     }
     if path == "/auth/github/start" {
+        let popup = query("popup");
+        if popup.as_ref().is_some_and(|value| !opaque(value)) { return Err(bad(400, "Invalid sign-in window.")); }
         let client = config(&env, "GITHUB_CLIENT_ID")
             .ok_or_else(|| bad(503, "GitHub sign-in is not configured."))?;
         if config(&env, "GITHUB_CLIENT_SECRET").is_none() {
@@ -302,7 +312,7 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                 .query_pairs_mut()
                 .append_pair("repositories", "1");
         }
-        rpc(&env,"ACCOUNTS",&state,"put",&json!({"kind":"oauth","cookieHash":hash(&secret),"verifier":verifier,"returnTo":destination.as_str(),"expires":now()+600000})).await?;
+        rpc(&env,"ACCOUNTS",&state,"put",&json!({"kind":"oauth","cookieHash":hash(&secret),"verifier":verifier,"returnTo":destination.as_str(),"popup":popup,"expires":now()+600000})).await?;
         let mut redirect = Url::parse("https://github.com/login/oauth/authorize").unwrap();
         for (k, v) in [
             ("client_id", client),
@@ -339,32 +349,23 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
             &json!({"cookieHash":hash(&secret)}),
         )
         .await?;
-        let code = query("code")
-            .filter(|_| query("error").is_none())
-            .ok_or_else(|| bad(400, "GitHub sign-in was cancelled."))?;
-        let mut exchange = request(
-            "https://github.com/login/oauth/access_token",
-            &json!({"client_id":config(&env,"GITHUB_CLIENT_ID"),"client_secret":config(&env,"GITHUB_CLIENT_SECRET"),"code":code,"redirect_uri":format!("{}/auth/github/callback",url.origin().ascii_serialization()),"code_verifier":flow["verifier"]}),
-        )?;
-        exchange.headers_mut()?.set("Accept", "application/json")?;
-        let mut response = github(&env, exchange).await?;
-        let result: Value = response.json().await?;
-        if response.status_code() >= 400 || result["access_token"].as_str().is_none() {
-            return Err(bad(401, "GitHub sign-in failed."));
-        }
-        let user = api(&env, text(&result, "access_token")?, "/user").await?;
-        if user["id"].as_u64().is_none() || user["login"].as_str().is_none() {
-            return Err(bad(502, "GitHub returned an invalid account."));
-        }
-        let sid = random()?;
-        rpc(&env,"ACCOUNTS",&sid,"put",&json!({"kind":"account","user":{"id":user["id"],"login":user["login"],"avatarUrl":user["avatar_url"]},"csrf":random()?,"expires":now()+7*DAY,"tokens":{"access":result["access_token"],"refresh":result["refresh_token"],"expires":result["expires_in"].as_u64().map(|s|now()+s*1000)}})).await?;
-        let destination = Url::parse(text(&flow, "returnTo")?)
-            .map_err(|_| bad(400, "Invalid sign-in return address."))?;
-        let mut response = redirect_response(destination)?;
-        response.headers_mut().append(
-            "Set-Cookie",
-            &cookie("rayde_session", &sid, &url, 7 * 86400),
-        )?;
+        let popup = flow["popup"].as_str().filter(|value| opaque(value));
+        let account = async {
+            let code = query("code")
+                .filter(|_| query("error").is_none())
+                .ok_or_else(|| bad(400, "GitHub sign-in was cancelled."))?;
+            auth_popup::account(&env, &url, &flow, &code).await
+        }.await;
+        let mut response = match account {
+            Ok(sid) => {
+                let mut response = if let Some(channel) = popup { auth_popup::completion(channel, true)? }
+                    else { redirect_response(Url::parse(text(&flow, "returnTo")?).map_err(|_| bad(400, "Invalid sign-in return address."))?)? };
+                response.headers_mut().append("Set-Cookie", &cookie("rayde_session", &sid, &url, 7 * 86400))?;
+                response
+            }
+            Err(_) if popup.is_some() => auth_popup::completion(popup.unwrap(), false)?,
+            Err(error) => return Err(error),
+        };
         response
             .headers_mut()
             .append("Set-Cookie", &cookie("rayde_oauth", "", &url, 0))?;
@@ -385,6 +386,11 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                 &json!({"user":session["user"],"csrf":session["csrf"],"installUrl":config(&env,"GITHUB_APP_SLUG").map(|slug|format!("https://github.com/apps/{slug}/installations/new"))}),
                 200,
             )?);
+        }
+        if let Some(key)=path.strip_prefix("/api/projects/create/") {
+            if req.method()!=Method::Post {return Err(bad(405,"Use POST to create a project."));}
+            if !opaque(key) {return Err(bad(400,"Invalid project request."));}
+            return Ok(env.durable_object("ACCOUNTS")?.get_by_name(&sid)?.fetch_with_request(req).await?);
         }
         // A local gateway has no GitHub: the account's synced workspaces are what Open Repository offers.
         if path == "/api/repositories" && req.method() == Method::Get && config(&env, "LOCAL_DEV").as_deref() == Some("1") && config(&env, "DEV_ACCOUNT").is_some() {

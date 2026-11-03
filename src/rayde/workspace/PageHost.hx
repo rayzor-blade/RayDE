@@ -47,15 +47,22 @@ class PageHost {
 	}
 	/** Blocking account compatibility for worker fibers; UI callers use requestAccount. */
 	public static function account(op:String, ?params:Dynamic):Dynamic {
-		var response = requestAccount(op,params).await();
+		var response:Dynamic;
+		try response = requestAccount(op,params).await() catch (failure:Dynamic) throw accountError(failure);
 		if (response.result == null) throw "The account service returned an invalid response.";
 		return response.result;
+	}
+
+	public static function accountError(failure:Dynamic):String {
+		if (Std.isOfType(failure,rayde.workspace.session.SessionClient.SessionFailure))
+			return cast(failure,rayde.workspace.session.SessionClient.SessionFailure).message;
+		return Std.string(failure);
 	}
 
 	/** Starts an account RPC; callers apply completed replies on the UI thread. */
 	public static function requestAccount(op:String, ?params:Dynamic):ash.Future<Dynamic> {
 		#if wasm
-		if (bridge != null) return bridge.requestAsync(op,params,20.);
+		if (bridge != null) return bridge.requestAsync(op,params,op == "account.signin" ? 620. : op == "account.create" ? 180. : 20.);
 		#end
 		var future = new ash.Future<Dynamic>();
 		if (op == "account.status") future.resolve({result:{user:null}});

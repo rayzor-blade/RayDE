@@ -8,6 +8,10 @@ The editor bundle opens a bootstrapped example on `rayde.org` and `www.rayde.org
 
 Set the account Worker's `APP_ORIGIN` to `https://app.rayde.org` for deployment. Its root opens Welcome/repository selection; owned workspaces open at `https://app.rayde.org/{session_id}`. The edge authenticates those pages before serving the editor, and sign-in returns to the same workspace. The browser derives its authenticated socket from the path; connection credentials stay off the URL. `ASSETS_ORIGIN` supplies the static editor bundle, including the index served for workspace paths. These hostname defaults do not configure DNS or deploy either site.
 
+In the app, GitHub sign-in opens a separate window and updates the existing editor after the HttpOnly session cookie is verified. Keep popup windows enabled for the app origin. The callback uses a random, per-attempt BroadcastChannel because the editor's isolation policy separates its opener across the GitHub navigation. No access tokens cross that channel.
+
+**New Project** opens the template grid, then a repository form. The selected starter is committed to a new personal GitHub repository, private by default, before compute provisioning starts. The GitHub App needs **Repository creation** and repository **Contents: read and write** permissions; existing installations must approve permission changes. Opening existing repositories only needs read access. Creation retries use a Durable Object record and refuse ambiguous creation or concurrent branch changes instead of overwriting files. A compute failure leaves the created repository available for retry.
+
 ## Local checks
 
 The build script installs the repository's pinned Rust nightly, the `wasm32-unknown-unknown` target and `worker-build` **0.8.7**. Build tools are cached under Cargo's home, separately from other installed versions. npm dependencies are build/test tooling only.
@@ -19,7 +23,7 @@ npm test
 
 Build `native/session` before running tests. The gateway test starts an isolated Rust workspace server. GitHub and compute provisioning are mocked; tests cover OAuth/PKCE, CSRF, repository access/pagination, token refresh, Durable Object persistence, ownership checks, recovery identity across compute restarts/replacements, real workspace reads and logout disconnection. To exercise the full browser UI after building `bin/web/repositories`, run `node test/browser-flow.mjs`. It needs Chrome and the development dependencies in `web/session`.
 
-For a locally configured GitHub App, copy `.dev.vars.example` to `.dev.vars`, fill it outside version control and run `npm run dev`. Configure the App callback to `http://127.0.0.1:8787/auth/github/callback`. Set its post-install setup URL to `http://127.0.0.1:8787/?repositories=1`. Grant repository Contents read access and allow users to choose installations/repositories. An expired user token can be refreshed if expiring tokens are enabled for the App. `APP_ORIGIN` is the editor origin; `ASSETS_ORIGIN` serves the built browser assets behind the same origin. `LOCAL_DEV=1` permits local HTTP/WS; omit it for deployment and use HTTPS/WSS.
+For a locally configured GitHub App, copy `.dev.vars.example` to `.dev.vars`, fill it outside version control and run `npm run dev`. Configure the App callback to `http://127.0.0.1:8787/auth/github/callback`. Set its post-install setup URL to `http://127.0.0.1:8787/?repositories=1`. Grant the permissions above and allow users to choose installations/repositories. An expired user token can be refreshed if expiring tokens are enabled for the App. `APP_ORIGIN` is the editor origin; `ASSETS_ORIGIN` serves the built browser assets behind the same origin. `LOCAL_DEV=1` permits local HTTP/WS; omit it for deployment and use HTTPS/WSS.
 
 ## Staging deployment
 

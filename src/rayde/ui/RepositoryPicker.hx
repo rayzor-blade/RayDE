@@ -94,6 +94,7 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 		</button>;
 
 	function request(op:String, ?params:Dynamic):Void {
+		if (op == "account.signin") progress.set("Complete sign-in in the GitHub window…");
 		operation = op; busy.set(true); error.set(""); pending = rayde.workspace.PageHost.requestAccount(op,params ?? {});
 		if (timer == null) timer = ashui.animation.AnimationScheduler.main.after(.02,poll);
 	}
@@ -107,11 +108,12 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 				value = completed.await().result;
 				if (value == null) throw "The account service returned an invalid response.";
 			} catch (failure:Dynamic) {
-				checked.set(true); error.set(Std.string(failure)); progress.set(""); workspace = null;
+				checked.set(true); error.set(rayde.workspace.PageHost.accountError(failure)); progress.set(""); workspace = null;
 				return;
 			}
 			switch operation {
-				case "account.status":
+				case "account.status", "account.signin":
+					progress.set("");
 					account.set(value.user); checked.set(true); installable = value.installable == true;
 					if (value.user != null) { repositories.set([]); cursor = null; request("account.repositories"); }
 				case "account.repositories":
@@ -132,6 +134,7 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 	}
 	function close():Void {
 		if (finished || gone) return;
+		if (busy.get() && operation == "account.signin") rayde.workspace.PageHost.requestAccount("account.cancel-signin");
 		finished = true; props.closed(); props.opened.set(false);
 	}
 }
