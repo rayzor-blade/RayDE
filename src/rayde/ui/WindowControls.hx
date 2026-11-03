@@ -40,6 +40,9 @@ class WindowControls extends Component<WindowControlsProps> {
 
 	/** The style a setting asks for: `auto` is the platform's, and on Linux the desktop's. */
 	public static function styleFor(setting:String):String {
+		#if (wasm || rayde_page)
+		return rayde.Platform.standalone() ? "icon" : "macos";
+		#else
 		if (setting != "auto")
 			return setting;
 		if (rayde.Platform.standalone())
@@ -52,6 +55,7 @@ class WindowControls extends Component<WindowControlsProps> {
 				var desktop = Sys.getEnv("XDG_CURRENT_DESKTOP");
 				desktop != null && desktop.toUpperCase().indexOf("KDE") >= 0 ? "kde" : "gnome";
 		}
+		#end
 	}
 
 	/** Whether the controls sit at the left edge of the bar, as macOS's do. */

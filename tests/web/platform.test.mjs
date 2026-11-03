@@ -11,16 +11,16 @@ function boot({platform='MacIntel',data,search='',standalone=false,embedded=fals
  return {environment:Array.from(context.ashuiEnvironment),attributes,rewrites,url:new URL('https://example.test/playground/'+search+'#editor')};
 }
 for(const [platform,expected] of [['MacIntel','Mac'],['iPad','Mac'],['Win32','Windows'],['Linux x86_64','Linux']]){
- test(`fallback platform ${platform}`,()=>assert.deepEqual(boot({platform}).environment,['RAYDE_VISITOR='+expected]));
+ test(`fallback platform ${platform}`,()=>assert.deepEqual(boot({platform}).environment,['RAYDE_VISITOR='+expected,'RAYDE_STANDALONE=1']));
 }
-test('browser platform data takes precedence over legacy platform',()=>assert.deepEqual(boot({platform:'MacIntel',data:{platform:'Windows'}}).environment,['RAYDE_VISITOR=Windows']));
+test('browser platform data takes precedence over legacy platform',()=>assert.deepEqual(boot({platform:'MacIntel',data:{platform:'Windows'}}).environment,['RAYDE_VISITOR=Windows','RAYDE_STANDALONE=1']));
 test('a shared URL cannot pin another visitor’s keyboard',()=>{
  const result=boot({search:'?env=RAYDE_VISITOR=Linux&env=ASH_GC_STATS=1&env=RAYDE_VISITOR=Windows&session=demo'});
- assert.deepEqual(result.environment,['ASH_GC_STATS=1','RAYDE_VISITOR=Mac']);assert.equal(result.url.searchParams.get('session'),'demo');assert.equal(result.rewrites,0);
+ assert.deepEqual(result.environment,['ASH_GC_STATS=1','RAYDE_VISITOR=Mac','RAYDE_STANDALONE=1']);assert.equal(result.url.searchParams.get('session'),'demo');assert.equal(result.rewrites,0);
 });
 test('standalone mode and keyboard are both detected',()=>{
  assert.deepEqual(boot({standalone:true}).environment,['RAYDE_VISITOR=Mac','RAYDE_STANDALONE=1']);
- assert.deepEqual(boot({standalone:true,embedded:true}).environment,['RAYDE_VISITOR=Mac']);
+ assert.deepEqual(boot({standalone:true,embedded:true}).environment,['RAYDE_VISITOR=Mac','RAYDE_STANDALONE=0']);
 });
 test('only embedded windows use the transparent page background',()=>{
  assert.equal(boot({embedded:true}).attributes['data-embedded'],'');
@@ -28,5 +28,11 @@ test('only embedded windows use the transparent page background',()=>{
 });
 test('remembered runtime variables do not dirty the browser URL or override its platform',()=>{
  const result=boot({platform:'Win32',environment:['CUSTOM=value','RAYDE_VISITOR=Mac']});
- assert.deepEqual(result.environment,['CUSTOM=value','RAYDE_VISITOR=Windows']);assert.equal(result.url.search,'');assert.equal(result.rewrites,0);
+ assert.deepEqual(result.environment,['CUSTOM=value','RAYDE_VISITOR=Windows','RAYDE_STANDALONE=1']);assert.equal(result.url.search,'');assert.equal(result.rewrites,0);
+});
+
+test('embedding owns its window controls despite saved and shared standalone settings',()=>{
+ const settings={search:'?env=RAYDE_STANDALONE=0',environment:['RAYDE_STANDALONE=1']};
+ assert.deepEqual(boot(settings).environment,['RAYDE_VISITOR=Mac','RAYDE_STANDALONE=1']);
+ assert.deepEqual(boot({...settings,embedded:true}).environment,['RAYDE_VISITOR=Mac','RAYDE_STANDALONE=0']);
 });

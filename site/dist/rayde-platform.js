@@ -9,8 +9,8 @@
     var connection = JSON.parse(globalThis.localStorage.getItem("rayde.workspaceConnection.v1"));
     if (connection && connection.version === 1 && Array.isArray(connection.environment)) stored = connection.environment.filter(function (entry) { return typeof entry === "string"; });
   } catch (_) {}
-  var environment = stored.concat(query.getAll("env")).filter(function (entry) { return entry.indexOf("RAYDE_VISITOR=") !== 0; });
+  var environment = stored.concat(query.getAll("env")).filter(function (entry) { return !/^RAYDE_(VISITOR|STANDALONE)=/.test(entry); });
   environment.push("RAYDE_VISITOR=" + visitor);
-  if (window.matchMedia("(display-mode: standalone), (display-mode: window-controls-overlay), (display-mode: fullscreen)").matches && window.top === window && !environment.some(function (entry) { return entry.indexOf("RAYDE_STANDALONE=") === 0; })) environment.push("RAYDE_STANDALONE=1");
+  environment.push("RAYDE_STANDALONE=" + (window.top === window ? "1" : "0"));
   globalThis.ashuiEnvironment = environment;
 })();

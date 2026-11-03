@@ -196,6 +196,13 @@ var Accounts = class {
     }
     if (op === "account.open") return this.api("/api/workspaces/open", { repository: params2.repository });
     if (op === "account.workspace") return this.api("/api/workspaces/" + encodeURIComponent(params2.workspace));
+    if (op === "account.resources") {
+      if (!/^[\w-]{43}$/.test(params2.workspace ?? "")) return { available: false, status: "unprovisioned" };
+      const revision = this.revision;
+      const resources = await this.api("/api/workspaces/" + params2.workspace + "/resources");
+      if (revision !== this.revision) throw new Error("The account changed. Refresh workspace usage.");
+      return resources;
+    }
     if (op === "account.sync-reopen") {
       if (!/^[\w-]{43}$/.test(params2.workspace)) throw new Error("Choose a synced workspace.");
       await this.request("account.status", {});
@@ -12388,7 +12395,7 @@ var start = (ask) => serve(ask, {
             reply = { result: await documents.request(request.op, request) };
             if (request.id === void 0) return;
           } else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from, request.to);
-          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
+          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request.op === "account.resources" ? { ...request, workspace: entry.workspace } : request) };
           else if (request.op === "page.markdown") reply = { result: documentation(request.source) };
           else if (request.op === "page.preview") {
             if (!previews) throw new Error("Connect an app preview session first.");
