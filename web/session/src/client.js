@@ -405,6 +405,9 @@ export class SessionClient {
     this.identity = null;
     this.credential = options.credential ?? null;
     this.stopped = false;
+    this.accountPaused = false;
+    this.connectionEpoch = 0;
+    this.cancelConnection = null;
     this.attempt = 0;
     this.generation = 0;
   }
@@ -422,12 +425,37 @@ export class SessionClient {
   invalidate() {
     if (this.invalidated) return this.invalidated;
     const error = this.invalidated = new SessionError({code:"workspace-changed",message:"The workspace or account changed. Reopen it to continue; your previous recovery data is kept in this browser."});
-    this.stopped = true; this.ready = false; this.generation++;
+    this.stopTransport(error);
+    this.emit("context-changed", {message:error.message});
+    return error;
+  }
+
+  stopTransport(error) {
+    this.stopped = true; this.ready = false; this.generation++; this.connectionEpoch++;
+    this.cancelConnection?.(error);
     for (const reply of this.waiting.values()) reply.reject(error);
     this.waiting.clear();
-    this.emit("context-changed", {message:error.message});
-    this.socket?.close();
-    return error;
+    const socket = this.socket; this.socket = null;
+    socket?.close();
+  }
+
+  /** Sign-out stops remote work while local documents and their recovery remain open. */
+  pauseAccount() {
+    if (this.accountPaused || this.invalidated || this.stopped) return;
+    this.accountPaused = true;
+    const error = new SessionError({code:"signed-out",message:"Signed out of GitHub. Sign in to reconnect; edits are kept in this browser."});
+    this.stopTransport(error);
+    this.emit("disconnected", {code:error.code,message:error.message});
+  }
+
+  resumeAccount() {
+    if (this.invalidated) return Promise.reject(this.invalidated);
+    if (!this.accountPaused) return Promise.resolve();
+    this.accountPaused = false; this.stopped = false;
+    return this.connect().catch(error => {
+      if (!this.invalidated && this.stopped) this.accountPaused = true;
+      throw error;
+    });
   }
 
   context(identity) {
@@ -437,20 +465,39 @@ export class SessionClient {
 
   /** Connects, and keeps reconnecting until `close()`. Resolves when the first connection is ready. */
   connect() {
+    if (this.invalidated || this.stopped) return Promise.reject(this.invalidated ?? new Error("The workspace connection is stopped."));
+    const epoch = ++this.connectionEpoch;
+    const replaced = new Error("The workspace connection was replaced.");
+    this.cancelConnection?.(replaced);
+    for (const reply of this.waiting.values()) reply.reject(replaced);
+    this.waiting.clear();
+    const previous = this.socket; this.socket = null; previous?.close(); this.ready = false;
     return new Promise((resolve, reject) => {
       let first = true;
+      const active = () => this.connectionEpoch === epoch && !this.stopped;
+      const finish = (error, hello) => {
+        if (!first) return;
+        first = false; clearTimeout(initial);
+        if (this.cancelConnection === cancel) this.cancelConnection = null;
+        if (error) reject(error); else resolve(hello);
+      };
+      const cancel = error => finish(error);
+      this.cancelConnection = cancel;
       const initial = setTimeout(() => {
-        if (first) { first = false; this.close(); reject(new Error("The workspace session did not connect in time.")); }
+        if (first && active()) this.close(new Error("The workspace session did not connect in time."));
       }, this.options.timeout ?? 30000);
       const open = () => {
-        if (this.stopped) return;
-        const socket = new WebSocket(this.options.url);
+        if (!active()) return;
+        let socket;
+        try { socket = new WebSocket(this.options.url); }
+        catch (error) { this.close(error); return; }
         this.socket = socket;
-        socket.onmessage = (message) => { if (this.socket === socket && !this.invalidated) this.receive(JSON.parse(message.data)); };
+        socket.onmessage = (message) => { if (active() && this.socket === socket && !this.invalidated) this.receive(JSON.parse(message.data)); };
         socket.onopen = async () => {
           try {
-            if (this.socket !== socket || this.stopped) return;
+            if (!active() || this.socket !== socket) return;
             this.hello = await this.rawRequest("hello", { token: this.options.token });
+            if (!active() || this.socket !== socket) return;
             this.identity = null;
             if (this.credential) {
               try {
@@ -459,7 +506,7 @@ export class SessionClient {
                 this.hello.cacheIdentity = reply.cacheIdentity;
               } catch { this.pendingAuth = true; }
             }
-            if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || this.stopped) throw new Error("The connection closed during sign-in.");
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error("The connection closed during sign-in.");
             const context = this.context(this.hello.cacheIdentity);
             if (this.workspace !== null && (context.key !== this.workspace || !context.cacheable && this.docs.size > 0)) throw this.invalidate();
             this.workspace = context.key; this.cacheable = context.cacheable; this.cacheIdentity = this.hello.cacheIdentity;
@@ -468,21 +515,22 @@ export class SessionClient {
             this.pendingAuth = !!this.hello.signin && !this.identity;
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc) => doc.sync().catch(() => {})));
-            if (first) { first = false; clearTimeout(initial); resolve(this.hello); }
+            if (active() && this.socket === socket) finish(null,this.hello);
           } catch (error) {
-            if (first) { first = false; clearTimeout(initial); this.close(); reject(error); }
+            if (!active()) return;
+            if (first) this.close(error);
             else if (this.socket === socket) socket.close();
           }
         };
         socket.onclose = () => {
-          if (this.socket !== socket) return;
+          if (!active() || this.socket !== socket) return;
           const wasReady = this.ready;
           this.ready = false;
           if (wasReady) { this.generation++; this.emit("disconnected"); }
           for (const [, reply] of this.waiting) reply.reject(new Error("The connection closed."));
           this.waiting.clear();
-          if (first && !wasReady && this.options.reconnect === false) { first = false; clearTimeout(initial); reject(new Error("Could not connect.")); }
-          if (!this.stopped && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5000));
+          if (first && !wasReady && this.options.reconnect === false) finish(new Error("Could not connect."));
+          if (active() && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5000));
         };
       };
       open();
@@ -620,10 +668,9 @@ export class SessionClient {
   /** Runs a program in the session; output arrives as `proc.out` and `proc.exit` events. */
   spawn(command, args = [], cwd = "") { return this.request("proc.spawn", { command, args, cwd }).then((r) => r.pid); }
 
-  close() {
-    this.stopped = true;
+  close(error = new Error("The workspace connection is closed.")) {
+    this.stopTransport(error);
     this.recoveryDirectory.close();
-    this.socket?.close();
   }
 }
 

@@ -118,7 +118,7 @@ test("account changes reach header subscribers without leaking session authority
   assert.deepEqual(calls.map(call=>call.url),["/api/session","/api/session","/api/logout"]);
   assert.equal(calls[2].init.headers["X-RayDE-CSRF"],"fresh-csrf");
   assert.deepEqual(changes.at(-1),{user:null});assert.equal(account.csrf,null);assert.equal(account.installUrl,null);
-  assert.deepEqual(navigations,["https://app.example"]);
+  assert.deepEqual(navigations,[]);
   stop();const length=changes.length;await account.request("account.status",{});assert.equal(changes.length,length);
 });
 

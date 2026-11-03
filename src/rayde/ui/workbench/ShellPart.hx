@@ -310,7 +310,7 @@ class ShellPart {
 
 	function beforeSignOut(proceed:Void->Void):Void {
 		if (wb.dirty.get().length == 0) { proceed(); return; }
-		wb.prompt.set({title:"Sign out of GitHub", description:"Save your edited files before leaving this workspace.", action:"Save and Sign Out", accept:_ -> wb.runPart.saveBefore(proceed)});
+		wb.prompt.set({title:"Sign out of GitHub", description:"Save your edited files before disconnecting this workspace. Your tabs will stay open.", action:"Save and Sign Out", accept:_ -> wb.runPart.saveBefore(proceed)});
 	}
 
 	/** A press on the bar: a double click maximizes the window, and anything else on it moves the window. */

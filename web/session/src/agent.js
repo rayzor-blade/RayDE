@@ -2,6 +2,7 @@ import { pageEntry } from "./entry.js";
 import { readConnection } from "./connection.js";
 import { samplePreset, seedSample } from "./preset.js";
 import { Accounts } from "./accounts.js";
+import { followAccount } from "./account-session.js";
 import { SessionClient } from "./client.js";
 import { EditorDocuments } from "./editor.js";
 import { documentation } from "./documentation.js";
@@ -65,7 +66,7 @@ export const start = ask => serve(ask, {
     const syncStatus = () => { void client?.request("sync.status").then(reply => {
       if (Object.hasOwn(reply,"syncWriteback")) client.receive({ev:"sync.status",syncWriteback:reply.syncWriteback});
     }).catch(()=>{}); };
-    client?.on("disconnected", () => {previews?.connection(false);answer({ ev: "session.disconnected", generation:client.generation });});
+    client?.on("disconnected", detail => {previews?.connection(false);answer({ ev: "session.disconnected", generation:client.generation, ...detail });});
     client?.on("context-changed", ({message}) => {previews?.connection(false);previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
     client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves, syncWriteback:client.hello?.syncWriteback??null });syncStatus();});
     if (client) syncStatus();
@@ -151,7 +152,7 @@ export const start = ask => serve(ask, {
         }
       })();
     });
-    const stopAccounts = accounts.subscribe(status => answer({ev:"account.changed", user:status.user}));
+    const stopAccounts = followAccount(accounts, entry.workspace ? client : null, status => answer({ev:"account.changed", user:status.user}));
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
       close() { stopAccounts(); accounts.signin?.cancel(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },

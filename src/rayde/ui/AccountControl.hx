@@ -48,9 +48,9 @@ class AccountControl extends Component<AccountControlProps> {
 						<text id="rayde-account-name" class="rayde-account-name">${user.get() == null ? "" : user.get().login}</text>
 					</dropdown-menu-trigger>
 					<dropdown-menu-content id="rayde-account-menu">
-						<if {failure.get() != ""}><dropdown-menu-item id="rayde-account-retry" disabled={busy.get()} onSelect={() -> request("account.status")}><icon document={Icons.RESTART_LINE} class="size-4"/>Retry connection</dropdown-menu-item><dropdown-menu-separator/></if>
-						<dropdown-menu-item id="rayde-account-manage" disabled={busy.get()} onSelect={() -> request("account.manage-access")}><icon document={Icons.SETTINGS_3_LINE} class="size-4"/>Manage access</dropdown-menu-item>
-						<dropdown-menu-item id="rayde-account-signout" disabled={busy.get()} onSelect={signOut}><icon document={Icons.LOGOUT_BOX_R_LINE} class="size-4"/>Sign out</dropdown-menu-item>
+						<if {failure.get() != ""}><dropdown-menu-item id="rayde-account-retry" disabled={busy.get()} onSelect={() -> request("account.status")}><div class="rayde-account-menu-row"><icon id="rayde-account-retry-icon" document={Icons.RESTART_LINE} class="size-4 shrink-0"/><text id="rayde-account-retry-label" wrap={false}>Retry connection</text></div></dropdown-menu-item><dropdown-menu-separator/></if>
+						<dropdown-menu-item id="rayde-account-manage" disabled={busy.get()} onSelect={() -> request("account.manage-access")}><div class="rayde-account-menu-row"><icon id="rayde-account-manage-icon" document={Icons.SETTINGS_3_LINE} class="size-4 shrink-0"/><text id="rayde-account-manage-label" wrap={false}>Manage access</text></div></dropdown-menu-item>
+						<dropdown-menu-item id="rayde-account-signout" disabled={busy.get()} onSelect={signOut}><div class="rayde-account-menu-row"><icon id="rayde-account-signout-icon" document={Icons.LOGOUT_BOX_R_LINE} class="size-4 shrink-0"/><text id="rayde-account-signout-label" wrap={false}>Sign out</text></div></dropdown-menu-item>
 					</dropdown-menu-content>
 				</dropdown-menu>
 			<else>

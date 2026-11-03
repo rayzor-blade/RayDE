@@ -119,7 +119,7 @@ export class Accounts {
       this.csrf = null;
       this.installUrl = null;
       this.changed(null);
-      this.later(() => this.location.assign(this.location.origin)); return {};
+      return {};
     }
     if (op === "account.connect") {
       if (!/^[\w-]{43}$/.test(params.workspace)) throw new Error("Choose a repository workspace.");
