@@ -13,12 +13,14 @@ export class Accounts {
     this.signin = null;
     this.csrf = null;
     this.installUrl = null;
+    this.user = null;
+    this.revision = 0;
     this.listeners = new Set();
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location?.href ?? "http://localhost").hostname);
   }
 
   subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  changed(user) { for (const listener of this.listeners) listener({user}); }
+  changed(user) { this.user = user ?? null; for (const listener of this.listeners) listener({user:this.user}); }
 
   signIn() {
     if (this.signin) return this.signin.promise;
@@ -79,7 +81,9 @@ export class Accounts {
   async request(op, params) {
     if (op === "account.status") {
       if (this.landing) { this.changed(null); return { user: null, installable: false }; }
+      const revision = this.revision;
       const session = await this.api("/api/session");
+      if (revision !== this.revision) return {user:this.user,installable:!!this.installUrl};
       this.csrf = session.csrf ?? null;
       this.installUrl = session.installUrl ?? null;
       this.changed(session.user);
@@ -116,6 +120,8 @@ export class Accounts {
     if (op === "account.signout") {
       await this.request("account.status", {});
       await this.api("/api/logout", {});
+      this.revision++;
+      this.signin?.cancel();
       this.csrf = null;
       this.installUrl = null;
       this.changed(null);

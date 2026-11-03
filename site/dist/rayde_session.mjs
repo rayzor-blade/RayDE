@@ -92,6 +92,8 @@ var Accounts = class {
     this.signin = null;
     this.csrf = null;
     this.installUrl = null;
+    this.user = null;
+    this.revision = 0;
     this.listeners = /* @__PURE__ */ new Set();
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location2?.href ?? "http://localhost").hostname);
   }
@@ -100,7 +102,8 @@ var Accounts = class {
     return () => this.listeners.delete(listener);
   }
   changed(user) {
-    for (const listener of this.listeners) listener({ user });
+    this.user = user ?? null;
+    for (const listener of this.listeners) listener({ user: this.user });
   }
   signIn() {
     if (this.signin) return this.signin.promise;
@@ -178,7 +181,9 @@ var Accounts = class {
         this.changed(null);
         return { user: null, installable: false };
       }
+      const revision = this.revision;
       const session = await this.api("/api/session");
+      if (revision !== this.revision) return { user: this.user, installable: !!this.installUrl };
       this.csrf = session.csrf ?? null;
       this.installUrl = session.installUrl ?? null;
       this.changed(session.user);
@@ -222,10 +227,11 @@ var Accounts = class {
     if (op === "account.signout") {
       await this.request("account.status", {});
       await this.api("/api/logout", {});
+      this.revision++;
+      this.signin?.cancel();
       this.csrf = null;
       this.installUrl = null;
       this.changed(null);
-      this.later(() => this.location.assign(this.location.origin));
       return {};
     }
     if (op === "account.connect") {
@@ -237,6 +243,18 @@ var Accounts = class {
     throw new Error("Unknown account request.");
   }
 };
+
+// src/account-session.js
+function followAccount(accounts2, client, notify) {
+  return accounts2.subscribe((status) => {
+    notify(status);
+    if (!client) return;
+    if (!status.user) client.pauseAccount();
+    else if (client.accountPaused) void client.resumeAccount().catch((error) => {
+      if (!client.invalidated) client.emit("disconnected", { message: error.message });
+    });
+  });
+}
 
 // node_modules/lib0/map.js
 var create = () => /* @__PURE__ */ new Map();
@@ -10067,6 +10085,9 @@ var SessionClient = class {
     this.identity = null;
     this.credential = options.credential ?? null;
     this.stopped = false;
+    this.accountPaused = false;
+    this.connectionEpoch = 0;
+    this.cancelConnection = null;
     this.attempt = 0;
     this.generation = 0;
   }
@@ -10081,14 +10102,39 @@ var SessionClient = class {
   invalidate() {
     if (this.invalidated) return this.invalidated;
     const error = this.invalidated = new SessionError({ code: "workspace-changed", message: "The workspace or account changed. Reopen it to continue; your previous recovery data is kept in this browser." });
+    this.stopTransport(error);
+    this.emit("context-changed", { message: error.message });
+    return error;
+  }
+  stopTransport(error) {
     this.stopped = true;
     this.ready = false;
     this.generation++;
+    this.connectionEpoch++;
+    this.cancelConnection?.(error);
     for (const reply of this.waiting.values()) reply.reject(error);
     this.waiting.clear();
-    this.emit("context-changed", { message: error.message });
-    this.socket?.close();
-    return error;
+    const socket = this.socket;
+    this.socket = null;
+    socket?.close();
+  }
+  /** Sign-out stops remote work while local documents and their recovery remain open. */
+  pauseAccount() {
+    if (this.accountPaused || this.invalidated || this.stopped) return;
+    this.accountPaused = true;
+    const error = new SessionError({ code: "signed-out", message: "Signed out of GitHub. Sign in to reconnect; edits are kept in this browser." });
+    this.stopTransport(error);
+    this.emit("disconnected", { code: error.code, message: error.message });
+  }
+  resumeAccount() {
+    if (this.invalidated) return Promise.reject(this.invalidated);
+    if (!this.accountPaused) return Promise.resolve();
+    this.accountPaused = false;
+    this.stopped = false;
+    return this.connect().catch((error) => {
+      if (!this.invalidated && this.stopped) this.accountPaused = true;
+      throw error;
+    });
   }
   context(identity) {
     const stable = cacheNamespace(this.options.url, identity);
@@ -10096,26 +10142,50 @@ var SessionClient = class {
   }
   /** Connects, and keeps reconnecting until `close()`. Resolves when the first connection is ready. */
   connect() {
+    if (this.invalidated || this.stopped) return Promise.reject(this.invalidated ?? new Error("The workspace connection is stopped."));
+    const epoch = ++this.connectionEpoch;
+    const replaced = new Error("The workspace connection was replaced.");
+    this.cancelConnection?.(replaced);
+    for (const reply of this.waiting.values()) reply.reject(replaced);
+    this.waiting.clear();
+    const previous = this.socket;
+    this.socket = null;
+    previous?.close();
+    this.ready = false;
     return new Promise((resolve, reject) => {
       let first = true;
+      const active = () => this.connectionEpoch === epoch && !this.stopped;
+      const finish = (error, hello) => {
+        if (!first) return;
+        first = false;
+        clearTimeout(initial);
+        if (this.cancelConnection === cancel) this.cancelConnection = null;
+        if (error) reject(error);
+        else resolve(hello);
+      };
+      const cancel = (error) => finish(error);
+      this.cancelConnection = cancel;
       const initial = setTimeout(() => {
-        if (first) {
-          first = false;
-          this.close();
-          reject(new Error("The workspace session did not connect in time."));
-        }
+        if (first && active()) this.close(new Error("The workspace session did not connect in time."));
       }, this.options.timeout ?? 3e4);
       const open = () => {
-        if (this.stopped) return;
-        const socket = new WebSocket(this.options.url);
+        if (!active()) return;
+        let socket;
+        try {
+          socket = new WebSocket(this.options.url);
+        } catch (error) {
+          this.close(error);
+          return;
+        }
         this.socket = socket;
         socket.onmessage = (message) => {
-          if (this.socket === socket && !this.invalidated) this.receive(JSON.parse(message.data));
+          if (active() && this.socket === socket && !this.invalidated) this.receive(JSON.parse(message.data));
         };
         socket.onopen = async () => {
           try {
-            if (this.socket !== socket || this.stopped) return;
+            if (!active() || this.socket !== socket) return;
             this.hello = await this.rawRequest("hello", { token: this.options.token });
+            if (!active() || this.socket !== socket) return;
             this.identity = null;
             if (this.credential) {
               try {
@@ -10126,7 +10196,7 @@ var SessionClient = class {
                 this.pendingAuth = true;
               }
             }
-            if (this.socket !== socket || socket.readyState !== WebSocket.OPEN || this.stopped) throw new Error("The connection closed during sign-in.");
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error("The connection closed during sign-in.");
             const context = this.context(this.hello.cacheIdentity);
             if (this.workspace !== null && (context.key !== this.workspace || !context.cacheable && this.docs.size > 0)) throw this.invalidate();
             this.workspace = context.key;
@@ -10138,22 +10208,15 @@ var SessionClient = class {
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc2) => doc2.sync().catch(() => {
             })));
-            if (first) {
-              first = false;
-              clearTimeout(initial);
-              resolve(this.hello);
-            }
+            if (active() && this.socket === socket) finish(null, this.hello);
           } catch (error) {
-            if (first) {
-              first = false;
-              clearTimeout(initial);
-              this.close();
-              reject(error);
-            } else if (this.socket === socket) socket.close();
+            if (!active()) return;
+            if (first) this.close(error);
+            else if (this.socket === socket) socket.close();
           }
         };
         socket.onclose = () => {
-          if (this.socket !== socket) return;
+          if (!active() || this.socket !== socket) return;
           const wasReady = this.ready;
           this.ready = false;
           if (wasReady) {
@@ -10162,12 +10225,8 @@ var SessionClient = class {
           }
           for (const [, reply] of this.waiting) reply.reject(new Error("The connection closed."));
           this.waiting.clear();
-          if (first && !wasReady && this.options.reconnect === false) {
-            first = false;
-            clearTimeout(initial);
-            reject(new Error("Could not connect."));
-          }
-          if (!this.stopped && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5e3));
+          if (first && !wasReady && this.options.reconnect === false) finish(new Error("Could not connect."));
+          if (active() && this.options.reconnect !== false) setTimeout(open, Math.min(250 * 2 ** this.attempt++, 5e3));
         };
       };
       open();
@@ -10350,10 +10409,9 @@ var SessionClient = class {
   spawn(command, args2 = [], cwd = "") {
     return this.request("proc.spawn", { command, args: args2, cwd }).then((r) => r.pid);
   }
-  close() {
-    this.stopped = true;
+  close(error = new Error("The workspace connection is closed.")) {
+    this.stopTransport(error);
     this.recoveryDirectory.close();
-    this.socket?.close();
   }
 };
 
@@ -12297,9 +12355,9 @@ var start = (ask) => serve(ask, {
       }).catch(() => {
       });
     };
-    client?.on("disconnected", () => {
+    client?.on("disconnected", (detail) => {
       previews?.connection(false);
-      answer({ ev: "session.disconnected", generation: client.generation });
+      answer({ ev: "session.disconnected", generation: client.generation, ...detail });
     });
     client?.on("context-changed", ({ message }) => {
       previews?.connection(false);
@@ -12396,7 +12454,7 @@ var start = (ask) => serve(ask, {
         }
       })();
     });
-    const stopAccounts = accounts.subscribe((status) => answer({ ev: "account.changed", user: status.user }));
+    const stopAccounts = followAccount(accounts, entry.workspace ? client : null, (status) => answer({ ev: "account.changed", user: status.user }));
     return {
       send(bytes) {
         try {

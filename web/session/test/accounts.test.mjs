@@ -130,6 +130,21 @@ test("a failed sign-out keeps the account and does not navigate away",async()=>{
   assert.deepEqual(changes,[{user:{login:"alice"}}]);assert.deepEqual(navigations,[]);assert.equal(account.csrf,"csrf");
 });
 
+test("a delayed account check cannot restore the header or CSRF after sign-out",async()=>{
+  const changes=[];let release,checks=0;
+  const account=new Accounts({fetch:async url=>{
+    if(url==="/api/logout")return Response.json({});
+    if(++checks===1)return new Promise(resolve=>release=()=>resolve(Response.json({user:{login:"stale"},csrf:"stale-csrf"})));
+    return Response.json({user:{login:"alice"},csrf:"fresh-csrf"});
+  }});
+  account.subscribe(status=>changes.push(status));
+  const pending=account.request("account.status",{});
+  await account.request("account.signout",{});release();
+  assert.deepEqual(await pending,{user:null,installable:false});
+  assert.equal(account.csrf,null);assert.deepEqual(changes.at(-1),{user:null});
+  assert.equal(changes.some(change=>change.user?.login==="stale"),false);
+});
+
 test("Manage access opens the GitHub App separately and preserves the editor",async()=>{
   const opened=[],navigations=[];
   const account=new Accounts({location:{href:"https://app.example/workspace",assign:url=>navigations.push(url)},open:(...args)=>opened.push(args),fetch:async()=>Response.json({user:{login:"alice"},csrf:"csrf",installUrl:"https://github.com/apps/rayde-staging/installations/new"})});
