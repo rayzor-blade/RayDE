@@ -12304,6 +12304,58 @@ var AppPreviews = class {
   }
 };
 
+// src/cached-demo.js
+var digest = /^[a-f0-9]{64}$/;
+var privatePart = (path2) => path2.split("/").some((part) => [".git", ".rayde", ".rayzor", ".haxelib", ".rayde-session"].includes(part));
+var demoInput = (path2) => !privatePart(path2) && path2 !== "data/tasks.json" && !["bin", "build", "Export"].includes(path2.split("/")[0]);
+var sha = async (bytes) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+var canonical = (value) => JSON.stringify(value, (_2, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a3], [b]) => a3.localeCompare(b))) : item);
+var decode2 = (data) => Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+async function remoteDemoEntries(client) {
+  const entries = [];
+  let bytes = 0, count2 = 0;
+  async function walk(path2) {
+    for (const entry2 of (await client.request("fs.list", { path: path2 })).entries) {
+      if (++count2 > 512) throw Error("The demo workspace has too many files.");
+      const name = path2 ? path2 + "/" + entry2.name : entry2.name;
+      if (privatePart(name) || ["bin", "build", "Export"].includes(name.split("/")[0])) continue;
+      if (entry2.kind === "dir") await walk(name);
+      else if (demoInput(name)) {
+        const file = await client.request("fs.read", { path: name, encoding: "base64" });
+        bytes += file.data.length;
+        if (bytes > 3 * 1024 * 1024) throw Error("The demo sources are too large.");
+        entries.push({ path: client.hello.root + "/" + name, directory: false, data: file.data });
+      }
+    }
+  }
+  await walk("");
+  return entries;
+}
+var CachedDemo = class {
+  constructor(preset, base, origin, entries, client) {
+    const value = preset.preview;
+    if (!value || !digest.test(value.release) || value.entry !== `demo/${value.release}/index.html` || !value.configuration || value.configuration.mode !== "browser" || canonical(value.configuration).length > 128 * 1024 || !value.inputs || typeof value.inputs !== "object" || Array.isArray(value.inputs) || Object.keys(value.inputs).length > 256 || Object.entries(value.inputs).some(([path2, hash]) => !path2 || path2.startsWith("/") || path2.split("/").some((part) => !part || part === "." || part === "..") || path2.includes("\\") || !demoInput(path2) || !digest.test(hash))) throw Error("Invalid demo preview manifest.");
+    const url = new URL(value.entry, base), host = new URL(origin);
+    if (!["https:", "http:"].includes(host.protocol) || host.username || host.password || host.origin === new URL(base).origin || host.protocol === "http:" && !["127.0.0.1", "localhost", "[::1]"].includes(host.hostname)) throw Error("The demo preview needs an isolated HTTPS origin.");
+    url.protocol = host.protocol;
+    url.host = host.host;
+    this.preset = preset;
+    this.entries = entries;
+    this.client = client;
+    this.artifact = { preview: value.release, url: url.href, path: "", cached: true };
+  }
+  async open(root, configuration) {
+    if (root !== this.client.hello.root || canonical(configuration) !== canonical(this.preset.preview.configuration)) return { available: false };
+    const entries = await this.entries(), inputs = entries.filter((entry2) => !entry2.directory && entry2.path.startsWith(root + "/") && demoInput(entry2.path.slice(root.length + 1)));
+    if (inputs.length !== Object.keys(this.preset.preview.inputs).length) return { available: false };
+    for (const entry2 of inputs) {
+      if (typeof entry2.data !== "string" || entry2.data.length > 3 * 1024 * 1024) return { available: false };
+      if (await sha(decode2(entry2.data)) !== this.preset.preview.inputs[entry2.path.slice(root.length + 1)]) return { available: false };
+    }
+    return { available: true, ...this.artifact };
+  }
+};
+
 // src/agent.js
 var query = new URLSearchParams(location.search);
 var entry = pageEntry(location, readConnection());
@@ -12330,7 +12382,7 @@ var start = (ask) => serve(ask, {
     const database = await storage();
     let preset = null;
     const sample = document.querySelector('meta[name="rayde-demo"]')?.content;
-    if (demo && !endpoint && sample) {
+    if ((demo || query.get("demo-preview") === "1") && sample) {
       const url = new URL(sample, import.meta.url);
       if (url.origin !== location.origin) throw new Error("The sample must come from this site.");
       const response = await fetch(url);
@@ -12338,8 +12390,10 @@ var start = (ask) => serve(ask, {
       const text2 = await response.text();
       if (text2.length > 3 * 1024 * 1024) throw new Error("The sample workspace is too large.");
       preset = samplePreset(JSON.parse(text2));
-      await seedSample(database, preset);
-      project ??= preset.project;
+      if (!endpoint) {
+        await seedSample(database, preset);
+        project ??= preset.project;
+      }
     }
     let storageFailure = null;
     let client = null;
@@ -12353,6 +12407,21 @@ var start = (ask) => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at2 = 0; at2 < bytes.length; at2 += 16384) deliver(bytes.subarray(at2, at2 + 16384));
     };
+    const files = (mode, body) => new Promise((resolve, reject) => {
+      const transaction = database.transaction("files", mode);
+      const request = body(transaction.objectStore("files"));
+      transaction.oncomplete = () => resolve(request?.result);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    const previewOrigin = document.querySelector('meta[name="rayde-preview-origin"]')?.content ?? (["127.0.0.1", "localhost", "[::1]"].includes(location.hostname) ? `${location.protocol}//${location.hostname === "localhost" ? "127.0.0.1" : "localhost"}:${location.port}` : "https://preview.rayde.org");
+    const cached = client && preset?.preview ? new CachedDemo(
+      preset,
+      new URL(sample, import.meta.url),
+      previewOrigin,
+      () => remoteDemoEntries(client),
+      client
+    ) : null;
     const documents = client ? new EditorDocuments(client, answer) : null;
     const previews = client ? new AppPreviews(client, void 0, answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update", "sync.status"]) client?.on(event, answer);
@@ -12378,26 +12447,25 @@ var start = (ask) => serve(ask, {
     });
     if (client) syncStatus();
     const localPath = (path2) => typeof path2 === "string" && (path2 === "/home/web" || path2.startsWith("/home/web/") || !client && demo && (path2 === "/work" || path2.startsWith("/work/"))) && !path2.split("/").includes("..");
-    const files = (mode, body) => new Promise((resolve, reject) => {
-      const transaction = database.transaction("files", mode);
-      const request = body(transaction.objectStore("files"));
-      transaction.oncomplete = () => resolve(request?.result);
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
     const requests = new Frames((text2) => {
       const request = JSON.parse(text2);
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
+          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, appPreviews: client?.hello.appPreviews === true || !!cached, webPreviews: client?.hello.webPreviews === true || !!cached, demoPreview: !!cached, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
           else if (request.op.startsWith("view.") && documents) {
             reply = { result: await documents.request(request.op, request) };
             if (request.id === void 0) return;
           } else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from, request.to);
           else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request.op === "account.resources" ? { ...request, workspace: entry.workspace } : request) };
           else if (request.op === "page.markdown") reply = { result: documentation(request.source) };
-          else if (request.op === "page.preview") {
+          else if (request.op === "page.demo-preview") {
+            reply = cached && !request.force ? await cached.open(request.root, request.configuration) : { available: false };
+            if (reply.available) previews.register(reply);
+          } else if (request.op === "page.demo-close") {
+            previews?.unregister(request.preview);
+            reply = {};
+          } else if (request.op === "page.preview") {
             if (!previews) throw new Error("Connect an app preview session first.");
             reply = previews.update(request);
             if (request.id === void 0) return;
