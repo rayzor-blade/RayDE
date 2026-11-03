@@ -10081,6 +10081,12 @@ var SessionClient = class {
       const reply = this.waiting.get(message.id);
       this.waiting.delete(message.id);
       message.ok ? reply.resolve(message) : reply.reject(new SessionError(message));
+    } else if (message.ev === "doc.status") {
+      const doc2 = this.docs.get(message.path);
+      if (doc2) {
+        doc2.cloudStatus(message.message ?? "");
+        if (["document-lineage", "recovery-conflict", "bad-buffer-state"].includes(message.code)) doc2.fence(new SessionError(message));
+      }
     } else if (message.ev === "doc.update") {
       const doc2 = this.docs.get(message.path);
       if (doc2 && !doc2.closed && !doc2.blocked) {
