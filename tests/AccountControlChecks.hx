@@ -37,6 +37,7 @@ class AccountControlChecks {
 			click();approved();settle();check(control.operation=="account.signout","Sign-out operation was replaced");requests[3].future.resolve(haxe.Json.parse('{"result":{}}'));settle();check(control.user.get()==null&&!control.busy.get()&&control.failure.get()=="","Signed-out header retained account name or an error: "+control.failure.get());
 			click();check(requests[4].op=="account.signin","Signed-out header has no sign-in action: "+[for(request in requests)request.op].join(",")+"; "+control.failure.get());requests[4].future.resolve({result:{user:{login:"alice"}}});settle();check(control.user.get().login=="alice","Popup sign-in did not update header");
 		} catch(error:Dynamic){stop();tree.dispose();throw error;}
+		control.request("account.signin");var abandoned=requests[requests.length-1].future;click();check(control.cancelling.get()&&requests[requests.length-1].op=="account.cancel-signin","Pending sign-in has no Cancel action");abandoned.reject("cancelled");settle();check(!control.busy.get()&&control.failure.get()=="","Cancelled sign-in left an error or a disabled button");
 		control.request("account.signin");stop();check(unsubscribed&&control.gone&&requests[requests.length-1].op=="account.cancel-signin","Closed header retained its account listener or pending sign-in");listener({ev:"account.changed",user:null});check(control.user.get()!=null,"Disposed header accepted account updates");tree.dispose();
 	}
 }
