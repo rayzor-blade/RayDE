@@ -43,6 +43,8 @@ haxe "${ui_args[@]}" -cp "$channel/haxelib/ash-channel" -D wasm -D ashui_no_hdll
 cp "$here/web/platform.js" "$out/rayde-platform.js"
 cp "$here/web/page.css" "$out/rayde-page.css"
 cp "$here/site/assets/rayde-icon.svg" "$out/rayde-icon.svg"
+cp "$here/src/rayde/ui/assets/rayde_transparent_wordmarks/rayde_dark_transparent_final.svg" "$out/rayde-logo-dark.svg"
+cp "$here/src/rayde/ui/assets/rayde_transparent_wordmarks/rayde_light_transparent_final.svg" "$out/rayde-logo-light.svg"
 python3 - "$out/index.html" <<'PY'
 import sys
 path = sys.argv[1]
@@ -57,6 +59,13 @@ if 'rayde-page.css' not in page:
     open(path, "w").write(page)
 if 'rel="icon"' not in page:
     page = page.replace('<title>', '<link rel="icon" href="./rayde-icon.svg" type="image/svg+xml">\n<title>', 1)
+    open(path, "w").write(page)
+if 'id="rayde-loading-logo"' not in page:
+    page = page.replace('<div class="spinner"></div>', '''<picture id="rayde-loading-logo">
+    <source media="(prefers-color-scheme: dark)" srcset="./rayde-logo-dark.svg">
+    <img src="./rayde-logo-light.svg" alt="RayDE" width="232" height="70">
+  </picture>
+  <div class="rayde-startup-progress" role="progressbar" aria-label="Loading RayDE"></div>''', 1)
     open(path, "w").write(page)
 PY
 ASH_WASM_FIBERS=1 "$ash" --build "$out/rayde.wasm" --target wasm32-wasip1-threads "$out/rayde.hl" 2>&1 | tail -8

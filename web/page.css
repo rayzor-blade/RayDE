@@ -1,2 +1,13 @@
 /* Embedded windows draw their own border and corners over the containing page. */
 html[data-embedded], html[data-embedded] body { background: transparent; }
+
+#rayde-loading-logo { display: block; width: min(232px, 65vw); margin-bottom: 22px; }
+#rayde-loading-logo img { display: block; width: 100%; height: auto; }
+.rayde-startup-progress { position: relative; width: min(232px, 65vw); height: 4px; margin-bottom: 14px; overflow: hidden;
+  border-radius: 4px; background: color-mix(in srgb, var(--muted) 18%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 24%, transparent); }
+.rayde-startup-progress::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 32%; border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent) 35%, #cdd9ff 70%, var(--accent));
+  box-shadow: 0 0 9px var(--accent); animation: rayde-startup-glide 1.6s ease-in-out infinite; }
+#status.failed .rayde-startup-progress { display: none; }
+@keyframes rayde-startup-glide { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
+@media (prefers-reduced-motion: reduce) { .rayde-startup-progress::after { animation: none; width: 100%; transform: none; } }

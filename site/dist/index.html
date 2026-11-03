@@ -33,7 +33,11 @@
 </style>
 <canvas id="screen" tabindex="0" data-xwindow="fit"></canvas>
 <div id="status" role="status" aria-live="polite">
-  <div class="spinner"></div>
+  <picture id="rayde-loading-logo">
+    <source media="(prefers-color-scheme: dark)" srcset="./rayde-logo-dark.svg">
+    <img src="./rayde-logo-light.svg" alt="RayDE" width="232" height="70">
+  </picture>
+  <div class="rayde-startup-progress" role="progressbar" aria-label="Loading RayDE"></div>
   <h1 id="status-title">Starting</h1>
   <p id="status-detail"></p>
 </div>
