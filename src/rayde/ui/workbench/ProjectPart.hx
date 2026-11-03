@@ -93,6 +93,7 @@ class ProjectPart {
 	final projectPicker = new rayde.run.Worker<rayde.ui.ProjectPicker.ProjectPickRequest, Null<String>>(ProjectPicker.choose);
 
 	var pickingProject = false;
+	var connectingRepository = false;
 
 	var cancelProjectDialog:Null<Void->Void>;
 
@@ -155,7 +156,21 @@ class ProjectPart {
 
 	function repositoryReady(id:String, project:Null<String>):Void {
 		function connect():Void {
-			rayde.workspace.PageHost.account("account.connect",{workspace:id, project:project});
+			if (connectingRepository || wb.gone) return;
+			connectingRepository = true;
+			var message = "Opening workspace…";
+			wb.notice.set(message);
+			var pending = rayde.workspace.PageHost.requestAccount("account.connect",{workspace:id, project:project});
+			function poll():Void {
+				if (wb.gone) return;
+				if (!pending.isReady()) { ashui.animation.AnimationScheduler.main.after(.02,poll); return; }
+				connectingRepository = false;
+				try {
+					if (pending.await().result == null) throw "The account service returned an invalid response.";
+					if (wb.notice.get() == message) wb.notice.set("");
+				} catch (error:Dynamic) wb.say(Std.string(error));
+			}
+			ashui.animation.AnimationScheduler.main.after(.02,poll);
 		}
 		if (wb.dirty.get().length > 0) wb.prompt.set({title:"Open repository", description:"Save your edited files before switching workspaces.", action:"Save and Open", accept:_ -> wb.runPart.saveBefore(connect)});
 		else connect();

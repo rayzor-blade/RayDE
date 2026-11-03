@@ -1,27 +1,38 @@
 /** Browser account controls. Credentials and workspace authority stay at the Rust edge. */
 export class Accounts {
-  constructor({ fetch = globalThis.fetch.bind(globalThis), location = globalThis.location, later = fn => setTimeout(fn, 60), pause = ms => new Promise(resolve => setTimeout(resolve,ms)) } = {}) {
+  constructor({ fetch = globalThis.fetch.bind(globalThis), location = globalThis.location, later = fn => setTimeout(fn, 60), pause = ms => new Promise(resolve => setTimeout(resolve,ms)), timeout = 15000 } = {}) {
     this.fetch = fetch;
     this.location = location;
     this.later = later;
     this.pause = pause;
+    this.timeout = timeout;
     this.csrf = null;
     this.installUrl = null;
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location?.href ?? "http://localhost").hostname);
   }
 
   async api(path, body) {
-    const response = await this.fetch(path, {
-      credentials: "same-origin",
-      method: body === undefined ? "GET" : "POST",
-      headers: body === undefined ? {} : { "Content-Type": "application/json", "X-RayDE-CSRF": this.csrf ?? "" },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (response.status === 401 && path === "/api/session") return { user: null };
-    if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Connect this editor to the workspace service to sign in.");
-    const reply = await response.json();
-    if (!response.ok) throw new Error(reply.message ?? "The workspace request failed.");
-    return reply;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(),this.timeout);
+    try {
+      const response = await this.fetch(path, {
+        signal: controller.signal,
+        credentials: "same-origin",
+        method: body === undefined ? "GET" : "POST",
+        headers: body === undefined ? {} : { "Content-Type": "application/json", "X-RayDE-CSRF": this.csrf ?? "" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      if (response.status === 401 && path === "/api/session") return { user: null };
+      if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Connect this editor to the workspace service to sign in.");
+      const reply = await response.json();
+      if (!response.ok) throw new Error(reply.message ?? "The workspace request failed.");
+      return reply;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("The workspace service did not respond. Try again.");
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async request(op, params) {

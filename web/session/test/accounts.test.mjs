@@ -37,6 +37,15 @@ test("a browser without an account can show sign-in without fabricating a local 
   assert.deepEqual(navigations, ["/auth/github/start"]);
 });
 
+test("an unresponsive account request aborts and reports a retryable failure", async () => {
+  let aborted=false;
+  const account=new Accounts({timeout:10,fetch:(_,init)=>new Promise((_,reject)=>{
+    init.signal.addEventListener("abort",()=>{aborted=true;reject(new DOMException("Aborted","AbortError"));},{once:true});
+  })});
+  await assert.rejects(account.request("account.status",{}),/workspace service did not respond/);
+  assert.equal(aborted,true);
+});
+
 
 test("the public demo sends sign-in to the app without querying private account APIs", async () => {
   const navigations=[];

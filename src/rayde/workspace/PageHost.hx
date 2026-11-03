@@ -45,17 +45,22 @@ class PageHost {
 		return install();
 		#end
 	}
-	/** Account RPC travels through the browser agent; only the edge sees GitHub credentials. */
+	/** Blocking account compatibility for worker fibers; UI callers use requestAccount. */
 	public static function account(op:String, ?params:Dynamic):Dynamic {
+		var response = requestAccount(op,params).await();
+		if (response.result == null) throw "The account service returned an invalid response.";
+		return response.result;
+	}
+
+	/** Starts an account RPC; callers apply completed replies on the UI thread. */
+	public static function requestAccount(op:String, ?params:Dynamic):ash.Future<Dynamic> {
 		#if wasm
-		if (bridge != null) {
-			var response = bridge.request(op,params);
-			if (response.result == null) throw "The account service returned an invalid response.";
-			return response.result;
-		}
+		if (bridge != null) return bridge.requestAsync(op,params,20.);
 		#end
-		if (op == "account.status") return {user:null};
-		throw "Connect this editor to the workspace service.";
+		var future = new ash.Future<Dynamic>();
+		if (op == "account.status") future.resolve({result:{user:null}});
+		else future.reject("Connect this editor to the workspace service.");
+		return future;
 	}
 	/** The page's own files. A page saves them from `storage.onChange` and loads them with `storage.load` before `install`. */
 	public static var storage(default, null):MemoryWorkspace;

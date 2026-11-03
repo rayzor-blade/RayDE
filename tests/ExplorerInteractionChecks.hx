@@ -66,10 +66,20 @@ class ExplorerInteractionChecks {
    Pointer.leave(tree);Pointer.release(tree);settle();check(count(".rayde-explorer-drag")==0 && Pointer.hooks.length==hooks,"Leaving the window retained the drag");
    scroll.jumpTo(0,0);settle();
    #if rayde_page
-   bench.projectPart.pickProject("project");until(() -> count("#rayde-repository-signin")==1);
+   bench.projectPart.pickProject("project");
+   Css.update();tree.flush();tree.computeLayout(bench.node,1100,760);
+   Offscreen.advance(.001);Css.update();tree.flush();tree.computeLayout(bench.node,1100,760);
+   check(count(".ui-dialog[open]")==1 && count("#rayde-repository-loading")==1,"Repository dialog did not open with loading feedback before the account reply");
+   var loading=box("#rayde-repository-loading");check(loading.width>100 && loading.height>0,"Repository loading feedback is not visible");
+   until(() -> count("#rayde-repository-signin")==1);
    check(count("#rayde-workspace-browser")==0,"Open Project used a filesystem picker in a browser");
    click("#rayde-repository-cancel");check(!bench.projectPart.pickingProject,"Cancelled repository picker remained locked");
    bench.projectPart.pickProject("folder");until(() -> count("#rayde-repository-signin")==1);click("#rayde-repository-cancel");check(!bench.projectPart.pickingProject,"Cancelled folder picker remained locked");
+   bench.dirty.set([]);
+   bench.projectPart.repositoryReady("a",null);
+   check(bench.projectPart.connectingRepository && bench.notice.get()=="Opening workspace…","Repository navigation did not return with immediate feedback");
+   until(() -> !bench.projectPart.connectingRepository);
+   check(bench.notice.get().indexOf("Connect this editor")>=0,"Repository navigation failure did not reach the UI");
    #end
    check(Pointer.hooks.length==hooks,"Idle Explorer kept drag hooks");
   } catch(error:Dynamic) {stop();tree.dispose();compiler.stop();throw error;}

@@ -14,8 +14,9 @@ typedef RepositoryPickerProps = {
 };
 private typedef Repository = {id:Dynamic, fullName:String, description:Null<String>, branch:String};
 
-/** Repository discovery and provisioning run outside the UI fiber. */
+/** The dialog mounts before asynchronous repository discovery starts. */
 class RepositoryPicker extends Component<RepositoryPickerProps> {
+	final visible = Signal.make(false);
 	final account = Signal.make((null:Dynamic));
 	final checked = Signal.make(false);
 	final busy = Signal.make(false);
@@ -23,7 +24,7 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 	final repositories = Signal.make(([]:Array<Repository>));
 	final error = Signal.make("");
 	final progress = Signal.make("");
-	final jobs = new rayde.run.Worker<{op:String, params:Dynamic}, Dynamic>((request,_) -> rayde.workspace.PageHost.account(request.op,request.params));
+	var pending:Null<ash.Future<Dynamic>>;
 	var cursor:Null<String>;
 	final more = Signal.make(false);
 	var installable = false;
@@ -34,14 +35,22 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 	var operation = "";
 
 	function render():Element {
-		request("account.status");
-		Owner.onCleanup(() -> { gone = true; jobs.dispose(); if (timer != null) timer.cancel(); });
+		Owner.onCleanup(() -> { gone = true; pending = null; if (timer != null) timer.cancel(); });
+		timer = ashui.animation.AnimationScheduler.main.after(0,() -> {
+			timer = null;
+			if (gone) return;
+			visible.set(true);
+			timer = ashui.animation.AnimationScheduler.main.after(.016,() -> {
+				timer = null;
+				if (!gone) request("account.status");
+			});
+		});
 		var shown = Computed.make(() -> repositories.get().filter(repo -> repo.fullName.toLowerCase().indexOf(search.get().toLowerCase()) >= 0));
-		return <dialog id="rayde-repository-picker" open={props.opened} onOpenChange={on -> if (!on) close()}>
+		return <dialog id="rayde-repository-picker" open={visible} onOpenChange={on -> if (!on) close()}>
 			<dialog-content id="rayde-repository-dialog" size={Lg}>
 				<dialog-header><div class="flex items-center gap-3"><icon document={Icons.GITHUB_FILL} class="size-6"/><dialog-title>Open repository</dialog-title></div>
 					<dialog-description>Code in a remote workspace connected to your GitHub repository.</dialog-description></dialog-header>
-				<if {!checked.get()}><text class="text-sm text-text-secondary py-6">Connecting to the workspace service…</text>
+				<if {!checked.get()}><text id="rayde-repository-loading" class="text-sm text-text-secondary py-6">Connecting to the workspace service…</text>
 				<else><if {account.get() == null}>
 					<div class="flex flex-col gap-4 py-5"><text class="text-sm text-text-secondary">Sign in to choose a repository. You control which repositories RayDE can access.</text>
 						<button id="rayde-repository-signin" disabled={busy.get()} onClick={_ -> request("account.signin")}><icon document={Icons.GITHUB_FILL} class="size-4"/>Continue with GitHub</button></div>
@@ -85,15 +94,22 @@ class RepositoryPicker extends Component<RepositoryPickerProps> {
 		</button>;
 
 	function request(op:String, ?params:Dynamic):Void {
-		operation = op; busy.set(true); error.set(""); jobs.submit("account",{op:op,params:params ?? {}});
+		operation = op; busy.set(true); error.set(""); pending = rayde.workspace.PageHost.requestAccount(op,params ?? {});
 		if (timer == null) timer = ashui.animation.AnimationScheduler.main.after(.02,poll);
 	}
 	function poll():Void {
 		timer = null; if (gone) return;
-		for (result in jobs.poll()) {
+		if (pending != null && pending.isReady()) {
+			var completed = pending; pending = null;
 			busy.set(false);
-			if (result.error != null) { checked.set(true); error.set(result.error); progress.set(""); workspace = null; continue; }
-			var value:Dynamic = result.value;
+			var value:Dynamic;
+			try {
+				value = completed.await().result;
+				if (value == null) throw "The account service returned an invalid response.";
+			} catch (failure:Dynamic) {
+				checked.set(true); error.set(Std.string(failure)); progress.set(""); workspace = null;
+				return;
+			}
 			switch operation {
 				case "account.status":
 					account.set(value.user); checked.set(true); installable = value.installable == true;
