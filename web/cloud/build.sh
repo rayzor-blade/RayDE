@@ -13,3 +13,4 @@ tools="${RAYDE_CLOUD_TOOLS_ROOT:-${CARGO_HOME:-$HOME/.cargo}/rayde-worker-tools/
 cargo install worker-build --version 0.8.7 --locked --root "$tools"
 export PATH="$tools/bin:$PATH"
 worker-build --release
+node prebuilt.mjs stamp

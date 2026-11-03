@@ -23,9 +23,21 @@ For a locally configured GitHub App, copy `.dev.vars.example` to `.dev.vars`, fi
 
 ## Staging deployment
 
-The checked-in configuration targets `rayde-workspaces-staging` and its app, assets and preview custom domains. In Cloudflare Workers Builds, use repository root directory `web/cloud`, build command `npm run build`, and deploy command `npx wrangler deploy`. The build bootstrap supplies Rust and `worker-build` even on a fresh build image. The dashboard Worker name must match the Wrangler name.
+The checked-in configuration targets `rayde-workspaces-staging` and its app, assets and preview custom domains. Build the Rust Worker locally and upload its compiled output:
 
-Store `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `RUNNER_SECRET` as Cloudflare Worker secrets so Git deployments preserve them. `GITHUB_APP_SLUG` is already a normal variable. Enable expiring user tokens on the GitHub App; leave authorization during installation disabled because RayDE starts its own state/PKCE flow. Webhooks and device flow are not implemented. Do not deploy `LOCAL_DEV`.
+```sh
+cd web/cloud
+npm ci
+npm run build
+npm run deploy:prebuilt -- --dry-run
+npm run deploy:prebuilt
+```
+
+`npm run build` records content hashes for the Rust/build inputs and emitted artifacts in ignored `build/prebuilt.json`. Deployment refuses missing, modified or stale builds before contacting Cloudflare. `npm run deploy` is an alias for the same checked upload. Wrangler bundles the generated JavaScript glue and uploads the already compiled WASM; deployment does not invoke Cargo. Runtime variables and domains can change without recompiling Rust.
+
+In the Worker's Cloudflare Settings → Builds, turn on **Disable builds** and cancel an existing Git-triggered build. Otherwise that separate pipeline will continue running its configured Rust build command. The repository can remain connected for reference. Compiled Worker output stays outside Git; local deployment uploads it directly to Cloudflare. The dashboard Worker name must match the Wrangler name.
+
+Store `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` and `RUNNER_SECRET` as Cloudflare Worker secrets so deployments preserve them. `GITHUB_APP_SLUG` is already a normal variable. Enable expiring user tokens on the GitHub App; leave authorization during installation disabled because RayDE starts its own state/PKCE flow. Webhooks and device flow are not implemented. Do not deploy `LOCAL_DEV`.
 
 `WORKSPACE_FILES` binds the private `rayde-workspace-files-staging` bucket. `EDITOR_ASSETS` binds the separate `rayde-editor-assets-staging` bucket. Upload the contents of the built `site/dist` directory to the editor bucket's root, including workers, modules, WASM, fonts and other resources. The Rust Worker streams that bucket on `assets-staging.rayde.org` and through app-origin asset paths; the bucket itself needs no public access. This supports editor files above the Workers Static Assets per-file limit without proxying the assets hostname back into the same Worker. ETags revalidate updated files; workspace pages remain uncached and owner-authorized.
 

@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "npm run build && node --test test/*.test.mjs",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "node prebuilt.mjs deploy",
+    "deploy:prebuilt": "node prebuilt.mjs deploy",
     "build": "bash build.sh"
   },
   "devDependencies": {
