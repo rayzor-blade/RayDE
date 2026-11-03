@@ -8,10 +8,12 @@ const starter=()=>({name:"my-project",description:"Starter fixture",private:true
   {path:"README.md",text:"# My project\n"},{path:"build.hxml",text:"-cp src\n-main Main\n"},
   {path:"src/Main.hx",text:'class Main { static function main() trace("Hello"); }'},
 ]});
-function github({failTree=false,conflict=false,permission=false,unknownCreate=false,denied}={}) {
+function github({failTree=false,conflict=false,permission=false,unknownCreate=false,denied,authorization}={}) {
   const calls=[];let head=base,failed=false;
   return {calls,handle:async request=>{
     const path=new URL(request.url).pathname;
+    if(authorization&&path==="/apps/rayde-test")return json({id:77,client_id:authorization.client??"test-client"});
+    if(authorization&&path==="/user/installations")return json({installations:authorization.pages?.[new URL(request.url).searchParams.get("page")]??authorization.installations??[]});
     if(!path.startsWith("/repos/alice/my-project/")&&path!=="/user/repos")return;
     const body=request.method==="GET"?null:await request.json();calls.push({path,method:request.method,body});
     if(denied?.path===path){const response=json({message:denied.message,ignored:"do-not-expose"},denied.status);for(const [key,value] of Object.entries(denied.headers??{}))response.headers.set(key,value);return response;}
@@ -91,4 +93,29 @@ test("rate limiting is distinguished from permission denial and can retry creati
   const create=()=>fetch("/api/projects/create/"+key,{method:"POST",headers:user.headers,body:JSON.stringify(starter())});
   const response=await create();assert.equal(response.status,429);assert.match((await response.json()).message,/rate limiting/);
   denied.path="disabled";assert.equal((await(await create()).json()).status,"ready");
+});
+
+test("creation denial distinguishes requested App permissions from personal installation grants",async t=>{
+  const own={id:17,app_id:77,account:{id:1,login:"alice"},suspended_at:null,permissions:{repository_creation:"write",contents:"write"}};
+  const cases=[
+    [{installations:[{...own,account:{id:99,login:"org"}}]},/Install rayde-test on your personal account \(alice\)/],
+    [{installations:[{...own,permissions:{contents:"write"}}]},/has not granted Repository creation write/],
+    [{installations:[{...own,suspended_at:"2026-11-03T00:00:00Z"}]},/installation on alice is suspended/],
+    [{client:"different-client",installations:[own]},/credentials do not match rayde-test/],
+    [{installations:[own]},/already grants repository creation, but GitHub rejected this authorization/],
+    [{installations:[{...own,permissions:{administration:"write"}}]},/already grants repository creation/],
+    [{pages:{1:Array.from({length:100},(_,id)=>({...own,account:{id:id+100}})),2:[own]}},/already grants repository creation/],
+  ];
+  for(const [authorization,expected] of cases){
+    const mock=github({permission:true,authorization}),{mf,fetch,calls}=await fixture({github:mock.handle});
+    try {
+      const user=await signin(fetch);
+      const response=await fetch("/api/projects/create/"+key,{method:"POST",headers:user.headers,body:JSON.stringify(starter())});
+      const result=await response.json();assert.equal(response.status,403);assert.match(result.message,expected);
+      assert.doesNotMatch(JSON.stringify(result),/access-alice|test-client-secret|refresh-alice/);
+      assert.equal(mock.calls.filter(call=>call.path==="/user/repos").length,1);
+      assert.equal(mock.calls.some(call=>call.path.includes("/contents/")),false);
+      if(authorization.client)assert.equal(calls.api.some(call=>call.path==="/user/installations"),false);
+    } finally { await mf.dispose(); }
+  }
 });

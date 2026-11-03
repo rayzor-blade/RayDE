@@ -101,6 +101,44 @@ async fn send(
     }, 15).await.map_err(|_|bad(504,"GitHub did not respond in time. Retry to check this project request."))?
 }
 
+async fn creation_denial(env: &Env, token: &str, user: &Value) -> Option<String> {
+    crate::workspace::deadline(async {
+        let slug = config(env,"GITHUB_APP_SLUG").ok_or_else(||bad(503,"The GitHub App is not configured."))?;
+        if !slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') { return Ok(None); }
+        let app = api(env,token,&format!("/apps/{slug}")).await?;
+        if app["id"].as_u64().is_none_or(|id|id==0) { return Ok(None); }
+        if let Some(expected) = app["client_id"].as_str() {
+            if config(env,"GITHUB_CLIENT_ID").as_deref() != Some(expected) {
+                console_warn!("GitHub project authorization: configured client does not match App {}",slug);
+                return Ok(Some(format!("The workspace service's GitHub credentials do not match {slug}. Update its Client ID and client secret to use this App, then sign in again.")));
+            }
+        }
+        let login = text(user,"login")?;
+        for page in 1..=3 {
+            let data = api(env,token,&format!("/user/installations?per_page=100&page={page}")).await?;
+            let installations = data["installations"].as_array().ok_or_else(||bad(502,"GitHub returned invalid installations."))?;
+            if let Some(installation) = installations.iter().find(|i| i["account"]["id"] == user["id"] && i["app_id"] == app["id"]) {
+                if !installation["suspended_at"].is_null() {
+                    return Ok(Some(format!("The {slug} installation on {login} is suspended. Resume that installation on GitHub, then retry.")));
+                }
+                let permissions = &installation["permissions"];
+                let creation = permissions["repository_creation"].as_str().unwrap_or("none");
+                let administration = permissions["administration"].as_str().unwrap_or("none");
+                let contents = permissions["contents"].as_str().unwrap_or("none");
+                console_warn!("GitHub project authorization: App={} personal installation grants repository_creation={} administration={} contents={}",slug,creation,administration,contents);
+                if creation != "write" && administration != "write" {
+                    return Ok(Some(format!("The {slug} installation on {login} has not granted Repository creation write. Approve the permission update for this personal-account installation, then retry.")));
+                }
+                return Ok(Some(format!("The {slug} installation on {login} already grants repository creation, but GitHub rejected this authorization. Sign out of GitHub in RayDE and sign in again, then retry.")));
+            }
+            if installations.len() < 100 {
+                return Ok(Some(format!("Install {slug} on your personal account ({login}) before creating a repository there. An installation on an organization does not grant access to your personal account.")));
+            }
+        }
+        Ok(None)
+    },6).await.ok().and_then(|result: AppResult<Option<String>>|result.ok()).flatten()
+}
+
 pub(crate) async fn create(
     state: &State,
     env: &Env,
@@ -264,10 +302,16 @@ async fn run(
         .await
         {
             Ok(repository) => repository,
-            Err(error) => {
+            Err(mut error) => {
                 if matches!(error.status, 401 | 403 | 409 | 429) {
                     job["phase"] = json!("new");
                     storage.put(record, &*job).await?;
+                }
+                if error.status == 403 {
+                    if let Some(detail) = creation_denial(env,access,&saved["user"]).await {
+                        let reference = error.message.rfind(" Reference: ").map(|at|&error.message[at..]).unwrap_or("");
+                        error.message = format!("{detail}{reference}");
+                    }
                 }
                 return Err(error);
             }
