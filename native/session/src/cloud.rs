@@ -6,6 +6,7 @@ use crate::{
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,7 +47,16 @@ pub struct Exchanged {
     pub update: Vec<u8>,
     pub sha256: String,
 }
+#[derive(Clone)]
+pub enum Notice{Refresh,Failed(SessionError)}
+pub type Notify=Arc<dyn Fn(Notice)+Send+Sync>;
+pub trait Subscription:Send+Sync{}
+impl<T:Send+Sync> Subscription for T{}
 pub trait Provider: Send + Sync {
+    fn watch(&self,_binding:Binding,_notify:Notify)->Option<Box<dyn Subscription>>{None}
+    fn accepted(&self,_binding:Binding){}
+    fn failed(&self,_binding:Binding,_error:SessionError){}
+    fn refresh(&self){}
     fn open<'a>(
         &'a self,
         path: &'a str,

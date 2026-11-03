@@ -19,6 +19,12 @@ impl DurableObject for AccountSession {
         Response::empty()
     }
     async fn fetch(&self, request: Request) -> Result<Response> {
+        // This read cannot wait on logout's gate while logout awaits a workspace disconnect.
+        if request.path()=="/sync-valid"{return finish(async{
+            let session:Value=self.state.storage().get("session").await?.ok_or_else(||bad(401,"Sign in to continue."))?;
+            if session["kind"]!="account"||session["expires"].as_u64().unwrap_or(0)<=now(){return Err(bad(401,"Sign in to continue."))}
+            Ok(reply(&json!({"owner":crate::sync::session_owner(&self.env,&session)}),200)?)
+        }.await);}
         {
             let _guard = self.gate.lock().await;
             finish(self.handle(request).await)
@@ -62,6 +68,7 @@ impl AccountSession {
         }
         if op == "/logout" {
             storage.delete_all().await?;
+            if let Some(workspaces)=saved["syncWorkspaces"].as_array(){for id in workspaces{crate::sync::disconnect_session(&self.env,id.as_str().unwrap_or(""),text(&data,"sid")?).await?;}}
             if let Some(workspaces) = saved["workspaces"].as_array() {
                 for id in workspaces {
                     rpc(
@@ -76,15 +83,16 @@ impl AccountSession {
             }
             return Ok(reply(&json!({}), 200)?);
         }
-        if op == "/remember" {
-            let mut ids = saved["workspaces"].as_array().cloned().unwrap_or_default();
+        if op == "/remember" || op=="/remember-sync" {
+            let field=if op=="/remember-sync"{"syncWorkspaces"}else{"workspaces"};
+            let mut ids = saved[field].as_array().cloned().unwrap_or_default();
             if !ids.contains(&data["id"]) {
                 ids.push(data["id"].clone());
             }
             if ids.len() > 64 {
                 return Err(bad(429, "Too many active workspaces."));
             }
-            saved["workspaces"] = json!(ids);
+            saved[field] = json!(ids);
             storage.put("session", saved).await?;
             return Ok(reply(&json!({}), 200)?);
         }

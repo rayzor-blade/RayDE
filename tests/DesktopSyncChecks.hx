@@ -17,7 +17,7 @@ class DesktopSyncChecks {
 		check(docs.owns(file),"published text must use the shared editor bridge");
 		hl.Gc.major();
 		Sys.println("DESKTOP_READY");Sys.stdin().readLine();
-		docs.refresh(file);until(() -> state.value.get()=="browser base 🦀");
+		until(() -> state.value.get()=="browser base 🦀");
 		check(sys.io.File.getContent(file)==disk,"cloud changes must remain unsaved in the desktop tree");
 		state.value.set("native "+state.value.get());docs.acceptBuffer(file);
 		docs.save(file,(error,text,_) -> {check(error==null,error);check(text=="native browser base 🦀","Save must return its accepted cloud version");saved=true;});

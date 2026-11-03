@@ -4,6 +4,8 @@ import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
 import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
 import {createServer} from 'node:net';
+import {createHash,createHmac} from 'node:crypto';
+import WebSocket from 'ws';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {fixture,json} from './fixture.mjs';
@@ -21,7 +23,7 @@ async function setup(t,{persist,allocation,capture}={}){
   return fixture(settings);
  };
  let host=await create(),stopped=false;
- const api=(path,init={},account='alice')=>host.mf.dispatchFetch(base+'/api/sync'+path,{...init,headers:{'X-Dev-Account':account,...init.headers}});
+ const api=(path,init={},account='alice')=>host.mf.dispatchFetch(base+'/api/sync'+path,{...init,headers:{...(account?{'X-Dev-Account':account}:{}),...init.headers}});
  const git=(...args)=>{const result=spawnSync('git',['-C',root,'-c','user.name=T','-c','user.email=t@example.invalid','-c','commit.gpgsign=false',...args],{encoding:'utf8'});assert.equal(result.status,0,result.stderr);};
  git('init','-q','-b','main');await writeFile(join(root,'a.txt'),'one 🦀 two');git('add','.');git('commit','-qm','first');
  if(allocation){const made=await(await api('/workspaces',post({allocation}))).json();await writeFile(join(root,'.git','rayde-sync.json'),JSON.stringify({[base]:{workspace:made.id,generation:0}}));}
@@ -33,8 +35,101 @@ async function setup(t,{persist,allocation,capture}={}){
  const exchange=(opened,doc,from=opened.vector)=>call('exchange',{path:'a.txt',lineage:opened.lineage,from,update:b64(Y.encodeStateAsUpdate(doc,bytes(from)))});
  const stop=async()=>{if(!stopped){stopped=true;await host.mf.dispose();}};
  const restart=async()=>{await stop();host=await create();stopped=false;};
- return {base,root,id,api,push,open,call,exchange,restart,stop};
+ return {base,root,id,api,push,open,call,exchange,restart,stop,fetch:(path,init)=>host.fetch(path,init),namespace:name=>host.mf.getDurableObjectNamespace(name)};
 }
+
+const pause=ms=>new Promise(done=>setTimeout(done,ms));
+async function eventually(check,timeout=5000){const end=Date.now()+timeout;while(!await check()){if(Date.now()>end)throw Error('Cloud watch did not settle');await pause(10);}}
+async function watch(w,{headers={},account='alice'}={}){
+ const socket=new WebSocket(w.base.replace('http:','ws:')+`/api/sync/workspaces/${w.id}/documents/watch`,{headers:{...(account?{'X-Dev-Account':account}:{}),...headers}}),messages=[];let closed=false;
+ socket.on('message',bytes=>messages.push(JSON.parse(String(bytes))));socket.on('close',()=>{closed=true;});
+ await new Promise((resolve,reject)=>{socket.once('open',resolve);socket.once('error',reject);socket.once('unexpected-response',(_,response)=>{let body='';response.on('data',chunk=>{body+=chunk;});response.once('end',()=>reject(Error(`Cloud watch ${response.statusCode}: ${body}`)));});});
+ await eventually(()=>messages.some(m=>m.ev==='ready'));return{socket,messages,get closed(){return closed||socket.readyState>=WebSocket.CLOSING;},send:body=>socket.send(JSON.stringify(body))};
+}
+function capability(w,expires){const owner=Buffer.from('dev:alice').toString('base64url'),body=`${w.id}.${expires}.${owner}`,key=createHash('sha256').update('rayde-sync-publish\0test-runner-secret').digest();return `rsp1.${body}.${createHmac('sha256',key).update('rsp1.'+body).digest('base64url')}`;}
+
+test('hibernating document notices coalesce until accepted and include deletion-only sequence changes',async t=>{
+ const w=await setup(t),opened=await w.open(),a=replica(opened),channel=await watch(w);
+ try{
+  channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});
+  a.getText('text').insert(0,'A ');const first=await w.exchange(opened,a);await eventually(()=>channel.messages.some(m=>m.sequence===first.sequence));
+  Y.applyUpdate(a,bytes(first.update));a.getText('text').delete(0,2);const second=await w.exchange(first,a);
+  assert.ok(second.sequence>first.sequence);assert.deepEqual(Y.decodeStateVector(bytes(second.vector)),Y.decodeStateVector(bytes(first.vector)));
+  await pause(75);assert.equal(channel.messages.filter(m=>m.ev==='changed').length,1,'one unacknowledged notice bounds socket buffering');
+  channel.send({op:'ack',path:'a.txt',lineage:opened.lineage,sequence:first.sequence});await eventually(()=>channel.messages.some(m=>m.sequence===second.sequence));
+  channel.send({op:'ack',path:'a.txt',lineage:opened.lineage,sequence:second.sequence});await pause(50);assert.equal(channel.messages.filter(m=>m.ev==='changed').length,2);
+  channel.send({op:'unsubscribe',path:'a.txt'});await pause(50);a.getText('text').insert(0,'after unsubscribe ');await w.exchange(second,a);await pause(50);assert.equal(channel.messages.filter(m=>m.ev==='changed').length,2);
+ }finally{channel.socket.close();}
+});
+
+test('watch reconnect catches missed history and retires subscriptions when snapshots replace their path',async t=>{
+ const w=await setup(t),opened=await w.open(),a=replica(opened);a.getText('text').insert(0,'missed ');const changed=await w.exchange(opened,a),channel=await watch(w);
+ try{
+  channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});await eventually(()=>channel.messages.some(m=>m.sequence===changed.sequence));
+  channel.send({op:'ack',path:'a.txt',lineage:opened.lineage,sequence:changed.sequence});
+  await writeFile(join(w.root,'a.txt'),text(a));assert.equal(w.push().event,'published');
+  await writeFile(join(w.root,'a.txt'),'replacement');assert.equal(w.push().event,'published');await eventually(()=>channel.messages.some(m=>m.retired));
+  const fresh=await w.open(3);assert.notEqual(fresh.lineage,opened.lineage);assert.equal(channel.closed,false);
+ }finally{channel.socket.close();}
+});
+
+test('watch credentials expire while idle and revocation fences existing sockets and old capabilities',async t=>{
+ const w=await setup(t),opened=await w.open();
+ const short=await watch(w,{account:null,headers:{Authorization:'Bearer '+capability(w,Date.now()+1000)}});await eventually(()=>short.closed);
+ const token=capability(w,Date.now()+8*60*60*1000),channel=await watch(w,{account:null,headers:{Authorization:'Bearer '+token}});
+ channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});
+ assert.equal((await w.api(`/workspaces/${w.id}/access/revoke`,{method:'POST'})).status,200);await eventually(()=>channel.closed);
+ assert.equal((await w.api(`/workspaces/${w.id}/documents/watch`,{headers:{Upgrade:'websocket',Authorization:'Bearer '+token}},null)).status,401);
+ assert.equal((await w.api(`/workspaces/${w.id}/documents/open`,{...post({path:'a.txt',generation:1}),headers:{Authorization:'Bearer '+token}},null)).status,401);
+ const owner=await watch(w);owner.socket.close();
+});
+
+test('watch authorization rejects foreign origins/accounts and logout closes account-bound subscriptions',async t=>{
+ const w=await setup(t);await w.open();
+ assert.equal((await w.api(`/workspaces/${w.id}/documents/watch`,{headers:{Upgrade:'websocket'}},'bob')).status,404);
+ const login=await w.fetch('/auth/dev?account=alice',{redirect:'manual'}),cookie=login.headers.getSetCookie()[0].split(';')[0];
+ assert.equal((await w.api(`/workspaces/${w.id}/documents/watch`,{headers:{Upgrade:'websocket',Cookie:cookie,Origin:'https://other.invalid'}},null)).status,403);
+ const channel=await watch(w,{account:null,headers:{Cookie:cookie,Origin:w.base}});
+ const session=await(await w.fetch('/api/session',{headers:{Cookie:cookie}})).json();
+ assert.equal((await w.fetch('/api/logout',{method:'POST',headers:{Cookie:cookie,Origin:w.base,'X-RayDE-CSRF':session.csrf}})).status,200);await eventually(()=>channel.closed);
+ assert.equal((await w.api(`/workspaces/${w.id}/documents/watch`,{headers:{Upgrade:'websocket',Cookie:cookie,Origin:w.base}},null)).status,401);
+});
+
+test('watch connection capacity is reusable and oversized messages disconnect without changing a head',async t=>{
+ const w=await setup(t),opened=await w.open(),channels=[];
+ try{
+  for(let i=0;i<32;i++)channels.push(await watch(w));
+  assert.equal((await w.api(`/workspaces/${w.id}/documents/watch`,{headers:{Upgrade:'websocket'}})).status,429);
+  for(const channel of channels)channel.socket.close();await eventually(()=>channels.every(channel=>channel.closed));
+  let next;await eventually(async()=>{try{next=await watch(w);return true;}catch{return false;}});
+  next.socket.send('x'.repeat(65537));await eventually(()=>next.closed);assert.equal(next.messages.find(m=>m.ev==='error')?.status,413);
+  assert.equal((await w.open()).sequence,opened.sequence);
+ }finally{for(const channel of channels)channel.socket.close();}
+});
+
+test('a lost logout disconnect cannot deliver more document history through the revoked account socket',async t=>{
+ const w=await setup(t),opened=await w.open(),client=replica(opened);
+ const login=await w.fetch('/auth/dev?account=alice',{redirect:'manual'}),cookie=login.headers.getSetCookie()[0].split(';')[0];
+ const channel=await watch(w,{account:null,headers:{Cookie:cookie,Origin:w.base}});
+ try{
+  channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});await pause(50);
+  const namespace=await w.namespace('ACCOUNTS'),sid=cookie.slice(cookie.indexOf('=')+1);
+  const loggedOut=await namespace.get(namespace.idFromName(sid)).fetch('https://internal/logout',post({sid:'missed-disconnect'}));assert.equal(loggedOut.status,200);
+  client.getText('text').insert(0,'after logout ');assert.equal((await w.exchange(opened,client)).status,200);await eventually(()=>channel.closed);
+  assert.equal(channel.messages.filter(m=>m.ev==='changed').length,0);
+ }finally{channel.socket.close();}
+});
+
+test('slow peers have one pending notice and disconnect at the acknowledgement deadline',async t=>{
+ const w=await setup(t),opened=await w.open(),client=replica(opened),channel=await watch(w);
+ try{
+  channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});
+  client.getText('text').insert(0,'slow ');await w.exchange(opened,client);await eventually(()=>channel.messages.some(m=>m.ev==='changed'));
+  await eventually(()=>channel.closed,70000);assert.equal(channel.messages.filter(m=>m.ev==='changed').length,1);
+  const resumed=await watch(w);resumed.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});
+  try{await eventually(()=>resumed.messages.some(m=>m.sequence>opened.sequence));}finally{resumed.socket.close();}
+ }finally{channel.socket.close();}
+});
 
 test('independent clients exchange concurrent Unicode edits and deletion-only updates exactly once',async t=>{
  const w=await setup(t),one=await w.open(),two=await w.open();assert.equal(one.lineage,two.lineage);
@@ -82,11 +177,13 @@ test('incremental journals compact and recover through a fresh gateway instance'
 });
 
 test('history quota refusal preserves the acknowledged head and usage',async t=>{
- const w=await setup(t,{allocation:1000}),opened=await w.open(),client=replica(opened);
+ const w=await setup(t,{allocation:1000}),opened=await w.open(),client=replica(opened),channel=await watch(w);
+ t.after(()=>channel.socket.close());channel.send({op:'subscribe',path:'a.txt',lineage:opened.lineage,sequence:opened.sequence});
  const status=await(await w.api(`/workspaces/${w.id}`)).json();assert.ok(status.usage.documents>0);
  client.getText('text').insert(0,'x'.repeat(1500));assert.equal((await w.exchange(opened,client)).status,413);
  const after=await w.open();assert.equal(after.sequence,opened.sequence);assert.equal(text(replica(after)),'one 🦀 two');
  assert.equal((await(await w.api(`/workspaces/${w.id}`)).json()).usage.documents,status.usage.documents);
+ await pause(100);assert.equal(channel.messages.filter(m=>m.ev==='changed').length,0,'a refused journal never publishes a notice');
 });
 
 test('a publish capability exchanges only its own workspace and never opens another workspace',async t=>{

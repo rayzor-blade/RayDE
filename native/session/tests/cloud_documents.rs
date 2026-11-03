@@ -39,7 +39,13 @@ struct Remote {
     omit_delete: AtomicBool,
     opens: AtomicUsize,
     gate: Mutex<Option<Arc<Gate>>>,
+    watchers: Arc<Mutex<Vec<(u64,cloud::Notify)>>>,
+    next_watch: AtomicUsize,
+    accepted: Mutex<Vec<Binding>>,
+    lose_reply: AtomicBool,
 }
+struct WatchGuard{watchers:Arc<Mutex<Vec<(u64,cloud::Notify)>>>,id:u64}
+impl Drop for WatchGuard{fn drop(&mut self){self.watchers.lock().unwrap().retain(|(id,_)|*id!=self.id);}}
 struct Gate {
     entered: tokio::sync::Notify,
     release: tokio::sync::Notify,
@@ -61,6 +67,8 @@ impl Remote {
             omit_delete: AtomicBool::new(false),
             opens: AtomicUsize::new(0),
             gate: Mutex::new(None),
+            watchers: Default::default(),next_watch:AtomicUsize::new(1),accepted:Default::default(),
+            lose_reply:AtomicBool::new(false),
         })
     }
     fn doc(&self) -> live::Document {
@@ -97,8 +105,11 @@ impl Remote {
         *self.state.lock().unwrap() = result.state;
         *self.sequence.lock().unwrap() += 1;
     }
+    fn notify(&self){let callbacks:Vec<_>=self.watchers.lock().unwrap().iter().map(|(_,notify)|notify.clone()).collect();for notify in callbacks{notify(cloud::Notice::Refresh);}}
 }
 impl Provider for Remote {
+    fn watch(&self,_:Binding,notify:cloud::Notify)->Option<Box<dyn cloud::Subscription>>{let id=self.next_watch.fetch_add(1,Ordering::SeqCst) as u64;self.watchers.lock().unwrap().push((id,notify));Some(Box::new(WatchGuard{watchers:self.watchers.clone(),id}))}
+    fn accepted(&self,binding:Binding){self.accepted.lock().unwrap().push(binding);}
     fn open<'a>(
         &'a self,
         _path: &'a str,
@@ -138,6 +149,7 @@ impl Provider for Remote {
                 *self.state.lock().unwrap() = next.state;
                 *self.sequence.lock().unwrap() += 1;
             }
+            if self.lose_reply.swap(false,Ordering::SeqCst){return Err(SessionError::new("cloud-offline","The exchange reply was lost."))}
             Ok(Exchanged {
                 binding: self.binding(),
                 update: if self.omit_delete.load(Ordering::SeqCst) {
@@ -548,4 +560,59 @@ async fn fresh_native_files_stay_editable_when_the_cloud_cannot_provide_a_histor
     let (editor,_)=editors(hub.clone());let opened=editor.request("view.open",&json!({"handle":"a","path":"a.txt"})).await.unwrap();
     assert_eq!(opened["passthrough"],true);assert!(hub.snapshot("a.txt").is_err());assert!(store.read_state("doc:a.txt").await.unwrap().is_none());
     editor.close().await;assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
+}
+
+struct RefusingStore{inner:DirStore,writes:AtomicUsize,fail_at:AtomicUsize}
+impl FileStore for RefusingStore{
+    fn name(&self)->String{self.inner.name()}
+    fn root(&self)->String{self.inner.root().to_string_lossy().into_owned()}
+    async fn recovery_path(&self,p:&str)->Result<String>{self.inner.recovery_path(p).await}
+    async fn matches_recovery_binding(&self,p:&str,b:&str)->Result<bool>{self.inner.matches_recovery_binding(p,b).await}
+    async fn list(&self,p:&str)->Result<Vec<rayde_session::store::Entry>>{self.inner.list(p).await}
+    async fn stat(&self,p:&str)->Result<Option<rayde_session::store::Entry>>{self.inner.stat(p).await}
+    async fn read(&self,p:&str)->Result<Vec<u8>>{self.inner.read(p).await}
+    async fn write(&self,p:&str,b:&[u8])->Result<()>{self.inner.write(p,b).await}
+    async fn mkdir(&self,p:&str)->Result<()>{self.inner.mkdir(p).await}
+    async fn remove(&self,p:&str,r:bool)->Result<()>{self.inner.remove(p,r).await}
+    async fn rename(&self,a:&str,b:&str)->Result<()>{self.inner.rename(a,b).await}
+    fn watch(&self,_:rayde_session::store::Change)->Box<dyn FnOnce()+Send>{Box::new(||{})}
+    async fn read_state(&self,k:&str)->Result<Option<Vec<u8>>>{self.inner.read_state(k).await}
+    async fn write_state(&self,k:&str,b:&[u8])->Result<()>{
+        let n=self.writes.fetch_add(1,Ordering::SeqCst)+1;
+        if n==self.fail_at.load(Ordering::SeqCst){return Err(SessionError::new("failed","Private journal write refused."))}
+        self.inner.write_state(k,b).await
+    }
+}
+
+#[tokio::test]
+async fn pushed_updates_ack_only_after_private_persistence_and_release_their_subscription(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let store=Arc::new(RefusingStore{inner:DirStore::with_state_root(root.path(),private.path()).unwrap(),writes:AtomicUsize::new(0),fail_at:AtomicUsize::new(usize::MAX)});
+    let hub=Arc::new(DocHub::new(store.clone(),Arc::new(|_|{})));hub.enable_push();hub.set_cloud(remote.clone());
+    let statuses=Arc::new(Mutex::new(Vec::new()));let observed=statuses.clone();hub.on_cloud_status("test".into(),Arc::new(move|_,error|observed.lock().unwrap().push(error)));
+    let opened=hub.attach("a.txt","one",None,Arc::new(|_|{})).await.unwrap();assert_eq!(remote.watchers.lock().unwrap().len(),1);
+    let client=replica(&opened.update,11);hub.receive("a.txt","one",&edit(&client,"private ")).unwrap();remote.remote_edit(" remote");
+    store.fail_at.store(store.writes.load(Ordering::SeqCst)+2,Ordering::SeqCst);remote.notify();
+    eventually(||statuses.lock().unwrap().iter().any(Option::is_some)).await;
+    assert!(remote.accepted.lock().unwrap().is_empty(),"a refused private write cannot acknowledge a pushed frontier");
+    assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
+    remote.notify();eventually(||!remote.accepted.lock().unwrap().is_empty()).await;
+    assert_eq!(remote.accepted.lock().unwrap().last().unwrap().sequence,*remote.sequence.lock().unwrap());
+    assert_eq!(hub.text("a.txt").unwrap(),"private one 🦀 two remote");
+    hub.detach("a.txt","one");hub.release("a.txt").await.unwrap();eventually(||remote.watchers.lock().unwrap().is_empty()).await;
+    remote.offline.store(true,Ordering::SeqCst);let (_,reopened)=make_hub(root.path(),private.path(),remote.clone());
+    let saved=reopened.attach("a.txt","two",None,Arc::new(|_|{})).await.unwrap();assert_eq!(saved.text,"private one 🦀 two remote");assert!(saved.dirty);
+    assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
+}
+
+#[tokio::test]
+async fn a_lost_pushed_exchange_reply_retries_the_private_graph_without_duplicate_journal_entries(){
+    let root=tempfile::tempdir().unwrap();let private=tempfile::tempdir().unwrap();std::fs::write(root.path().join("a.txt"),"one 🦀 two").unwrap();
+    let remote=Remote::new();let (_,hub)=make_hub(root.path(),private.path(),remote.clone());hub.enable_push();
+    let statuses=Arc::new(Mutex::new(Vec::new()));let observed=statuses.clone();hub.on_cloud_status("test".into(),Arc::new(move|_,error|observed.lock().unwrap().push(error)));
+    let opened=hub.attach("a.txt","one",None,Arc::new(|_|{})).await.unwrap();let client=replica(&opened.update,11);hub.receive("a.txt","one",&edit(&client,"once ")).unwrap();
+    remote.lose_reply.store(true,Ordering::SeqCst);remote.notify();eventually(||statuses.lock().unwrap().iter().any(Option::is_some)).await;
+    let committed=*remote.sequence.lock().unwrap();assert!(remote.accepted.lock().unwrap().is_empty());assert_eq!(remote.doc().text(),"once one 🦀 two");
+    remote.notify();eventually(||!remote.accepted.lock().unwrap().is_empty()).await;assert_eq!(*remote.sequence.lock().unwrap(),committed);assert_eq!(hub.text("a.txt").unwrap(),"once one 🦀 two");
+    assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");hub.detach("a.txt","one");hub.release("a.txt").await.unwrap();assert!(remote.watchers.lock().unwrap().is_empty());
 }

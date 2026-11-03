@@ -36,6 +36,7 @@ struct OpenDoc {
     saving: AsyncMutex<()>,
     cloud: Mutex<Option<crate::cloud::Binding>>,
     cloud_legacy: bool,
+    #[cfg(feature="server")] watch:Mutex<Option<Box<dyn crate::cloud::Subscription>>>,
 }
 
 /// Replaces `text`'s contents with `next` by editing only what differs, so cursors and concurrent edits survive.
@@ -103,15 +104,23 @@ pub struct DocHub<S: FileStore> {
     /// Called with a path whose document has edits to write; the runner calls `flush` after they settle.
     dirty: Arc<dyn Fn(&str) + Send + Sync>,
     cloud: OnceLock<Arc<dyn crate::cloud::Provider>>,
+    cloud_status:Mutex<HashMap<String,Arc<dyn Fn(&str,Option<SessionError>)+Send+Sync>>>,
+    #[cfg(feature="server")] link:OnceLock<std::sync::Weak<Self>>,
+    #[cfg(feature="server")] watch_jobs:Mutex<HashMap<String,Option<std::sync::Weak<OpenDoc>>>>,
 }
 
 impl<S: FileStore> DocHub<S> {
     pub fn new(store: Arc<S>, dirty: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
-        Self { store, open: Mutex::new(HashMap::new()), opening: AsyncMutex::new(()), dirty, cloud:OnceLock::new() }
+        Self { store, open: Mutex::new(HashMap::new()), opening: AsyncMutex::new(()), dirty, cloud:OnceLock::new(),cloud_status:Default::default(),#[cfg(feature="server")]link:OnceLock::new(),#[cfg(feature="server")]watch_jobs:Default::default() }
     }
 
     pub fn set_cloud(&self,provider:Arc<dyn crate::cloud::Provider>){let _=self.cloud.set(provider);}
     pub fn cloud_available(&self)->bool{self.cloud.get().is_some()}
+    #[cfg(feature="server")] pub fn enable_push(self:&Arc<Self>){let _=self.link.set(Arc::downgrade(self));}
+    pub fn on_cloud_status(&self,id:String,listener:Arc<dyn Fn(&str,Option<SessionError>)+Send+Sync>){self.cloud_status.lock().unwrap().insert(id,listener);}
+    pub fn remove_cloud_status(&self,id:&str){self.cloud_status.lock().unwrap().remove(id);}
+    #[cfg(feature="server")] fn cloud_status(&self,path:&str,error:Option<SessionError>){let callbacks:Vec<_>=self.cloud_status.lock().unwrap().values().cloned().collect();for callback in callbacks{callback(path,error.clone());}}
+    pub fn refresh_cloud(&self){if let Some(provider)=self.cloud.get(){provider.refresh();}}
     pub fn snapshot(&self,path:&str)->Result<Vec<u8>>{self.get(path).map(|open|state_of(&open.doc)).ok_or_else(||SessionError::new("not-open","The document is not open."))}
 
     fn get(&self, path: &str) -> Option<Arc<OpenDoc>> {
@@ -263,7 +272,7 @@ impl<S: FileStore> DocHub<S> {
                     }
             })
             .expect("a document accepts an update observer");
-            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), buffered, saving: AsyncMutex::new(()), cloud:Mutex::new(cloud.clone()),cloud_legacy }
+            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), buffered, saving: AsyncMutex::new(()), cloud:Mutex::new(cloud.clone()),cloud_legacy,#[cfg(feature="server")]watch:Default::default() }
         });
         Ok(open)
     }
@@ -311,6 +320,15 @@ impl<S: FileStore> DocHub<S> {
         let document_id=self.store.document_identity(path).await?;
         self.open.lock().unwrap().insert(path.to_string(), open.clone());
         open.subscribers.lock().unwrap().insert(client.to_string(), send);
+        #[cfg(feature="server")] if let (Some(link),Some(provider),Some(binding))=(self.link.get(),self.cloud.get(),open.cloud.lock().unwrap().clone()){
+            let mut watch=open.watch.lock().unwrap();if watch.is_none(){
+                let (link,expected,path)=(link.clone(),Arc::downgrade(&open),path.to_string());
+                *watch=provider.watch(binding,Arc::new(move|notice|{if let (Some(hub),Some(open))=(link.upgrade(),expected.upgrade()){
+                    if !hub.get(&path).is_some_and(|current|Arc::ptr_eq(&current,&open)){return}
+                    match notice{crate::cloud::Notice::Refresh=>hub.queue_watch(path.clone(),Arc::downgrade(&open)),crate::cloud::Notice::Failed(error)=>hub.cloud_status(&path,Some(error))}
+                }}));
+            }provider.refresh();
+        }
         let txn = open.doc.transact();
         let text = open.text.get_string(&txn);
         let dirty = open.buffered && text != *open.last_disk.lock().unwrap();
@@ -351,11 +369,27 @@ impl<S: FileStore> DocHub<S> {
 
     /// Local recovery precedes cloud publication; the accepted graph excludes edits that arrived during I/O.
     pub async fn sync_cloud(&self,path:&str)->Result<Option<Vec<u8>>>{
+        self.cloud_barrier(path,true).await
+    }
+    async fn cloud_barrier(&self,path:&str,activity:bool)->Result<Option<Vec<u8>>>{
         let Some(open)=self.get(path) else{return Err(SessionError::new("not-open","The document is not open."))};
         if open.cloud.lock().unwrap().is_none(){return Ok(None)}
+        if activity{self.refresh_cloud();}
         let _saving=open.saving.lock().await;
         self.persist(path,&open,&state_of(&open.doc),None).await?;
         self.sync_cloud_inner(path,&open).await
+    }
+    #[cfg(feature="server")]
+    fn queue_watch(self:&Arc<Self>,path:String,expected:std::sync::Weak<OpenDoc>){
+        {let mut jobs=self.watch_jobs.lock().unwrap();if let Some(pending)=jobs.get_mut(&path){*pending=Some(expected);return}jobs.insert(path.clone(),Some(expected));}
+        let hub=self.clone();tokio::spawn(async move{loop{
+            let expected={let mut jobs=hub.watch_jobs.lock().unwrap();match jobs.get_mut(&path).and_then(Option::take){Some(expected)=>expected,None=>{jobs.remove(&path);return}}};
+            if let Some(open)=expected.upgrade().filter(|open|hub.get(&path).is_some_and(|current|Arc::ptr_eq(&current,open))){
+                let result=hub.cloud_barrier(&path,false).await;
+                if let Err(error)=&result{if let (Some(provider),Some(binding))=(hub.cloud.get(),open.cloud.lock().unwrap().clone()){provider.failed(binding,error.clone());}}
+                hub.cloud_status(&path,result.err());
+            }
+        }});
     }
     async fn sync_cloud_inner(&self,path:&str,open:&OpenDoc)->Result<Option<Vec<u8>>>{
         let Some(binding)=open.cloud.lock().unwrap().clone() else{return Ok(None)};
@@ -373,8 +407,9 @@ impl<S: FileStore> DocHub<S> {
         let accepted=state_of(&accepted);crate::checkpoint::pack(&accepted)?;
         if crate::checkpoint::digest(crate::checkpoint::text(&accepted)?.as_bytes())!=reply.sha256{return Err(crate::cloud::lineage())}
         open.doc.transact_mut_with(yrs::Origin::from(CLOUD)).apply_update(Update::decode_v1(&reply.update).map_err(|_|crate::cloud::lineage())?).map_err(|_|crate::cloud::lineage())?;
-        *open.cloud.lock().unwrap()=Some(reply.binding);
+        *open.cloud.lock().unwrap()=Some(reply.binding.clone());
         self.persist(path,open,&state_of(&open.doc),None).await?;
+        provider.accepted(reply.binding);
         Ok(Some(accepted))
     }
     pub fn journal_from(state:&[u8],vector:&str)->Result<crate::checkpoint::Delta>{
@@ -430,6 +465,7 @@ impl<S: FileStore> DocHub<S> {
             return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
         };
         let _saving = open.saving.lock().await;
+        if explicit{self.refresh_cloud();}
         if explicit && open.cloud.lock().unwrap().is_some(){self.persist(path,&open,&state_of(&open.doc),None).await?;}
         let accepted=if explicit {self.sync_cloud_inner(path,&open).await?}else{None};
         let (text,state)=if let Some(state)=accepted{(crate::checkpoint::text(&state)?,state)}else{let txn=open.doc.transact();(open.text.get_string(&txn),txn.encode_state_as_update_v1(&StateVector::default()))};

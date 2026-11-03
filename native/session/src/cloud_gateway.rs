@@ -14,19 +14,19 @@ use rayde_sync::{
 use std::sync::Arc;
 
 pub struct Gateway {
-    source: Source,
+    source: Arc<Source>,
     permits: tokio::sync::Semaphore,
+    watches:crate::cloud_watch::Broker,
 }
 enum Source{Session(Arc<Writeback>),Desktop{config:client::Config,_lease:std::fs::File}}
+impl Source{fn config(&self)->client::Config{match self{Source::Session(writeback)=>writeback.config(),Source::Desktop{config,..}=>config.clone()}}}
 impl Gateway {
     pub fn new(writeback: Arc<Writeback>) -> Self {
-        Self {
-            source:Source::Session(writeback),
-            permits: tokio::sync::Semaphore::new(8),
-        }
+        Self::with_source(Source::Session(writeback))
     }
-    pub fn desktop(config:client::Config,lease:std::fs::File)->Self{Self{source:Source::Desktop{config,_lease:lease},permits:tokio::sync::Semaphore::new(8)}}
-    fn config(&self)->client::Config{match &self.source{Source::Session(writeback)=>writeback.config(),Source::Desktop{config,..}=>config.clone()}}
+    pub fn desktop(config:client::Config,lease:std::fs::File)->Self{Self::with_source(Source::Desktop{config,_lease:lease})}
+    fn with_source(source:Source)->Self{let source=Arc::new(source);let getter=source.clone();Self{source,permits:tokio::sync::Semaphore::new(8),watches:crate::cloud_watch::Broker::new(Arc::new(move||getter.config()))}}
+    fn config(&self)->client::Config{self.source.config()}
 }
 fn failure(failure: client::Failure) -> SessionError {
     let code = match failure.status {
@@ -59,6 +59,10 @@ fn binding(gateway: &str, reply: &documents::Reply) -> Binding {
     }
 }
 impl Provider for Gateway {
+    fn watch(&self,binding:Binding,notify:crate::cloud::Notify)->Option<Box<dyn crate::cloud::Subscription>>{self.watches.watch(binding,notify)}
+    fn accepted(&self,binding:Binding){self.watches.accepted(binding)}
+    fn failed(&self,binding:Binding,error:SessionError){self.watches.failed(binding,error)}
+    fn refresh(&self){self.watches.refresh()}
     fn open<'a>(
         &'a self,
         path: &'a str,

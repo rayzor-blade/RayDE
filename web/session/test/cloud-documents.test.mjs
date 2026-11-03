@@ -50,3 +50,12 @@ test('expired cloud acknowledgement keeps edits available locally and refuses Sa
  await assert.rejects(doc.save(),/Reconnect/);assert.equal(doc.text.toString(),'kept shared');assert.equal(f.server.getText('text').toString(),'shared');assert.equal(f.calls.includes('doc.save'),false);
  await doc.close();f.client.ready=false;f.client.close();f.server.destroy();
 });
+
+test('pushed transport status preserves local edits and fences only a changed document history',async()=>{
+ const f=fixture(),events=[],views=new EditorDocuments(f.client,event=>events.push(event));await views.request('view.open',{path:'a',handle:'one'});
+ const doc=f.client.docs.get('a');f.client.ready=false;doc.text.insert(0,'private ');const before=Y.encodeStateAsUpdate(doc.ydoc);
+ f.client.receive({ev:'doc.status',path:'a',code:'cloud-offline',message:'Cloud updates disconnected'});assert.equal(doc.blocked,undefined);assert.equal(doc.unsent,true);assert.ok(events.some(event=>event.ev==='view.status'));
+ f.client.receive({ev:'doc.status',path:'a',code:null,message:''});assert.equal(doc.cloudMessage,'');
+ f.client.receive({ev:'doc.status',path:'a',code:'document-lineage',message:'History changed'});assert.equal(doc.blocked.code,'document-lineage');assert.deepEqual(Y.encodeStateAsUpdate(doc.ydoc),before);
+ views.close();f.client.close();f.server.destroy();
+});

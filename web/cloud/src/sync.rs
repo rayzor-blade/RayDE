@@ -105,6 +105,31 @@ async fn forward(env: &Env, id: &str, request: Request) -> AppResult<Response> {
     let stub = env.durable_object("SYNC_WORKSPACES")?.get_by_name(id)?;
     Ok(stub.fetch_with_request(request).await?)
 }
+async fn scoped(env:&Env,issued:Option<u64>,id:&str,mut request:Request)->AppResult<Response>{
+    if let Some(issued)=issued{request.headers_mut()?.set("X-Sync-Issued",&issued.to_string())?;}forward(env,id,request).await
+}
+pub(crate) async fn disconnect_session(env:&Env,id:&str,sid:&str)->AppResult<()>{
+    forward(env,id,workspace_request("/disconnect","@session-control",Method::Post,&[],Some(json!({"sid":sid}).to_string().into_bytes()))?).await?;Ok(())
+}
+async fn watch_route(req:&Request,env:&Env,id:&str)->AppResult<Response>{
+    let bearer=req.headers().get("Authorization")?.and_then(|v|v.strip_prefix("Bearer ").map(str::to_string));
+    let (owner,expires,sid,issued)=if let Some(token)=bearer{
+        let (owner,workspace)=verify_capability(env,&token).ok_or_else(||bad(401,"Sign in to continue."))?;
+        if workspace!=id{return Err(bad(403,"This credential cannot do that."))}
+        let expires=token.split('.').nth(2).and_then(|v|v.parse::<u64>().ok()).ok_or_else(||bad(401,"Sign in to continue."))?;
+        (owner,expires,None,Some(expires.saturating_sub(CAPABILITY_MS)))
+    }else if config(env,"LOCAL_DEV").as_deref()==Some("1")&&req.headers().get("X-Dev-Account")?.is_some(){
+        (owner_of(req,env).await?,now()+CAPABILITY_MS,None,None)
+    }else{
+        if req.headers().get("Origin")?.as_deref()!=config(env,"APP_ORIGIN").as_deref(){return Err(bad(403,"The connection origin could not be verified."))}
+        let (sid,session)=auth(req,env).await?;
+        rpc(env,"ACCOUNTS",&sid,"remember-sync",&json!({"id":id})).await?;
+        (session_owner(env,&session),session["expires"].as_u64().unwrap_or(0).min(now()+CAPABILITY_MS),Some(sid),None)
+    };
+    let mut request=workspace_request("/document-watch",&owner,Method::Get,&[("Upgrade","websocket"),("X-Sync-Expires",&expires.to_string())],None)?;
+    if let Some(sid)=sid{request.headers_mut()?.set("X-Sync-Session",&sid)?;}
+    scoped(env,issued,id,request).await
+}
 
 async fn limited(req: &mut Request, limit: usize) -> AppResult<Vec<u8>> {
     if req.headers().get("Content-Length")?.and_then(|v| v.parse::<usize>().ok()).is_some_and(|n| n > limit) {
@@ -249,8 +274,9 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
         return runner_route(req, env, &parts).await;
     }
     let parts: Vec<&str> = rest.trim_matches('/').split('/').collect();
+    if req.method()==Method::Get{if let ["workspaces",id,"documents","watch"]=parts.as_slice(){return watch_route(req,env,id).await;}}
     let bearer = req.headers().get("Authorization")?.and_then(|value| value.strip_prefix("Bearer ").map(str::to_string)).filter(|token| token.starts_with("rsp1."));
-    let owner = match bearer {
+    let (owner,issued) = match bearer {
         // A capability is the owner's, for one workspace and only for reading its state, manifest and chunks and uploading and publishing to it.
         Some(token) => {
             let (owner, workspace) = verify_capability(env, &token).ok_or_else(|| bad(401, "Sign in to continue."))?;
@@ -258,9 +284,10 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
             if !allowed {
                 return Err(bad(403, "This credential cannot do that."));
             }
-            owner
+            let expires=token.split('.').nth(2).and_then(|v|v.parse::<u64>().ok()).ok_or_else(||bad(401,"Sign in to continue."))?;
+            (owner,Some(expires.saturating_sub(CAPABILITY_MS)))
         }
-        None => owner_of(req, env).await?,
+        None => (owner_of(req, env).await?,None),
     };
     let method = req.method();
     let origin = config(env, "APP_ORIGIN").unwrap_or_default();
@@ -272,34 +299,35 @@ pub(crate) async fn route(req: &mut Request, env: &Env, rest: &str) -> AppResult
             let id = WorkspaceId::from_random(&random);
             let data = json!({"id": id.as_str(), "allocation": body["allocation"], "durationMs": body["durationMs"], "origin": origin});
             let request = workspace_request("/create", &owner, Method::Post, &[("Content-Type", "application/json")], Some(data.to_string().into_bytes()))?;
-            forward(env, id.as_str(), request).await
+            scoped(env,issued, id.as_str(), request).await
         }
-        (Method::Get, ["workspaces", id]) => forward(env, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await,
+        (Method::Get, ["workspaces", id]) => scoped(env,issued, id, workspace_request(&format!("/status?origin={}", urlencode(&origin)), &owner, Method::Get, &[], None)?).await,
+        (Method::Post, ["workspaces", id, "access", "revoke"]) => scoped(env,issued,id,workspace_request("/revoke",&owner,Method::Post,&[],None)?).await,
         (Method::Post, ["workspaces", id, "open"]) => {
             let opened = open_synced(env, &owner, id, &origin).await?;
             Ok(reply(&json!({"id": id, "url": opened["url"], "generation": opened["generation"]}), 200)?)
         }
         (Method::Post, ["workspaces", id, "documents", operation @ ("open" | "exchange")]) => {
             let bytes=limited(req,rayde_sync::live::MAX_STATE.div_ceil(3)*4+128*1024).await?;
-            forward(env,id,workspace_request(&format!("/document-{operation}"),&owner,Method::Post,&[],Some(bytes))?).await
+            scoped(env,issued,id,workspace_request(&format!("/document-{operation}"),&owner,Method::Post,&[],Some(bytes))?).await
         }
         (Method::Post, ["workspaces", id, "uploads"]) => {
             let bytes = limited(req, 4 * 1024 * 1024).await?;
-            forward(env, id, workspace_request("/begin", &owner, Method::Post, &[("Content-Type", "application/json")], Some(bytes))?).await
+            scoped(env,issued, id, workspace_request("/begin", &owner, Method::Post, &[("Content-Type", "application/json")], Some(bytes))?).await
         }
-        (Method::Get, ["workspaces", id, "uploads", lease]) => forward(env, id, workspace_request("/pending", &owner, Method::Get, &[("X-Sync-Lease", lease)], None)?).await,
+        (Method::Get, ["workspaces", id, "uploads", lease]) => scoped(env,issued, id, workspace_request("/pending", &owner, Method::Get, &[("X-Sync-Lease", lease)], None)?).await,
         (Method::Put, ["workspaces", id, "uploads", lease, "chunks", hash]) => {
             let bytes = limited(req, MAX_CHUNK).await?;
-            forward(env, id, workspace_request("/chunk", &owner, Method::Put, &[("X-Sync-Lease", lease), ("X-Sync-Hash", hash)], Some(bytes))?).await
+            scoped(env,issued, id, workspace_request("/chunk", &owner, Method::Put, &[("X-Sync-Lease", lease), ("X-Sync-Hash", hash)], Some(bytes))?).await
         }
         (Method::Post, ["workspaces", id, "uploads", lease, "publish"]) => {
             let bytes = limited(req, MAX_MANIFEST).await?;
             let path = format!("/publish?origin={}", urlencode(&origin));
-            forward(env, id, workspace_request(&path, &owner, Method::Post, &[("X-Sync-Lease", lease)], Some(bytes))?).await
+            scoped(env,issued, id, workspace_request(&path, &owner, Method::Post, &[("X-Sync-Lease", lease)], Some(bytes))?).await
         }
-        (Method::Delete, ["workspaces", id, "uploads", lease]) => forward(env, id, workspace_request("/cancel", &owner, Method::Post, &[("X-Sync-Lease", lease)], None)?).await,
-        (Method::Get, ["workspaces", id, "export", "manifest"]) => forward(env, id, workspace_request("/manifest", &owner, Method::Get, &[], None)?).await,
-        (Method::Get, ["workspaces", id, "export", "chunks", hash]) => forward(env, id, workspace_request("/chunk-read", &owner, Method::Get, &[("X-Sync-Hash", hash)], None)?).await,
+        (Method::Delete, ["workspaces", id, "uploads", lease]) => scoped(env,issued, id, workspace_request("/cancel", &owner, Method::Post, &[("X-Sync-Lease", lease)], None)?).await,
+        (Method::Get, ["workspaces", id, "export", "manifest"]) => scoped(env,issued, id, workspace_request("/manifest", &owner, Method::Get, &[], None)?).await,
+        (Method::Get, ["workspaces", id, "export", "chunks", hash]) => scoped(env,issued, id, workspace_request("/chunk-read", &owner, Method::Get, &[("X-Sync-Hash", hash)], None)?).await,
         _ => Err(bad(404, "There is no such sync route.")),
     }
 }
@@ -312,9 +340,9 @@ fn urlencode(value: &str) -> String {
 
 #[durable_object]
 pub struct SyncWorkspaceSession {
-    state: State,
-    env: Env,
-    gate: futures_util::lock::Mutex<()>,
+    pub(crate) state: State,
+    pub(crate) env: Env,
+    pub(crate) gate: futures_util::lock::Mutex<()>,
 }
 
 impl DurableObject for SyncWorkspaceSession {
@@ -325,10 +353,17 @@ impl DurableObject for SyncWorkspaceSession {
         let _guard = self.gate.lock().await;
         finish(self.handle(req).await)
     }
+    async fn websocket_message(&self,ws:WebSocket,message:WebSocketIncomingMessage)->Result<()>{
+        let _guard=self.gate.lock().await;
+        if let Err(error)=self.watch_message(&ws,message).await{let _=ws.send(&json!({"ev":"error","status":error.status,"message":error.message}));let _=self.watch_close(&ws,if error.status==413{1009}else{1008},"Cloud Sync subscription refused").await;}Ok(())
+    }
+    async fn websocket_close(&self,ws:WebSocket,_:usize,_:String,_:bool)->Result<()>{let _guard=self.gate.lock().await;self.watch_close(&ws,1000,"Closed").await.map_err(|_|worker::Error::RustError("Cloud Sync cleanup failed".into()))}
+    async fn websocket_error(&self,ws:WebSocket,_:Error)->Result<()>{let _guard=self.gate.lock().await;let _=self.watch_close(&ws,1011,"Reconnect to Cloud Sync").await;Ok(())}
     /// Abandons the uploads that sat past their lease, returns their reservations and deletes what they stored.
     async fn alarm(&self) -> Result<Response> {
         let _guard = self.gate.lock().await;
         let storage = self.state.storage();
+        self.watch_sweep().await.map_err(|_|worker::Error::RustError("Cloud Sync expiry cleanup failed".into()))?;
         if let Some(mut workspace) = storage.get::<SyncWorkspace>("ws").await? {
             let garbage = workspace.sweep(now());
             storage.put("ws", &workspace).await?;
@@ -345,11 +380,13 @@ impl SyncWorkspaceSession {
         self.env.bucket("WORKSPACE_FILES").map_err(|_| bad(503, "Cloud Sync storage is not configured."))
     }
 
-    async fn schedule(&self, workspace: &SyncWorkspace) -> AppResult<()> {
-        if let Some(first) = workspace.uploads.values().map(|u| u.started_at).min() {
-            let due = (first + LEASE_MS + 1_000).saturating_sub(now()).max(1_000);
+    pub(crate) async fn schedule(&self, workspace: &SyncWorkspace) -> AppResult<()> {
+        let watch=self.watch_deadline();
+        let expiry=watch.and(workspace.expiry.expires_at);
+        if let Some(first) = workspace.uploads.values().map(|u| u.started_at+LEASE_MS+1000).chain(watch).chain(expiry).filter(|due|*due>now()).min() {
+            let due = first.saturating_sub(now()).max(1);
             self.state.storage().set_alarm(Duration::from_millis(due)).await?;
-        }
+        }else{self.state.storage().delete_alarm().await?;}
         Ok(())
     }
 
@@ -380,6 +417,7 @@ impl SyncWorkspaceSession {
         let storage = self.state.storage();
         let stored = storage.get::<SyncWorkspace>("ws").await?;
         let plan = Entitlement::free();
+        if op=="/disconnect"&&owner=="@session-control"{let data:Value=req.json().await?;self.watch_disconnect(Some(text(&data,"sid")?)).await?;return Ok(reply(&json!({}),200)?)}
 
         if op == "/create" {
             let data: Value = req.json().await?;
@@ -402,7 +440,15 @@ impl SyncWorkspaceSession {
         let reads_only = owner == RUNNER && matches!(op.as_str(), "/manifest" | "/chunk-read");
         let mut workspace = stored.filter(|w| reads_only || w.owner.as_str() == owner).ok_or_else(|| bad(404, "No such synced workspace."))?;
         let id = workspace.id.as_str().to_string();
+        if let Some(issued)=req.headers().get("X-Sync-Issued")?.and_then(|v|v.parse::<u64>().ok()){
+            if storage.get::<u64>("sync-access-after").await?.is_some_and(|after|issued<=after){return Err(bad(401,"Cloud Sync access was revoked. Reopen the workspace."))}
+        }
         match op.as_str() {
+            "/document-watch"=>self.watch_open(&req,&workspace).await,
+            "/revoke"=>{
+                let garbage=workspace.revoke();let mut values=std::collections::BTreeMap::new();values.insert("ws".into(),json!(&workspace));values.insert("sync-access-after".into(),json!(now()));crate::checkpoints::put(&storage,values).await?;
+                self.watch_disconnect(None).await?;self.delete_chunks(&id,&garbage).await;Ok(reply(&json!({"revoked":true}),200)?)
+            },
             "/status" => {let mut body=status_body(&id,&workspace,&origin);body["usage"]["documents"]=json!(crate::sync_documents::Documents::new(self.state.storage()).usage().await?);Ok(reply(&body,200)?)},
             "/document-open" | "/document-exchange" => {
                 if workspace.expiry.is_expired(now()){return refusal(&SyncError::Expired)}
@@ -413,6 +459,7 @@ impl SyncWorkspaceSession {
                 let data:Value=req.json().await?;let bucket=self.bucket()?;
                 let budget=workspace.allocation_bytes.saturating_sub(workspace.usage.total()).min(plan.max_account_bytes.saturating_sub(self.others(&owner,&id).await).saturating_sub(workspace.usage.total())) as usize;
                 let result=crate::sync_documents::Documents::new(self.state.storage()).request(&op,&data,&manifest,&bucket,budget).await?;
+                let _=self.watch_changed(data["path"].as_str()).await;self.schedule(&workspace).await?;
                 self.report(&workspace,None).await;Ok(reply(&result,200)?)
             }
             "/begin" => {
@@ -485,6 +532,7 @@ impl SyncWorkspaceSession {
                         // The manifest is stored before the generation advances, so a failure here leaves the last valid generation as it was.
                         bucket.put(format!("{}generations/{:012}.json", prefix(&id), done.generation), manifest.to_bytes()).execute().await?;
                         values.insert("ws".into(),json!(&next));crate::checkpoints::put(&storage,values).await?;
+                        let _=self.watch_changed(None).await;self.schedule(&next).await?;
                         self.delete_chunks(&id, &done.garbage).await;
                         self.report(&next, Some(&manifest.name)).await;
                         let mut body = status_body(&id, &next, &origin);

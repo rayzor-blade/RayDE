@@ -224,7 +224,7 @@ impl<S: FileStore> Editors<S> {
         !self.syncing.lock().unwrap().is_empty()
     }
     pub fn new(hub: Arc<DocHub<S>>, out: Out) -> Arc<Self> {
-        Arc::new(Self {
+        let owner=Arc::new(Self {
             hub,
             views: Mutex::new(HashMap::new()),
             opening: Default::default(),
@@ -232,7 +232,13 @@ impl<S: FileStore> Editors<S> {
             closed: AtomicBool::new(false),
             serial: Default::default(),
             syncing: Default::default(),
-        })
+        });
+        let weak=Arc::downgrade(&owner);owner.hub.on_cloud_status(format!("editor:{:p}",Arc::as_ptr(&owner)),Arc::new(move|path,error|{if let Some(owner)=weak.upgrade(){
+            for (handle,_) in owner.views.lock().unwrap().iter().filter(|(_,view)|view.path==path){
+                let message=error.as_ref().map_or("",|e|e.message.as_str());(owner.out)(json!({"ev":"view.status","handle":handle,"message":message}).to_string());
+                if let Some(error)=&error{if matches!(error.code,"document-lineage"|"recovery-conflict"|"bad-buffer-state"){(owner.out)(json!({"ev":"view.error","handle":handle,"code":error.code,"message":error.message}).to_string());}}
+            }
+        }}));owner
     }
     pub async fn request(self: &Arc<Self>, op: &str, r: &Value) -> Result<Value> {
         if self.closed.load(Ordering::Acquire) {
@@ -478,6 +484,7 @@ impl<S: FileStore> Editors<S> {
         }
     }
     pub async fn close(&self) {
+        self.hub.remove_cloud_status(&format!("editor:{:p}",self));
         self.closed.store(true, Ordering::Release);
         let views = std::mem::take(&mut *self.views.lock().unwrap());
         for (_, view) in views {

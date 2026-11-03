@@ -45,7 +45,7 @@ pub trait Programs: Send + Sync + 'static {
 
 pub struct Workspace<S: FileStore> {
     pub store: Arc<S>,
-    pub docs: DocHub<S>,
+    pub docs: Arc<DocHub<S>>,
     pub programs: Option<Arc<dyn Programs>>,
     #[cfg(feature = "server")]
     sources:OnceLock<crate::read_roots::ReadRoots>,
@@ -70,7 +70,13 @@ impl<S: FileStore> Workspace<S> {
     }
 
     pub fn with_authority(store: Arc<S>, token: Option<String>, programs: Option<Arc<dyn Programs>>, dirty: Arc<dyn Fn(&str) + Send + Sync>, authority: Option<Arc<dyn Authority>>, clock: Arc<dyn Fn() -> u64 + Send + Sync>) -> Arc<Self> {
-        Arc::new(Self { docs: DocHub::new(store.clone(), dirty), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), #[cfg(feature = "server")] writeback:OnceLock::new(), #[cfg(feature = "server")] previews:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) })
+        let workspace=Arc::new(Self { docs: Arc::new(DocHub::new(store.clone(), dirty)), store, programs, #[cfg(feature = "server")] sources:OnceLock::new(), #[cfg(feature = "server")] writeback:OnceLock::new(), #[cfg(feature = "server")] previews:OnceLock::new(), syntax:OnceLock::new(), terminals:OnceLock::new(), authority, clock, token, connections: Mutex::new(HashMap::new()), next: AtomicU64::new(1) });
+        #[cfg(feature="server")] workspace.docs.enable_push();
+        let weak=Arc::downgrade(&workspace);workspace.docs.on_cloud_status("workspace".into(),Arc::new(move|path,error|{if let Some(workspace)=weak.upgrade(){
+            if let Some(error)=&error{workspace.cloud_failed(error);}
+            let message=json!({"ev":"doc.status","path":path,"code":error.as_ref().map(|e|e.code),"message":error.as_ref().map_or("",|e|e.message.as_str())}).to_string();
+            for subscriber in workspace.connections.lock().unwrap().values(){(subscriber.out)(message.clone());}
+        }}));workspace
     }
 
     #[cfg(feature = "server")]
@@ -251,6 +257,7 @@ impl<S: FileStore> Connection<S> {
             #[cfg(feature = "server")]
             if let Some(writeback)=workspace.writeback.get(){
                 let reply=writeback.authorize(text(request,"control")?,text(request,"gateway")?,text(request,"workspace")?,text(request,"token")?)?;
+                workspace.docs.refresh_cloud();
                 let weak=Arc::downgrade(&workspace);let writeback=writeback.clone();
                 tokio::spawn(async move{writeback.initialize().await;if let Some(workspace)=weak.upgrade(){workspace.sync_changed();}});
                 return Ok(reply);

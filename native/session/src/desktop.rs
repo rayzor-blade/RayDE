@@ -78,6 +78,7 @@ pub async fn open(
             .map_err(|_| SessionError::new("failed", "Could not open private recovery."))?
             ?;
         let hub = Arc::new(DocHub::new(Arc::new(store), Arc::new(|_| {})));
+        hub.enable_push();
         hub.set_cloud(Arc::new(crate::cloud_gateway::Gateway::desktop(
             config, lease,
         )));

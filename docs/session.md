@@ -32,6 +32,8 @@ Reconnecting to the same workspace restores document synchronization. Active ext
 
 Cloud Sync preserves saved edits and its merge base across session recovery. If publish access expires, choose **Reopen workspace** in Cloud Sync. Recovery errors pause saving to the cloud and keep your local files.
 
+Supported open text files receive shared edits automatically. Incoming edits stay unsaved until you choose Save; a disconnected session keeps local edits for recovery.
+
 If the workspace or signed-in account changes, RayDE pauses the old editor bindings and shows a warning. Choose **Reopen Workspace** to preserve local recovery data and reload the current workspace. If storage fails, the page stays open and reports the problem. Previous recovery data is kept separately from the new workspace.
 
 Avoid clearing browser storage when recovering unsaved edits: it contains local drafts, personal history and tab layout.

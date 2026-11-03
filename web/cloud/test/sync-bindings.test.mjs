@@ -33,7 +33,7 @@ test('the browser editor binds to cloud history, keeps unsaved disk separate, an
  const disk=join(data,'workspaces',id,'1',root.split('/').pop(),'a.txt');
  doc.text.insert(0,'browser ');await until(()=>!doc.unsent,'cloud acknowledgement');assert.equal(await readFile(disk,'utf8'),'base 🦀');
  const native=spawnSync(docCli,[base,'alice',id,'a.txt',' native'],{encoding:'utf8'});assert.equal(native.status,0,native.stderr);
- await doc.sync();assert.equal(doc.text.toString(),'browser base 🦀 native');assert.equal(await readFile(disk,'utf8'),'base 🦀');
+ await until(()=>doc.text.toString()==='browser base 🦀 native','pushed native update');assert.equal(await readFile(disk,'utf8'),'base 🦀');
  await doc.save();assert.equal(await readFile(disk,'utf8'),doc.text.toString());
  const lineage=doc.cloudLineage;await doc.close();client.close();await stop();await start();
  assert.equal((await api(`/api/sync/workspaces/${id}/open`,{method:'POST'})).status,200);await ready();client=await connect();doc=await client.openDoc('a.txt');assert.equal(doc.cloudLineage,lineage);assert.equal(doc.text.toString(),'browser base 🦀 native');

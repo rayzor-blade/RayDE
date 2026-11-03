@@ -47,6 +47,8 @@ struct Record {
 pub struct Documents {
     storage: Storage,
 }
+#[derive(Clone,Serialize,Deserialize)]
+pub(crate) struct Head{pub path:String,pub lineage:String,pub sequence:u64}
 fn unavailable() -> Failure {
     bad(
         503,
@@ -117,6 +119,10 @@ impl Documents {
     }
     pub async fn usage(&self) -> AppResult<usize> {
         Ok(self.index().await?.bytes)
+    }
+    pub(crate) async fn head(&self,path:&str)->AppResult<Option<Head>>{
+        let index=self.index().await?;
+        Ok(self.record(&index,&hash(path)).await?.map(|record|Head{path:path.into(),lineage:record.seed.lineage,sequence:record.sequence}))
     }
     async fn record(&self, index: &Index, id: &str) -> AppResult<Option<Record>> {
         let Some(usage) = index.entries.get(id).filter(|e| e.checksum.is_some()) else {

@@ -6,6 +6,7 @@ mod recovery;
 mod file_payloads;
 mod sync;
 mod sync_documents;
+mod sync_watch;
 pub use account::AccountSession;
 pub use workspace::WorkspaceSession;
 

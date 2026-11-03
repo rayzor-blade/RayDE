@@ -29,8 +29,8 @@ try{
  const competing=spawnSync(process.env.ASH??'ash',['--preset','application',resolve('../../bin/desktop-sync-checks.hl'),root,base],{cwd:resolve('../..'),env:{...process.env,HOME:join(data,'home')},encoding:'utf8',timeout:15000});
  assert.notEqual(competing.status,0);assert.match(competing.stdout+competing.stderr,/another RayDE process/);
  doc.text.insert(0,'browser ');await until(()=>!doc.unsent,'browser acknowledgement');native.stdin.write('\n');await step('DESKTOP_SAVED');
- await doc.sync();assert.equal(doc.text.toString(),'native browser base 🦀');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
- native.stdin.write('\n');await step('DESKTOP_DONE');await stop(native);await doc.sync();assert.equal(doc.text.toString(),'browser base 🦀');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
+ await until(()=>doc.text.toString()==='native browser base 🦀','pushed desktop edit');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
+ native.stdin.write('\n');await step('DESKTOP_DONE');await stop(native);await until(()=>doc.text.toString()==='browser base 🦀','pushed author undo');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
  const resumed=spawnSync(process.env.ASH??'ash',['--preset','application',resolve('../../bin/desktop-sync-checks.hl'),root,base+'/'],{cwd:resolve('../..'),env:{...process.env,HOME:join(data,'home')},encoding:'utf8',input:'\n\n',timeout:20000});
  assert.equal(resumed.status,0,resumed.stdout+resumed.stderr);assert.match(resumed.stdout,/DESKTOP_DONE/);
  assert.doesNotMatch(nativeLog+resumed.stdout+resumed.stderr,/gave up stopping the world/);await doc.close();

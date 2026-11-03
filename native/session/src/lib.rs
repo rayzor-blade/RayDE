@@ -28,6 +28,8 @@ mod writeback;
 #[cfg(feature = "server")]
 mod cloud_gateway;
 #[cfg(feature = "server")]
+mod cloud_watch;
+#[cfg(feature = "server")]
 mod sync_state;
 #[cfg(feature = "server")]
 mod preview_cache;
