@@ -289,14 +289,14 @@ class ShellPart {
 	/** Matching end widths keep the project centered across window-control styles. */
 	function barEnd(style:String, leftEnd:Bool):Element {
 		var controlsLeft = WindowControls.onLeft(style), width = 112 + (controlsLeft ? 0 : WindowControls.width(style));
+		var account:Array<Element> = [];
 		#if (wasm || rayde_page)
 		width += 136;
+		if (!leftEnd) account.push(<account-control beforeSignOut={beforeSignOut} say={wb.say}/>);
 		#end
 		var end = <div class="rayde-bar-end flex items-center shrink-0" width={width}>
 			<if {!leftEnd}><for {state in [wb.runPart.statusState()]}>${wb.runPart.runControls(state)}</for></if>
-			#if (wasm || rayde_page)
-			<if {!leftEnd}><account-control beforeSignOut={beforeSignOut} say={wb.say}/></if>
-			#end
+			<for {control in account}>${control}</for>
 			<if {controlsLeft == leftEnd}><window-controls style={style} chrome={wb.chrome}/></if>
 		</div>;
 		var identity = ashui.css.Identity.of(end.tree,end.node.id);

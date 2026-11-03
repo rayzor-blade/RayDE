@@ -43,6 +43,12 @@ class ExplorerInteractionChecks {
   try {
    bench.explorerPart.folderState("/work/from",true).set(true); bench.explorerPart.folderState("/work/from/nested",true).set(true);
    bench.openProject();until(() -> count(row("/work/from/one.txt"))==1);
+   for(id in Css.query(tree,bench.node.id,"#rayde-bar text")) {
+    var text=ashui.ui.Text.at(id);if(text!=null)check(text.text().indexOf("#if")<0&&text.text().indexOf("#end")<0,"Title bar rendered compiler directives as text");
+   }
+   #if !rayde_page
+   check(count("#rayde-account")==0,"Native title bar mounted browser account controls");
+   #end
    bench.openFile("/work/from/one.txt");settle(); var editor=bench.editorFor("/work/from/one.txt"), state=editor.state;
    editor.applyEdits([{from:0,to:0,text:"unsaved "}]); bench.documentsPart.edited("/work/from/one.txt");settle();var value=editor.value.get();
    var hooks=Pointer.hooks.length;
