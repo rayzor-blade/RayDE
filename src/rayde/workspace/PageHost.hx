@@ -62,7 +62,7 @@ class PageHost {
 	/** Starts an account RPC; callers apply completed replies on the UI thread. */
 	public static function requestAccount(op:String, ?params:Dynamic):ash.Future<Dynamic> {
 		#if wasm
-		if (bridge != null) return bridge.requestAsync(op,params,op == "account.signin" ? 620. : op == "account.create" ? 180. : 20.);
+		if (bridge != null) return bridge.requestAsync(op,params,op == "account.signin" ? 620. : op == "account.create" ? 180. : op == "account.signout" ? 40. : 20.);
 		#end
 		var future = new ash.Future<Dynamic>();
 		if (op == "account.status") future.resolve({result:{user:null}});

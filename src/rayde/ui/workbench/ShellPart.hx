@@ -289,14 +289,28 @@ class ShellPart {
 	/** Matching end widths keep the project centered across window-control styles. */
 	function barEnd(style:String, leftEnd:Bool):Element {
 		var controlsLeft = WindowControls.onLeft(style), width = 112 + (controlsLeft ? 0 : WindowControls.width(style));
+		#if (wasm || rayde_page)
+		width += 136;
+		#end
 		var end = <div class="rayde-bar-end flex items-center shrink-0" width={width}>
 			<if {!leftEnd}><for {state in [wb.runPart.statusState()]}>${wb.runPart.runControls(state)}</for></if>
+			#if (wasm || rayde_page)
+			<if {!leftEnd}><account-control beforeSignOut={beforeSignOut} say={wb.say}/></if>
+			#end
 			<if {controlsLeft == leftEnd}><window-controls style={style} chrome={wb.chrome}/></if>
 		</div>;
 		var identity = ashui.css.Identity.of(end.tree,end.node.id);
 		identity.setAttribute("data-side",leftEnd ? "left" : "right");
 		identity.setAttribute("data-controls",controlsLeft ? "left" : "right");
+		#if (wasm || rayde_page)
+		identity.setAttribute("data-account", "");
+		#end
 		return end;
+	}
+
+	function beforeSignOut(proceed:Void->Void):Void {
+		if (wb.dirty.get().length == 0) { proceed(); return; }
+		wb.prompt.set({title:"Sign out of GitHub", description:"Save your edited files before leaving this workspace.", action:"Save and Sign Out", accept:_ -> wb.runPart.saveBefore(proceed)});
 	}
 
 	/** A press on the bar: a double click maximizes the window, and anything else on it moves the window. */

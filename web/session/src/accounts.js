@@ -13,8 +13,12 @@ export class Accounts {
     this.signin = null;
     this.csrf = null;
     this.installUrl = null;
+    this.listeners = new Set();
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location?.href ?? "http://localhost").hostname);
   }
+
+  subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  changed(user) { for (const listener of this.listeners) listener({user}); }
 
   signIn() {
     if (this.signin) return this.signin.promise;
@@ -74,10 +78,11 @@ export class Accounts {
 
   async request(op, params) {
     if (op === "account.status") {
-      if (this.landing) return { user: null, installable: false };
+      if (this.landing) { this.changed(null); return { user: null, installable: false }; }
       const session = await this.api("/api/session");
       this.csrf = session.csrf ?? null;
       this.installUrl = session.installUrl ?? null;
+      this.changed(session.user);
       return { user: session.user, installable: !!this.installUrl };
     }
     if (op === "account.repositories") return this.api("/api/repositories" + (params.cursor ? "?cursor=" + encodeURIComponent(params.cursor) : ""));
@@ -109,8 +114,11 @@ export class Accounts {
       this.later(() => this.location.assign(url.href)); return {};
     }
     if (op === "account.signout") {
+      await this.request("account.status", {});
       await this.api("/api/logout", {});
       this.csrf = null;
+      this.installUrl = null;
+      this.changed(null);
       this.later(() => this.location.assign(this.location.origin)); return {};
     }
     if (op === "account.connect") {

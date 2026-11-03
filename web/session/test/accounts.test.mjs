@@ -102,3 +102,30 @@ test("Cloud Sync renewal obtains current CSRF authority without handling a publi
   await assert.rejects(account.request("account.sync-reopen",{workspace:"../other"}),/Choose a synced workspace/);
   assert.equal(calls.length,3);
 });
+
+test("account changes reach header subscribers without leaking session authority",async()=>{
+  const calls=[],changes=[],navigations=[];let loggedOut=false;
+  const account=new Accounts({location:{href:"https://app.example/",origin:"https://app.example",assign:url=>navigations.push(url)},later:fn=>fn(),fetch:async(url,init)=>{
+    calls.push({url,init});
+    if(url==="/api/logout"){loggedOut=true;return Response.json({});}
+    return Response.json({user:loggedOut?null:{login:"alice"},csrf:"fresh-csrf",installUrl:"https://github.com/apps/rayde/installations/new"});
+  }});
+  const stop=account.subscribe(status=>changes.push(status));
+  await account.request("account.status",{});
+  assert.deepEqual(changes,[{user:{login:"alice"}}]);
+  account.csrf="stale-csrf";
+  await account.request("account.signout",{});
+  assert.deepEqual(calls.map(call=>call.url),["/api/session","/api/session","/api/logout"]);
+  assert.equal(calls[2].init.headers["X-RayDE-CSRF"],"fresh-csrf");
+  assert.deepEqual(changes.at(-1),{user:null});assert.equal(account.csrf,null);assert.equal(account.installUrl,null);
+  assert.deepEqual(navigations,["https://app.example"]);
+  stop();const length=changes.length;await account.request("account.status",{});assert.equal(changes.length,length);
+});
+
+test("a failed sign-out keeps the account and does not navigate away",async()=>{
+  const navigations=[],changes=[];
+  const account=new Accounts({location:{href:"https://app.example/",assign:url=>navigations.push(url)},later:fn=>fn(),fetch:async url=>url==="/api/session"?Response.json({user:{login:"alice"},csrf:"csrf"}):Response.json({message:"Sign out failed"},{status:503})});
+  account.subscribe(status=>changes.push(status));
+  await assert.rejects(account.request("account.signout",{}),/Sign out failed/);
+  assert.deepEqual(changes,[{user:{login:"alice"}}]);assert.deepEqual(navigations,[]);assert.equal(account.csrf,"csrf");
+});

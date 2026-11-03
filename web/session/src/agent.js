@@ -151,9 +151,10 @@ export const start = ask => serve(ask, {
         }
       })();
     });
+    const stopAccounts = accounts.subscribe(status => answer({ev:"account.changed", user:status.user}));
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { accounts.signin?.cancel(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
+      close() { stopAccounts(); accounts.signin?.cancel(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

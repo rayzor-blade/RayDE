@@ -13,6 +13,7 @@ import rayde.workspace.Fs;
 @:access(rayde.ui.workbench.ExplorerPart)
 @:access(rayde.ui.workbench.DocumentsPart)
 @:access(rayde.ui.workbench.ProjectPart)
+@:access(rayde.ui.workbench.ShellPart)
 class ExplorerInteractionChecks {
  static function check(ok:Bool, why:String):Void { if (!ok) throw why; }
  static function main():Void {
@@ -66,6 +67,10 @@ class ExplorerInteractionChecks {
    Pointer.leave(tree);Pointer.release(tree);settle();check(count(".rayde-explorer-drag")==0 && Pointer.hooks.length==hooks,"Leaving the window retained the drag");
    scroll.jumpTo(0,0);settle();
    #if rayde_page
+   var account=box("#rayde-account-action");check(account.x>900&&account.x+account.width<=1100,"Account button is not in the top-right header");
+   var signedOut=false;bench.dirty.set(["/work/to/one.txt"]);bench.shellPart.beforeSignOut(()->signedOut=true);
+   check(!signedOut&&bench.prompt.get()!=null&&bench.prompt.get().action=="Save and Sign Out","Sign-out bypassed unsaved edits");
+   bench.prompt.set(null);bench.dirty.set([]);bench.shellPart.beforeSignOut(()->signedOut=true);check(signedOut,"Clean sign-out was blocked by a prompt");settle();
    bench.projectPart.pickProject("project");
    Css.update();tree.flush();tree.computeLayout(bench.node,1100,760);
    Offscreen.advance(.001);Css.update();tree.flush();tree.computeLayout(bench.node,1100,760);
