@@ -9268,6 +9268,20 @@ function openDatabase(name, create7) {
     request.onsuccess = () => resolve(request.result);
   });
 }
+async function cloudHeader(name) {
+  const db = await openDatabase(name, false);
+  if (!db) return { populated: false, cloud: void 0 };
+  try {
+    if (!db.objectStoreNames.contains("updates") || !db.objectStoreNames.contains("custom")) throw failure("The browser recovery store is invalid.");
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(["updates", "custom"], "readonly"), cloud = tx.objectStore("custom").get("rayde:cloud-lineage"), last2 = tx.objectStore("updates").openKeyCursor(null, "prev");
+      tx.oncomplete = () => resolve({ cloud: cloud.result, populated: last2.result != null });
+      tx.onerror = tx.onabort = () => reject(tx.error ?? failure("Could not inspect browser recovery."));
+    });
+  } finally {
+    db.close();
+  }
+}
 var RecoveryDirectory = class {
   async database() {
     return this.opening ??= openDatabase("rayde-document-bindings-v1", true);
@@ -9572,6 +9586,10 @@ var b64 = {
     return bytes;
   }
 };
+var CLOUD_BINDING = "rayde:cloud-lineage";
+function cloudLineage() {
+  return Object.assign(new Error("This document belongs to another cloud history. Its previous browser recovery is kept; reconcile it before continuing live sync."), { code: "document-lineage" });
+}
 var SessionError = class extends Error {
   constructor(reply) {
     super(reply.message ?? reply.code);
@@ -9594,6 +9612,10 @@ var Doc2 = class {
     this.persistence = null;
     this.persistences = /* @__PURE__ */ new Set();
     this.documentId = null;
+    this.cloudLineage = null;
+    this.cloudLegacy = false;
+    this.cloudMessage = "";
+    this.buffered = false;
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = /* @__PURE__ */ new Set();
@@ -9628,9 +9650,14 @@ var Doc2 = class {
     this.documentId = id2;
     this.client.documentIds?.set(id2, this);
   }
-  async recover(name) {
+  async recover(name, expectedLineage = this.cloudLineage) {
     if (!this.persistent || this.persistence?.name === name) return;
     this.guard();
+    if (expectedLineage) {
+      const header = await cloudHeader(name);
+      this.guard();
+      if (header.cloud !== void 0 && (header.cloud?.version !== 1 || header.cloud.lineage !== expectedLineage) || header.populated && header.cloud === void 0) throw cloudLineage();
+    }
     const persistence = new IndexeddbPersistence(name, this.ydoc);
     this.persistences.add(persistence);
     await new Promise((resolve, reject) => {
@@ -9647,6 +9674,11 @@ var Doc2 = class {
     });
     this.guard();
     this.persistence = persistence;
+    const cloud = await persistence.get(CLOUD_BINDING);
+    if (cloud !== void 0) {
+      if (cloud?.version !== 1 || !validDocumentId(cloud.lineage) || this.cloudLineage && this.cloudLineage !== cloud.lineage) throw cloudLineage();
+      this.cloudLineage = cloud.lineage;
+    }
   }
   async releaseOtherRecovery() {
     for (const persistence of this.persistences) if (persistence !== this.persistence) {
@@ -9678,10 +9710,11 @@ var Doc2 = class {
     const persistence = this.persistence;
     if (!persistence || this.closed) return;
     await new Promise((resolve, reject) => {
-      const tx = persistence.db.transaction("updates", "readwrite");
+      const tx = persistence.db.transaction(["updates", "custom"], "readwrite");
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("Could not preserve document recovery."));
       tx.objectStore("updates").add(encodeStateAsUpdate(this.ydoc));
+      if (this.cloudLineage) tx.objectStore("custom").put({ version: 1, lineage: this.cloudLineage }, CLOUD_BINDING);
     });
   }
   async checkpoint() {
@@ -9733,13 +9766,14 @@ var Doc2 = class {
         reply = await this.open();
         this.identityHint = validDocumentId(reply.documentId) ? reply.documentId : null;
         this.applyReply(reply);
+        if (this.cloudLineage) await this.checkpointGraph();
         await this.releaseOtherRecovery();
       }
       this.guard();
       const missing = encodeStateAsUpdate(this.ydoc, b64.decode(reply.vector));
       this.failed = false;
       this.suspended = false;
-      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing, true);
+      if (missing.length > 2 || this.client.hello?.durableUpdates || this.cloudLineage) await this.send(missing, true);
       else if (this.inflight === 0) this.unsent = false;
       this.listeners.forEach((listener) => listener("synced"));
     } catch (error) {
@@ -9749,10 +9783,16 @@ var Doc2 = class {
   }
   open(vector = encodeStateVector(this.ydoc), expected = this.documentId) {
     this.guard();
-    return this.client.request("doc.open", { path: this.path, vector: b64.encode(vector), ...expected ? { documentId: expected } : {} });
+    return this.client.request("doc.open", { path: this.path, vector: b64.encode(vector), ...expected ? { documentId: expected } : {}, ...this.client.hello?.cloudDocuments === 1 ? { cloud: true } : {}, ...this.cloudLineage ? { cloudLineage: this.cloudLineage } : {} });
   }
   applyReply(reply) {
     this.guard();
+    if (reply.cloudLineage != null) {
+      if (!validDocumentId(reply.cloudLineage) || this.cloudLineage && this.cloudLineage !== reply.cloudLineage || encodeStateVector(this.ydoc).length > 1 && this.cloudLineage !== reply.cloudLineage) throw cloudLineage();
+      this.cloudLineage = reply.cloudLineage;
+    } else if (this.cloudLineage) throw cloudLineage();
+    this.cloudLegacy = reply.cloudLegacy === true;
+    this.buffered = reply.buffered === true;
     if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
     applyUpdate(this.ydoc, b64.decode(reply.update), "session");
@@ -9760,6 +9800,22 @@ var Doc2 = class {
   async synchronizeIdentity() {
     const name = legacyName(this.workspace, this.path);
     const legacy = this.persistent ? await readLegacy(name) : null;
+    if (this.client.hello.cloudDocuments === 1) {
+      const offered = await this.open(new Uint8Array([0]));
+      if (offered.cloudLineage != null) {
+        if (legacy?.last && (!legacy.binding || legacy.binding.id === offered.documentId)) throw cloudLineage();
+        this.identify(offered.documentId);
+        await this.recover(recoveryName(this.workspace, this.documentId), offered.cloudLineage);
+        this.applyReply(offered);
+        if (this.persistence) {
+          await checkpointRecovery(this.persistence, this.ydoc, this.workspace, this.documentId, [], true);
+          await this.checkpointGraph();
+          await this.client.recoveryDirectory.put(this.workspace, this.path, this.documentId);
+        }
+        await this.releaseOtherRecovery();
+        return offered;
+      }
+    }
     let reply, proven = null;
     if (!this.documentId) {
       if (legacy?.last && !legacy.binding || encodeStateVector(this.ydoc).length > 1) {
@@ -9806,7 +9862,7 @@ var Doc2 = class {
   }
   fence(error) {
     this.failed = true;
-    if (!["document-changed", "identity-required", "recovery-failed"].includes(error.code) || this.closed) return;
+    if (!["document-changed", "identity-required", "recovery-failed", "document-lineage"].includes(error.code) || this.closed) return;
     this.blocked = error;
     this.suspended = true;
     this.client.emit?.("document-error", { path: this.path, documentId: this.documentId, code: error.code, message: error.message });
@@ -9818,16 +9874,26 @@ var Doc2 = class {
     work.finally(() => this.pending.delete(work));
     return work;
   }
+  cloudStatus(message) {
+    if (this.cloudMessage === message) return;
+    this.cloudMessage = message;
+    this.client.emit?.("document-status", { path: this.path, message });
+  }
   async transmit(update, version) {
     this.inflight++;
+    if (this.cloudLineage) this.cloudStatus("Synchronizing cloud edits\u2026");
     try {
       await this.client.request("doc.update", { path: this.path, update: b64.encode(update), ...this.documentId ? { documentId: this.documentId } : {} });
       this.acknowledgedVersion = Math.max(this.acknowledgedVersion, version);
     } catch (error) {
       this.fence(error);
+      if (this.cloudLineage) this.cloudStatus(error.code === "sync-auth" ? "Cloud access expired \xB7 reopen workspace" : "Cloud sync pending \xB7 edits kept locally");
       if (error.code === "auth-required") this.client.needSignIn(error.login);
     } finally {
-      if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) this.unsent = false;
+      if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) {
+        this.unsent = false;
+        if (this.cloudLineage) this.cloudStatus("");
+      }
     }
   }
   save() {
@@ -10018,6 +10084,7 @@ var SessionClient = class {
     } else if (message.ev === "doc.update") {
       const doc2 = this.docs.get(message.path);
       if (doc2 && !doc2.closed && !doc2.blocked) {
+        if (doc2.buffered) doc2.restoredDirty = true;
         applyUpdate(doc2.ydoc, b64.decode(message.update), "session");
         doc2.listeners.forEach((listener) => listener("remote"));
       }
@@ -10258,7 +10325,7 @@ var EditorDocument = class {
     this.shadow.on("update", this.publish);
   }
   snapshot() {
-    return { text: this.text.toString(), epoch: this.epoch, serial: this.serial, ...this.doc.restoredDirty ? { dirty: true } : {} };
+    return { text: this.text.toString(), epoch: this.epoch, serial: this.serial, ...this.doc.restoredDirty ? { dirty: true } : {}, syncMessage: this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "") };
   }
   local(request) {
     if (!this.ready || request.epoch !== this.epoch || request.serial !== this.serial + 1 || !Array.isArray(request.parts))
@@ -10287,7 +10354,7 @@ var EditorDocument = class {
     const text2 = probe.getText("text").toString();
     probe.destroy();
     this.offer = { update, version: this.version, epoch: this.epoch + 1, serial: this.serial };
-    this.emit({ ev: "view.remote", handle: this.handle, text: text2, parts, epoch: this.offer.epoch, serial: this.serial });
+    this.emit({ ev: "view.remote", handle: this.handle, text: text2, parts, epoch: this.offer.epoch, serial: this.serial, dirty: this.doc.buffered && this.doc.restoredDirty });
   }
   acknowledge(request) {
     const offer = this.offer;
@@ -10332,6 +10399,9 @@ var EditorDocuments = class {
         view.ready = false;
         this.emit({ ev: "view.error", handle: view.handle, code, message });
       }
+    });
+    this.unsubscribeStatus = client.on?.("document-status", ({ path: path2, message }) => {
+      for (const view of this.documents.values()) if (view.doc.path === path2) this.emit({ ev: "view.status", handle: view.handle, message });
     });
   }
   request(op, request) {
@@ -10409,6 +10479,7 @@ var EditorDocuments = class {
     this.closed = true;
     this.unsubscribe?.();
     this.unsubscribeDocument?.();
+    this.unsubscribeStatus?.();
     for (const view of this.documents.values()) {
       view.dispose();
       void view.doc.close();
