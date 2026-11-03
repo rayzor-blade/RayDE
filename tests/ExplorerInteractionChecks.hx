@@ -17,9 +17,12 @@ import rayde.workspace.Fs;
 class ExplorerInteractionChecks {
  static function check(ok:Bool, why:String):Void { if (!ok) throw why; }
  static function main():Void {
-  var previous = Fs.current, home = Sys.getEnv("HOME"), ext = Sys.getEnv("RAYDE_EXTENSIONS");
-  try for (dark in [false,true]) run(dark) catch (error:Dynamic) { Fs.current=previous; Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",ext); throw error; }
-  Fs.current=previous; Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",ext);
+  var previous = Fs.current, home = Sys.getEnv("HOME"), ext = Sys.getEnv("RAYDE_EXTENSIONS"), standalone = Sys.getEnv("RAYDE_STANDALONE");
+  #if rayde_page
+  Sys.putEnv("RAYDE_STANDALONE","1");
+  #end
+  try for (dark in [false,true]) run(dark) catch (error:Dynamic) { Fs.current=previous; Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",ext); Sys.putEnv("RAYDE_STANDALONE",standalone); throw error; }
+  Fs.current=previous; Sys.putEnv("HOME",home); Sys.putEnv("RAYDE_EXTENSIONS",ext); Sys.putEnv("RAYDE_STANDALONE",standalone);
   Sys.println("Explorer gestures: moves, dirty tabs/undo, hover expansion, cancellation, collisions, refusal and cleanup; repository picker: signed-out state and cancellation in both themes");
  }
  static function run(dark:Bool):Void {
@@ -74,6 +77,11 @@ class ExplorerInteractionChecks {
    scroll.jumpTo(0,0);settle();
    #if rayde_page
    var account=box("#rayde-account-action");check(account.x>900&&account.x+account.width<=1100,"Account button is not in the top-right header");
+   Sys.putEnv("RAYDE_STANDALONE","0");
+   var landingOwner=new Owner(tree),landing=landingOwner.run(()->bench.shellPart.barEnd("macos",false));
+   check(Css.query(tree,landing.node.id,"#rayde-account").length==0,"Landing demo mounted account/retry controls");
+   check(Css.query(tree,landing.node.id,"[data-account]").length==0,"Landing header reserved account-control spacing");
+   landingOwner.dispose();Sys.putEnv("RAYDE_STANDALONE","1");
    var signedOut=false;bench.dirty.set(["/work/to/one.txt"]);bench.shellPart.beforeSignOut(()->signedOut=true);
    check(!signedOut&&bench.prompt.get()!=null&&bench.prompt.get().action=="Save and Sign Out","Sign-out bypassed unsaved edits");
    bench.prompt.set(null);bench.dirty.set([]);bench.shellPart.beforeSignOut(()->signedOut=true);check(signedOut,"Clean sign-out was blocked by a prompt");settle();

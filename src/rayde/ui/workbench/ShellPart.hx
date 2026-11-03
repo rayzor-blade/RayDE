@@ -291,8 +291,11 @@ class ShellPart {
 		var controlsLeft = WindowControls.onLeft(style), width = 112 + (controlsLeft ? 0 : WindowControls.width(style));
 		var account:Array<Element> = [];
 		#if (wasm || rayde_page)
-		width += 136;
-		if (!leftEnd) account.push(<account-control beforeSignOut={beforeSignOut} say={wb.say}/>);
+		var showAccount = rayde.Platform.standalone();
+		if (showAccount) {
+			width += 136;
+			if (!leftEnd) account.push(<account-control beforeSignOut={beforeSignOut} say={wb.say}/>);
+		}
 		#end
 		var end = <div class="rayde-bar-end flex items-center shrink-0" width={width}>
 			<if {!leftEnd}><for {state in [wb.runPart.statusState()]}>${wb.runPart.runControls(state)}</for></if>
@@ -303,7 +306,7 @@ class ShellPart {
 		identity.setAttribute("data-side",leftEnd ? "left" : "right");
 		identity.setAttribute("data-controls",controlsLeft ? "left" : "right");
 		#if (wasm || rayde_page)
-		identity.setAttribute("data-account", "");
+		if (showAccount) identity.setAttribute("data-account", "");
 		#end
 		return end;
 	}

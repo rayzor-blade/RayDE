@@ -6,6 +6,7 @@ import ashui.layout.Node;
 import ashui.reactive.Owner;
 import rayde.sync.ResourceUsage;
 import rayde.ui.WorkspaceResources;
+import rayde.ui.SyncPanel;
 
 class WorkspaceResourcesChecks {
 	static function check(ok:Bool,message:String):Void {if(!ok)throw message;}
@@ -26,6 +27,7 @@ class WorkspaceResourcesChecks {
 		usage.refresh();usage.frame();requests[4].resolve({result:{available:false,status:"unprovisioned"}});usage.frame();time=10000;usage.frame();check(requests.length==5,"Local demo should not poll for nonexistent compute");
 		usage.close();usage.refresh();usage.frame();check(requests.length==5,"Disposed resources kept polling");
 		for(dark in [true,false])for(width in [240,320])render(dark,width);
+		for(dark in [true,false])panel(dark);
 		Sys.println("workspace resources: async loading, single-flight refresh, hidden/disposed polling, account fencing, unavailable states and narrow light/dark layout");
 	}
 	static function sample():ResourceSample return {available:true,cpuPercent:23.4,cpuLimit:2,memoryBytes:805306368,memoryLimitBytes:3221225472.,storageBytes:134217728,storageLimitBytes:1073741824,uptimeSeconds:640,durationLimitSeconds:3600};
@@ -39,6 +41,33 @@ class WorkspaceResourcesChecks {
 		for(id in ["cpu","memory","storage","uptime"]){var nodes=Css.query(tree,root.node.id,"#rayde-resources-"+id);check(nodes.length==1,"Missing metric "+id);var b=tree.getScrolledBounds(new Node(nodes[0]));check(b.width>0 && b.x>=0 && b.x+b.width<=width && b.height>0,"Metric row clips sidebar: "+id+" "+Std.string(b));}
 		Snapshot.capture("workspace-resources-"+(dark?"dark":"light")+"-"+width,tree,root.node,width,520);
 		state.set({loading:false,message:"Workspace usage is temporarily unavailable."});settle();check(Css.query(tree,root.node.id,"#rayde-resources-message").length==1,"Unavailable state has no feedback");
+		stop();tree.dispose();
+	}
+	static function panel(dark:Bool):Void {
+		ashui.theme.ThemeState.init(rayde.ui.Theming.bundle("restrained"),dark?Dark:Light);rayde.ui.Style.use();
+		var tree=new LayoutTree(),stop:Void->Void=null;
+		var resources=ashui.reactive.Signal.make(({loading:true,message:""}:ResourceState));
+		var state=ashui.reactive.Signal.make(rayde.sync.SyncState.Sync.empty(SignedOut));
+		var saved=ashui.reactive.Signal.make((null:Null<rayde.ui.SyncPanel.SaveBack>));
+		var fallback=ashui.reactive.Signal.make((null:Null<String>));
+		var root=Owner.root(tree,cleanup->{stop=cleanup;return <div id="rayde" widthPercent={1} heightPercent={1}><for {message in [fallback.get()]}><sync-panel workspace="Pocket Studio" state={state} now={()->0.} saveBack={saved} resources={resources} onRefreshResources={()->{}} unavailableMessage={message}
+			onPull={()->{}} onResolve={_->{}} onPick={(_,_) -> {}} onApply={()->{}} onDiff={_->{}} onSignIn={()->{}} onInitGit={()->{}} onSync={()->{}} onCancel={()->{}} onRetry={()->{}}
+			onCopy={()->{}} onOpen={()->{}} onShare={()->{}} onPause={()->{}} onExport={()->{}} onExtend={()->{}} onDisconnect={()->{}} onDelete={()->{}} onExpiry={_->{}}/></for></div>;});
+		function settle():Void for(_ in 0...4){Offscreen.advance(.025);Css.setViewport(320,900);Css.update();tree.flush();tree.computeLayout(root.node,320,900);}
+		function has(selector:String):Bool return Css.query(tree,root.node.id,selector).length==1;
+		try {
+			settle();check(has("#rayde-sync-sign-in")&&has("#rayde-sync-phase")&&!has("#rayde-workspace-resources"),"Resource loading replaced the default Cloud Sync view");
+			resources.set({loading:false,message:"Usage is available in a provisioned cloud workspace.",sample:{available:false,status:"unprovisioned"}});settle();
+			check(has("#rayde-sync-sign-in")&&!has("#rayde-workspace-resources"),"An unprovisioned workspace replaced Cloud Sync with unavailable statistics");
+			fallback.set("Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link.");settle();
+			check(has("#rayde-sync-unavailable")&&!has("#rayde-workspace-resources"),"Resources suppressed the existing browser guidance");
+			Snapshot.capture("cloud-sync-browser-default-"+(dark?"dark":"light"),tree,root.node,320,900);
+			fallback.set(null);state.set(rayde.sync.SyncState.Sync.empty(Ready));resources.set({loading:false,message:"",sample:sample()});settle();
+			check(has("#rayde-sync-start")&&has("#rayde-sync-phase")&&has("#rayde-workspace-resources"),"Provisioned statistics replaced sync controls");
+			Snapshot.capture("cloud-sync-with-resources-"+(dark?"dark":"light"),tree,root.node,320,900);
+			saved.set({generation:4,busy:false,message:"",failed:false,canMerge:false,conflicts:[]});settle();
+			check(has("#rayde-sync-save")&&has("#rayde-sync-generation")&&has("#rayde-workspace-resources"),"Statistics replaced save-back controls");
+		} catch(error:Dynamic){stop();tree.dispose();throw error;}
 		stop();tree.dispose();
 	}
 }
