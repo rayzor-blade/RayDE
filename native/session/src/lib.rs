@@ -1,6 +1,7 @@
 //! RayDE's workspace session. The core is platform-neutral: a store, documents and a protocol. `server` adds a directory store, programs and a socket.
 pub mod auth;
 pub mod checkpoint;
+pub mod cloud;
 pub mod framing;
 mod buffer_state;
 pub mod docs;
@@ -20,6 +21,8 @@ mod read_roots;
 mod previews;
 #[cfg(feature = "server")]
 mod writeback;
+#[cfg(feature = "server")]
+mod cloud_gateway;
 #[cfg(feature = "server")]
 mod sync_state;
 #[cfg(feature = "server")]

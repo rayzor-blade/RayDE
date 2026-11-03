@@ -77,6 +77,11 @@ impl<S: FileStore> Workspace<S> {
     pub(crate) fn set_sources(&self, sources:crate::read_roots::ReadRoots) { let _ = self.sources.set(sources); }
     #[cfg(feature = "server")]
     pub(crate) fn set_writeback(&self,writeback:Arc<crate::writeback::Writeback>){let _=self.writeback.set(writeback);}
+    fn cloud_failed(&self,error:&SessionError){
+        #[cfg(feature="server")]
+        if error.code=="sync-auth" {if let Some(writeback)=self.writeback.get(){writeback.failure(error);self.sync_changed();}}
+        #[cfg(not(feature="server"))] let _=error;
+    }
     fn writeback_state(&self)->Value {
         #[cfg(feature = "server")] if let Some(writeback)=self.writeback.get(){return writeback.describe();}
         Value::Null
@@ -271,7 +276,7 @@ impl<S: FileStore> Connection<S> {
                     }
                     self.ready = true;
                 }
-                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "documentLookup":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "syncWriteback":workspace.writeback_state(), "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
+                Ok(json!({"protocol": PROTOCOL, "checkpoints":1, "bufferedRestore":1, "journals":1, "privateJournals":1, "fileMutations":1, "documentIdentities":if store.document_identities(){1}else{0}, "documentLookup":if store.document_identities(){1}else{0}, "closedDocumentMoves":if store.document_identities(){1}else{0}, "name": store.name(), "client": self.name, "root": store.root(), "readRoots":workspace.read_roots(), "exec": workspace.programs.is_some(), "appPreviews":workspace.previews_available(), "webPreviews":workspace.web_previews_available(), "syncWriteback":workspace.writeback_state(), "cloudDocuments":if workspace.docs.cloud_available(){1}else{0}, "host":{"os":std::env::consts::OS,"arch":std::env::consts::ARCH}, "syntax":workspace.syntax.get().is_some(), "terminal":workspace.terminals.get().is_some(), "terminalProfiles":workspace.terminals.get().map(|t|t.profiles()), "extensions": workspace.programs.as_ref().and_then(|programs| programs.extensions()), "signin": workspace.authority.as_ref().map(|a| a.login_url()), "identity": self.identity.as_ref().map(|i| i.login.clone()), "cacheIdentity":self.cache_identity()}))
             }
             "auth.login" => {
                 let authority = workspace.authority.as_ref().ok_or_else(|| SessionError::new("bad-request", "This session does not ask for a sign-in."))?;
@@ -343,11 +348,12 @@ impl<S: FileStore> Connection<S> {
                 let out = self.out.clone();
                 let event_path = path.clone();
                 let send = Arc::new(move |update: Vec<u8>| out(json!({"ev": "doc.update", "path": event_path, "update": B64.encode(update)}).to_string()));
-                let opened = workspace.docs.attach_identified(&path, &self.name, vector.as_deref(), expected, send).await?;
+                let lineage=request.get("cloudLineage").and_then(Value::as_str);
+                let opened = workspace.docs.attach_mode(&path, &self.name, vector.as_deref(), expected,lineage,request["cloud"]==true, send).await.inspect_err(|error|workspace.cloud_failed(error))?;
                 if !self.docs.contains(&path) {
                     self.docs.push(path);
                 }
-                Ok(json!({"documentId":opened.document_id,"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty}))
+                Ok(json!({"documentId":opened.document_id,"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty,"cloudLineage":opened.cloud_lineage,"cloudLegacy":opened.cloud_legacy}))
             }
             "doc.update" => {
                 let path = clean(text(request, "path")?)?;
@@ -355,11 +361,12 @@ impl<S: FileStore> Connection<S> {
                 if !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before editing it.")); }
                 let update = bytes(request, "update")?;
                 if request["journal"] == true {
-                    let delta = workspace.docs.receive_journal(&path, &self.name, &update, text(request, "vector")?)?;
-                    workspace.docs.persist_journal(&path).await?;
+                    let mut delta = workspace.docs.receive_journal(&path, &self.name, &update, text(request, "vector")?)?;
+                    if let Some(state)=workspace.docs.sync_cloud(&path).await.inspect_err(|error|workspace.cloud_failed(error))?{delta=crate::docs::DocHub::<S>::journal_from(&state,text(request,"vector")?)?;}else{workspace.docs.persist_journal(&path).await?;}
                     Ok(json!({"journal":delta}))
                 } else {
-                    workspace.docs.receive(&path, &self.name, &update).map(|_| json!({}))
+                    workspace.docs.receive(&path, &self.name, &update)?;
+                    workspace.docs.sync_cloud(&path).await.inspect_err(|error|workspace.cloud_failed(error))?;Ok(json!({}))
                 }
             }
             "doc.save" => {
@@ -367,7 +374,7 @@ impl<S: FileStore> Connection<S> {
                 if let Some(id)=request.get("documentId") {if id.as_str().is_none() || store.document_identity(&path).await?.as_deref()!=id.as_str(){return Err(SessionError::new("document-changed","The path belongs to a different document."));}}
                 let checkpoint = request["checkpoint"] == true;
                 if checkpoint && !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before saving its checkpoint.")); }
-                let saved = workspace.docs.save(&path,checkpoint).await?;
+                let saved = workspace.docs.save(&path,checkpoint).await.inspect_err(|error|workspace.cloud_failed(error))?;
                 let mut reply = json!({"written":saved.written,"mtime":saved.mtime});
                 if let Some(state) = saved.state { reply["checkpoint"] = json!(crate::checkpoint::pack(&state)?); }
                 Ok(reply)

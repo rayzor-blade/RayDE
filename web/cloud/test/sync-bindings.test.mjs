@@ -1,0 +1,44 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn,spawnSync} from 'node:child_process';
+import {createServer} from 'node:net';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import WebSocket from 'ws';
+import {SessionClient} from '../../session/src/client.js';
+const pushCli=resolve('../../native/sync/target/debug/examples/push'),docCli=resolve('../../native/sync/target/debug/examples/document');
+const port=()=>new Promise(done=>{const server=createServer().listen(0,'127.0.0.1',()=>{const p=server.address().port;server.close(()=>done(p));});});
+const pause=ms=>new Promise(done=>setTimeout(done,ms));
+async function until(check,label){const deadline=Date.now()+15000;while(!await check()){if(Date.now()>deadline)throw Error('Timed out: '+label);await pause(30);}}
+
+test('the browser editor binds to cloud history, keeps unsaved disk separate, and resumes after service restart',async t=>{
+ const data=await mkdtemp(join(tmpdir(),'rayde-binding-gateway-')),root=await mkdtemp(join(tmpdir(),'rayde-binding-source-')),p=await port(),base=`http://127.0.0.1:${p}`;
+ let child,log='',stopped=true;
+ const start=async()=>{log='';child=spawn('node',['dev/sync-dev.mjs','--port',String(p),'--data',data],{stdio:['ignore','pipe','inherit']});stopped=false;child.stdout.on('data',chunk=>{log+=String(chunk);});await until(()=>{if(child.exitCode!==null)throw Error('The gateway exited');return log.includes('Cloud Sync gateway');},'gateway startup');};
+ const stop=async()=>{if(stopped)return;stopped=true;const exit=new Promise(done=>child.once('exit',done));child.kill();await exit;child.stdout.destroy();};
+ t.after(async()=>{await stop();await rm(data,{recursive:true,force:true});await rm(root,{recursive:true,force:true});});await start();
+ const git=(...args)=>{const r=spawnSync('git',['-C',root,'-c','user.name=T','-c','user.email=t@example.invalid','-c','commit.gpgsign=false',...args],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);};
+ git('init','-q','-b','main');await writeFile(join(root,'a.txt'),'base 🦀');git('add','.');git('commit','-qm','first');
+ const pushed=spawnSync(pushCli,[root,base,'alice'],{encoding:'utf8'}),initial=JSON.parse(pushed.stdout.trim().split('\n').at(-1));assert.equal(initial.event,'published',JSON.stringify(initial));const id=initial.url.split('/').pop();
+ const api=(path,init={})=>fetch(base+path,{...init,headers:{'X-Dev-Account':'alice',...init.headers}});
+ assert.equal((await api(`/api/sync/workspaces/${id}/open`,{method:'POST'})).status,200);
+ const login=await fetch(`${base}/auth/dev?account=alice&return=/${id}`,{redirect:'manual'}),cookie=login.headers.getSetCookie()[0].split(';')[0];
+ const ready=()=>until(async()=>{const state=await(await fetch(`${base}/api/workspaces/${id}`,{headers:{Cookie:cookie}})).json();if(state.status==='failed')throw Error(state.message);return state.status==='ready';},'workspace readiness');await ready();
+ const previousSocket=globalThis.WebSocket;
+ globalThis.WebSocket=class extends WebSocket{constructor(url){super(url,{headers:{Cookie:cookie,Origin:base}});}};
+ t.after(()=>{globalThis.WebSocket=previousSocket;});
+ const connect=async()=>{const client=new SessionClient({url:`ws://127.0.0.1:${p}/api/workspaces/${id}/socket`,persist:false,reconnect:false,timeout:10000});await client.connect();return client;};
+ let client=await connect();t.after(()=>client.close());let doc=await client.openDoc('a.txt');assert.ok(doc.cloudLineage);assert.equal(doc.text.toString(),'base 🦀');
+ const disk=join(data,'workspaces',id,'1',root.split('/').pop(),'a.txt');
+ doc.text.insert(0,'browser ');await until(()=>!doc.unsent,'cloud acknowledgement');assert.equal(await readFile(disk,'utf8'),'base 🦀');
+ const native=spawnSync(docCli,[base,'alice',id,'a.txt',' native'],{encoding:'utf8'});assert.equal(native.status,0,native.stderr);
+ await doc.sync();assert.equal(doc.text.toString(),'browser base 🦀 native');assert.equal(await readFile(disk,'utf8'),'base 🦀');
+ await doc.save();assert.equal(await readFile(disk,'utf8'),doc.text.toString());
+ const lineage=doc.cloudLineage;await doc.close();client.close();await stop();await start();
+ assert.equal((await api(`/api/sync/workspaces/${id}/open`,{method:'POST'})).status,200);await ready();client=await connect();doc=await client.openDoc('a.txt');assert.equal(doc.cloudLineage,lineage);assert.equal(doc.text.toString(),'browser base 🦀 native');
+ doc.text.insert(doc.text.length,' after restart');await until(()=>!doc.unsent,'resumed cloud acknowledgement');assert.equal(await readFile(disk,'utf8'),'browser base 🦀 native');await doc.save();
+ assert.equal((await client.request('sync.publish')).generation,2);
+ const manifest=await(await api(`/api/sync/workspaces/${id}/export/manifest`)).json();const file=manifest.files.find(f=>f.path==='a.txt');const content=Buffer.from(await(await api(`/api/sync/workspaces/${id}/export/chunks/${file.chunks[0].hash}`)).arrayBuffer()).toString();assert.equal(content,doc.text.toString());
+ await doc.close();
+});

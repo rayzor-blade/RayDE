@@ -191,6 +191,7 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools,&options.environment).await?)} else {None};
     if let Some(previews)=&previews {workspace.set_previews(previews.registry.clone());}
     if let Some(writeback)=crate::writeback::Writeback::from_env(store.clone()) {
+        workspace.docs.set_cloud(Arc::new(crate::cloud_gateway::Gateway::new(writeback.clone())));
         workspace.set_writeback(writeback.clone());
         let weak=Arc::downgrade(&workspace);
         tokio::spawn(async move{writeback.initialize().await;if let Some(workspace)=weak.upgrade(){workspace.sync_changed();}});

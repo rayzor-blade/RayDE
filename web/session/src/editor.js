@@ -62,7 +62,7 @@ export class EditorDocument {
     this.shadow.on("update", this.publish);
   }
 
-  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial, ...(this.doc.restoredDirty ? {dirty:true} : {})}; }
+  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial, ...(this.doc.restoredDirty ? {dirty:true} : {}),syncMessage:this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "")}; }
 
   local(request) {
     if (!this.ready || request.epoch !== this.epoch || request.serial !== this.serial + 1 || !Array.isArray(request.parts))
@@ -90,7 +90,7 @@ export class EditorDocument {
     const text = probe.getText("text").toString();
     probe.destroy();
     this.offer = {update, version:this.version, epoch:this.epoch + 1, serial:this.serial};
-    this.emit({ev:"view.remote", handle:this.handle, text, parts, epoch:this.offer.epoch, serial:this.serial});
+    this.emit({ev:"view.remote", handle:this.handle, text, parts, epoch:this.offer.epoch, serial:this.serial,dirty:this.doc.buffered && this.doc.restoredDirty});
   }
 
   acknowledge(request) {
@@ -133,6 +133,9 @@ export class EditorDocuments {
         view.ready = false;
         this.emit({ev:"view.error",handle:view.handle,code,message});
       }
+    });
+    this.unsubscribeStatus=client.on?.("document-status",({path,message})=>{
+      for(const view of this.documents.values())if(view.doc.path===path)this.emit({ev:"view.status",handle:view.handle,message});
     });
   }
 
@@ -191,6 +194,7 @@ export class EditorDocuments {
     this.closed = true;
     this.unsubscribe?.();
     this.unsubscribeDocument?.();
+    this.unsubscribeStatus?.();
     for (const view of this.documents.values()) { view.dispose(); void view.doc.close(); }
     this.documents.clear();
   }

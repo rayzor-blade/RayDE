@@ -55,7 +55,7 @@ impl Writeback {
             working: tokio::sync::Mutex::new(()),
         }))
     }
-    fn config(&self) -> Config {
+    pub(crate) fn config(&self) -> Config {
         Config {
             root: self.store.root().into(),
             gateway: self.gateway.clone(),
@@ -83,7 +83,7 @@ impl Writeback {
             error: None,
         };
     }
-    fn failure(&self, error: &SessionError) {
+    pub(crate) fn failure(&self, error: &SessionError) {
         let mut status = self.status.lock().unwrap();
         status.ready = false;
         status.message = error.message.clone();

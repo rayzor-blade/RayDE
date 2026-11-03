@@ -26,6 +26,19 @@ function openDatabase(name, create) {
   });
 }
 
+/** Verify a cloud namespace before attaching its updates to an already bound replica. */
+export async function cloudHeader(name){
+  const db=await openDatabase(name,false);if(!db)return{populated:false,cloud:undefined};
+  try{
+    if(!db.objectStoreNames.contains("updates")||!db.objectStoreNames.contains("custom"))throw failure("The browser recovery store is invalid.");
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(["updates","custom"],"readonly"),cloud=tx.objectStore("custom").get("rayde:cloud-lineage"),last=tx.objectStore("updates").openKeyCursor(null,"prev");
+      tx.oncomplete=()=>resolve({cloud:cloud.result,populated:last.result!=null});
+      tx.onerror=tx.onabort=()=>reject(tx.error??failure("Could not inspect browser recovery."));
+    });
+  }finally{db.close();}
+}
+
 /** Only verified path hints live here; document graphs have separate identity keys. */
 export class RecoveryDirectory {
   async database() { return this.opening ??= openDatabase("rayde-document-bindings-v1",true); }

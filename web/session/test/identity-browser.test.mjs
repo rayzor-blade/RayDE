@@ -290,3 +290,56 @@ test('a live move retains a recovered dirty graph over its saved disk baseline u
   assert.equal(readFileSync(join(f.a,'moved.txt'),'utf8'),'alpha + unsaved');
  }finally{await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
 });
+
+// The mock transport supplies a fixed seed; recovery uses real IndexedDB across a page reload.
+for(const identified of [false,true])test(`cloud lineage and offline graph recover together while unbound history stays fenced (${identified?'identified':'hosted'})`,{skip:!existsSync(chrome)},async()=>{
+ const f=fixture(),port=await freePort(),stop=await start(f.a,port,f.state);let page;
+ const Y=await import('yjs'),seed=new Y.Doc();seed.clientID=0;seed.getText('text').insert(0,'cloud seed');
+ const offer={documentId:'d'.repeat(64),cloudLineage:'e'.repeat(64),update:Buffer.from(Y.encodeStateAsUpdate(seed)).toString('base64'),vector:Buffer.from(Y.encodeStateVector(seed)).toString('base64'),buffered:true};
+ const workspace='cloud-persistence-'+crypto.randomUUID();
+ try{
+  page=await pageAt(port);
+  await page.evaluate(async({offer,workspace,identified})=>{
+   const {SessionClient}=await import('/session-client.js');const client=new SessionClient({url:location.origin.replace('http:','ws:')+'/session',persist:true});
+   client.ready=client.cacheable=true;client.workspace=workspace;client.hello={documentIdentities:identified?1:0,cloudDocuments:1};client.request=async op=>op==='doc.open'?offer:{};
+   const doc=await client.openDoc('cloud.txt');client.ready=false;doc.text.insert(doc.text.length,' + offline');await doc.checkpoint();await doc.close();client.close();
+  },{offer,workspace,identified});
+  await page.reload();await page.waitForFunction(()=>window.demo?.client.ready);
+  const recovered=await page.evaluate(async({offer,workspace,identified})=>{
+   const {SessionClient,Doc}=await import('/session-client.js');
+   const make=()=>{const client=new SessionClient({url:location.origin.replace('http:','ws:')+'/session',persist:true});client.ready=client.cacheable=true;client.workspace=workspace;client.hello={documentIdentities:identified?1:0,cloudDocuments:1};client.request=async op=>op==='doc.open'?offer:{};return client;};
+   const client=make(),doc=await client.openDoc('cloud.txt'),text=doc.text.toString();
+   const cloud=await doc.persistence.get('rayde:cloud-lineage');
+   await new Promise((resolve,reject)=>{const tx=doc.persistence.db.transaction('custom','readwrite');tx.objectStore('custom').delete('rayde:cloud-lineage');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
+   await doc.close();client.close();
+   const again=make();let code;try{await again.openDoc('cloud.txt');}catch(error){code=error.code;}
+   again.ready=false;const kept=new Doc(again,'cloud.txt');kept.identify(offer.documentId);await kept.recover(identified?`rayde:v3:${JSON.stringify([workspace,offer.documentId])}`:`rayde:v2:${JSON.stringify([workspace,"cloud.txt"])}`);const preserved=kept.text.toString();await kept.close();again.close();
+   return{text,cloud,code,preserved};
+  },{offer,workspace,identified});
+  assert.equal(recovered.text,'cloud seed + offline');assert.equal(recovered.cloud.lineage,offer.cloudLineage);assert.equal(recovered.code,'document-lineage');assert.equal(recovered.preserved,recovered.text);
+ }finally{seed.destroy();await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
+});
+
+test('a cloud replica checks account recovery before importing an unbound graph',{skip:!existsSync(chrome)},async()=>{
+ const f=fixture(),port=await freePort(),stop=await start(f.a,port,f.state);let page;
+ const Y=await import('yjs'),seed=new Y.Doc();seed.clientID=0;seed.getText('text').insert(0,'cloud seed');
+ const offer={documentId:'d'.repeat(64),cloudLineage:'e'.repeat(64),update:Buffer.from(Y.encodeStateAsUpdate(seed)).toString('base64'),vector:Buffer.from(Y.encodeStateVector(seed)).toString('base64'),buffered:true};
+ try{
+  page=await pageAt(port);
+  const result=await page.evaluate(async offer=>{
+   const {SessionClient,Doc}=await import('/session-client.js'),scope=crypto.randomUUID();
+   const make=workspace=>{const client=new SessionClient({url:location.origin.replace('http:','ws:')+'/session',persist:true});client.ready=client.cacheable=true;client.workspace=workspace;client.hello={documentIdentities:1,cloudDocuments:1};client.request=async op=>op==='doc.open'?offer:{};return client;};
+   const viewer=make(scope+'-viewer'),doc=await viewer.openDoc('cloud.txt');viewer.ready=false;
+   doc.text.insert(doc.text.length,' + private');await doc.checkpoint();
+   const account=make(scope+'-account');account.ready=false;const foreign=new Doc(account,'cloud.txt');foreign.identify(offer.documentId);
+   const name=`rayde:v3:${JSON.stringify([account.workspace,offer.documentId])}`;
+   await foreign.recover(name);foreign.text.insert(0,'unbound account draft');await foreign.checkpointGraph();await foreign.close();
+   viewer.workspace=account.workspace;let code;try{await doc.moveRecovery();}catch(error){code=error.code;}
+   const active=doc.text.toString();await doc.close();viewer.close();
+   const kept=new Doc(account,'cloud.txt');kept.identify(offer.documentId);await kept.recover(name);
+   const preserved=kept.text.toString(),tag=await kept.persistence.get('rayde:cloud-lineage');await kept.close();account.close();return{code,active,preserved,tag};
+  },offer);
+  assert.equal(result.code,'document-lineage');assert.equal(result.active,'cloud seed + private');
+  assert.equal(result.preserved,'unbound account draft');assert.equal(result.tag,undefined);
+ }finally{seed.destroy();await page?.close().catch(()=>{});await stop();rmSync(f.base,{recursive:true,force:true});}
+});

@@ -14,7 +14,7 @@ Text edits continue while disconnected and are kept in browser storage for recon
 
 Hosted sessions record acknowledged edits in durable recovery. **Save** waits for pending edits to reach the host before writing the file. A failed save leaves the tab marked as changed and reports the error. Build and workspace switching wait for successful saves.
 
-The host also writes shared edits as they settle. Hosted sessions store a document recovery checkpoint before confirming Save. This checkpoint covers the saved document, rather than a backup of the whole workspace.
+Ordinary session documents write through as edits settle. Cloud-bound documents keep edits in recovery until you choose **Save**, which writes the file on the host. Hosted sessions store a document recovery checkpoint before confirming Save. This checkpoint covers the saved document, rather than a backup of the whole workspace.
 
 ## Tools and extensions
 

@@ -35,7 +35,7 @@ fn decode(value: &str, limit: usize) -> Result<Vec<u8>, Failure> {
     Ok(bytes)
 }
 fn request(config: &Config, path: &str, op: &str, body: Value) -> Result<Reply, Failure> {
-    let (gateway, workspace) = existing_workspace(config)?;
+    let (gateway, workspace) = connection(config)?;
     WorkspaceId::parse(&workspace).map_err(|_| invalid())?;
     if crate::manifest::path_problem(path, &crate::lifecycle::Limits::default()).is_some()
         || path.is_empty()
@@ -74,6 +74,16 @@ fn request(config: &Config, path: &str, op: &str, body: Value) -> Result<Reply, 
         sha256: wire.sha256,
         anchor: wire.anchor,
     })
+}
+fn connection(config:&Config)->Result<(Gateway,String),Failure>{
+    let (mut gateway,workspace)=existing_workspace(config)?;
+    WorkspaceId::parse(&workspace).map_err(|_|invalid())?;
+    gateway.agent=ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(5)).timeout(Duration::from_secs(15)).build();
+    Ok((gateway,workspace))
+}
+pub fn manifest(config:&Config)->Result<Manifest,Failure>{
+    let (gateway,workspace)=connection(config)?;
+    Manifest::from_bytes(&gateway.call_limited("GET",&format!("/workspaces/{workspace}/export/manifest"),None,Some(16*1024*1024))?).map_err(|_|invalid())
 }
 pub fn open(config: &Config, path: &str, generation: u64) -> Result<Reply, Failure> {
     let reply = request(

@@ -5,7 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 const MAGIC: &[u8] = b"\xffrayde-buffer\0";
-pub(crate) const MAX_HEADER: usize = 8192;
+pub(crate) const MAX_HEADER: usize = 128 * 1024;
 pub(crate) const PREFIX: usize = MAGIC.len() + 4;
 
 #[derive(Serialize, Deserialize)]
@@ -18,6 +18,8 @@ pub(crate) struct Baseline {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     binding: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud: Option<crate::cloud::Binding>,
 }
 pub(crate) fn digest(value: &str) -> bool {
     value.len() == 64
@@ -33,6 +35,19 @@ fn invalid() -> SessionError {
 }
 impl Baseline {
     fn checksum(&self) -> Result<String> {
+        if self.version == 4 {
+            return Ok(checkpoint::digest(
+                &serde_json::to_vec(&(
+                    self.version,
+                    &self.disk,
+                    &self.saving,
+                    &self.graph,
+                    &self.path,
+                    &self.cloud,
+                ))
+                .map_err(|_| invalid())?,
+            ));
+        }
         Ok(checkpoint::digest(
             &serde_json::to_vec(&(
                 self.version,
@@ -55,6 +70,18 @@ impl Baseline {
 
 /// The graph and both sides of an in-progress Save share one atomic private record.
 pub(crate) fn pack(state: &[u8], disk: &str, saving: Option<&str>, path: &str) -> Result<Vec<u8>> {
+    pack_cloud(state, disk, saving, path, None)
+}
+pub(crate) fn pack_cloud(
+    state: &[u8],
+    disk: &str,
+    saving: Option<&str>,
+    path: &str,
+    cloud: Option<crate::cloud::Binding>,
+) -> Result<Vec<u8>> {
+    if let Some(cloud) = &cloud {
+        cloud.validate()?;
+    }
     if state.len() > checkpoint::MAX_BYTES {
         return Err(SessionError::new(
             "too-large",
@@ -70,12 +97,19 @@ pub(crate) fn pack(state: &[u8], disk: &str, saving: Option<&str>, path: &str) -
         return Err(invalid());
     }
     let mut header = Baseline {
-        version: if path.starts_with("document:") {3} else {2},
+        version: if cloud.is_some() {
+            4
+        } else if path.starts_with("document:") {
+            3
+        } else {
+            2
+        },
         disk: disk.into(),
         saving: saving.map(String::from),
         graph: checkpoint::digest(state),
         path: Some(path.into()),
         binding: None,
+        cloud,
     };
     header.binding = Some(header.checksum()?);
     let header = serde_json::to_vec(&header).map_err(|_| invalid())?;
@@ -117,7 +151,7 @@ pub(crate) fn header(bytes: &[u8]) -> Result<Option<(Baseline, usize)>> {
     let mut header: Baseline =
         serde_json::from_slice(bytes.get(end..end + size).ok_or_else(invalid)?)
             .map_err(|_| invalid())?;
-    if !matches!(header.version, 1 | 2 | 3)
+    if !matches!(header.version, 1 | 2 | 3 | 4)
         || header.version >= 2
             && header
                 .path
@@ -132,7 +166,20 @@ pub(crate) fn header(bytes: &[u8]) -> Result<Option<(Baseline, usize)>> {
     if header.version >= 2 && header.binding.as_deref() != Some(header.checksum()?.as_str()) {
         return Err(invalid());
     }
-    if header.version==3 && !header.path.as_deref().and_then(|p|p.strip_prefix("document:")).is_some_and(digest){return Err(invalid());}
+    if header.version == 3
+        && !header
+            .path
+            .as_deref()
+            .and_then(|p| p.strip_prefix("document:"))
+            .is_some_and(digest)
+    {
+        return Err(invalid());
+    }
+    if header.version == 4 {
+        header.cloud.as_ref().ok_or_else(invalid)?.validate()?;
+    } else if header.cloud.is_some() {
+        return Err(invalid());
+    }
     if header.version == 1 {
         header.path = None;
     }
@@ -158,8 +205,14 @@ pub(crate) fn unpack(bytes: &[u8]) -> Result<Option<(Baseline, &[u8])>> {
     Ok(Some((header, state)))
 }
 
-#[cfg(feature="server")]
-pub(crate) fn rebind(bytes:&[u8],id:&str)->Result<Vec<u8>> {
-    let (header,graph)=unpack(bytes)?.ok_or_else(invalid)?;
-    pack(graph,&header.disk,header.saving.as_deref(),&format!("document:{id}"))
+#[cfg(feature = "server")]
+pub(crate) fn rebind(bytes: &[u8], id: &str) -> Result<Vec<u8>> {
+    let (header, graph) = unpack(bytes)?.ok_or_else(invalid)?;
+    pack_cloud(
+        graph,
+        &header.disk,
+        header.saving.as_deref(),
+        &format!("document:{id}"),
+        header.cloud,
+    )
 }

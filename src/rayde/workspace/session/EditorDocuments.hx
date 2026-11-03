@@ -35,9 +35,9 @@ class EditorDocuments {
 				}
 			}
 			if (event.ev == "session.connected") connected.set(true);
-			if (event.ev != "view.remote" && event.ev != "view.error") return;
+			if (event.ev != "view.remote" && event.ev != "view.error" && event.ev != "view.status") return;
 			for (binding in bindings) if (binding.handle == event.handle) {
-				if (event.ev == "view.error") binding.fail(event.message, event.code != "workspace-changed"); else binding.remote = event;
+				if(event.ev=="view.status")binding.statusPending=event.message;else if (event.ev == "view.error") binding.fail(event.message, event.code != "workspace-changed"); else binding.remote = event;
 				break;
 			}
 		});
@@ -69,7 +69,7 @@ class EditorDocuments {
 	}
 	public function message(file:String):String {
 		revision.get(); var binding = bindings.get(file);
-		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.moving.get() ? "Moving document…" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept in browser" : "";
+		return binding == null ? "" : binding.failure.get() != "" ? "Document sync paused" : binding.moving.get() ? "Moving document…" : binding.blocked.get() ? "Synchronizing document…" : !connected.get() ? "Offline · edits kept in browser" : binding.status.get();
 	}
 	public function acceptBuffer(file:String):Void { var binding = bindings.get(file); if (binding != null) binding.acceptBuffer(); }
 	public function pause(message:String):Void for (binding in bindings) binding.fail(message,false);
@@ -89,6 +89,8 @@ private class EditorBinding {
 	public final failure = Signal.make("");
 	public final moving = Signal.make(false);
 	public var remote:Dynamic;
+	public var statusPending:Null<String>;
+	public final status=Signal.make("");
 	final client:SessionClient;
 	final state:CodeEditorState;
 	public var file:String;
@@ -166,6 +168,7 @@ private class EditorBinding {
 		state.applyRemote(known, {caret:moved(position.caret), anchor:moved(position.anchor)});
 	}
 	public function frame():Void {
+		if(statusPending!=null){status.set(statusPending);statusPending=null;}
 		if (closed || broken || moving.get()) return;
 		if (saving != null && saving.future.isReady()) {
 			var completed = saving; saving = null;
@@ -180,6 +183,7 @@ private class EditorBinding {
 			try result = pending.await().result catch (error:Dynamic) { pending = null; fail(Std.string(error)); return; }
 			pending = null;
 			if (result == null || !Std.isOfType(result.text,String)) { fail("The workspace returned an invalid document."); return; }
+			if(Std.isOfType(result.syncMessage,String))status.set(result.syncMessage);
 			var previous = state.value.get();
 			if (opening) {
 				opening = false; known = result.text; state.applyRemote(known);
@@ -204,7 +208,7 @@ private class EditorBinding {
 			var accept = message.serial == serial;
 			if (accept) {
 				var previous = state.value.get(); apply(message); epoch = message.epoch;
-				if (previous != known) changed(false);
+				if (previous != known) changed(message.dirty==true);
 			}
 			notify("view.ack", {epoch:message.epoch, accept:accept});
 		}

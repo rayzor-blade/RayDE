@@ -3,7 +3,7 @@
 // reach the session when it is reachable and the person has signed in. A reconnect catches both sides up.
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
-import {RecoveryDirectory, validDocumentId, legacyName, recoveryName, readLegacy, recoveryHeader, checkpointRecovery, markLegacy} from "./recovery.js";
+import {RecoveryDirectory, validDocumentId, legacyName, recoveryName, readLegacy, recoveryHeader, checkpointRecovery, markLegacy, cloudHeader} from "./recovery.js";
 import {moveDocuments} from "./moves.js";
 
 export function cacheNamespace(address, identity) {
@@ -26,6 +26,8 @@ const b64 = {
     return bytes;
   },
 };
+const CLOUD_BINDING = "rayde:cloud-lineage";
+function cloudLineage(){return Object.assign(new Error("This document belongs to another cloud history. Its previous browser recovery is kept; reconcile it before continuing live sync."),{code:"document-lineage"});}
 
 export class SessionError extends Error {
   constructor(reply) {
@@ -52,6 +54,10 @@ export class Doc {
     this.persistence = null;
     this.persistences = new Set();
     this.documentId = null;
+    this.cloudLineage = null;
+    this.cloudLegacy = false;
+    this.cloudMessage = "";
+    this.buffered = false;
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = new Set();
@@ -87,9 +93,13 @@ export class Doc {
     this.client.documentIds?.set(id,this);
   }
 
-  async recover(name) {
+  async recover(name,expectedLineage=this.cloudLineage) {
     if (!this.persistent || this.persistence?.name === name) return;
     this.guard();
+    if(expectedLineage){
+      const header=await cloudHeader(name);this.guard();
+      if(header.cloud!==undefined && (header.cloud?.version!==1 || header.cloud.lineage!==expectedLineage) || header.populated && header.cloud===undefined)throw cloudLineage();
+    }
     const persistence = new IndexeddbPersistence(name,this.ydoc);
     this.persistences.add(persistence);
     // Destroying persistence suppresses its synced event, so closing must cancel the wait.
@@ -103,6 +113,11 @@ export class Doc {
     });
     this.guard();
     this.persistence = persistence;
+    const cloud=await persistence.get(CLOUD_BINDING);
+    if (cloud!==undefined) {
+      if(cloud?.version!==1 || !validDocumentId(cloud.lineage) || this.cloudLineage && this.cloudLineage!==cloud.lineage) throw cloudLineage();
+      this.cloudLineage=cloud.lineage;
+    }
   }
 
   async releaseOtherRecovery() {
@@ -136,10 +151,11 @@ export class Doc {
     const persistence = this.persistence;
     if (!persistence || this.closed) return;
     await new Promise((resolve,reject) => {
-      const tx = persistence.db.transaction("updates","readwrite");
+      const tx = persistence.db.transaction(["updates","custom"],"readwrite");
       tx.oncomplete = () => resolve();
       tx.onerror = tx.onabort = () => reject(tx.error ?? new Error("Could not preserve document recovery."));
       tx.objectStore("updates").add(Y.encodeStateAsUpdate(this.ydoc));
+      if(this.cloudLineage)tx.objectStore("custom").put({version:1,lineage:this.cloudLineage},CLOUD_BINDING);
     });
   }
 
@@ -190,12 +206,13 @@ export class Doc {
         reply = await this.open();
         this.identityHint = validDocumentId(reply.documentId) ? reply.documentId : null;
         this.applyReply(reply);
+        if(this.cloudLineage)await this.checkpointGraph();
         await this.releaseOtherRecovery();
       }
       this.guard();
       const missing = Y.encodeStateAsUpdate(this.ydoc,b64.decode(reply.vector));
       this.failed = false; this.suspended = false;
-      if (missing.length > 2 || this.client.hello?.durableUpdates) await this.send(missing,true);
+      if (missing.length > 2 || this.client.hello?.durableUpdates || this.cloudLineage) await this.send(missing,true);
       else if (this.inflight === 0) this.unsent = false;
       this.listeners.forEach(listener => listener("synced"));
     } catch (error) {
@@ -205,11 +222,17 @@ export class Doc {
 
   open(vector = Y.encodeStateVector(this.ydoc), expected = this.documentId) {
     this.guard();
-    return this.client.request("doc.open",{path:this.path,vector:b64.encode(vector),...(expected ? {documentId:expected} : {})});
+    return this.client.request("doc.open",{path:this.path,vector:b64.encode(vector),...(expected ? {documentId:expected} : {}),...(this.client.hello?.cloudDocuments===1 ? {cloud:true} : {}),...(this.cloudLineage ? {cloudLineage:this.cloudLineage} : {})});
   }
 
   applyReply(reply) {
     this.guard();
+    if(reply.cloudLineage!=null){
+      if(!validDocumentId(reply.cloudLineage)||this.cloudLineage && this.cloudLineage!==reply.cloudLineage||Y.encodeStateVector(this.ydoc).length>1 && this.cloudLineage!==reply.cloudLineage)throw cloudLineage();
+      this.cloudLineage=reply.cloudLineage;
+    }else if(this.cloudLineage)throw cloudLineage();
+    this.cloudLegacy=reply.cloudLegacy===true;
+    this.buffered=reply.buffered===true;
     if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
     Y.applyUpdate(this.ydoc,b64.decode(reply.update),"session");
@@ -218,6 +241,21 @@ export class Doc {
   async synchronizeIdentity() {
     const name = legacyName(this.workspace,this.path);
     const legacy = this.persistent ? await readLegacy(name) : null;
+    if(this.client.hello.cloudDocuments===1){
+      const offered=await this.open(new Uint8Array([0]));
+      if(offered.cloudLineage!=null){
+        if(legacy?.last && (!legacy.binding || legacy.binding.id===offered.documentId))throw cloudLineage();
+        this.identify(offered.documentId);
+        await this.recover(recoveryName(this.workspace,this.documentId),offered.cloudLineage);
+        this.applyReply(offered);
+        if(this.persistence){
+          await checkpointRecovery(this.persistence,this.ydoc,this.workspace,this.documentId,[],true);
+          await this.checkpointGraph();
+          await this.client.recoveryDirectory.put(this.workspace,this.path,this.documentId);
+        }
+        await this.releaseOtherRecovery();return offered;
+      }
+    }
     let reply, proven = null;
     if (!this.documentId) {
       // An unbound legacy graph must pass the server's rebound-path check before import.
@@ -262,7 +300,7 @@ export class Doc {
 
   fence(error) {
     this.failed = true;
-    if (!["document-changed","identity-required","recovery-failed"].includes(error.code) || this.closed) return;
+    if (!["document-changed","identity-required","recovery-failed","document-lineage"].includes(error.code) || this.closed) return;
     this.blocked = error; this.suspended = true;
     this.client.emit?.("document-error",{path:this.path,documentId:this.documentId,code:error.code,message:error.message});
   }
@@ -275,18 +313,25 @@ export class Doc {
     return work;
   }
 
+  cloudStatus(message){
+    if(this.cloudMessage===message)return;
+    this.cloudMessage=message;this.client.emit?.("document-status",{path:this.path,message});
+  }
+
   async transmit(update, version) {
     this.inflight++;
+    if(this.cloudLineage)this.cloudStatus("Synchronizing cloud edits…");
     try {
       await this.client.request("doc.update", { path: this.path, update: b64.encode(update), ...(this.documentId ? {documentId:this.documentId} : {}) });
       this.acknowledgedVersion = Math.max(this.acknowledgedVersion,version);
     } catch (error) {
       this.fence(error);
+      if(this.cloudLineage)this.cloudStatus(error.code==="sync-auth" ? "Cloud access expired · reopen workspace" : "Cloud sync pending · edits kept locally");
       if (error.code === "auth-required") this.client.needSignIn(error.login);
       // Anything else is retried by the next handshake.
     } finally {
       // Unsent until every update in flight has been taken and none failed.
-      if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) this.unsent = false;
+      if (--this.inflight === 0 && !this.failed && this.acknowledgedVersion === this.localVersion) {this.unsent = false;if(this.cloudLineage)this.cloudStatus("");}
     }
   }
 
@@ -452,6 +497,7 @@ export class SessionClient {
     } else if (message.ev === "doc.update") {
       const doc = this.docs.get(message.path);
       if (doc && !doc.closed && !doc.blocked) {
+        if(doc.buffered)doc.restoredDirty=true;
         Y.applyUpdate(doc.ydoc, b64.decode(message.update), "session");
         doc.listeners.forEach((listener) => listener("remote"));
       }
