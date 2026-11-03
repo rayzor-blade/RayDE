@@ -248,6 +248,16 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
     );
     assert_eq!(a_status, 200);
     assert_eq!(duplicate_status, 200);
+    let measured:Value=http.post(format!("{base}/workspaces/metrics")).bearer_auth(secret)
+        .json(&json!({"id":workspace_id(1,111),"owner":1})).send().await.unwrap().json().await.unwrap();
+    assert_eq!(measured["available"],true);
+    assert_eq!(measured["cpuLimit"],1);
+    assert_eq!(measured["memoryLimitBytes"],u64::from(config.memory_mib)*1024*1024);
+    assert!(measured["cpuPercent"].as_f64().is_some_and(|n|n>=0.));
+    assert!(measured["memoryBytes"].as_u64().is_some_and(|n|n>0));
+    assert!(measured["storageLimitBytes"].as_u64().is_some_and(|n|n>0 && n<=1024*1024*1024));
+    assert!(measured["storageBytes"].as_u64().is_some());
+    assert!(measured["uptimeSeconds"].as_f64().is_some());
     assert!(
         a == duplicate,
         "duplicate opens must return the same private connection"

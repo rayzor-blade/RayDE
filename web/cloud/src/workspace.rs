@@ -224,6 +224,8 @@ pub struct WorkspaceSession {
     queued_bytes: Rc<Cell<usize>>,
     recovery_tail: RefCell<Option<futures_channel::oneshot::Receiver<()>>>,
     connecting: Openings,
+    resources: futures_util::lock::Mutex<()>,
+    resource_sample: RefCell<Option<(u64,Value)>>,
 }
 impl DurableObject for WorkspaceSession {
     fn new(state: State, env: Env) -> Self {
@@ -240,6 +242,8 @@ impl DurableObject for WorkspaceSession {
             queued_bytes: Rc::new(Cell::new(0)),
             recovery_tail: RefCell::new(None),
             connecting: Rc::new(RefCell::new(Vec::new())),
+            resources: futures_util::lock::Mutex::new(()),
+            resource_sample: RefCell::new(None),
         }
     }
     async fn fetch(&self, req: Request) -> Result<Response> {
@@ -509,6 +513,17 @@ impl WorkspaceSession {
         }
         if value.as_ref().is_some_and(|v| v["owner"] != data["owner"]) {
             return Err(bad(403, "This workspace belongs to another account."));
+        }
+        if req.path() == "/resources" {
+            let record=value.ok_or_else(||bad(404,"Workspace not found."))?;
+            if record["status"]!="ready" {return Ok(reply(&json!({"available":false,"status":record["status"]}),200)?);}
+            if let Some((at,sample))=self.resource_sample.borrow().as_ref().filter(|(at,_)|now().saturating_sub(*at)<3000) {
+                let _=at;return Ok(reply(sample,200)?);
+            }
+            let _guard=self.resources.try_lock().ok_or_else(||bad(429,"Resource usage is already refreshing."))?;
+            let sample=workspace_resources(&self.env,&record).await?;
+            *self.resource_sample.borrow_mut()=Some((now(),sample.clone()));
+            return Ok(reply(&sample,200)?);
         }
         if req.path() == "/checkpoint"
             || req.path() == "/checkpoints"
@@ -818,6 +833,26 @@ fn runner_session_origin(env: &Env, endpoint: &Url) -> AppResult<()> {
         return Err(bad(502,"The workspace endpoint does not match the configured runner."));
     }
     Ok(())
+}
+async fn workspace_resources(env:&Env, value:&Value) -> AppResult<Value> {
+    let url=config(env,"RUNNER_URL").unwrap_or_else(||"https://runner.internal".into());
+    let endpoint=Url::parse(&url).map_err(|_|bad(503,"Invalid runner configuration."))?;
+    if endpoint.scheme()!="https" && config(env,"LOCAL_DEV").as_deref()!=Some("1") {return Err(bad(503,"The runner requires HTTPS."));}
+    let mut req=request(&format!("{}/workspaces/metrics",url.trim_end_matches('/')),&json!({"id":value["id"],"owner":value["owner"]}))?;
+    req.headers_mut()?.set("Authorization",&format!("Bearer {}",config(env,"RUNNER_SECRET").ok_or_else(||bad(503,"Workspace usage is unavailable."))?))?;
+    let fetch=async {
+        let mut response=if let Ok(binding)=env.service("RUNNER") {binding.fetch_request(req).await?} else {Fetch::Request(req).send().await?};
+        if response.status_code()!=200 {return Err(bad(503,"Workspace usage is temporarily unavailable."));}
+        let text=response.text().await?;
+        if text.len()>16384 {return Err(bad(502,"Invalid workspace usage response."));}
+        let sample:Value=serde_json::from_str(&text).map_err(|_|bad(502,"Invalid workspace usage response."))?;
+        let mut public=json!({"available":sample["available"]==true,"sampledAt":now(),"status":"ready"});
+        for key in ["cpuPercent","cpuLimit","memoryBytes","memoryLimitBytes","storageBytes","storageLimitBytes","uptimeSeconds","durationLimitSeconds"] {
+            public[key]=sample[key].as_f64().filter(|n|n.is_finite()&&*n>=0.&&*n<=9_007_199_254_740_991.).map_or(Value::Null,|_|sample[key].clone());
+        }
+        Ok(public)
+    };
+    deadline(fetch,10).await.map_err(|_|bad(504,"Workspace usage did not respond. Try refreshing."))?
 }
 async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     let url = config(env, "RUNNER_URL").unwrap_or_else(|| "https://runner.internal".into());

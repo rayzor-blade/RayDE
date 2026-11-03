@@ -442,7 +442,8 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
         }
         if let Some(rest) = path.strip_prefix("/api/workspaces/") {
             let socket = rest.ends_with("/socket");
-            let id = rest.strip_suffix("/socket").unwrap_or(rest);
+            let resources = rest.ends_with("/resources");
+            let id = rest.strip_suffix("/socket").or_else(||rest.strip_suffix("/resources")).unwrap_or(rest);
             if !workspace_id(id) {
                 return Err(bad(404, "Workspace not found."));
             }
@@ -492,7 +493,7 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                         &env,
                         "WORKSPACES",
                         id,
-                        "state",
+                        if resources { "resources" } else { "state" },
                         &json!({"owner":session["user"]["id"]}),
                     )
                     .await?,

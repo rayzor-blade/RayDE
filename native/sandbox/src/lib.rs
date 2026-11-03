@@ -157,6 +157,17 @@ pub struct Output {
     pub stderr: Vec<u8>,
 }
 
+/// Guest measurements; an absent field means the backend cannot measure it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Metrics {
+    pub cpu_percent: Option<f64>,
+    pub cpu_limit: Option<u32>,
+    pub memory_bytes: Option<u64>,
+    pub memory_limit_bytes: Option<u64>,
+    pub uptime_seconds: Option<f64>,
+}
+
 /// A running command with its pipes. Dropping it kills the command.
 pub struct Process {
     pub stdin: Box<dyn AsyncWrite + Send + Unpin>,
@@ -180,6 +191,9 @@ pub trait SandboxProvider: Send + Sync {
     fn list(&self, selector: &Labels) -> impl Future<Output = Result<Vec<SandboxInfo>>> + Send;
     /// Succeeds only when the sandbox's agent answers.
     fn ping(&self, name: &str) -> impl Future<Output = Result<()>> + Send;
+    fn metrics(&self, _name: &str) -> impl Future<Output = Result<Metrics>> + Send {
+        async { Err(Error::Unsupported("metrics")) }
+    }
     fn stop(&self, name: &str) -> impl Future<Output = Result<()>> + Send;
     /// Idempotent. Takes the sandbox's owned mounts with it and leaves named volumes.
     fn remove(&self, name: &str) -> impl Future<Output = Result<()>> + Send;

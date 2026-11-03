@@ -22,6 +22,8 @@ Ordinary session documents write through as edits settle. Cloud-bound documents 
 
 ## Tools and extensions
 
+Open **Cloud Sync** in the activity bar to see the provisioned workspace's CPU, memory, disk usage and VM uptime, alongside its resource and lifetime limits. Measurements refresh while the panel is open. An unavailable metric is labelled explicitly; the landing-page example has no personal resource allocation.
+
 Build, Run, terminals and language servers use the session host's tools and environment. Extensions run there too, with their views displayed in the browser. The host must allow execution for these features.
 
 For a browser-compatible Ashui project, choose **Preview App** from **Code Actions** or the eye button beside the tabs. RayDE saves your edits, builds the app and opens it in a preview tab. **Rebuild** applies later source changes. This requires [app preview tooling on the host](contributing/session.md#app-previews).

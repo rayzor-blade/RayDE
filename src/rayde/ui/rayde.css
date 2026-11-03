@@ -618,6 +618,9 @@ input.rayde-cc-field:hover, input.rayde-cc-field:focus { background: transparent
 #rayde-sync-panel .rayde-sync-welcome { width: 48px; height: 48px; align-items: center; justify-content: center; border-radius: var(--radius-xl); background: var(--accent-subtle); color: var(--primary); }
 #rayde-sync-panel .rayde-sync-muted { font-size: 11px; color: var(--text-secondary); white-space: normal; line-height: 1.5; }
 #rayde-sync-panel .rayde-sync-card { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); }
+#rayde-sync-panel .rayde-resource-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; min-width: 0; }
+#rayde-sync-panel .rayde-resource-values { flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+#rayde-sync-panel .rayde-resources-meters { gap: 10px; }
 #rayde-sync-panel .rayde-sync-actions { flex-direction: row; align-items: center; gap: 8px; }
 #rayde-sync-panel .rayde-sync-actions > .ui-button { flex: 1; min-width: 0; }
 #rayde-sync-panel .rayde-sync-actions > .ui-dropdown-menu { flex-shrink: 0; }

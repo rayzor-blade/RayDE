@@ -311,3 +311,13 @@ async fn a_snapshot_is_restored_from_the_gateway_and_a_bad_chunk_is_refused() {
     let wrong = restore::restore(&config, &http, &temp.path().join("wrong"), &sync_request(WorkspaceId::from_random(&[3; 32]).as_str())).await;
     assert!(wrong.is_err(), "a snapshot of another workspace is not restored under this id");
 }
+
+#[test]
+fn metrics_reject_another_guest_and_preserve_unknown_measurements() {
+    let sample=br#"{"name":"own-guest","state":"running","cpu_percent":2.5,"memory_bytes":1234,"uptime_secs":12.25,"memory_host_resident_bytes":999999}"#;
+    let usage=crate::msb::parse_metrics(sample,"own-guest").unwrap();
+    assert_eq!(usage.cpu_percent,Some(2.5));assert_eq!(usage.memory_bytes,Some(1234));assert_eq!(usage.uptime_seconds,Some(12.25));
+    assert!(crate::msb::parse_metrics(sample,"someone-else").is_err());
+    let unknown=crate::msb::parse_metrics(br#"{"name":"own-guest","state":"running","cpu_percent":-1,"memory_bytes":null}"#,"own-guest").unwrap();
+    assert!(unknown.cpu_percent.is_none() && unknown.memory_bytes.is_none());
+}

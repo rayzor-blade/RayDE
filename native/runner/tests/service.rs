@@ -400,3 +400,21 @@ async fn a_synced_workspace_cannot_open_on_a_runner_with_no_gateway() {
     assert!(fixture.sandboxes().await.is_empty());
     fixture.stop().await;
 }
+
+#[tokio::test]
+async fn metrics_need_private_authority_and_workspace_ownership() {
+    let mut fixture=Fixture::new(1).await;
+    assert_eq!(fixture.open(1,111).await.0,200);
+    let body=json!({"id":workspace_id(1,111),"owner":1});
+    let url=format!("{}/workspaces/metrics",fixture.base);
+    assert_eq!(fixture.http.post(&url).json(&body).send().await.unwrap().status(),401);
+    let denied=fixture.http.post(&url).bearer_auth(SECRET).json(&json!({"id":body["id"],"owner":2})).send().await.unwrap();
+    assert_eq!(denied.status(),403);
+    let response=fixture.http.post(&url).bearer_auth(SECRET).json(&body).send().await.unwrap();
+    assert_eq!(response.status(),200);assert_eq!(response.headers()["cache-control"],"no-store");
+    let usage:Value=response.json().await.unwrap();
+    assert_eq!(usage["available"],false);assert_eq!(usage["cpuLimit"],1);assert_eq!(usage["memoryLimitBytes"],512*1024*1024);assert_eq!(usage["durationLimitSeconds"],300);
+    assert!(usage["memoryBytes"].is_null());assert!(usage["cpuPercent"].is_null());
+    assert!(!usage.to_string().contains("sandbox") && !usage.to_string().contains(SECRET));
+    fixture.running.take().unwrap().shutdown().await;
+}

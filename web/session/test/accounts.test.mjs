@@ -153,3 +153,12 @@ test("Manage access opens the GitHub App separately and preserves the editor",as
   account.installUrl="https://evil.invalid/apps/rayde";
   await assert.rejects(account.request("account.manage-access",{}),/not configured/);assert.equal(opened.length,1);
 });
+
+test("resource requests stay on the current edge and stale account replies are rejected",async()=>{
+  const calls=[];let release;
+  const account=new Accounts({location:{href:"https://editor.example/"},fetch:(url,init)=>{calls.push({url,init});return new Promise(resolve=>release=()=>resolve(Response.json({available:true,memoryBytes:1234})));}});
+  assert.deepEqual(await account.request("account.resources",{}),{available:false,status:"unprovisioned"});assert.equal(calls.length,0);
+  const pending=account.request("account.resources",{workspace:"a".repeat(43)});
+  assert.equal(calls[0].url,"/api/workspaces/"+"a".repeat(43)+"/resources");assert.equal(calls[0].init.credentials,"same-origin");assert.equal(calls[0].init.method,"GET");
+  account.revision++;release();await assert.rejects(pending,/account changed/);
+});

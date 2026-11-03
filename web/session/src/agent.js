@@ -89,7 +89,7 @@ export const start = ask => serve(ask, {
             if (request.id === undefined) return;
           }
           else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from,request.to);
-          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request) };
+          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request.op === "account.resources" ? {...request,workspace:entry.workspace} : request) };
           else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
           else if (request.op === "page.preview") {
             if (!previews) throw new Error("Connect an app preview session first.");

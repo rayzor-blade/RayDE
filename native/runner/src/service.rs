@@ -26,6 +26,7 @@ struct Service<P: Backend> {
     registry: Registry,
     http: reqwest::Client,
     control: Arc<Semaphore>,
+    measurements: Semaphore,
     base: String,
     halt: watch::Sender<bool>,
 }
@@ -175,6 +176,7 @@ pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<R
         registry,
         http,
         control: Arc::new(Semaphore::new(4)),
+        measurements: Semaphore::new(2),
         base: base.trim_end_matches('/').into(),
         halt,
     });
@@ -182,6 +184,7 @@ pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<R
         .route("/health", get(|| async { "ready" }))
         .route("/workspaces/open", post(open::<P>))
         .route("/workspaces/delete", post(delete::<P>))
+        .route("/workspaces/metrics", post(metrics::<P>))
         .route("/workspaces/:id/session", get(socket::<P>))
         .layer(DefaultBodyLimit::max(32 * 1024))
         .with_state(service.clone());
@@ -220,6 +223,48 @@ fn response(value: serde_json::Value) -> Response {
         header::HeaderValue::from_static("no-store"),
     );
     response
+}
+async fn metrics<P: Backend>(State(service): State<Arc<Service<P>>>, headers: HeaderMap, Json(request): Json<Delete>) -> Result<Response> {
+    authenticate(&service, &headers)?;
+    if !valid_id(&request.id) || request.owner == 0 { return Err(invalid()); }
+    if *service.halt.borrow() {return Err(unavailable());}
+    let _permit = service.measurements.try_acquire().map_err(|_| unavailable())?;
+    let cell = service.registry.records.lock().await.get(&request.id).cloned().ok_or(Failure(StatusCode::NOT_FOUND,"Workspace not found."))?;
+    let record = cell.record.try_lock().map_err(|_| unavailable())?.clone();
+    if record.owner != request.owner { return Err(Failure(StatusCode::FORBIDDEN,"This workspace belongs to another account.")); }
+    let mut value = serde_json::json!({"available":false,"status":record.phase,"cpuLimit":service.config.cpus,
+        "memoryLimitBytes":u64::from(service.config.memory_mib)*1024*1024,"durationLimitSeconds":service.config.max_duration_seconds});
+    if record.phase == "ready" && cell.active.load(Ordering::Acquire) {
+        let sample = async {
+            let metrics = service.backend.metrics(&record.sandbox).await.ok();
+            let disk = service.backend.run(&record.sandbox, sb::Command {program:"df".into(),args:vec!["-Pk".into(),"/workspace".into()],env:Default::default()},4096,Duration::from_secs(3)).await.ok()
+                .filter(|out|out.status==0).and_then(|out|workspace_disk(&out.stdout));
+            (metrics,disk)
+        };
+        if let Ok((metrics,disk)) = tokio::time::timeout(Duration::from_secs(8),sample).await {
+            if let Some(metrics)=metrics {
+                value["available"]=serde_json::json!(true);
+                value["cpuPercent"]=serde_json::json!(metrics.cpu_percent);
+                value["memoryBytes"]=serde_json::json!(metrics.memory_bytes);
+                value["uptimeSeconds"]=serde_json::json!(metrics.uptime_seconds);
+                if let Some(limit)=metrics.cpu_limit {value["cpuLimit"]=serde_json::json!(limit);}
+                if let Some(limit)=metrics.memory_limit_bytes {value["memoryLimitBytes"]=serde_json::json!(limit);}
+            }
+            if let Some((used,limit))=disk { value["available"]=serde_json::json!(true);value["storageBytes"]=serde_json::json!(used);value["storageLimitBytes"]=serde_json::json!(limit); }
+        }
+        let current=cell.record.try_lock().map_err(|_| unavailable())?;
+        if current.generation!=record.generation || current.phase!="ready" {return Err(unavailable());}
+    }
+    Ok(response(value))
+}
+
+fn workspace_disk(bytes: &[u8]) -> Option<(u64,u64)> {
+    let text=std::str::from_utf8(bytes).ok()?;
+    let row:Vec<_>=text.lines().skip(1).next()?.split_whitespace().collect();
+    if row.len()!=6 || row[5]!="/workspace" {return None;}
+    let limit=row[1].parse::<u64>().ok()?.checked_mul(1024)?;
+    let used=row[2].parse::<u64>().ok()?.checked_mul(1024)?;
+    (limit>0 && used<=limit).then_some((used,limit))
 }
 async fn open<P: Backend>(
     State(service): State<Arc<Service<P>>>,

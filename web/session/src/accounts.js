@@ -96,6 +96,13 @@ export class Accounts {
     }
     if (op === "account.open") return this.api("/api/workspaces/open", { repository: params.repository });
     if (op === "account.workspace") return this.api("/api/workspaces/" + encodeURIComponent(params.workspace));
+    if (op === "account.resources") {
+      if (!/^[\w-]{43}$/.test(params.workspace ?? "")) return {available:false,status:"unprovisioned"};
+      const revision=this.revision;
+      const resources=await this.api("/api/workspaces/" + params.workspace + "/resources");
+      if (revision!==this.revision) throw new Error("The account changed. Refresh workspace usage.");
+      return resources;
+    }
     if (op === "account.sync-reopen") {
       if (!/^[\w-]{43}$/.test(params.workspace)) throw new Error("Choose a synced workspace.");
       await this.request("account.status", {});

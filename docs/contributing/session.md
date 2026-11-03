@@ -15,6 +15,10 @@ Private CRDT state lives in `~/.rayde-session/<path-hash>/state`, keyed by the c
 
 The [MSB runner](../../native/runner/README.md) provisions isolated Linux guests for the local cloud-workspace pilot. It includes NUC testing and the private command-stream bridge used by the Worker; the user-facing session protocol is unchanged.
 
+### Resource usage
+
+The browser Cloud Sync panel requests `GET /api/workspaces/{id}/resources` only while visible. The Worker verifies the account owns that workspace and asks the private runner's `/workspaces/metrics` endpoint. The runner selects its registered guest, reads MSB CPU/memory/uptime and runs a bounded `df -Pk /workspace` for that disk. Provisioning uses a separate admission limit; measurement requests cannot queue ahead of it. The Worker caches samples briefly and returns only public measurements and limits. Backend credentials, guest names and host paths stay private. Unsupported or failed measurements stay unknown. The UI consumes completed Ash futures on its own frame and discards replies after hiding, closing or account changes.
+
 ## Serving the full editor
 
 Build with `scripts/build-web.sh`; see [browser build requirements](building.md#browser-build). It needs Ash's `ash-channel` Haxe library, `ash_channel.wasm` and `channel-agent.mjs`. `ASH_CHANNEL_ROOT` selects the checkout, `ASH_CHANNEL_WEB` its side module, and `WEB_LIBS` the window/GPU libraries. Use matching Ash and window libraries with future-aware browser idle waits. Run `npm ci` in `web/session` before bundling the page agent.

@@ -178,6 +178,14 @@ pub(crate) fn parse_status(bytes: &[u8]) -> sb::Result<Vec<Row>> {
         .collect()
 }
 
+pub(crate) fn parse_metrics(bytes: &[u8], name: &str) -> sb::Result<sb::Metrics> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| sb::Error::Unavailable)?;
+    if value["name"] != name || value["state"] != "running" { return Err(sb::Error::Unavailable); }
+    let number = |key: &str| value[key].as_f64().filter(|n| n.is_finite() && *n >= 0.);
+    Ok(sb::Metrics {cpu_percent:number("cpu_percent"), cpu_limit:value["cpus"].as_u64().and_then(|v|u32::try_from(v).ok()).filter(|v|*v>0),
+        memory_bytes:value["memory_bytes"].as_u64(), memory_limit_bytes:value["memory_limit_bytes"].as_u64().filter(|v|*v>0), uptime_seconds:number("uptime_secs")})
+}
+
 /// The labels in `msb inspect --format json`: the running configuration, or the stored one when the sandbox is stopped (`active_config` is null then).
 pub(crate) fn parse_inspect(bytes: &[u8]) -> sb::Result<sb::Labels> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| sb::Error::Unavailable)?;
@@ -310,6 +318,10 @@ impl sb::SandboxProvider for Msb {
     async fn ping(&self, name: &str) -> sb::Result<()> {
         self.running(name).await?;
         self.call(vec!["ping".into(), name.into()], 5).await.map(|_| ())
+    }
+
+    async fn metrics(&self, name: &str) -> sb::Result<sb::Metrics> {
+        parse_metrics(&self.call(vec!["metrics".into(), name.into(), "--format".into(), "json".into()], 5).await?, name)
     }
 
     async fn stop(&self, name: &str) -> sb::Result<()> {

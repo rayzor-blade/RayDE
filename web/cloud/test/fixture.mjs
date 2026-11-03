@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, github } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, github, metrics } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -60,6 +60,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
       RUNNER: async request => {
         if (request.headers.get("Authorization") !== "Bearer "+runnerSecret) return json({}, 403);
         const data = await request.json(); calls.runner.push(data);
+        if(new URL(request.url).pathname==="/workspaces/metrics")return metrics ? metrics(data) : json({available:false});
         if(runnerUrl){
           const response=await fetch(runnerUrl.replace(/\/$/,"")+"/workspaces/open",{method:"POST",headers:{Authorization:"Bearer "+runnerSecret,"Content-Type":"application/json"},body:JSON.stringify(data)});
           return json(await response.json(),response.status);

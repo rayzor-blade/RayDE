@@ -24,6 +24,8 @@ typedef SyncPanelProps = {
 	now:Void->Float,
 	?unavailableMessage:String,
 	?saveBack:Signal<Null<SaveBack>>,
+	?resources:Signal<rayde.sync.ResourceUsage.ResourceState>,
+	?onRefreshResources:Void->Void,
 	?onSave:Void->Void,
     ?onReopen:Void->Void,
 	?onMerge:Void->Void,
@@ -58,15 +60,16 @@ class SyncPanel extends Component<SyncPanelProps> {
 		return <div id="rayde-sync-panel" class="flex flex-col flex-1 min-w-0 min-h-0">
 		<div class="rayde-sync-heading">
 			<icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-4 shrink-0"/><text class="flex-1">Cloud Sync</text>
-			<if {props.saveBack == null || props.saveBack.get() == null}><for {state in [props.state.get()]}>${phaseBadge(state)}</for></if>
+			<if {props.resources == null && (props.saveBack == null || props.saveBack.get() == null)}><for {state in [props.state.get()]}>${phaseBadge(state)}</for></if>
 		</div>
 		<div class="rayde-sync-scroll">
 			<text id="rayde-sync-workspace" class="rayde-sync-workspace">${props.workspace}</text>
+			<if {props.resources != null}>${new WorkspaceResources({state:props.resources,onRefresh:props.onRefreshResources})}</if>
 			<if {props.saveBack != null && props.saveBack.get() != null}>
 				<for {saved in [props.saveBack.get()]}>${saveBack(saved)}</for>
 			<else>
 				<if {props.unavailableMessage != null}>
-					<div class="rayde-sync-section"><text id="rayde-sync-unavailable" class="rayde-sync-muted">${props.unavailableMessage}</text></div>
+					<if {props.resources == null}><div class="rayde-sync-section"><text id="rayde-sync-unavailable" class="rayde-sync-muted">${props.unavailableMessage}</text></div></if>
 				<else>
 					<for {state in [props.state.get()]}>${body(state)}</for>
 				</if>
