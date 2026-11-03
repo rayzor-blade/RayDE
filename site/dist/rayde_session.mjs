@@ -12307,7 +12307,7 @@ var AppPreviews = class {
 // src/cached-demo.js
 var digest = /^[a-f0-9]{64}$/;
 var privatePart = (path2) => path2.split("/").some((part) => [".git", ".rayde", ".rayzor", ".haxelib", ".rayde-session"].includes(part));
-var demoInput = (path2) => !privatePart(path2) && path2 !== "data/tasks.json" && !["bin", "build", "Export"].includes(path2.split("/")[0]);
+var demoInput = (path2) => !privatePart(path2) && !["data/tasks.json", "README.md", ".gitignore"].includes(path2) && !["bin", "build", "Export"].includes(path2.split("/")[0]);
 var sha = async (bytes) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 var canonical = (value) => JSON.stringify(value, (_2, item) => item && typeof item === "object" && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a3], [b]) => a3.localeCompare(b))) : item);
 var decode2 = (data) => Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
