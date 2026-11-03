@@ -71,27 +71,38 @@ function seedSample(database, value) {
 
 // src/accounts.js
 var Accounts = class {
-  constructor({ fetch: fetch2 = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60), pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
+  constructor({ fetch: fetch2 = globalThis.fetch.bind(globalThis), location: location2 = globalThis.location, later = (fn) => setTimeout(fn, 60), pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), timeout = 15e3 } = {}) {
     this.fetch = fetch2;
     this.location = location2;
     this.later = later;
     this.pause = pause;
+    this.timeout = timeout;
     this.csrf = null;
     this.installUrl = null;
     this.landing = ["rayde.org", "www.rayde.org"].includes(new URL(location2?.href ?? "http://localhost").hostname);
   }
   async api(path2, body) {
-    const response = await this.fetch(path2, {
-      credentials: "same-origin",
-      method: body === void 0 ? "GET" : "POST",
-      headers: body === void 0 ? {} : { "Content-Type": "application/json", "X-RayDE-CSRF": this.csrf ?? "" },
-      ...body === void 0 ? {} : { body: JSON.stringify(body) }
-    });
-    if (response.status === 401 && path2 === "/api/session") return { user: null };
-    if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Connect this editor to the workspace service to sign in.");
-    const reply = await response.json();
-    if (!response.ok) throw new Error(reply.message ?? "The workspace request failed.");
-    return reply;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      const response = await this.fetch(path2, {
+        signal: controller.signal,
+        credentials: "same-origin",
+        method: body === void 0 ? "GET" : "POST",
+        headers: body === void 0 ? {} : { "Content-Type": "application/json", "X-RayDE-CSRF": this.csrf ?? "" },
+        ...body === void 0 ? {} : { body: JSON.stringify(body) }
+      });
+      if (response.status === 401 && path2 === "/api/session") return { user: null };
+      if (!response.headers.get("Content-Type")?.includes("application/json")) throw new Error("Connect this editor to the workspace service to sign in.");
+      const reply = await response.json();
+      if (!response.ok) throw new Error(reply.message ?? "The workspace request failed.");
+      return reply;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error("The workspace service did not respond. Try again.");
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
   async request(op, params2) {
     if (op === "account.status") {
