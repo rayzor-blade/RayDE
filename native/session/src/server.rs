@@ -366,6 +366,7 @@ async fn page(State(shared): State<Shared>, uri: Uri) -> Response {
             };
             Response::builder().header(header::CONTENT_TYPE, kind).header(header::CACHE_CONTROL, "no-store")
                 .header("Cross-Origin-Opener-Policy", "same-origin").header("Cross-Origin-Embedder-Policy", "require-corp")
+                .header("Cross-Origin-Resource-Policy", "cross-origin")
                 .body(Body::from(bytes)).unwrap()
         }
         Err(_) => StatusCode::NOT_FOUND.into_response(),

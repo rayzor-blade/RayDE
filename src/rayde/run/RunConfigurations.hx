@@ -66,7 +66,7 @@ class RunConfigurations {
 	];
 
 	public static function framework(root:String):String {
-		var value:Dynamic = Store.section(root, "run").framework;
+		var value:Dynamic = section(root).framework;
 		return Std.isOfType(value, String) ? value : "haxe";
 	}
 
@@ -122,7 +122,42 @@ class RunConfigurations {
 	}
 
 	public static function load(root:String, target:String, preview = false, ?family:String):RunConfiguration
-		return from(Store.section(root, "run"), target, preview, family);
+		return from(section(root), target, preview, family);
+
+	/** Published project defaults remain editable through the workspace's Run Configurations. */
+	public static function section(root:String):Dynamic {
+		var defaults:Dynamic = {};
+		try {
+			var path = haxe.io.Path.join([root, "haxelib.json"]);
+			if (rayde.workspace.Fs.exists(path)) {
+				var manifest:Dynamic = haxe.Json.parse(rayde.workspace.Fs.getContent(path));
+				if (object(manifest.rayde) && object(manifest.rayde.run)) defaults = manifest.rayde.run;
+			}
+		} catch (_:Dynamic) {}
+		var saved = Store.section(root, "run");
+		for (field in Reflect.fields(saved)) {
+			var value = Reflect.field(saved, field);
+			if ((field == "targets" || field == "previews") && object(value)) {
+				if (!object(Reflect.field(defaults, field))) Reflect.setField(defaults, field, {});
+				var group = Reflect.field(defaults, field);
+				for (target in Reflect.fields(value)) {
+					var merged = Reflect.field(group, target), replacement = Reflect.field(value, target);
+					if (!object(merged) || !object(replacement)) Reflect.setField(group, target, replacement);
+					else for (name in Reflect.fields(replacement)) Reflect.setField(merged, name, Reflect.field(replacement, name));
+				}
+			} else Reflect.setField(defaults, field, value);
+		}
+		return defaults;
+	}
+
+	/** A saved browser choice takes precedence over automatic native surface previews. */
+	public static function explicitBrowser(section:Dynamic, target:String):Bool {
+		for (group in [section.previews, section.targets]) {
+			var value = group == null ? null : Reflect.field(group, target);
+			if (value != null && Reflect.hasField(value, "mode")) return value.mode == "browser";
+		}
+		return false;
+	}
 
 	public static function from(section:Dynamic, target:String, preview = false, ?family:String):RunConfiguration {
 		var legacy:Dynamic = section.runner;

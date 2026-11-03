@@ -198,6 +198,12 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
     let path = url.path().to_string();
     if preview_origin(&env).is_some_and(|origin|url.origin().ascii_serialization()==origin) {
         if req.method()!=Method::Get {return Err(bad(404,"This app preview is unavailable."));}
+        let demo=path.strip_prefix("/dist").unwrap_or(&path);
+        if let Some(rest)=demo.strip_prefix("/demo/") {
+            if rest.split('/').next().is_some_and(opaque) {
+                return assets::get(&req,&env,demo).await?.ok_or_else(||bad(404,"This demo preview is unavailable."));
+            }
+        }
         let parts=path.strip_prefix("/previews/").map(|path|path.splitn(3,'/').collect::<Vec<_>>()).unwrap_or_default();
         if parts.len()!=3 || !workspace_id(parts[0]) || !opaque(parts[1]) {return Err(bad(404,"This app preview is unavailable."));}
         let namespace=env.durable_object("WORKSPACES")?;

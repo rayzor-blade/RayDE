@@ -66,7 +66,8 @@ pub(crate) async fn get(req: &Request, env: &Env, path: &str) -> AppResult<Optio
         headers.set("Content-Encoding", &encoding)?;
     }
     headers.set("ETag", &object.http_etag())?;
-    headers.set("Cache-Control", "public, max-age=0, must-revalidate")?;
+    let immutable=key.strip_prefix("demo/").and_then(|rest|rest.split('/').next()).is_some_and(|release|release.len()==64 && release.bytes().all(|byte|byte.is_ascii_hexdigit()));
+    headers.set("Cache-Control", if immutable {"public, max-age=31536000, immutable"} else {"public, max-age=0, must-revalidate"})?;
     headers.set("X-Content-Type-Options", "nosniff")?;
     headers.set("Cross-Origin-Resource-Policy", "cross-origin")?;
     headers.set("Cross-Origin-Opener-Policy", "same-origin")?;

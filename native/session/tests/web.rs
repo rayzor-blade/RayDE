@@ -55,6 +55,7 @@ async fn nested_site_assets_and_exact_origins_work_on_an_assigned_port() {
         );
         assert!(response.contains("cross-origin-opener-policy: same-origin"));
         assert!(response.contains("cross-origin-embedder-policy: require-corp"));
+        assert!(response.contains("cross-origin-resource-policy: cross-origin"));
         assert!(response.ends_with(body));
     }
     let url = format!("ws://{}/session", running.address);

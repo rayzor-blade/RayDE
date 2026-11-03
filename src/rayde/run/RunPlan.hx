@@ -25,7 +25,7 @@ class RunPlan {
 
 	public static function selected(root:String, args:Array<String>, ?family:String, preview = false):String {
 		if (family == "rayzor" || args.length == 0) {
-			var section = rayde.settings.Store.section(root, "run"),
+			var section = RunConfigurations.section(root),
 				value:Dynamic = preview && section.previewTarget != null ? section.previewTarget : section.target;
 			if (Std.isOfType(value, String))
 				return value;

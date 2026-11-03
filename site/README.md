@@ -1,6 +1,6 @@
 # Landing page
 
-`index.html`, `landing.css` and `landing.mjs` are the site. Desktop screens embed the standalone editor from `dist/index.html` in a same-origin frame. Smaller screens show `assets/editor-preview.webp` and do not fetch the WASM runtime. The public sample is [Pocket Studio](demo/README.md), a Haxe/Ashui project and companion RayScript extension built against published Haxelib packages. It uses browser storage; builds, terminals, language servers and extensions require a connected workspace session.
+`index.html`, `landing.css` and `landing.mjs` are the site. Desktop screens embed the editor from `dist/index.html` in a same-origin frame. Smaller screens show `assets/editor-preview.webp` and do not fetch the WASM runtime. [Pocket Studio](demo/README.md) is a Haxe/Ashui project and companion RayScript extension built against published Haxelib packages. The landing editor uses a real workspace session for files, Rayzor, extensions, builds and terminals.
 
 Regenerate the editor, including its browser agents and native side modules, from source:
 
@@ -14,11 +14,10 @@ For local preview on a chosen port, the Rust session can serve both the site and
 
 ```sh
 python3 scripts/serve-site.py --port 8731
-python3 scripts/serve-site.py --port 8731 --offline
 python3 scripts/serve-site.py --port 8732 --workspace path/to/build.hxml
 ```
 
-The default preview automatically connects to an editable Pocket Studio workspace, including its tools and built-in extensions. `--offline` serves only the browser sample. The connected preview keeps an editable Pocket Studio copy, Git history and published Haxelib packages under `~/.rayde-session/demos/pocket-studio`. `--workspace` explicitly enables a chosen project’s tools and extensions. These local modes expose an opt-in bootstrap on the loopback preview server, allowing a clean URL without publishing credentials in site files. The launcher stops its own session with Ctrl+C. No Node backend is needed.
+The default preview automatically connects to an editable Pocket Studio workspace, including its tools and built-in extensions. It keeps an editable Pocket Studio copy, Git history and published Haxelib packages under `~/.rayde-session/demos/pocket-studio`. `--workspace` explicitly enables a chosen project’s tools and extensions. These local modes expose an opt-in bootstrap on the loopback preview server, allowing a clean URL without publishing credentials in site files. The launcher stops its own session with Ctrl+C. No Node backend is needed. An unavailable session leaves the landing editor unavailable rather than substituting an offline workspace.
 
 If another server serves the site, start the workspace session with `--origin http://127.0.0.1:PORT` for that exact page origin, then use the session URL and token fragment. Different ports are different origins; the allowlist deliberately does not trust every localhost page. Serve the site with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` for shared WASM memory.
 
@@ -43,5 +42,14 @@ node scripts/warm-preview.mjs --url http://127.0.0.1:8731/
 This uses an isolated headless Chrome profile to run **Preview App** through the editor's Run Configuration, then verifies another request reuses the full WASM cache without launching either compiler. It leaves the cache in the managed workspace's `.rayde/preview-cache/`; closing the preparation browser releases its temporary preview. Install the development dependencies in `web/session` and set `CHROME` if Chrome/Chromium is not in a usual location. Preparation is separate from serving and page loads. Rewarm after source, library, toolchain or host environment changes; copied cache files are still validated against those inputs.
 
 The sample is packaged with `scripts/package-demo.py`. Its namespaced browser seed adds missing files atomically and preserves existing file contents. Regeneration never overwrites a visitor’s edits. Editor state (`.rayde/`), dependencies and caches are excluded from the package and ignored by the demo's Git repository.
+
+Prepare the public app preview separately from visitor startup:
+
+```sh
+python3 scripts/prepare-demo-preview.py --session /path/to/rayde-session
+python3 scripts/package-demo.py site/dist/demo-workspace.json
+```
+
+The preparation helper is built by `build-site.sh`. It uses installed Ash and the normal Preview build pipeline, verifies a full WASM cache hit, and packages a versioned app with matching source and Run Configuration fingerprints. A connected landing workspace can open the matching artifact without running either compiler; its files and saved board data remain on the real session. Source or compiler-setting changes rebuild through that session. Ordinary workspace previews retain their configured host-rendered path. Serve the app on the separate preview origin; local preview uses the alternate loopback hostname on the same port.
 
 The loopback bootstrap rejects cross-origin browser requests and non-loopback Host headers, and refuses public listeners. It is disabled on ordinary sessions and account-gateway deployments. A public live demo still needs authenticated compute provisioning; a static site alone has no extension processes. Local Jam remains a desktop feature pending its browser/session transport.

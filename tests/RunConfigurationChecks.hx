@@ -98,6 +98,20 @@ class RunConfigurationChecks {
 		check(lime.buildCommand == "haxelib" && lime.buildFlags.join(" ") == "run lime build html5" && lime.mode == "browser",
 			"OpenFL did not select its framework compiler");
 		processes();
+		var previous=rayde.workspace.Fs.current,memory=new rayde.workspace.MemoryWorkspace();
+		rayde.workspace.Fs.current=memory;
+		try {
+			memory.createDirectory("/demo");
+			memory.saveContent("/demo/haxelib.json",'{"rayde":{"run":{"framework":"ashui","previews":{"hl":{"mode":"browser","buildFlags":["-Oz"]}}}}}');
+			check(RunConfigurations.explicitBrowser(RunConfigurations.section("/demo"),"hl"),"Published preview mode was ignored");
+			check(!RunConfigurations.explicitBrowser({},"hl"),"An ordinary workspace was converted to a browser preview");
+			Store.saveChecked("/demo","run",{previews:{hl:{arguments:["local"]}}});
+			var configured=RunConfigurations.load("/demo","hl",true);
+			check(configured.buildFlags[0]=="-Oz" && configured.arguments[0]=="local","Workspace overrides replaced unrelated project defaults");
+			Store.saveChecked("/demo","run",{previews:{hl:{mode:"process"}}});
+			check(!RunConfigurations.explicitBrowser(RunConfigurations.section("/demo"),"hl"),"Explicit process mode lost to the manifest");
+		} catch(error:Dynamic){rayde.workspace.Fs.current=previous;throw error;}
+		rayde.workspace.Fs.current=previous;
 		Sys.println("Run configurations: all Haxe targets, quoting, Ash AOT, Rayzor triples, framework presets, starter metadata and JS/Python execution passed");
 	}
 

@@ -1,0 +1,41 @@
+import rayde.run.AppPreviewBuild;
+import rayde.run.BuildProgress;
+import rayde.run.RunConfigurations;
+import rayde.workspace.PageHost;
+import rayde.workspace.session.SessionClient;
+
+/** Operator preparation uses the same planner, compiler supervision and cache as Preview App. */
+@:access(rayde.run.AppPreviewBuild)
+class PrepareDemoPreview {
+    static function copy(source:String, destination:String):Void {
+        sys.FileSystem.createDirectory(destination);
+        for (name in sys.FileSystem.readDirectory(source)) {
+            var from=source+"/"+name,to=destination+"/"+name;
+            if(sys.FileSystem.isDirectory(from))copy(from,to);
+            else if(!StringTools.endsWith(name,".hl"))sys.io.File.copy(from,to);
+        }
+    }
+    static function main():Void {
+        var args=Sys.args();
+        if(args.length!=3)throw "Use PrepareDemoPreview HOST:PORT TOKEN_FILE OUTPUT_DIRECTORY";
+        var address=args[0].split(":"),client=SessionClient.connect(address[0],Std.parseInt(address[1]),StringTools.trim(sys.io.File.getContent(args[1])));
+        try {
+            PageHost.install(client,null,false);
+            var manifest=client.root+"/build.hxml",inputs=rayde.lang.Hxml.read(manifest),progress=new BuildProgress();
+            var configuration=RunConfigurations.load(client.root,"hl",true);
+            var build={client:client,compiler:"haxe",args:inputs,cwd:client.root,progress:progress,force:false,family:"haxe",manifest:manifest};
+            var result=AppPreviewBuild.build(build,()->false);
+            Sys.println(result.output);
+            client.request("preview.close",{preview:result.artifact.preview});
+            client.request("preview.discard",{path:result.artifact.path});
+            build.progress=new BuildProgress();result=AppPreviewBuild.build(build,()->false);
+            if(result.output.indexOf("Reusing unchanged preview bundle.")<0)throw "The prepared demo did not reuse its WASM cache.";
+            copy(client.root+"/"+result.artifact.path,args[2]);
+            sys.io.File.saveContent(args[2]+"/configuration.json",haxe.Json.stringify(configuration));
+            Sys.println(result.output);
+            client.request("preview.close",{preview:result.artifact.preview});
+            client.request("preview.discard",{path:result.artifact.path});
+            client.close();
+        } catch(error:Dynamic){client.close();throw error;}
+    }
+}

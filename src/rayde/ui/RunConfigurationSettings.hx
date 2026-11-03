@@ -23,7 +23,7 @@ class RunConfigurationSettings extends Component<{root:String,?target:String,?fa
   </div>;
  }
  function activeTarget():String {
-  var section=rayde.settings.Store.section(props.root,"run");
+  var section=rayde.run.RunConfigurations.section(props.root);
   var saved:Dynamic=preview.get() && section.previewTarget!=null ? section.previewTarget : section.target;
   return props.target ?? (Std.isOfType(saved,String) ? saved : props.family=="rayzor" ? "native" : "hl");
  }

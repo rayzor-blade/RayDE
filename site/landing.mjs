@@ -23,14 +23,19 @@ connection = await previewConnection() ?? connection;
 const editor = new URL('./dist/index.html', import.meta.url);
 editor.search = location.search;
 const connected = editor.searchParams.has('session') || !!connection?.endpoint;
-if (!connected) editor.searchParams.set('demo', '1');
+editor.searchParams.delete('demo');
+editor.searchParams.set('demo-preview', '1');
 const authenticated = new URLSearchParams(location.hash.slice(1)).has('token');
 if (authenticated) editor.hash = location.hash;
-detail.textContent = connected ? 'Connected workspace. Tools and extensions run on the session host.' : 'Browser sample. Builds and extensions are available in a hosted workspace.';
+detail.textContent = connected ? 'Explore Pocket Studio with Rayzor, built-in extensions and app previews.' : 'The workspace is not connected. Please try again shortly.';
 for (const link of document.querySelectorAll('.editor-link')) link.href = editor.href;
 let loading = false;
 function start() {
   if (loading || !desktop.matches) return;
+  if (!connected) {
+    state.textContent = 'Workspace unavailable';
+    return;
+  }
   if (!globalThis.crossOriginIsolated || !navigator.gpu) {
     state.textContent = 'Editor preview';
     detail.textContent = 'The live demo needs WebGPU and cross-origin isolation. Open the full editor in a supported browser.';
@@ -45,7 +50,7 @@ function start() {
     const update = () => {
       if (status.hidden) {
         poster.hidden = true;
-        state.textContent = connected ? 'Live editor' : 'Browser sample'; state.dataset.live = '';
+        state.textContent = 'Live editor'; state.dataset.live = '';
         observer.disconnect();
       } else if (status.classList.contains('failed')) {
         state.textContent = 'Editor unavailable';

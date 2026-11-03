@@ -135,7 +135,10 @@ class RunPart {
 		var session=rayde.workspace.PageHost.session;
         var kind=rayde.run.RunPlan.target(wb.props.display.args).kind;
         var rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
-        if(kind=="hl"&&!rayzor)return canPreviewAshui();
+        if(kind=="hl"&&!rayzor){
+            var host=session==null ? rayde.workspace.PageHost.bridge : session;
+            return browserPreviewSelected(kind) ? host!=null && host.appPreviews && wb.extension==null : canPreviewAshui();
+        }
         return session!=null && session.webPreviews && wb.extension==null &&
             (rayzor&&wb.props.display.project.runnable || kind=="js" || runner!=null&&runner.configuration.mode=="browser");
 	}
@@ -151,6 +154,9 @@ class RunPart {
 		#end
 	}
 
+	function browserPreviewSelected(target:String):Bool
+		return rayde.run.RunConfigurations.explicitBrowser(rayde.run.RunConfigurations.section(wb.props.display.cwd),target);
+
 	public function previewApp():Void {
 		previewAppBuild(false);
 	}
@@ -160,7 +166,7 @@ class RunPart {
 	function previewAppBuild(force:Bool):Void {
 		#if wasm
 		var target=rayde.run.RunPlan.target(wb.props.display.args).kind, rayzor=wb.props.display.project!=null && wb.props.display.project.runtime=="rayzor";
-		if(target=="hl"&&!rayzor&&canPreviewAshui()){
+		if(target=="hl"&&!rayzor&&canPreviewAshui()&&!browserPreviewSelected(target)){
 			// The session host names its own surface script and the shell there expands it; the project's build file picks what is built, and the app draws at this display's pixel ratio.
 			var hxml=wb.props.display.project==null ? wb.props.display.hxml : wb.props.display.project.file;
 			saveBefore(() -> previewSurface("env RAYDE_SURFACE_SCALE="+rayde.ui.SurfacePreview.deviceScale()+" HXML='"+Std.string(hxml).split("'").join("'\\''")+"' \"${RAYDE_ASHUI_SURFACE:?this session host has no Ashui preview}\"", wb.props.display.cwd, wb.props.name));

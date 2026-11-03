@@ -7,7 +7,7 @@ import ashui.reactive.Signal;
 
 private typedef Build = {client:SessionClient, compiler:String, args:Array<String>, cwd:String, progress:BuildProgress, force:Bool, family:String, manifest:Null<String>};
 private typedef Configuration = {compiler:String,args:Array<String>,cwd:String,family:String,manifest:Null<String>};
-typedef AppArtifact = {preview:String, url:String, path:String, ?arguments:Array<String>};
+typedef AppArtifact = {preview:String, url:String, path:String, ?arguments:Array<String>, ?cached:Bool};
 
 /** One supervised browser build per window. Compiler work and output readers stay off the UI thread. */
 class AppPreviewBuild {
@@ -88,12 +88,13 @@ class AppPreviewBuild {
 			if (result.error != null) {error.set(result.error);state.set("failed");}
 			else {
 				var previous=artifact.get();artifact.set(result.value.artifact);output.set(result.value.output);state.set("ready");
-				if (previous!=null) release(previous);
+				if (previous!=null && !(previous.cached==true && previous.preview==result.value.artifact.preview)) release(previous);
 			}
 		}
 		if (worker.busy()) timer=ashui.animation.AnimationScheduler.main.after(.05,poll);
 	}
 	function release(value:AppArtifact):Void {
+		if (value.cached == true) { client.requestAsync("page.demo-close",{preview:value.preview}); return; }
 		client.requestAsync("preview.close",{preview:value.preview}).then(_ -> client.requestAsync("preview.discard",{path:value.path}),_ -> {});
 	}
 	public function dispose():Void {
@@ -145,6 +146,15 @@ class AppPreviewBuild {
             var target=RunPlan.selected(value.cwd,inputs,value.family,true);
             var configuration=RunConfigurations.load(value.cwd,target,true,value.family);
             if(configuration.mode!="browser")throw "Choose a browser-compatible Run Configuration for this target in Build Settings.";
+            if (value.client.demoPreview) {
+                progress.stage("Checking demo inputs");
+                var cached=value.client.request("page.demo-preview",{root:value.cwd,configuration:configuration,force:value.force});
+                if(cached.available==true) {
+                    progress.append("Opening the prebuilt Pocket Studio app.\n");progress.stage("Preview ready");
+                    return {artifact:{preview:cached.preview,url:cached.url,path:"",cached:true,arguments:configuration.arguments.copy()},output:progress.snapshot().output};
+                }
+                if(!value.client.exec)throw "These sources need a new build. Connect a workspace session to rebuild the app.";
+            }
             var marker="{preview}",model=RunPlan.make(value.compiler,inputs,value.cwd,marker,configuration,true,"{support}",true);
             var primary=model.program.indexOf(marker+"/")==0 ? model.program.substr(marker.length+1) : "app.js";
             var output=model.output.indexOf(marker+"/")==0 ? model.output.substr(marker.length+1) : primary;

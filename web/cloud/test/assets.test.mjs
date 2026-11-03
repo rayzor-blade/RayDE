@@ -8,6 +8,20 @@ import {fixture,signin} from './fixture.mjs';
 const asset='https://assets.example.test';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 
+test('public demo artifacts use the isolated preview origin without account access',async t=>{
+ const {mf}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
+ const bucket=await mf.getR2Bucket('EDITOR_ASSETS'),release='a'.repeat(64);
+ await bucket.put(`demo/${release}/index.html`,'<html>public app</html>');
+ for(const path of [`/demo/${release}/index.html`,`/dist/demo/${release}/index.html`]){
+  const response=await mf.dispatchFetch('http://localhost:8787'+path);
+  assert.equal(response.status,200);assert.equal(await response.text(),'<html>public app</html>');
+  assert.match(response.headers.get('Cache-Control'),/immutable/);
+  assert.equal(response.headers.get('Cross-Origin-Embedder-Policy'),'require-corp');
+ }
+ for(const path of ['/demo/not-a-release/index.html','/api/session','/auth/github/start'])
+  assert.equal((await mf.dispatchFetch('http://localhost:8787'+path)).status,404,path);
+});
+
 test('concurrent thread agents receive the complete compilable WASM host on either asset route',async t=>{
  const {mf,fetch}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
  const bytes=await readFile(new URL('../../../site/dist/ash_browser_bg.wasm',import.meta.url));

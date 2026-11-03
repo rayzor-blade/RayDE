@@ -4,6 +4,17 @@
   "license": "MIT",
   "description": "A small project board built with Haxe and Ashui, with a companion RayScript extension.",
   "classPath": "src",
+  "rayde": {
+    "run": {
+      "framework": "ashui",
+      "previews": {
+        "hl": {
+          "mode": "browser",
+          "runner": "ash"
+        }
+      }
+    }
+  },
   "dependencies": {
     "ashui": "0.2.2",
     "ashui-components": "0.2.2",
