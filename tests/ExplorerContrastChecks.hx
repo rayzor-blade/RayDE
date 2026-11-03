@@ -24,7 +24,7 @@ class ExplorerContrastChecks {
 				stop = cleanup;
 				return <div id="rayde" width={320} height={220}>
 					<text id="primary" class="text-text-primary">Primary</text><text id="secondary" class="text-text-secondary">Secondary</text>
-					<explorer-tree root="/workspace" name="Workspace" head={() -> null} icon={_ -> Icons.FILE_CODE_LINE} ignored={path -> path == "/workspace/ignored.txt"}
+					<explorer-tree root="/workspace" name="Workspace" head={() -> null} icon={_ -> Icons.FILE_CODE_LINE} ignored={(path,_) -> path == "/workspace/ignored.txt"}
 						opened={_ -> true} state={(_,initial) -> Signal.make(initial)} selected={selected} onSelect={selected.set} onPress={_ -> {}} revision={() -> 0}
 						entries={_ -> [{name:"ordinary.hx",path:"/workspace/ordinary.hx",directory:false},{name:"ignored.txt",path:"/workspace/ignored.txt",directory:false}]}/>
 				</div>;

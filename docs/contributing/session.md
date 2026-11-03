@@ -13,6 +13,8 @@ The server prints an address and token. To serve the small browser client, build
 
 Private CRDT state lives in `~/.rayde-session/<path-hash>/state`, keyed by the canonical workspace path. Startup migrates legacy workspace-local state there and preserves conflicting copies. `--state-root DIR` selects private storage for sandbox or test hosts.
 
+Explorer navigation uses `page.tree.list` when the browser advertises `treeCache`. Visited directory metadata stays in memory and IndexedDB, scoped by the verified workspace/account identity, root and read-only mount. Stale listings render immediately and revalidate in the background on access; filesystem membership changes, reconnects and explicit refresh invalidate affected listings. Content-only CRDT updates do not rebuild the tree. The cache holds at most 256 directories and 4 MiB, separately from CRDT document recovery. File reads, ordinary `fs.list` and `fs.stat` remain authoritative. Directory listings already carry file kinds, so expansion does not request a stat for each child.
+
 The [MSB runner](../../native/runner/README.md) provisions isolated Linux guests for the local cloud-workspace pilot. It includes NUC testing and the private command-stream bridge used by the Worker; the user-facing session protocol is unchanged.
 
 ### Resource usage

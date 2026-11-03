@@ -30,7 +30,7 @@ typedef ExplorerTreeProps = {
 	/** The project's own file, the first row under the folder; null if it has none. */
 	head:Void->Null<{path:String, icon:ashui.svg.SvgDocument}>,
 	icon:String->ashui.svg.SvgDocument,
-	ignored:String->Bool,
+	ignored:(String, Bool)->Bool,
 	/** Whether a folder starts open, when it has not been opened or closed yet. */
 	opened:String->Bool,
 	/** A folder's open state; the same signal for the same folder. */
@@ -214,7 +214,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 						if (up >= 0) go(up);
 					}
 				case Named(Enter) | Named(Space):
-					props.onSelect(row.path);
+					if (!row.directory) props.onSelect(row.path);
 					if (row.directory) row.open.set(!row.open.get());
 				case _: return;
 			}
@@ -252,7 +252,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 		interaction.onClick(_ -> {
 			if (drag.suppressClick()) return;
 			focused(path);
-			props.onSelect(path);
+			if (!row.directory) props.onSelect(path);
 			if (row.directory) row.open.set(!row.open.get());
 		});
 		interaction.onPointerDown(event -> if (props.onMove != null && (props.canMove == null || props.canMove())) drag.begin(path, event));
@@ -265,7 +265,7 @@ class ExplorerTree extends Component<ExplorerTreeProps> {
 		var item = Library.part("ui-tree-item", null, row.directory ? ["state" => Computed.make(() -> (row.open.get() ? "open" : "closed" : Null<String>))] : null, [line]);
 		var identity = Identity.of(item.tree, item.node.id);
 		identity.setAttribute("data-path", path);
-		if (props.ignored(path)) identity.setAttribute("data-ignored", "");
+		if (props.ignored(path,row.directory)) identity.setAttribute("data-ignored", "");
 		return item;
 	}
 }

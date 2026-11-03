@@ -11,6 +11,7 @@ import { Frames, frame } from "./frames.js";
 import { serve } from "./channel-agent.mjs";
 import { AppPreviews } from "./previews.js";
 import { CachedDemo, remoteDemoEntries } from "./cached-demo.js";
+import { TreeCache } from "./tree-cache.js";
 
 const query = new URLSearchParams(location.search);
 const entry = pageEntry(location, readConnection());
@@ -72,6 +73,7 @@ export const start = ask => serve(ask, {
     const cached = client && preset?.preview ? new CachedDemo(preset,new URL(sample,import.meta.url),previewOrigin,
       ()=>remoteDemoEntries(client),client) : null;
     const documents = client ? new EditorDocuments(client, answer) : null;
+    const tree = client ? new TreeCache(client,{changed:()=>answer({ev:'page.tree.changed'})}) : null;
     const previews = client ? new AppPreviews(client,undefined,answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update", "sync.status"]) client?.on(event, answer);
     const syncStatus = () => { void client?.request("sync.status").then(reply => {
@@ -87,7 +89,9 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), appPreviews:client?.hello.appPreviews===true || !!cached, webPreviews:client?.hello.webPreviews===true || !!cached, demoPreview:!!cached, generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, documentMoves:!!documents && client.documentMoves, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), treeCache:!!tree, appPreviews:client?.hello.appPreviews===true || !!cached, webPreviews:client?.hello.webPreviews===true || !!cached, demoPreview:!!cached, generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, documentMoves:!!documents && client.documentMoves, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          else if(request.op==='page.tree.list'&&tree)reply=await tree.list(request);
+          else if(request.op==='page.tree.refresh'&&tree){tree.invalidate(request.path??'',request.mount??null,true);reply={};}
           else if (request.op.startsWith("view.") && documents) {
             reply = {result:await documents.request(request.op, request)};
             if (request.id === undefined) return;
@@ -164,7 +168,7 @@ export const start = ask => serve(ask, {
     const stopAccounts = followAccount(accounts, entry.workspace ? client : null, status => answer({ev:"account.changed", user:status.user}));
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { stopAccounts(); accounts.signin?.cancel(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
+      close() { stopAccounts(); accounts.signin?.cancel(); tree?.close(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

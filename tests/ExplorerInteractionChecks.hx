@@ -26,7 +26,7 @@ class ExplorerInteractionChecks {
   Sys.println("Explorer gestures: moves, dirty tabs/undo, hover expansion, cancellation, collisions, refusal and cleanup; repository picker: signed-out state and cancellation in both themes");
  }
  static function run(dark:Bool):Void {
-  var memory = new rayde.workspace.MemoryWorkspace(); Fs.current=memory;
+  var memory = new CountingWorkspace(); Fs.current=memory;
   for (dir in ["/home/check", "/work/from/nested", "/work/to", "/work/empty-extensions"]) Fs.createDirectory(dir);
   Sys.putEnv("HOME","/home/check"); Sys.putEnv("RAYDE_EXTENSIONS","/work/empty-extensions");
   Fs.saveContent("/work/from/one.txt","one\n"); Fs.saveContent("/work/from/nested/deep.txt","deep");
@@ -35,7 +35,7 @@ class ExplorerInteractionChecks {
   for (i in 0...100) Fs.saveContent('/work/other$i.hxml',"-cp from\n");
   ashui.theme.ThemeState.init(ashui.theme.themes.RestrainedTheme.bundle(),dark ? Dark : Light); rayde.ui.Style.use();
   var compiler = new CompilerServer(), tree = new LayoutTree(), stop:Void->Void = null, picked = "";
-  var bench = Owner.root(tree,cleanup -> {stop=cleanup; return new Workbench({display:new Display(compiler,"/work",[]),name:"Workspace",onWorkspace:path -> picked=path});});
+  var bench = Owner.root(tree,cleanup -> {stop=cleanup; return new Workbench({display:new Display(compiler,"/work",["-cp","from"]),name:"Workspace",onWorkspace:path -> picked=path});});
   function settle(frames=4):Void for (_ in 0...frames) {Offscreen.advance(.025); Css.update(); tree.flush(); tree.computeLayout(bench.node,1100,760);}
   function count(selector:String):Int return Css.query(tree,bench.node.id,selector).length;
   function box(selector:String):ashui.layout.Bounds {var nodes=Css.query(tree,bench.node.id,selector); check(nodes.length==1,'Missing $selector'); return tree.getScrolledBounds(new Node(nodes[0]));}
@@ -52,6 +52,9 @@ class ExplorerInteractionChecks {
    #if !rayde_page
    check(count("#rayde-account")==0,"Native title bar mounted browser account controls");
    #end
+   memory.watch="/work/from";
+   click(row("/work/from"));click(row("/work/from"));
+   check(memory.checks==0,"Folder toggles performed file-open existence/type checks");memory.watch=null;
    bench.openFile("/work/from/one.txt");settle(); var editor=bench.editorFor("/work/from/one.txt"), state=editor.state;
    editor.applyEdits([{from:0,to:0,text:"unsaved "}]); bench.documentsPart.edited("/work/from/one.txt");settle();var value=editor.value.get();
    var hooks=Pointer.hooks.length;
@@ -104,4 +107,11 @@ class ExplorerInteractionChecks {
   } catch(error:Dynamic) {stop();tree.dispose();compiler.stop();throw error;}
   stop();tree.dispose();compiler.stop();
  }
+}
+
+private class CountingWorkspace extends rayde.workspace.MemoryWorkspace {
+ public var watch:Null<String>;
+ public var checks=0;
+ override public function exists(path:String):Bool {if(path==watch)checks++;return super.exists(path);}
+ override public function isDirectory(path:String):Bool {if(path==watch)checks++;return super.isDirectory(path);}
 }

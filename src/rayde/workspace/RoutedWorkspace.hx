@@ -7,7 +7,7 @@ import haxe.io.Bytes;
  * In a page the session's folder is one mount and the browser's own storage, for settings, themes and built-in extensions, is the rest.
  * Mounts are given absolute paths and the workspaces they hold are called with the same absolute paths.
  */
-class RoutedWorkspace implements Workspace {
+class RoutedWorkspace implements Workspace implements TreeWorkspace {
 	final mounts:Array<{prefix:String, workspace:Workspace}> = [];
 	final fallback:Workspace;
 
@@ -48,6 +48,18 @@ class RoutedWorkspace implements Workspace {
 		return names;
 	}
 	public function stat(path:String):sys.FileStat return route(path).stat(path);
+	public function treeEntries(path:String):Array<TreeWorkspace.TreeEntry> {
+		var entries = Fs.treeEntries(path,route(path)), here = normalize(path);
+		for (mount in mounts) {
+			var at = mount.prefix.lastIndexOf("/"), name = mount.prefix.substr(at + 1);
+			if ((at == 0 ? "/" : mount.prefix.substr(0,at)) == here && mount.prefix != "/") {
+				var existing = Lambda.find(entries,e -> e.name == name);
+				if (existing == null) entries.push({name:name,directory:true}); else existing.directory=true;
+			}
+		}
+		return entries;
+	}
+	public function refreshTree(path:String):Void Fs.refreshTree(path,route(path));
 	public function fullPath(path:String):String return route(path).fullPath(path);
 	public function absolutePath(path:String):String return route(path).absolutePath(path);
 	public function getContent(path:String):String return route(path).getContent(path);

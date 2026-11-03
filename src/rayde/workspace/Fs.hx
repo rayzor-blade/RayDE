@@ -10,6 +10,15 @@ class Fs {
 	public static inline function exists(path:String):Bool return current.exists(path);
 	public static inline function isDirectory(path:String):Bool return current.isDirectory(path);
 	public static inline function readDirectory(path:String):Array<String> return current.readDirectory(path);
+	public static function treeEntries(path:String, ?workspace:Workspace):Array<TreeWorkspace.TreeEntry> {
+		var provider = workspace ?? current;
+		if (Std.isOfType(provider, TreeWorkspace)) return cast(provider, TreeWorkspace).treeEntries(path);
+		return [for (name in provider.readDirectory(path)) try {name:name,directory:provider.isDirectory(haxe.io.Path.join([path,name]))} catch (_:Dynamic) continue];
+	}
+	public static function refreshTree(path:String, ?workspace:Workspace):Void {
+		var provider = workspace ?? current;
+		if (Std.isOfType(provider, TreeWorkspace)) cast(provider, TreeWorkspace).refreshTree(path);
+	}
 	public static inline function stat(path:String):sys.FileStat return current.stat(path);
 	public static inline function fullPath(path:String):String return current.fullPath(path);
 	public static inline function absolutePath(path:String):String return current.absolutePath(path);

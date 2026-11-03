@@ -19,6 +19,7 @@ class SessionClient {
 	public var syntax(default, null) = false;
 	public var appPreviews(default, null) = false;
 	public var demoPreview(default, null) = false;
+	public var treeCache(default, null) = false;
 	/** The cloud workspace this session's tree was restored from and the generation it is a copy of, when it can save back to it. */
     public var syncWriteback(default, null):Null<{workspace:String, generation:Int, ?ready:Bool, ?message:String, ?error:String}>;
     public var webPreviews(default,null) = false;
@@ -75,6 +76,7 @@ class SessionClient {
 			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
 			client.appPreviews = hello.appPreviews == true;
 			client.demoPreview = hello.demoPreview == true;
+			client.treeCache = hello.treeCache == true;
         if (hello.syncWriteback != null) client.syncWriteback = cast hello.syncWriteback;
             client.webPreviews=hello.webPreviews==true || client.appPreviews;
             if(hello.host!=null){client.hostSystem=switch(hello.host.os:String){case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};client.hostArchitecture=hello.host.arch;}

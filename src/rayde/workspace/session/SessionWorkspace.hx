@@ -7,7 +7,7 @@ import haxe.io.Bytes;
  * The files of a session, as `Workspace` calls. The session reports its root, and a path under it is a path in the session;
  * programs the session runs see the same paths, so a path RayDE builds is one they can use.
  */
-class SessionWorkspace implements Workspace {
+class SessionWorkspace implements Workspace implements rayde.workspace.TreeWorkspace {
 	final client:SessionClient;
 	final mount:String;
 	final source:Null<String>;
@@ -36,7 +36,7 @@ class SessionWorkspace implements Workspace {
 
 	function request(op:String, params:Dynamic):Dynamic {
 		if (source != null) {
-			if (op != "fs.stat" && op != "fs.list" && op != "fs.read") throw "Installed sources are read-only.";
+			if (op != "fs.stat" && op != "fs.list" && op != "fs.read" && op != "page.tree.list" && op != "page.tree.refresh") throw "Installed sources are read-only.";
 			Reflect.setField(params,"mount",source);
 		}
 		return client.request(op,params);
@@ -54,6 +54,13 @@ class SessionWorkspace implements Workspace {
 	public function readDirectory(path:String):Array<String> {
 		var names:Array<String> = [for (item in (request("fs.list", {path: inside(path)}).entries : Array<Dynamic>)) item.name];
 		return names;
+	}
+
+	public function treeEntries(path:String):Array<rayde.workspace.TreeWorkspace.TreeEntry>
+		return [for (item in (request(client.treeCache ? "page.tree.list" : "fs.list", {path:inside(path)}).entries:Array<Dynamic>)) {name:item.name,directory:item.kind == "dir"}];
+
+	public function refreshTree(path:String):Void {
+		if (client.treeCache) request("page.tree.refresh", {path:inside(path)});
 	}
 
 	public function stat(path:String):sys.FileStat {

@@ -42,15 +42,15 @@ class GitIgnore {
 		answers.clear();
 	}
 
-	public function ignored(path:String):Bool {
+	public function ignored(path:String, ?directory:Bool):Bool {
 		var known = answers.get(path);
 		if (known != null) return known;
-		var result = decide(path);
+		var result = decide(path,directory);
 		answers.set(path, result);
 		return result;
 	}
 
-	function decide(path:String):Bool {
+	function decide(path:String, ?isDirectory:Bool):Bool {
 		var base = top();
 		if (base == null) return false;
 		var full = Path.removeTrailingSlashes(Path.normalize(path));
@@ -59,7 +59,7 @@ class GitIgnore {
 		for (i in 0...parts.length) {
 			at = at == "" ? parts[i] : at + "/" + parts[i];
 			if (parts[i] == ".git") return true;
-			var directory = i < parts.length - 1 || Fs.isDirectory(full);
+			var directory = i < parts.length - 1 || (isDirectory == null ? Fs.isDirectory(full) : isDirectory);
 			if (matches(base, at, directory)) return true;
 		}
 		return false;

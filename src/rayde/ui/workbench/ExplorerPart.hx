@@ -89,7 +89,17 @@ class ExplorerPart {
 	final wb:Workbench;
 
 	public function new(wb:Workbench)
+	{
 		this.wb = wb;
+		#if wasm
+		var client = rayde.workspace.PageHost.bridge;
+		if (client != null) wb.contributions.onClose(client.subscribe(event -> {
+			if (event.ev == "page.tree.changed") {ignoreRevision=-1;treeRevision.set(treeRevision.get() + 1);}
+		}));
+		#end
+	}
+
+	final treeRevision = Signal.make(0);
 
 	/**
 	 * What the Explorer's tree shows selected, which the tree writes when a row is
@@ -181,7 +191,7 @@ class ExplorerPart {
 				<context-menu-trigger id="rayde-explorer-trigger">
 					<explorer-tree root={wb.props.display.cwd} name={wb.props.name} entries={explorerEntries} head={headRow} icon={wb.editorPart.fileIcon}
 						ignored={ignoredPath} opened={startsOpen} state={folderState} selected={treeSelected} onSelect={openExplorerFile}
-						onPress={explorerPress} onMove={moveExplorerFile} canMove={() -> !movingFile} revision={() -> wb.buildRevision.get()}/>
+						onPress={explorerPress} onMove={moveExplorerFile} canMove={() -> !movingFile} revision={() -> wb.buildRevision.get() + treeRevision.get()}/>
 				</context-menu-trigger>
 				<context-menu-content id="rayde-explorer-menu-content"><for {state in [{target: menuTarget.get(), keys: wb.keymapPart.bindingsRevision.get(), held: clipboardRevision.get()}]}>${explorerItems(state.target)}</for></context-menu-content>
 			</context-menu>;
@@ -226,10 +236,10 @@ class ExplorerPart {
 	}
 
 	/** Whether git ignores a path; the ignore files are read again after each refresh of the Explorer. */
-	function ignoredPath(path:String):Bool {
+	function ignoredPath(path:String, ?directory:Bool):Bool {
 		var rules = gitIgnore(), revision = wb.buildRevision.get();
 		if (revision != ignoreRevision) { ignoreRevision = revision; rules.refresh(); }
-		return rules.ignored(path);
+		return rules.ignored(path,directory);
 	}
 
 	/** The rules git ignores files by, for the project that is open. */
@@ -423,6 +433,7 @@ class ExplorerPart {
 
 	/** Builds the tree again from the files as they are. */
 	public function refreshExplorer():Void {
+		Fs.refreshTree(wb.props.display.cwd);
 		refreshFileIndex();
 		wb.buildRevision.set(wb.buildRevision.get() + 1);
 	}
@@ -606,7 +617,7 @@ class ExplorerPart {
 
 	/** Whether a folder starts open: the project's source folders do, and what is inside them. */
 	function startsOpen(dir:String):Bool
-		return Lambda.exists(classpaths(), cp -> FileOps.inside(dir, cp.dir));
+		return Lambda.exists(FileIndex.directories(wb.props.display.cwd,wb.props.display.args), cp -> FileOps.inside(dir,cp));
 
 	/** The project's files with the open ones first, in the order of their tabs. */
 	function recentFiles():Array<String> {
@@ -647,10 +658,10 @@ class ExplorerPart {
 
 	/** What is in `dir`, folders first, then Haxe files, then the rest, each by name. */
 	function explorerEntries(dir:String):Array<rayde.ui.ExplorerTree.ExplorerEntry> {
-		var names = try Fs.readDirectory(dir) catch (_:Dynamic) [];
-		names = names.filter(name -> name != ".git");
+		var entries = try Fs.treeEntries(dir) catch (_:Dynamic) [];
+		entries = entries.filter(entry -> entry.name != ".git");
 		var directories = new Map<String, Bool>();
-		names = [for (name in names) try { directories.set(name, Fs.isDirectory(haxe.io.Path.join([dir, name]))); name; } catch (_:Dynamic) continue];
+		var names = [for (entry in entries) {directories.set(entry.name,entry.directory);entry.name;}];
 		function rank(name:String):Int return directories.get(name) ? 0 : haxe.io.Path.extension(name).toLowerCase() == "hx" ? 1 : 2;
 		names.sort((a, b) -> { var order = rank(a) - rank(b); return order == 0 ? Reflect.compare(a.toLowerCase(), b.toLowerCase()) : order; });
 		var entry = projectEntry(), out:Array<rayde.ui.ExplorerTree.ExplorerEntry> = [];
