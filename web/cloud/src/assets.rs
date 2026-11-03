@@ -84,11 +84,12 @@ pub(crate) async fn get(req: &Request, env: &Env, path: &str) -> AppResult<Optio
         if req.method() == Method::Head {
             Response::empty()?
         } else {
-            Response::from_stream(
+            // Let the runtime forward R2 bytes without copying each chunk through WASM.
+            Response::from_body(
                 object
                     .body()
                     .ok_or_else(|| bad(503, "Editor asset is unavailable."))?
-                    .stream()?,
+                    .response_body()?,
             )?
         }
     };

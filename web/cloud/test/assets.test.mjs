@@ -2,10 +2,23 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
 import {fixture,signin} from './fixture.mjs';
 
 const asset='https://assets.example.test';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+
+test('concurrent thread agents receive the complete compilable WASM host on either asset route',async t=>{
+ const {mf,fetch}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
+ const bytes=await readFile(new URL('../../../site/dist/ash_browser_bg.wasm',import.meta.url));
+ const bucket=await mf.getR2Bucket('EDITOR_ASSETS');await bucket.put('ash_browser_bg.wasm',bytes);
+ await Promise.all(Array.from({length:8},async(_,index)=>{
+  const response=index%2?await fetch('/ash_browser_bg.wasm'):await mf.dispatchFetch(asset+'/ash_browser_bg.wasm');
+  assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'application/wasm');
+  const received=await response.arrayBuffer();assert.equal(received.byteLength,bytes.length);assert.equal(sha(new Uint8Array(received)),sha(bytes));
+  await WebAssembly.compile(received);
+ }));
+});
 
 test('R2 editor assets stream files above the static asset limit on both configured hosts',async t=>{
  const {mf,fetch}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
