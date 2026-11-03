@@ -25,8 +25,14 @@ try{
  client=new SessionClient({url:`ws://127.0.0.1:${port}/api/workspaces/${id}/socket`,persist:false,reconnect:false});await client.connect();const doc=await client.openDoc('a.txt');
  native=spawn(process.env.ASH??'ash',['--preset','application',resolve('../../bin/desktop-sync-checks.hl'),root,base],{cwd:resolve('../..'),env:{...process.env,HOME:join(data,'home')},stdio:['pipe','pipe','pipe']});native.stdout.on('data',bytes=>{nativeLog+=bytes;});native.stderr.on('data',bytes=>{nativeLog+=bytes;});
  const step=async marker=>until(()=>{if(native.exitCode!==null&&!nativeLog.includes(marker))throw Error(nativeLog);return nativeLog.includes(marker);},marker);
- await step('DESKTOP_READY');doc.text.insert(0,'browser ');await until(()=>!doc.unsent,'browser acknowledgement');native.stdin.write('\n');await step('DESKTOP_SAVED');
+ await step('DESKTOP_READY');
+ const competing=spawnSync(process.env.ASH??'ash',['--preset','application',resolve('../../bin/desktop-sync-checks.hl'),root,base],{cwd:resolve('../..'),env:{...process.env,HOME:join(data,'home')},encoding:'utf8',timeout:15000});
+ assert.notEqual(competing.status,0);assert.match(competing.stdout+competing.stderr,/another RayDE process/);
+ doc.text.insert(0,'browser ');await until(()=>!doc.unsent,'browser acknowledgement');native.stdin.write('\n');await step('DESKTOP_SAVED');
  await doc.sync();assert.equal(doc.text.toString(),'native browser base 🦀');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
- native.stdin.write('\n');await step('DESKTOP_DONE');await doc.sync();assert.equal(doc.text.toString(),'browser base 🦀');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());await doc.close();
+ native.stdin.write('\n');await step('DESKTOP_DONE');await stop(native);await doc.sync();assert.equal(doc.text.toString(),'browser base 🦀');assert.equal(await readFile(join(root,'a.txt'),'utf8'),doc.text.toString());
+ const resumed=spawnSync(process.env.ASH??'ash',['--preset','application',resolve('../../bin/desktop-sync-checks.hl'),root,base+'/'],{cwd:resolve('../..'),env:{...process.env,HOME:join(data,'home')},encoding:'utf8',input:'\n\n',timeout:20000});
+ assert.equal(resumed.status,0,resumed.stdout+resumed.stderr);assert.match(resumed.stdout,/DESKTOP_DONE/);
+ assert.doesNotMatch(nativeLog+resumed.stdout+resumed.stderr,/gave up stopping the world/);await doc.close();
  console.log('Desktop/browser editor binding, saved-file separation and per-author undo: passed');
 }finally{client?.close();await stop(native);await stop(gateway);await rm(data,{recursive:true,force:true});await rm(root,{recursive:true,force:true});}

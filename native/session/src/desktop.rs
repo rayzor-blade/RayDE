@@ -24,6 +24,7 @@ pub async fn open(
     let (config, root, key) = tokio::task::spawn_blocking(move || {
         let mut config = documents::desktop_config(&config)
             .map_err(|error| SessionError::new("not-synced", error.message))?;
+        config.gateway = config.gateway.trim_end_matches('/').to_string();
         config.root = std::fs::canonicalize(&config.root).map_err(crate::dir_store::io_error)?;
         let key = crate::checkpoint::digest(
             &serde_json::to_vec(&(
@@ -60,12 +61,26 @@ pub async fn open(
         hub
     } else {
         let path = config.root.clone();
-        let store = tokio::task::spawn_blocking(move || DirStore::with_state_root(path, root))
+        let (store,lease) = tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(&root).map_err(crate::dir_store::io_error)?;
+            let mut options=std::fs::OpenOptions::new();options.create(true).read(true).write(true);
+            #[cfg(unix)] {use std::os::unix::fs::OpenOptionsExt;options.mode(0o600);}
+            let lease=options.open(root.join("desktop.lock")).map_err(crate::dir_store::io_error)?;
+            match lease.try_lock(){
+                Ok(())=>{},
+                Err(std::fs::TryLockError::WouldBlock)=>return Err(SessionError::new("document-open","Cloud sync for this folder is active in another RayDE process. Close it there before attaching here; your local edits are kept.")),
+                Err(std::fs::TryLockError::Error(error))=>return Err(crate::dir_store::io_error(error)),
+            }
+            let store=DirStore::with_state_root(path,root).map_err(crate::dir_store::io_error)?;
+            Ok::<_,SessionError>((store,lease))
+        })
             .await
             .map_err(|_| SessionError::new("failed", "Could not open private recovery."))?
-            .map_err(crate::dir_store::io_error)?;
+            ?;
         let hub = Arc::new(DocHub::new(Arc::new(store), Arc::new(|_| {})));
-        hub.set_cloud(Arc::new(crate::cloud_gateway::Gateway::desktop(config)));
+        hub.set_cloud(Arc::new(crate::cloud_gateway::Gateway::desktop(
+            config, lease,
+        )));
         hubs.insert(key, Arc::downgrade(&hub));
         hub
     };

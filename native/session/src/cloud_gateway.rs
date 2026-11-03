@@ -17,7 +17,7 @@ pub struct Gateway {
     source: Source,
     permits: tokio::sync::Semaphore,
 }
-enum Source{Session(Arc<Writeback>),Desktop(client::Config)}
+enum Source{Session(Arc<Writeback>),Desktop{config:client::Config,_lease:std::fs::File}}
 impl Gateway {
     pub fn new(writeback: Arc<Writeback>) -> Self {
         Self {
@@ -25,8 +25,8 @@ impl Gateway {
             permits: tokio::sync::Semaphore::new(8),
         }
     }
-    pub fn desktop(config:client::Config)->Self{Self{source:Source::Desktop(config),permits:tokio::sync::Semaphore::new(8)}}
-    fn config(&self)->client::Config{match &self.source{Source::Session(writeback)=>writeback.config(),Source::Desktop(config)=>config.clone()}}
+    pub fn desktop(config:client::Config,lease:std::fs::File)->Self{Self{source:Source::Desktop{config,_lease:lease},permits:tokio::sync::Semaphore::new(8)}}
+    fn config(&self)->client::Config{match &self.source{Source::Session(writeback)=>writeback.config(),Source::Desktop{config,..}=>config.clone()}}
 }
 fn failure(failure: client::Failure) -> SessionError {
     let code = match failure.status {

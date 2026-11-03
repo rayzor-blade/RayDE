@@ -4,6 +4,11 @@ use std::ptr;
 
 static RUNTIMES: Mutex<Vec<Option<Arc<Runtime>>>> = Mutex::new(Vec::new());
 
+unsafe extern "C" {fn hl_blocking(enter:bool);}
+struct HeapWait;
+impl HeapWait{fn begin()->Self{unsafe{hl_blocking(true)};Self}}
+impl Drop for HeapWait{fn drop(&mut self){unsafe{hl_blocking(false)}}}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sync_editor_open(data:*const vbyte,len:i32)->i32{catch_unwind(||unsafe{text(data,len)}.map_or(-1,super::sync_editor::open)).unwrap_or(-1)}
 define_prim!(hlp_sync_editor_open,sync_editor_open,"PBi_i");
@@ -11,7 +16,10 @@ define_prim!(hlp_sync_editor_open,sync_editor_open,"PBi_i");
 pub unsafe extern "C" fn sync_editor_send(id:i32,data:*const vbyte,len:i32)->bool{catch_unwind(||unsafe{text(data,len)}.is_some_and(|text|super::sync_editor::send(id,text))).unwrap_or(false)}
 define_prim!(hlp_sync_editor_send,sync_editor_send,"PiBi_b");
 #[unsafe(no_mangle)]
-pub extern "C" fn sync_editor_receive(id:i32,seconds:f64)->*mut vbyte{catch_unwind(||super::sync_editor::receive(id,seconds).map_or(ptr::null_mut(),|text|packed_text(&text))).unwrap_or(ptr::null_mut())}
+pub extern "C" fn sync_editor_receive(id:i32,seconds:f64)->*mut vbyte{catch_unwind(||{
+    let received={let _wait=HeapWait::begin();super::sync_editor::receive(id,seconds)};
+    received.map_or(ptr::null_mut(),|text|packed_text(&text))
+}).unwrap_or(ptr::null_mut())}
 define_prim!(hlp_sync_editor_receive,sync_editor_receive,"Pid_B");
 #[unsafe(no_mangle)]
 pub extern "C" fn sync_editor_close(id:i32){let _=catch_unwind(||super::sync_editor::close(id));}
