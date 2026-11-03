@@ -3588,9 +3588,9 @@ var findRootTypeKey = (type) => {
   }
   throw unexpectedCase();
 };
-var isParentOf = (parent, child) => {
+var isParentOf = (parent2, child) => {
   while (child !== null) {
-    if (child.parent === parent) {
+    if (child.parent === parent2) {
       return true;
     }
     child = /** @type {AbstractType<any>} */
@@ -4768,9 +4768,9 @@ var YEvent = class {
     );
   }
 };
-var getPathTo = (parent, child) => {
+var getPathTo = (parent2, child) => {
   const path2 = [];
-  while (child._item !== null && child !== parent) {
+  while (child._item !== null && child !== parent2) {
     if (child._item.parentSub !== null) {
       path2.unshift(child._item.parentSub);
     } else {
@@ -5139,16 +5139,16 @@ var typeListGet = (type, index) => {
     }
   }
 };
-var typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) => {
+var typeListInsertGenericsAfter = (transaction, parent2, referenceItem, content) => {
   let left = referenceItem;
   const doc2 = transaction.doc;
   const ownClientId = doc2.clientID;
   const store = doc2.store;
-  const right = referenceItem === null ? parent._start : referenceItem.right;
+  const right = referenceItem === null ? parent2._start : referenceItem.right;
   let jsonContent = [];
   const packJsonContent = () => {
     if (jsonContent.length > 0) {
-      left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentAny(jsonContent));
+      left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentAny(jsonContent));
       left.integrate(transaction, 0);
       jsonContent = [];
     }
@@ -5170,14 +5170,14 @@ var typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) 
           switch (c.constructor) {
             case Uint8Array:
             case ArrayBuffer:
-              left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentBinary(new Uint8Array(
+              left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentBinary(new Uint8Array(
                 /** @type {Uint8Array} */
                 c
               )));
               left.integrate(transaction, 0);
               break;
             case Doc:
-              left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentDoc(
+              left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentDoc(
                 /** @type {Doc} */
                 c
               ));
@@ -5185,7 +5185,7 @@ var typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) 
               break;
             default:
               if (c instanceof AbstractType) {
-                left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentType(c));
+                left = new Item(createID(ownClientId, getState(store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentType(c));
                 left.integrate(transaction, 0);
               } else {
                 throw new Error("Unexpected content type in insert operation");
@@ -5197,19 +5197,19 @@ var typeListInsertGenericsAfter = (transaction, parent, referenceItem, content) 
   packJsonContent();
 };
 var lengthExceeded = () => create3("Length exceeded!");
-var typeListInsertGenerics = (transaction, parent, index, content) => {
-  if (index > parent._length) {
+var typeListInsertGenerics = (transaction, parent2, index, content) => {
+  if (index > parent2._length) {
     throw lengthExceeded();
   }
   if (index === 0) {
-    if (parent._searchMarker) {
-      updateMarkerChanges(parent._searchMarker, index, content.length);
+    if (parent2._searchMarker) {
+      updateMarkerChanges(parent2._searchMarker, index, content.length);
     }
-    return typeListInsertGenericsAfter(transaction, parent, null, content);
+    return typeListInsertGenericsAfter(transaction, parent2, null, content);
   }
   const startIndex = index;
-  const marker = findMarker(parent, index);
-  let n = parent._start;
+  const marker = findMarker(parent2, index);
+  let n = parent2._start;
   if (marker !== null) {
     n = marker.p;
     index -= marker.index;
@@ -5229,29 +5229,29 @@ var typeListInsertGenerics = (transaction, parent, index, content) => {
       index -= n.length;
     }
   }
-  if (parent._searchMarker) {
-    updateMarkerChanges(parent._searchMarker, startIndex, content.length);
+  if (parent2._searchMarker) {
+    updateMarkerChanges(parent2._searchMarker, startIndex, content.length);
   }
-  return typeListInsertGenericsAfter(transaction, parent, n, content);
+  return typeListInsertGenericsAfter(transaction, parent2, n, content);
 };
-var typeListPushGenerics = (transaction, parent, content) => {
-  const marker = (parent._searchMarker || []).reduce((maxMarker, currMarker) => currMarker.index > maxMarker.index ? currMarker : maxMarker, { index: 0, p: parent._start });
+var typeListPushGenerics = (transaction, parent2, content) => {
+  const marker = (parent2._searchMarker || []).reduce((maxMarker, currMarker) => currMarker.index > maxMarker.index ? currMarker : maxMarker, { index: 0, p: parent2._start });
   let n = marker.p;
   if (n) {
     while (n.right) {
       n = n.right;
     }
   }
-  return typeListInsertGenericsAfter(transaction, parent, n, content);
+  return typeListInsertGenericsAfter(transaction, parent2, n, content);
 };
-var typeListDelete = (transaction, parent, index, length2) => {
+var typeListDelete = (transaction, parent2, index, length2) => {
   if (length2 === 0) {
     return;
   }
   const startIndex = index;
   const startLength = length2;
-  const marker = findMarker(parent, index);
-  let n = parent._start;
+  const marker = findMarker(parent2, index);
+  let n = parent2._start;
   if (marker !== null) {
     n = marker.p;
     index -= marker.index;
@@ -5277,23 +5277,23 @@ var typeListDelete = (transaction, parent, index, length2) => {
   if (length2 > 0) {
     throw lengthExceeded();
   }
-  if (parent._searchMarker) {
+  if (parent2._searchMarker) {
     updateMarkerChanges(
-      parent._searchMarker,
+      parent2._searchMarker,
       startIndex,
       -startLength + length2
       /* in case we remove the above exception */
     );
   }
 };
-var typeMapDelete = (transaction, parent, key) => {
-  const c = parent._map.get(key);
+var typeMapDelete = (transaction, parent2, key) => {
+  const c = parent2._map.get(key);
   if (c !== void 0) {
     c.delete(transaction);
   }
 };
-var typeMapSet = (transaction, parent, key, value) => {
-  const left = parent._map.get(key) || null;
+var typeMapSet = (transaction, parent2, key, value) => {
+  const left = parent2._map.get(key) || null;
   const doc2 = transaction.doc;
   const ownClientId = doc2.clientID;
   let content;
@@ -5330,31 +5330,31 @@ var typeMapSet = (transaction, parent, key, value) => {
         }
     }
   }
-  new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, null, null, parent, key, content).integrate(transaction, 0);
+  new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, null, null, parent2, key, content).integrate(transaction, 0);
 };
-var typeMapGet = (parent, key) => {
-  parent.doc ?? warnPrematureAccess();
-  const val = parent._map.get(key);
+var typeMapGet = (parent2, key) => {
+  parent2.doc ?? warnPrematureAccess();
+  const val = parent2._map.get(key);
   return val !== void 0 && !val.deleted ? val.content.getContent()[val.length - 1] : void 0;
 };
-var typeMapGetAll = (parent) => {
+var typeMapGetAll = (parent2) => {
   const res = {};
-  parent.doc ?? warnPrematureAccess();
-  parent._map.forEach((value, key) => {
+  parent2.doc ?? warnPrematureAccess();
+  parent2._map.forEach((value, key) => {
     if (!value.deleted) {
       res[key] = value.content.getContent()[value.length - 1];
     }
   });
   return res;
 };
-var typeMapHas = (parent, key) => {
-  parent.doc ?? warnPrematureAccess();
-  const val = parent._map.get(key);
+var typeMapHas = (parent2, key) => {
+  parent2.doc ?? warnPrematureAccess();
+  const val = parent2._map.get(key);
   return val !== void 0 && !val.deleted;
 };
-var typeMapGetAllSnapshot = (parent, snapshot) => {
+var typeMapGetAllSnapshot = (parent2, snapshot) => {
   const res = {};
-  parent._map.forEach((value, key) => {
+  parent2._map.forEach((value, key) => {
     let v2 = value;
     while (v2 !== null && (!snapshot.sv.has(v2.id.client) || v2.id.clock >= (snapshot.sv.get(v2.id.client) || 0))) {
       v2 = v2.left;
@@ -5904,18 +5904,18 @@ var findNextPosition = (transaction, pos, count2) => {
   }
   return pos;
 };
-var findPosition = (transaction, parent, index, useSearchMarker) => {
+var findPosition = (transaction, parent2, index, useSearchMarker) => {
   const currentAttributes = /* @__PURE__ */ new Map();
-  const marker = useSearchMarker ? findMarker(parent, index) : null;
+  const marker = useSearchMarker ? findMarker(parent2, index) : null;
   if (marker) {
     const pos = new ItemTextListPosition(marker.p.left, marker.p, marker.index, currentAttributes);
     return findNextPosition(transaction, pos, index - marker.index);
   } else {
-    const pos = new ItemTextListPosition(null, parent._start, 0, currentAttributes);
+    const pos = new ItemTextListPosition(null, parent2._start, 0, currentAttributes);
     return findNextPosition(transaction, pos, index);
   }
 };
-var insertNegatedAttributes = (transaction, parent, currPos, negatedAttributes) => {
+var insertNegatedAttributes = (transaction, parent2, currPos, negatedAttributes) => {
   while (currPos.right !== null && (currPos.right.deleted === true || currPos.right.content.constructor === ContentFormat && equalAttrs(
     negatedAttributes.get(
       /** @type {ContentFormat} */
@@ -5937,7 +5937,7 @@ var insertNegatedAttributes = (transaction, parent, currPos, negatedAttributes) 
   negatedAttributes.forEach((val, key) => {
     const left = currPos.left;
     const right = currPos.right;
-    const nextFormat = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentFormat(key, val));
+    const nextFormat = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentFormat(key, val));
     nextFormat.integrate(transaction, 0);
     currPos.right = nextFormat;
     currPos.forward();
@@ -5969,7 +5969,7 @@ var minimizeAttributeChanges = (currPos, attributes) => {
     currPos.forward();
   }
 };
-var insertAttributes = (transaction, parent, currPos, attributes) => {
+var insertAttributes = (transaction, parent2, currPos, attributes) => {
   const doc2 = transaction.doc;
   const ownClientId = doc2.clientID;
   const negatedAttributes = /* @__PURE__ */ new Map();
@@ -5979,14 +5979,14 @@ var insertAttributes = (transaction, parent, currPos, attributes) => {
     if (!equalAttrs(currentVal, val)) {
       negatedAttributes.set(key, currentVal);
       const { left, right } = currPos;
-      currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, new ContentFormat(key, val));
+      currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, new ContentFormat(key, val));
       currPos.right.integrate(transaction, 0);
       currPos.forward();
     }
   }
   return negatedAttributes;
 };
-var insertText = (transaction, parent, currPos, text2, attributes) => {
+var insertText = (transaction, parent2, currPos, text2, attributes) => {
   currPos.currentAttributes.forEach((_val, key) => {
     if (attributes[key] === void 0) {
       attributes[key] = null;
@@ -5995,27 +5995,27 @@ var insertText = (transaction, parent, currPos, text2, attributes) => {
   const doc2 = transaction.doc;
   const ownClientId = doc2.clientID;
   minimizeAttributeChanges(currPos, attributes);
-  const negatedAttributes = insertAttributes(transaction, parent, currPos, attributes);
+  const negatedAttributes = insertAttributes(transaction, parent2, currPos, attributes);
   const content = text2.constructor === String ? new ContentString(
     /** @type {string} */
     text2
   ) : text2 instanceof AbstractType ? new ContentType(text2) : new ContentEmbed(text2);
   let { left, right, index } = currPos;
-  if (parent._searchMarker) {
-    updateMarkerChanges(parent._searchMarker, currPos.index, content.getLength());
+  if (parent2._searchMarker) {
+    updateMarkerChanges(parent2._searchMarker, currPos.index, content.getLength());
   }
-  right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent, null, content);
+  right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), left, left && left.lastId, right, right && right.id, parent2, null, content);
   right.integrate(transaction, 0);
   currPos.right = right;
   currPos.index = index;
   currPos.forward();
-  insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
+  insertNegatedAttributes(transaction, parent2, currPos, negatedAttributes);
 };
-var formatText = (transaction, parent, currPos, length2, attributes) => {
+var formatText = (transaction, parent2, currPos, length2, attributes) => {
   const doc2 = transaction.doc;
   const ownClientId = doc2.clientID;
   minimizeAttributeChanges(currPos, attributes);
-  const negatedAttributes = insertAttributes(transaction, parent, currPos, attributes);
+  const negatedAttributes = insertAttributes(transaction, parent2, currPos, attributes);
   iterationLoop: while (currPos.right !== null && (length2 > 0 || negatedAttributes.size > 0 && (currPos.right.deleted || currPos.right.content.constructor === ContentFormat))) {
     if (!currPos.right.deleted) {
       switch (currPos.right.content.constructor) {
@@ -6055,11 +6055,11 @@ var formatText = (transaction, parent, currPos, length2, attributes) => {
     for (; length2 > 0; length2--) {
       newlines += "\n";
     }
-    currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), currPos.left, currPos.left && currPos.left.lastId, currPos.right, currPos.right && currPos.right.id, parent, null, new ContentString(newlines));
+    currPos.right = new Item(createID(ownClientId, getState(doc2.store, ownClientId)), currPos.left, currPos.left && currPos.left.lastId, currPos.right, currPos.right && currPos.right.id, parent2, null, new ContentString(newlines));
     currPos.right.integrate(transaction, 0);
     currPos.forward();
   }
-  insertNegatedAttributes(transaction, parent, currPos, negatedAttributes);
+  insertNegatedAttributes(transaction, parent2, currPos, negatedAttributes);
 };
 var cleanupFormattingGap = (transaction, start2, curr, startAttributes, currAttributes) => {
   let end = start2;
@@ -6206,12 +6206,12 @@ var cleanupYTextAfterTransaction = (transaction) => {
       )) {
         return;
       }
-      const parent = (
+      const parent2 = (
         /** @type {YText} */
         item.parent
       );
       if (item.content.constructor === ContentFormat) {
-        needFullCleanup.add(parent);
+        needFullCleanup.add(parent2);
       } else {
         cleanupContextlessFormattingGap(t, item);
       }
@@ -6244,13 +6244,13 @@ var deleteText = (transaction, currPos, length2) => {
   if (start2) {
     cleanupFormattingGap(transaction, start2, currPos.right, startAttrs, currPos.currentAttributes);
   }
-  const parent = (
+  const parent2 = (
     /** @type {AbstractType<any>} */
     /** @type {Item} */
     (currPos.left || currPos.right).parent
   );
-  if (parent._searchMarker) {
-    updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length2);
+  if (parent2._searchMarker) {
+    updateMarkerChanges(parent2._searchMarker, currPos.index, -startLength + length2);
   }
   return currPos;
 };
@@ -8726,13 +8726,13 @@ var Item = class _Item extends AbstractStruct {
    * @param {string | null} parentSub
    * @param {AbstractContent} content
    */
-  constructor(id2, left, origin, right, rightOrigin, parent, parentSub, content) {
+  constructor(id2, left, origin, right, rightOrigin, parent2, parentSub, content) {
     super(id2, content.getLength());
     this.origin = origin;
     this.left = left;
     this.right = right;
     this.rightOrigin = rightOrigin;
-    this.parent = parent;
+    this.parent = parent2;
     this.parentSub = parentSub;
     this.redone = null;
     this.content = content;
@@ -8994,16 +8994,16 @@ var Item = class _Item extends AbstractStruct {
    */
   delete(transaction) {
     if (!this.deleted) {
-      const parent = (
+      const parent2 = (
         /** @type {AbstractType<any>} */
         this.parent
       );
       if (this.countable && this.parentSub === null) {
-        parent._length -= this.length;
+        parent2._length -= this.length;
       }
       this.markDeleted();
       addToDeleteSet(transaction.deleteSet, this.id.client, this.id.clock, this.length);
-      addChangedTypeToTransaction(transaction, parent, this.parentSub);
+      addChangedTypeToTransaction(transaction, parent2, this.parentSub);
       this.content.delete(transaction);
     }
   }
@@ -9046,26 +9046,26 @@ var Item = class _Item extends AbstractStruct {
       encoder.writeRightID(rightOrigin);
     }
     if (origin === null && rightOrigin === null) {
-      const parent = (
+      const parent2 = (
         /** @type {AbstractType<any>} */
         this.parent
       );
-      if (parent._item !== void 0) {
-        const parentItem = parent._item;
+      if (parent2._item !== void 0) {
+        const parentItem = parent2._item;
         if (parentItem === null) {
-          const ykey = findRootTypeKey(parent);
+          const ykey = findRootTypeKey(parent2);
           encoder.writeParentInfo(true);
           encoder.writeString(ykey);
         } else {
           encoder.writeParentInfo(false);
           encoder.writeLeftID(parentItem.id);
         }
-      } else if (parent.constructor === String) {
+      } else if (parent2.constructor === String) {
         encoder.writeParentInfo(true);
-        encoder.writeString(parent);
-      } else if (parent.constructor === ID) {
+        encoder.writeString(parent2);
+      } else if (parent2.constructor === ID) {
         encoder.writeParentInfo(false);
-        encoder.writeLeftID(parent);
+        encoder.writeLeftID(parent2);
       } else {
         unexpectedCase();
       }
@@ -12356,6 +12356,251 @@ var CachedDemo = class {
   }
 };
 
+// src/tree-cache.js
+var MAX_DIRECTORIES = 256;
+var MAX_BYTES = 4 * 1024 * 1024;
+var clean = (path2) => typeof path2 === "string" && !path2.startsWith("/") && !/[\\\0]/.test(path2) && (path2 === "" || path2.split("/").every((part) => part && part !== "." && part !== ".."));
+var parent = (path2) => path2.slice(0, Math.max(0, path2.lastIndexOf("/")));
+var under2 = (path2, dir) => dir === "" || path2 === dir || path2.startsWith(dir + "/");
+var raced = () => Object.assign(Error("The directory changed while loading."), { code: "tree-changed" });
+var TreeCache = class {
+  constructor(client, { storage: storage2 = new TreeStorage(), changed = () => {
+  }, now = Date.now } = {}) {
+    this.client = client;
+    this.storage = storage2;
+    this.changed = changed;
+    this.now = now;
+    this.rows = /* @__PURE__ */ new Map();
+    this.reads = /* @__PURE__ */ new Map();
+    this.flights = /* @__PURE__ */ new Map();
+    this.versions = /* @__PURE__ */ new Map();
+    this.pending = /* @__PURE__ */ new Map();
+    this.bytes = 0;
+    this.epoch = 0;
+    this.closed = false;
+    this.notifying = false;
+    this.stops = [
+      client.on("fs.changed", (event) => {
+        if (event.kind !== "change") this.invalidate(event.path);
+        if (event.path?.split("/").at(-1) === ".gitignore" || event.path?.endsWith(".git/info/exclude")) this.notify();
+      }),
+      client.on("workspace.moved", (event) => {
+        this.invalidate(event.from);
+        this.invalidate(event.to);
+      }),
+      client.on("connected", () => {
+        this.reset(false);
+        this.notify();
+      }),
+      client.on("signed-in", () => {
+        this.reset(true);
+        this.notify();
+      }),
+      client.on("context-changed", () => this.reset(true))
+    ];
+  }
+  guard() {
+    if (this.closed || this.client.invalidated || this.client.accountPaused) throw this.client.invalidated ?? Error("The workspace connection is stopped.");
+  }
+  address(params2) {
+    const path2 = params2.path ?? "", mount = params2.mount ?? null;
+    if (!clean(path2)) throw Error("Invalid directory path.");
+    const source = mount === null ? null : this.client.hello.readRoots?.find((source2) => source2.id === mount);
+    if (mount !== null && !source) throw Error("Unknown installed source mount.");
+    const scope = JSON.stringify([this.client.workspace, this.client.hello.root, mount, source?.path ?? null]);
+    return { key: JSON.stringify([scope, path2]), scope, path: path2, params: { path: path2, ...mount === null ? {} : { mount } } };
+  }
+  notify() {
+    if (this.notifying || this.closed) return;
+    this.notifying = true;
+    queueMicrotask(() => {
+      this.notifying = false;
+      if (!this.closed) this.changed();
+    });
+  }
+  reset(clear) {
+    this.epoch++;
+    this.flights.clear();
+    this.reads.clear();
+    this.versions.clear();
+    if (clear) {
+      this.rows.clear();
+      this.bytes = 0;
+    } else for (const row of this.rows.values()) row.checked = 0;
+  }
+  track(key, delta) {
+    const count2 = (this.pending.get(key) ?? 0) + delta;
+    if (count2 > 0) this.pending.set(key, count2);
+    else {
+      this.pending.delete(key);
+      if (!this.rows.has(key)) this.versions.delete(key);
+    }
+  }
+  put(address, entries, checked) {
+    const bytes = JSON.stringify(entries).length * 2;
+    const previous = this.rows.get(address.key);
+    if (previous) this.bytes -= previous.bytes;
+    if (bytes > MAX_BYTES) {
+      this.rows.delete(address.key);
+      return null;
+    }
+    const row = { ...address, entries, checked, bytes };
+    this.rows.delete(address.key);
+    this.rows.set(address.key, row);
+    this.bytes += bytes;
+    while (this.rows.size > MAX_DIRECTORIES || this.bytes > MAX_BYTES) {
+      const [key, old] = this.rows.entries().next().value;
+      this.rows.delete(key);
+      this.bytes -= old.bytes;
+      if (!this.pending.has(key)) this.versions.delete(key);
+    }
+    return row;
+  }
+  async list(params2 = {}, retry = 0) {
+    this.guard();
+    const address = this.address(params2), known = this.rows.get(address.key);
+    if (known) {
+      this.rows.delete(address.key);
+      this.rows.set(address.key, known);
+      if (this.client.ready && this.now() - known.checked > 15e3) this.load(address).catch(() => {
+      });
+      return { entries: structuredClone(known.entries) };
+    }
+    if (this.reads.has(address.key)) return this.reads.get(address.key);
+    const epoch = this.epoch, version = this.versions.get(address.key) ?? 0;
+    const work = (async () => {
+      const saved = this.client.cacheable && this.client.options?.persist !== false ? await this.storage.get(address.key).catch(() => null) : null;
+      this.guard();
+      if (epoch !== this.epoch || (this.versions.get(address.key) ?? 0) !== version) throw raced();
+      if (saved?.version === 1 && saved.key === address.key && valid(saved.entries) && JSON.stringify(saved.entries).length * 2 <= MAX_BYTES) {
+        this.put(address, saved.entries, 0);
+        if (this.client.ready) this.load(address).catch(() => {
+        });
+        return { entries: structuredClone(saved.entries) };
+      }
+      return this.load(address);
+    })();
+    this.reads.set(address.key, work);
+    this.track(address.key, 1);
+    try {
+      return await work;
+    } catch (error) {
+      if (error.code !== "tree-changed" || retry >= 2) throw error;
+      if (this.reads.get(address.key) === work) this.reads.delete(address.key);
+      return this.list(params2, retry + 1);
+    } finally {
+      if (this.reads.get(address.key) === work) this.reads.delete(address.key);
+      this.track(address.key, -1);
+    }
+  }
+  load(address) {
+    if (this.flights.has(address.key)) return this.flights.get(address.key);
+    const epoch = this.epoch, version = this.versions.get(address.key) ?? 0;
+    const work = (async () => {
+      const reply = await this.client.request("fs.list", address.params);
+      this.guard();
+      if (epoch !== this.epoch || (this.versions.get(address.key) ?? 0) !== version) throw raced();
+      if (!valid(reply.entries)) throw Error("Invalid directory metadata.");
+      const old = this.rows.get(address.key), different = old && JSON.stringify(old.entries.map((e) => [e.name, e.kind])) !== JSON.stringify(reply.entries.map((e) => [e.name, e.kind]));
+      const row = this.put(address, reply.entries, this.now());
+      if (row && this.client.cacheable && this.client.options?.persist !== false)
+        this.storage.put({ version: 1, key: address.key, entries: reply.entries, used: this.now() }).catch(() => {
+        });
+      if (different) this.notify();
+      return { entries: structuredClone(reply.entries) };
+    })();
+    this.flights.set(address.key, work);
+    this.track(address.key, 1);
+    work.finally(() => {
+      if (this.flights.get(address.key) === work) this.flights.delete(address.key);
+      this.track(address.key, -1);
+    }).catch(() => {
+    });
+    return work;
+  }
+  invalidate(path2 = "", mount = null, refresh = false) {
+    if (!clean(path2)) return;
+    const address = this.address({ path: path2, mount });
+    const keys2 = /* @__PURE__ */ new Set([...this.rows.keys(), ...this.flights.keys(), ...this.reads.keys()]);
+    let changed = false;
+    for (const key of keys2) {
+      const [scope, dir] = JSON.parse(key);
+      if (scope !== address.scope || !(dir === parent(path2) || under2(dir, path2))) continue;
+      changed = true;
+      this.versions.set(key, (this.versions.get(key) ?? 0) + 1);
+      this.flights.delete(key);
+      const row = this.rows.get(key);
+      if (row) {
+        row.checked = 0;
+        if (!refresh && this.client.ready) this.load(row).catch(() => {
+        });
+      }
+    }
+    if (changed && refresh) this.notify();
+  }
+  close() {
+    this.closed = true;
+    this.reset(true);
+    for (const stop of this.stops) stop();
+    this.storage.close();
+  }
+};
+function valid(entries) {
+  return Array.isArray(entries) && entries.every((entry2) => entry2 && typeof entry2.name === "string" && entry2.name.length > 0 && entry2.name.length <= 4096 && !/[\/\\\0]/.test(entry2.name) && entry2.name !== "." && entry2.name !== ".." && ["dir", "file", "other"].includes(entry2.kind) && Number.isFinite(entry2.size) && entry2.size >= 0 && Number.isFinite(entry2.mtime) && entry2.mtime >= 0);
+}
+var TreeStorage = class {
+  constructor() {
+    this.database = null;
+  }
+  async open() {
+    if (!this.database) this.database = new Promise((resolve, reject) => {
+      const request = indexedDB.open("rayde-visited-tree-v1", 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore("directories", { keyPath: "key" });
+        request.result.createObjectStore("usage", { keyPath: "key" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    return this.database;
+  }
+  async get(key) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const request = db.transaction("directories").objectStore("directories").get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async put(row) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["directories", "usage"], "readwrite"), store = tx.objectStore("directories"), usage = tx.objectStore("usage");
+      store.put(row);
+      usage.put({ key: row.key, used: row.used, bytes: JSON.stringify(row).length * 2 });
+      const request = usage.getAll();
+      request.onsuccess = () => {
+        const rows = request.result.sort((a3, b) => b.used - a3.used);
+        let bytes = 0;
+        for (let i = 0; i < rows.length; i++) {
+          bytes += rows[i].bytes;
+          if (i >= MAX_DIRECTORIES || bytes > MAX_BYTES) {
+            store.delete(rows[i].key);
+            usage.delete(rows[i].key);
+          }
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error ?? Error("Directory metadata could not be cached."));
+    });
+  }
+  close() {
+    this.database?.then((db) => db.close()).catch(() => {
+    });
+    this.database = null;
+  }
+};
+
 // src/agent.js
 var query = new URLSearchParams(location.search);
 var entry = pageEntry(location, readConnection());
@@ -12423,6 +12668,7 @@ var start = (ask) => serve(ask, {
       client
     ) : null;
     const documents = client ? new EditorDocuments(client, answer) : null;
+    const tree = client ? new TreeCache(client, { changed: () => answer({ ev: "page.tree.changed" }) }) : null;
     const previews = client ? new AppPreviews(client, void 0, answer) : null;
     for (const event of ["proc.out", "proc.exit", "term.ready", "term.update", "term.failed", "fs.changed", "doc.update", "sync.status"]) client?.on(event, answer);
     const syncStatus = () => {
@@ -12452,8 +12698,12 @@ var start = (ask) => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, appPreviews: client?.hello.appPreviews === true || !!cached, webPreviews: client?.hello.webPreviews === true || !!cached, demoPreview: !!cached, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
-          else if (request.op.startsWith("view.") && documents) {
+          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, treeCache: !!tree, appPreviews: client?.hello.appPreviews === true || !!cached, webPreviews: client?.hello.webPreviews === true || !!cached, demoPreview: !!cached, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
+          else if (request.op === "page.tree.list" && tree) reply = await tree.list(request);
+          else if (request.op === "page.tree.refresh" && tree) {
+            tree.invalidate(request.path ?? "", request.mount ?? null, true);
+            reply = {};
+          } else if (request.op.startsWith("view.") && documents) {
             reply = { result: await documents.request(request.op, request) };
             if (request.id === void 0) return;
           } else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from, request.to);
@@ -12542,6 +12792,7 @@ var start = (ask) => serve(ask, {
       close() {
         stopAccounts();
         accounts.signin?.cancel();
+        tree?.close();
         previews?.dispose();
         documents?.close();
         client?.close();
