@@ -62,6 +62,7 @@ async fn send(
     headers.set("User-Agent", "RayDE")?;
     headers.set("X-GitHub-Api-Version", "2022-11-28")?;
     headers.set("Content-Type", "application/json")?;
+    let lookup = method == Method::Get;
     let mut init = RequestInit::new();
     init.with_method(method).with_headers(headers);
     if let Some(data) = data {
@@ -70,13 +71,33 @@ async fn send(
     let request = Request::new_with_init(&format!("https://api.github.com{path}"), &init)?;
     crate::workspace::deadline(async {
     let mut response = github(env, request).await?;
-    match response.status_code() {
-        200..=299 => response.json().await.map_err(Failure::from),
-        401 => Err(bad(401,"Sign in with GitHub again.")),
-        403|404 => Err(bad(403,"Allow Repository creation and Contents write for the RayDE GitHub App, then retry.")),
-        422 => Err(bad(409,"GitHub could not apply this request. Check the repository name and its current files.")),
-        _ => Err(bad(502,"GitHub did not complete the project request. Try again.")),
-    }
+    let status = response.status_code();
+    if (200..=299).contains(&status) { return response.json().await.map_err(Failure::from); }
+    let operation = if path == "/user/repos" { "Repository creation" }
+        else if path.contains("/contents/") { "Starter file creation" }
+        else if path.contains("/git/ref") && lookup { "Starter branch lookup" }
+        else { "Starter commit publication" };
+    let request_id = response.headers().get("X-GitHub-Request-Id")?.unwrap_or_default();
+    let accepted = response.headers().get("X-Accepted-GitHub-Permissions")?.unwrap_or_default();
+    let limited = status == 429 || response.headers().get("X-RateLimit-Remaining")?.as_deref() == Some("0")
+        || response.headers().get("Retry-After")?.is_some();
+    let details: Value = response.json().await.unwrap_or(Value::Null);
+    let clean = |text: &str| text.chars().filter(|c| !c.is_control()).take(240).collect::<String>();
+    let reason = clean(details["message"].as_str().unwrap_or("GitHub rejected the request."));
+    console_warn!("GitHub starter request: operation={} status={} request={} accepted={} reason={}",
+        operation, status, clean(&request_id), clean(&accepted), reason);
+    if status == 401 { return Err(bad(401,"Sign in with GitHub again.")); }
+    if limited { return Err(bad(429,"GitHub is rate limiting project requests. Wait a little, then retry this project.")); }
+    let help = match status {
+        403 if path == "/user/repos" => " Check Repository creation write on the App installation, or sign in again to renew authorization.",
+        403 => " Check Contents write and this repository's access on the App installation.",
+        404 => " Check that the repository is included in the App installation.",
+        422 => " Check the repository name and its current files.",
+        _ => " Retry this project to check its progress.",
+    };
+    let reference = if request_id.is_empty() { String::new() } else { format!(" Reference: {}.",clean(&request_id)) };
+    Err(bad(match status {403 | 404 => 403,422 => 409,_ => 502},
+        &format!("{operation} failed ({status}): {reason}{help}{reference}")))
     }, 15).await.map_err(|_|bad(504,"GitHub did not respond in time. Retry to check this project request."))?
 }
 
@@ -244,7 +265,7 @@ async fn run(
         {
             Ok(repository) => repository,
             Err(error) => {
-                if matches!(error.status, 401 | 403 | 409) {
+                if matches!(error.status, 401 | 403 | 409 | 429) {
                     job["phase"] = json!("new");
                     storage.put(record, &*job).await?;
                 }
@@ -287,7 +308,7 @@ async fn run(
         {
             Ok(initial) => initial,
             Err(error) => {
-                if matches!(error.status, 401 | 403 | 409) {
+                if matches!(error.status, 401 | 403 | 409 | 429) {
                     job["phase"] = json!("created");
                     storage.put(record, &*job).await?;
                 }

@@ -8,12 +8,13 @@ const starter=()=>({name:"my-project",description:"Starter fixture",private:true
   {path:"README.md",text:"# My project\n"},{path:"build.hxml",text:"-cp src\n-main Main\n"},
   {path:"src/Main.hx",text:'class Main { static function main() trace("Hello"); }'},
 ]});
-function github({failTree=false,conflict=false,permission=false,unknownCreate=false}={}) {
+function github({failTree=false,conflict=false,permission=false,unknownCreate=false,denied}={}) {
   const calls=[];let head=base,failed=false;
   return {calls,handle:async request=>{
     const path=new URL(request.url).pathname;
     if(!path.startsWith("/repos/alice/my-project/")&&path!=="/user/repos")return;
     const body=request.method==="GET"?null:await request.json();calls.push({path,method:request.method,body});
+    if(denied?.path===path){const response=json({message:denied.message,ignored:"do-not-expose"},denied.status);for(const [key,value] of Object.entries(denied.headers??{}))response.headers.set(key,value);return response;}
     if(path==="/user/repos")return unknownCreate?json({},503):permission?json({},403):json({...repo,name:"my-project",full_name:"alice/my-project",owner:{id:1}},201);
     if(path.endsWith("/contents/README.md"))return json({commit:{sha:base,tree:{sha:baseTree},parents:[]}},201);
     if(path.endsWith("/git/ref/heads/main"))return json({object:{sha:conflict?"f".repeat(40):head}});
@@ -71,5 +72,23 @@ test("project input and GitHub App permissions are checked before starter public
   }
   assert.equal((await create({...starter(),files:[{path:"README.md",text:"a".repeat(1024*1024+1)}]})).status,413);
   assert.equal(mock.calls.length,0);
-  const denied=await create(starter());assert.equal(denied.status,403);assert.match((await denied.json()).message,/Repository creation and Contents write/);
+  const denied=await create(starter());assert.equal(denied.status,403);assert.match((await denied.json()).message,/Repository creation failed \(403\)/);
+});
+
+test("GitHub failures identify the rejected starter operation and preserve its reference",async t=>{
+  const mock=github({denied:{path:"/repos/alice/my-project/contents/README.md",status:404,message:"Not Found",headers:{"X-GitHub-Request-Id":"fixture-reference","X-Accepted-GitHub-Permissions":"contents=write"}}});
+  const {mf,fetch}=await fixture({github:mock.handle});t.after(()=>mf.dispose());const user=await signin(fetch);
+  const response=await fetch("/api/projects/create/"+key,{method:"POST",headers:user.headers,body:JSON.stringify(starter())});
+  const result=await response.json();
+  assert.equal(result.status,"incomplete");assert.equal(result.repository.fullName,"alice/my-project");
+  assert.match(result.message,/Starter file creation failed \(404\): Not Found/);assert.match(result.message,/included in the App installation/);
+  assert.match(result.message,/Reference: fixture-reference/);assert.doesNotMatch(result.message,/Repository creation write|access-alice|do-not-expose/);
+});
+
+test("rate limiting is distinguished from permission denial and can retry creation",async t=>{
+  const denied={path:"/user/repos",status:403,message:"API rate limit exceeded",headers:{"X-RateLimit-Remaining":"0"}};
+  const mock=github({denied}),{mf,fetch}=await fixture({github:mock.handle});t.after(()=>mf.dispose());const user=await signin(fetch);
+  const create=()=>fetch("/api/projects/create/"+key,{method:"POST",headers:user.headers,body:JSON.stringify(starter())});
+  const response=await create();assert.equal(response.status,429);assert.match((await response.json()).message,/rate limiting/);
+  denied.path="disabled";assert.equal((await(await create()).json()).status,"ready");
 });
