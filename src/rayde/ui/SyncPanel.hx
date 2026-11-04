@@ -25,6 +25,7 @@ typedef SyncPanelProps = {
 	?unavailableMessage:String,
 	?saveBack:Signal<Null<SaveBack>>,
 	?resources:Signal<rayde.sync.ResourceUsage.ResourceState>,
+	?browserAccount:Signal<rayde.sync.BrowserAccount.BrowserAccountState>,
 	?onRefreshResources:Void->Void,
 	?onSave:Void->Void,
     ?onReopen:Void->Void,
@@ -60,7 +61,9 @@ class SyncPanel extends Component<SyncPanelProps> {
 		return <div id="rayde-sync-panel" class="flex flex-col flex-1 min-w-0 min-h-0">
 		<div class="rayde-sync-heading">
 			<icon document={Icons.UPLOAD_CLOUD_2_FILL} class="size-4 shrink-0"/><text class="flex-1">Cloud Sync</text>
-			<if {props.saveBack == null || props.saveBack.get() == null}><for {state in [props.state.get()]}>${phaseBadge(state)}</for></if>
+			<if {props.browserAccount != null}><for {account in [props.browserAccount.get()]}>
+				<badge id="rayde-sync-account" size={Sm} variant={account.message != null ? Warning : account.login != null ? Success : Secondary}>${account.checking ? "Checking account…" : account.message != null ? "Account unavailable" : account.login != null ? "Signed in" : "Signed out"}</badge>
+			</for><else><if {props.saveBack == null || props.saveBack.get() == null}><for {state in [props.state.get()]}>${phaseBadge(state)}</for></if></if>
 		</div>
 		<div class="rayde-sync-scroll">
 			<text id="rayde-sync-workspace" class="rayde-sync-workspace">${props.workspace}</text>
@@ -78,6 +81,7 @@ class SyncPanel extends Component<SyncPanelProps> {
 	</div>;
 
 	function hasResources():Bool {
+		if (props.browserAccount != null && props.browserAccount.get().login == null) return false;
 		var sample = props.resources == null ? null : props.resources.get().sample;
 		return sample != null && (sample.available || sample.status == "ready");
 	}

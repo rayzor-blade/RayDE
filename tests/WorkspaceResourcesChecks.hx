@@ -28,6 +28,7 @@ class WorkspaceResourcesChecks {
 		usage.close();usage.refresh();usage.frame();check(requests.length==5,"Disposed resources kept polling");
 		for(dark in [true,false])for(width in [240,320])render(dark,width);
 		for(dark in [true,false])panel(dark);
+		for(dark in [true,false])browserPanel(dark);
 		Sys.println("workspace resources: async loading, single-flight refresh, hidden/disposed polling, account fencing, unavailable states and narrow light/dark layout");
 	}
 	static function sample():ResourceSample return {available:true,cpuPercent:23.4,cpuLimit:2,memoryBytes:805306368,memoryLimitBytes:3221225472.,storageBytes:134217728,storageLimitBytes:1073741824,uptimeSeconds:640,durationLimitSeconds:3600};
@@ -67,6 +68,32 @@ class WorkspaceResourcesChecks {
 			Snapshot.capture("cloud-sync-with-resources-"+(dark?"dark":"light"),tree,root.node,320,900);
 			saved.set({generation:4,busy:false,message:"",failed:false,canMerge:false,conflicts:[]});settle();
 			check(has("#rayde-sync-save")&&has("#rayde-sync-generation")&&has("#rayde-workspace-resources"),"Statistics replaced save-back controls");
+		} catch(error:Dynamic){stop();tree.dispose();throw error;}
+		stop();tree.dispose();
+	}
+	static function browserPanel(dark:Bool):Void {
+		ashui.theme.ThemeState.init(rayde.ui.Theming.bundle("restrained"),dark?Dark:Light);rayde.ui.Style.use();
+		var tree=new LayoutTree(),stop:Void->Void=null;
+		var account=ashui.reactive.Signal.make(({checking:true}:rayde.sync.BrowserAccount.BrowserAccountState));
+		var state=ashui.reactive.Signal.make(rayde.sync.SyncState.Sync.empty(SignedOut));
+		var resources=ashui.reactive.Signal.make(({loading:false,message:"",sample:sample()}:ResourceState));
+		var root=Owner.root(tree,cleanup->{stop=cleanup;return <div id="rayde" widthPercent={1} heightPercent={1} class="bg-background text-text-primary"><sync-panel workspace="project" state={state} now={()->0.} browserAccount={account} resources={resources}
+			unavailableMessage="Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link."
+			onPull={()->{}} onResolve={_->{}} onPick={(_,_) -> {}} onApply={()->{}} onDiff={_->{}} onSignIn={()->{}} onInitGit={()->{}} onSync={()->{}} onCancel={()->{}} onRetry={()->{}}
+			onCopy={()->{}} onOpen={()->{}} onShare={()->{}} onPause={()->{}} onExport={()->{}} onExtend={()->{}} onDisconnect={()->{}} onDelete={()->{}} onExpiry={_->{}}/></div>;});
+		function settle():Void for(_ in 0...4){Offscreen.advance(.025);Css.setViewport(320,900);Css.update();tree.flush();tree.computeLayout(root.node,320,900);}
+		function has(selector:String):Bool return Css.query(tree,root.node.id,selector).length==1;
+		function label():String {
+			for(id in Css.query(tree,root.node.id,"#rayde-sync-account text")){var t=ashui.ui.Text.at(id);if(t!=null)return t.text();}
+			return "";
+		}
+		try {
+			settle();check(label()=="Checking account…"&&!has("#rayde-workspace-resources"),"Unverified account showed signed-out state with private usage");
+			account.set({checking:false,login:"darmie"});settle();
+			check(label()=="Signed in"&&!has("#rayde-sync-phase")&&has("#rayde-workspace-resources")&&has("#rayde-sync-unavailable"),"Browser account did not replace the stale native sign-in label");
+			Snapshot.capture("cloud-sync-browser-signed-in-"+(dark?"dark":"light"),tree,root.node,320,900);
+			account.set({checking:false});settle();check(label()=="Signed out"&&!has("#rayde-workspace-resources"),"Sign-out retained another account's usage");
+			account.set({checking:false,message:"Account unavailable"});settle();check(label()=="Account unavailable"&&!has("#rayde-workspace-resources"),"Account failures appeared signed out or exposed old usage");
 		} catch(error:Dynamic){stop();tree.dispose();throw error;}
 		stop();tree.dispose();
 	}

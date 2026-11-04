@@ -26,6 +26,7 @@ class SyncFeature {
 	var opening = false;
     var lastSyncStatus:Dynamic;
 	var resources:Null<ResourceUsage>;
+	var browserAccount:Null<BrowserAccount>;
 
 	public static function install(host:Host):Void
 		installed.set(host.contributions, new SyncFeature(host));
@@ -43,11 +44,13 @@ class SyncFeature {
 		c.sidebar("sync", panel);
 		c.onClose(() -> installed.remove(c));
 		#if wasm
-		resources=new ResourceUsage(() -> rayde.workspace.PageHost.requestAccount("account.resources"),() -> !host.closed() && host.sidebarShown("sync"));
-		var unsubscribe=rayde.workspace.PageHost.bridge==null ? () -> {} : rayde.workspace.PageHost.bridge.subscribe(event -> {if(event.ev=="account.changed")resources.clear();});
-		c.onClose(() -> {resources.close();unsubscribe();});
+		browserAccount=new BrowserAccount(() -> rayde.workspace.PageHost.requestAccount("account.status"),
+			listener -> rayde.workspace.PageHost.bridge==null ? () -> {} : rayde.workspace.PageHost.bridge.subscribe(listener),
+			() -> {if(resources!=null)resources.clear();});
+		resources=new ResourceUsage(() -> rayde.workspace.PageHost.requestAccount("account.resources"),() -> !host.closed() && browserAccount.signedIn() && host.sidebarShown("sync"));
+		c.onClose(() -> {resources.close();browserAccount.close();});
 		#end
-        c.onFrame(() -> {receiveSyncStatus();if(resources!=null)resources.frame();});
+        c.onFrame(() -> {receiveSyncStatus();if(browserAccount!=null)browserAccount.frame();if(resources!=null)resources.frame();});
 		refresh();
 	}
 
@@ -93,7 +96,7 @@ class SyncFeature {
     }
 
 	function panel():Element
-		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} saveBack={saveBack} resources={resources==null ? null : resources.state} onRefreshResources={() -> {if(resources!=null)resources.refresh();}} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve} onPick={pick} onApply={apply} onDiff={showDiff}
+		return <sync-panel workspace={host.name} state={state} now={() -> Date.now().getTime()} browserAccount={browserAccount==null ? null : browserAccount.state} saveBack={saveBack} resources={resources==null ? null : resources.state} onRefreshResources={() -> {if(resources!=null)resources.refresh();}} onSave={save} onMerge={() -> merge()} onPull={() -> pull()} onResolve={resolve} onPick={pick} onApply={apply} onDiff={showDiff}
             onReopen={() -> {if (host.reopenWorkspace!=null) host.reopenWorkspace();}}
             unavailableMessage={#if wasm "Cloud Sync starts from the desktop app. A synced workspace opens in the browser from its link." #else null #end}
 			onSignIn={() -> host.say("Signing in to rayde.org is not available yet.")} onInitGit={initGit}
