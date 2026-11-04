@@ -25,17 +25,14 @@ editor.search = location.search;
 const connected = editor.searchParams.has('session') || !!connection?.endpoint;
 editor.searchParams.delete('demo');
 editor.searchParams.set('demo-preview', '1');
+if(!connected){editor.searchParams.set('demo','1');editor.searchParams.set('demo-live','1');}
 const authenticated = new URLSearchParams(location.hash.slice(1)).has('token');
 if (authenticated) editor.hash = location.hash;
-detail.textContent = connected ? 'Explore Pocket Studio with Rayzor, built-in extensions and app previews.' : 'The workspace is not connected. Please try again shortly.';
+detail.textContent = 'Explore Pocket Studio with Rayzor, built-in extensions and app previews.';
 for (const link of document.querySelectorAll('.editor-link')) link.href = editor.href;
 let loading = false;
 function start() {
   if (loading || !desktop.matches) return;
-  if (!connected) {
-    state.textContent = 'Workspace unavailable';
-    return;
-  }
   if (!globalThis.crossOriginIsolated || !navigator.gpu) {
     state.textContent = 'Editor preview';
     detail.textContent = 'The live demo needs WebGPU and cross-origin isolation. Open the full editor in a supported browser.';

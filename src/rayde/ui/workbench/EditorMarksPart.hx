@@ -109,7 +109,7 @@ class EditorMarksPart {
 		}
 		new ashui.reactive.Watch(() -> wb.problems.get(), list -> {
 			var text = wb.documentsPart.buffer(file).get();
-			editor.decorate("problems", [for (p in list) if (p.file == file) squiggle(text, p)]);
+			editor.decorate("problems", [for (p in list) if (p.file == file && p.range != null) squiggle(text, p)]);
 		});
 	}
 

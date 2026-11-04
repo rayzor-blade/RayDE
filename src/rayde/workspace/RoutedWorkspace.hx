@@ -18,6 +18,7 @@ class RoutedWorkspace implements Workspace implements TreeWorkspace {
 	/** Paths at or under `prefix` go to `workspace`. A later mount at a longer prefix takes what is under it. */
 	public function mount(prefix:String, workspace:Workspace):Void {
 		var at = normalize(prefix);
+		for (entry in mounts) if (entry.prefix == at) {entry.workspace = workspace;return;}
 		mounts.push({prefix: at, workspace: workspace});
 		mounts.sort((a, b) -> b.prefix.length - a.prefix.length);
 	}

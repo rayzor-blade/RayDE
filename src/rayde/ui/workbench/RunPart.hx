@@ -427,6 +427,12 @@ class RunPart {
 
 	/** Project actions stay in place while builds report progress and Stop is available. */
 	function runControls(state:String):Element {
+		var session = rayde.workspace.PageHost.session;
+		var connected = Signal.make(session == null || !session.deferred || session.isOnline());
+		if (session != null && session.deferred) {
+			var unsubscribe = session.subscribe(event -> {if (event.ev == "session.connected" || event.ev == "session.disconnected") connected.set(session.isOnline());});
+			Owner.onCleanup(unsubscribe);
+		}
 		var runnable = runner!=null && runner.canRun();
 		if (wb.props.empty == true || !runnable && !canBuild()) return <div/>;
 		var building = state == "preview-building" || state == "preview-reconnecting" || state == "building", active = building || state == "running";
@@ -435,12 +441,12 @@ class RunPart {
 		var runShortcut = wb.keymapPart.bindings.label("run");
 		var controls = <div id="rayde-run-controls" class="flex items-center gap-1" onPointerDown={e -> e.stopPropagation()}>
 			<if {active}><tooltip label="Stop" side="bottom"><button id="rayde-stop" variant={Outline} size={Icon} class="rayde-toolbar-action text-error" onClick={_ -> stopRun()}><icon document={Icons.STOP_FILL} class="size-4"/></button></tooltip></if>
-			<if {canBuild()}><tooltip label={buildLabel + (building || shortcut == null ? "" : " (" + shortcut + ")")} side="bottom">
-				<button id="rayde-build-action" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> buildProject()}>
+			<if {canBuild()}><tooltip label={!connected.get() ? "Workspace connecting" : buildLabel + (building || shortcut == null ? "" : " (" + shortcut + ")")} side="bottom">
+				<button id="rayde-build-action" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active || !connected.get()} onClick={_ -> buildProject()}>
 					<if {building}><spinner id="rayde-build-spinner" size={Sm}/><else><icon document={Icons.HAMMER_LINE} class="size-4"/></if>
 				</button>
 			</tooltip></if>
-			<if {runnable}><tooltip label={"Run project" + (runShortcut == null ? "" : " (" + runShortcut + ")")} side="bottom"><button id="rayde-run" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active} onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-4"/></button></tooltip></if>
+			<if {runnable}><tooltip label={!connected.get() ? "Workspace connecting" : "Run project" + (runShortcut == null ? "" : " (" + runShortcut + ")")} side="bottom"><button id="rayde-run" variant={Outline} size={Icon} class="rayde-toolbar-action" disabled={active || !connected.get()} onClick={_ -> run()}><icon document={Icons.PLAY_FILL} class="size-4"/></button></tooltip></if>
 		</div>;
 		for (action in [{id:"rayde-build-action",label:buildLabel},{id:"rayde-run",label:"Run project"},{id:"rayde-stop",label:"Stop"}])
 			for (node in ashui.css.Css.query(controls.tree,controls.node.id,"#" + action.id)) {

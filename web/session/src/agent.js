@@ -12,6 +12,10 @@ import { serve } from "./channel-agent.mjs";
 import { AppPreviews } from "./previews.js";
 import { CachedDemo, remoteDemoEntries } from "./cached-demo.js";
 import { TreeCache } from "./tree-cache.js";
+import {DemoSource} from './demo-seed.js';
+import {DemoStore} from './demo-store.js';
+import {DemoSession} from './demo-session.js';
+import {DemoAdmission,afterEditorReady} from './demo-admission.js';
 
 const query = new URLSearchParams(location.search);
 const entry = pageEntry(location, readConnection());
@@ -38,19 +42,28 @@ export const start = ask => serve(ask, {
     }
     const database = await storage();
     let preset = null;
+    let demoSource = null;
     const sample = document.querySelector('meta[name="rayde-demo"]')?.content;
     if ((demo || query.get('demo-preview') === '1') && sample) {
       const url = new URL(sample, import.meta.url);
       if (url.origin !== location.origin) throw new Error("The sample must come from this site.");
       const response = await fetch(url);
       if (!response.ok) throw new Error("The sample workspace could not be loaded.");
-      const text = await response.text();
-      if (text.length > 3*1024*1024) throw new Error("The sample workspace is too large.");
-      preset = samplePreset(JSON.parse(text));
-      if (!endpoint) { await seedSample(database, preset); project ??= preset.project; }
+      const bytes=new Uint8Array(await response.arrayBuffer());
+      if (bytes.length > 3*1024*1024) throw new Error("The sample workspace is too large.");
+      if(entry.admission){demoSource=await DemoSource.read(bytes);preset=demoSource.preset;}
+      else preset = samplePreset(JSON.parse(new TextDecoder().decode(bytes)));
+      if (!endpoint&&!entry.admission) { await seedSample(database, preset); project ??= preset.project; }
     }
     let storageFailure = null;
     let client = null;
+    if(entry.admission){
+      if(!demoSource)throw Error('The demo source bundle is unavailable.');
+      const url=new URL('/api/demo/socket',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
+      const store=new DemoStore(location.origin,demoSource.release);
+      client=new DemoSession({source:demoSource,store,binding:await store.open(),url:url.href});
+      project='build.hxml';
+    }
     if (endpoint) {
       const url = new URL(endpoint, location.href);
       if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("The session address must use ws:// or wss://.");
@@ -61,6 +74,7 @@ export const start = ask => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at = 0; at < bytes.length; at += 16384) deliver(bytes.subarray(at, at + 16384));
     };
+    const admission=entry.admission?new DemoAdmission(client,{changed:state=>answer({ev:'demo.status',...state})}):null;
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -81,7 +95,12 @@ export const start = ask => serve(ask, {
     }).catch(()=>{}); };
     client?.on("disconnected", detail => {previews?.connection(false);answer({ ev: "session.disconnected", generation:client.generation, ...detail });});
     client?.on("context-changed", ({message}) => {previews?.connection(false);previews?.reset();answer({ev:"session.disconnected",generation:client.generation,code:"workspace-changed",message});});
-    client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, documentMoves:!!documents && client.documentMoves, syncWriteback:client.hello?.syncWriteback??null });syncStatus();});
+    const hello=()=>({...(client?.hello??{root:'/work',name:preset?.name??'work',exec:false}),treeCache:!!tree,
+      appPreviews:client?.hello.appPreviews===true||!!cached,webPreviews:client?.hello.webPreviews===true||!!cached,demoPreview:!!cached,
+      generation:client?.generation??0,online:client?client.ready:true,remote:!!client,embedded:window.parent!==window,documentBridge:!!documents,
+      documentMoves:!!documents&&client.documentMoves,storageKey:client?.workspace,demo,repositories:query.get('repositories')==='1',project,
+      deferred:!!admission,demoState:admission?.state.status,demoMessage:admission?.state.message});
+    client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, capabilities:hello(), documentMoves:!!documents && client.documentMoves, syncWriteback:client.hello?.syncWriteback??null });syncStatus();});
     if (client) syncStatus();
     const localPath = path => typeof path === "string" && (path === "/home/web" || path.startsWith("/home/web/") || !client && demo && (path === "/work" || path.startsWith("/work/"))) && !path.split("/").includes("..");
     const requests = new Frames(text => {
@@ -89,7 +108,8 @@ export const start = ask => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...(client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }), treeCache:!!tree, appPreviews:client?.hello.appPreviews===true || !!cached, webPreviews:client?.hello.webPreviews===true || !!cached, demoPreview:!!cached, generation:client?.generation ?? 0, remote: !!client, embedded:window.parent !== window, documentBridge:!!documents, documentMoves:!!documents && client.documentMoves, storageKey:client?.workspace, demo, repositories: query.get("repositories") === "1", project: project };
+          if (request.op === "hello") reply = hello();
+          else if(request.op==='page.demo-retry'&&admission){void admission.start(true);reply={};}
           else if(request.op==='page.tree.list'&&tree)reply=await tree.list(request);
           else if(request.op==='page.tree.refresh'&&tree){tree.invalidate(request.path??'',request.mount??null,true);reply={};}
           else if (request.op.startsWith("view.") && documents) {
@@ -166,9 +186,10 @@ export const start = ask => serve(ask, {
       })();
     });
     const stopAccounts = followAccount(accounts, entry.workspace ? client : null, status => answer({ev:"account.changed", user:status.user}));
+    const stopReady=admission?afterEditorReady(()=>void admission.start()):()=>{};
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
-      close() { stopAccounts(); accounts.signin?.cancel(); tree?.close(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
+      close() { stopReady();admission?.close();stopAccounts(); accounts.signin?.cancel(); tree?.close(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },
     };
   },
 });

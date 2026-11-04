@@ -121,7 +121,13 @@ class PageHost {
 			for (source in session.readRoots) routed.mount(source.path,new SessionWorkspace(session,source));
 			if (session.extensionsRoot != null && session.readOnly(session.extensionsRoot)) Sys.putEnv("RAYDE_EXTENSIONS",session.extensionsRoot);
 			Fs.current = routed;
-			Procs.current = session.exec ? new SessionLauncher(session) : new NoLauncher();
+			Procs.current = session.exec || session.deferred ? new SessionLauncher(session) : new NoLauncher();
+			if (session.deferred) session.subscribe(event -> {
+				if (event.ev != "session.connected") return;
+				rayde.run.Haxelib.refresh();
+				for (source in session.readRoots) routed.mount(source.path,new SessionWorkspace(session,source));
+				if (session.extensionsRoot != null && session.readOnly(session.extensionsRoot)) Sys.putEnv("RAYDE_EXTENSIONS",session.extensionsRoot);
+			});
 			return session.root;
 		}
 		if (!demo) { Fs.current = routed; Procs.current = new NoLauncher(); return null; }

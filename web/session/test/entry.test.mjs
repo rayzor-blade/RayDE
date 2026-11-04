@@ -4,10 +4,13 @@ import { pageEntry } from "../src/entry.js";
 const entry = href => pageEntry({href});
 test("the public site boots a demo and the app root keeps a signed-in workspace entry", () => {
   assert.equal(entry("https://rayde.org/").demo,true);
+  assert.equal(entry("https://rayde.org/").admission,true);
   assert.equal(entry("https://www.rayde.org/").demo,true);
   assert.equal(entry("https://app.rayde.org/").demo,false);
   assert.equal(entry("http://127.0.0.1:8787/").demo,false);
   assert.equal(entry("http://127.0.0.1:8731/?demo=1").demo,true);
+  assert.equal(entry("http://127.0.0.1:8731/?demo=1").admission,false);
+  assert.equal(entry("https://landing.example/dist/index.html?demo=1&demo-live=1").admission,true);
   assert.equal(entry("https://rayde.org/?demo=0").demo,false);
 });
 test("a workspace path selects its own authenticated socket without exposing credentials in the URL", () => {
@@ -23,4 +26,9 @@ test("cached landing previews retain the real workspace connection", () => {
   const route=pageEntry({href:"http://127.0.0.1:8731/dist/index.html?demo-preview=1"},connection);
   assert.equal(route.endpoint,connection.endpoint);assert.equal(route.token,connection.token);
   assert.equal(route.project,"build.hxml");assert.equal(route.demo,false);
+  assert.equal(route.admission,false);
+});
+test('public admission cannot inherit a remembered private preview credential',()=>{
+ const route=pageEntry({href:'https://rayde.org/dist/index.html'},{endpoint:'wss://private.example/session',token:'private'});
+ assert.equal(route.endpoint,null);assert.equal(route.token,undefined);assert.equal(route.admission,true);
 });

@@ -463,6 +463,11 @@ export class SessionClient {
     return {key:stable ?? JSON.stringify(["volatile",this.volatile]),cacheable:stable !== null};
   }
 
+  /** Hosts may verify a deferred connection before any local replica is published. */
+  async acceptHello() {}
+  async prepareConnected() {}
+  makeDocument(path) {return new Doc(this,path);}
+
   /** Connects, and keeps reconnecting until `close()`. Resolves when the first connection is ready. */
   connect() {
     if (this.invalidated || this.stopped) return Promise.reject(this.invalidated ?? new Error("The workspace connection is stopped."));
@@ -507,12 +512,16 @@ export class SessionClient {
               } catch { this.pendingAuth = true; }
             }
             if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error("The connection closed during sign-in.");
+            await this.acceptHello(this.hello);
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
             const context = this.context(this.hello.cacheIdentity);
             if (this.workspace !== null && (context.key !== this.workspace || !context.cacheable && this.docs.size > 0)) throw this.invalidate();
             this.workspace = context.key; this.cacheable = context.cacheable; this.cacheIdentity = this.hello.cacheIdentity;
             this.ready = true;
             this.attempt = 0;
             this.pendingAuth = !!this.hello.signin && !this.identity;
+            await this.prepareConnected();
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc) => doc.sync().catch(() => {})));
             if (active() && this.socket === socket) finish(null,this.hello);
@@ -639,7 +648,7 @@ export class SessionClient {
     let doc = this.docs.get(path);
     if (doc?.closed) { await doc.close(); return this.openDoc(path); }
     if (!doc) {
-      doc = new Doc(this, path);
+      doc = this.makeDocument(path);
       this.docs.set(path, doc);
       doc.started = doc.start();
     }

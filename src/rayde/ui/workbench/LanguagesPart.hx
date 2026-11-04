@@ -132,6 +132,11 @@ class LanguagesPart {
 
 	/** Asks the compiler what is wrong with `file` as it is in the editor. */
 	public function check(file:String):Void {
+		var session = rayde.workspace.PageHost.session;
+		if (session != null && session.deferred && !session.isOnline()) {
+			diagnosticJobs.cancel(file);
+			return;
+		}
 		if (!Workbench.isVirtual(file) && languageServers != null && languageServers.client(file) != null) {
 			diagnosticJobs.cancel(file);
 			languageServers.sync(file, wb.documentsPart.buffer(file).get());

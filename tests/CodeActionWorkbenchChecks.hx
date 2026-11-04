@@ -126,6 +126,13 @@ class CodeActionWorkbenchChecks {
 			until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 			clickAction("Run Project"); until(() -> !bench.runPart.runner.active());
 			check(bench.runPart.runner.console.indexOf("ACTION_RAN") >= 0 && bench.runPart.runner.exitCode == 0,"Run provider did not route through the project runner");
+			var diagnostic:rayde.lang.Display.Diagnostic = {file:file, range:null, severity:1, message:"Workspace connecting"};
+			bench.problems.set([diagnostic]); settle();
+			check(bench.problems.get()[0] == diagnostic && bench.editorFor(file).decorationsAt(0).length == 0,"A diagnostic without a source range was underlined or discarded");
+			diagnostic = {file:file, range:{start:{line:0,character:0},end:{line:0,character:5}}, severity:2, message:"Source warning"};
+			bench.problems.set([diagnostic]); settle();
+			check(bench.editorFor(file).decorationsAt(1).length == 1,"A source diagnostic lost its underline");
+			bench.problems.set([]); settle();
 			bench.runPart.saveAll(); bench.closeFile(file); bench.closeFile(other); settle();
 			check(bench.codeActionsPart.codeActions.list().length == 0 && !bench.codeActionsPart.codeActions.busy(),"Closed tabs retained action data");
 		} catch(error:Dynamic) { stop(); tree.dispose(); compiler.stop(); Sys.putEnv("RAYDE_EXTENSIONS",previous ?? ""); throw error; }

@@ -26,6 +26,7 @@ class EditorDocuments {
 	public function new(client:SessionClient, changed:(String, Bool)->Void, failed:String->Void, selection:String->CodeSelection, composing:String->Bool, ?warning:String->Void) {
 		this.client = client; this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
 		this.warning = warning == null ? failed : warning;
+		connected.set(client.isOnline());
 		unsubscribe = client.subscribe(event -> {
 			if (event.ev == "session.disconnected") {
 				connected.set(false);

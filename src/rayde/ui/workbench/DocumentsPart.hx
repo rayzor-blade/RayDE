@@ -13,6 +13,7 @@ import ashui.components.CodeView;
 import ashui.components.Icon;
 import ashui.components.Resizable;
 import ashui.components.Select;
+import ashui.components.Spinner;
 import ashui.components.Tabs;
 import ashui.components.Tooltip;
 import ashui.components.Toast;
@@ -153,6 +154,20 @@ class DocumentsPart {
 		}
 	}
 	function bindSession(client:rayde.workspace.session.SessionClient):Void {
+		if (client.deferred) {
+			var status = Signal.make(client.demoState), message = Signal.make(client.demoMessage);
+			var unsubscribeDemo = client.subscribe(event -> {
+				if (event.ev != "demo.status" || wb.gone) return;
+				status.set(event.status); message.set(event.message);
+			});
+			wb.contributions.onClose(unsubscribeDemo);
+			wb.contributions.status({id:"workspace.connecting",place:"right",order:0,build:() ->
+				<if {status.get() != "ready"}><tooltip label={message.get()} side="top"><div class="rayde-status-item flex gap-1.5">
+					<if {status.get() == "waiting" || status.get() == "connecting"}><spinner size={Sm}/><else><icon document={Icons.CLOUD_OFF_LINE} class="size-3.5 text-warning"/></if>
+					<text class="text-xs text-text-secondary">${status.get() == "waiting" || status.get() == "connecting" ? "Workspace connecting…" : status.get() == "expired" ? "Session expired" : "Workspace offline"}</text>
+					<if {status.get() == "failed"}><button id="rayde-demo-reconnect" variant={Ghost} size={Sm} onClick={_ -> {client.requestAsync("page.demo-retry");}}>Reconnect</button></if>
+				</div></tooltip></if>});
+		}
 		documentClient=client;
 		wb.contributions.readOnlyWhen(client.readOnly);
 		if (!client.documentBridge) return;

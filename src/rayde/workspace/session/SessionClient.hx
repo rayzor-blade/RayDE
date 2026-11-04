@@ -29,6 +29,9 @@ class SessionClient {
 	public var terminalProfiles(default,null):Array<rayde.term.Profiles.Profile> = [];
 	public var remote(default, null) = true;
 	public var demo(default, null) = false;
+	public var deferred(default, null) = false;
+	public var demoState(default, null) = "";
+	public var demoMessage(default, null) = "";
 	public var embedded(default, null) = false;
 	public var repositories(default, null) = false;
 	public var documentBridge(default, null) = false;
@@ -72,26 +75,32 @@ class SessionClient {
 		var client = new SessionClient(channel);
 		try {
 			var hello = client.request("hello", {token:token});
-			client.root = hello.root; client.name = hello.name; client.exec = hello.exec == true;
-			client.syntax = hello.syntax == true;client.terminal = hello.terminal == true;
-			client.appPreviews = hello.appPreviews == true;
-			client.demoPreview = hello.demoPreview == true;
-			client.treeCache = hello.treeCache == true;
-        if (hello.syncWriteback != null) client.syncWriteback = cast hello.syncWriteback;
-            client.webPreviews=hello.webPreviews==true || client.appPreviews;
-            if(hello.host!=null){client.hostSystem=switch(hello.host.os:String){case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};client.hostArchitecture=hello.host.arch;}
-			if (Std.isOfType(hello.terminalProfiles,Array)) client.terminalProfiles = cast hello.terminalProfiles;
+			client.root = hello.root; client.name = hello.name;
+			client.capabilities(hello);
 			client.repositories = hello.repositories == true; client.demo = hello.demo == true; client.remote = hello.remote != false; client.project = hello.project; client.signin = hello.signin;
+			client.deferred = hello.deferred == true;
+			client.demoState = hello.demoState ?? ""; client.demoMessage = hello.demoMessage ?? "";
+			client.online = !Reflect.hasField(hello,"online") || hello.online == true;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
 			client.documentMoves = client.documentBridge && hello.documentMoves == true;
 			client.embedded = hello.embedded == true;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;
-			if (Std.isOfType(hello.readRoots,Array)) for (source in (hello.readRoots:Array<Dynamic>))
-				if (Std.isOfType(source.id,String) && Std.isOfType(source.path,String) && source.path != "") client.readRoots.push({id:source.id,path:source.path});
-			client.extensionHost = hello.extensions == null ? null : hello.extensions.host;
-			client.extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
 		} catch (error:Dynamic) { client.close(); throw error; }
 		return client;
+	}
+
+	function capabilities(hello:Dynamic):Void {
+		exec = hello.exec == true; syntax = hello.syntax == true; terminal = hello.terminal == true;
+		appPreviews = hello.appPreviews == true; demoPreview = hello.demoPreview == true; treeCache = hello.treeCache == true;
+		webPreviews = hello.webPreviews == true || appPreviews;
+		if (Reflect.hasField(hello,"syncWriteback")) syncWriteback = cast hello.syncWriteback;
+		if (hello.host != null) {hostSystem = switch(hello.host.os:String) {case "macos":"Mac";case "windows":"Windows";case "linux":"Linux";case _:hello.host.os;};hostArchitecture=hello.host.arch;}
+		terminalProfiles = Std.isOfType(hello.terminalProfiles,Array) ? cast hello.terminalProfiles : [];
+		readRoots = [];
+		if (Std.isOfType(hello.readRoots,Array)) for (source in (hello.readRoots:Array<Dynamic>))
+			if (Std.isOfType(source.id,String) && Std.isOfType(source.path,String) && source.path != "") readRoots.push({id:source.id,path:source.path});
+		extensionHost = hello.extensions == null ? null : hello.extensions.host;
+		extensionsRoot = hello.extensions == null ? null : hello.extensions.root;
 	}
 
 	public function readOnly(file:String):Bool {
@@ -178,10 +187,16 @@ class SessionClient {
 				if (Std.isOfType(message.generation,Int)) generation = message.generation; else if (online) generation++;
 				online = false;
 			} else if (message.ev == "session.connected") {
+				if (message.capabilities != null) {
+					if (message.capabilities.root != root || message.capabilities.storageKey != storageKey) {mutex.release();throw "The workspace capabilities changed identity.";}
+					capabilities(message.capabilities);
+				}
 				if (Std.isOfType(message.generation,Int)) generation = message.generation;
 				if (Std.isOfType(message.documentMoves,Bool)) documentMoves = documentBridge && message.documentMoves == true;
 				online = true;
                 if (Reflect.hasField(message,"syncWriteback")) syncWriteback = cast message.syncWriteback;
+            } else if (message.ev == "demo.status") {
+                demoState = message.status; demoMessage = message.message;
             } else if (message.ev == "sync.status") {
                 syncWriteback = cast message.syncWriteback;
 			}
