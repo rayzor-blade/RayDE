@@ -81,3 +81,60 @@ test('local development can retain its asset origin when the staging R2 binding 
  const {mf,fetch}=await fixture({asset:`http://127.0.0.1:${server.address().port}`,editorAssets:true,assetSource:'origin'});t.after(()=>mf.dispose());
  assert.equal(await(await fetch('/')).text(),'<html>local editor</html>');
 });
+
+async function release(bucket,label){
+ const files={'index.html':'<html><head></head><a href="#features">Features</a><script type="module" src="./landing.mjs"></script>landing '+label+'</html>',
+  'dist/index.html':'<html><meta charset="utf-8"><script type="module" src="./ashui-host.mjs"></script>editor '+label+'</html>',
+  'dist/thread.js':'export const release="'+label+'";', 'dist/rayde.wasm':new Uint8Array([0,97,115,109,1,0,0,0]),
+  ['dist/demo/'+ 'a'.repeat(64)+'/index.html']:'<html>isolated app '+label+'</html>'};
+ const entries=Object.entries(files).sort(([a],[b])=>a.localeCompare(b));
+ const manifest=JSON.stringify({version:1,files:Object.fromEntries(entries.map(([name,data])=>[name,{bytes:Buffer.byteLength(data),sha256:sha(data)}]))})+'\n';
+ const id=sha(manifest);
+ for(const [name,data]of entries)await bucket.put(`releases/${id}/${name}`,data);
+ await bucket.put(`releases/${id}/manifest.json`,manifest);
+ return {id,files,promote:()=>bucket.put('editor-release.json',JSON.stringify({version:1,release:id}))};
+}
+
+test('promoted editor pages pin all modules to one immutable release across promotion and rollback',async t=>{
+ const {mf,fetch}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
+ const bucket=await mf.getR2Bucket('EDITOR_ASSETS'),first=await release(bucket,'first'),second=await release(bucket,'second');
+ await first.promote();
+ const page=await fetch('/');assert.equal(page.status,200);const html=await page.text();
+ assert.match(html,new RegExp(`src="/releases/${first.id}/dist/ashui-host.mjs"`));
+ assert.doesNotMatch(html,/<base/);
+ assert.match(html,/editor first/);assert.equal(page.headers.get('Cache-Control'),'no-store');
+ assert.match(html,/name="rayde-preview-origin" content="http:\/\/localhost:8787"/);
+ const head=await fetch('/',{method:'HEAD'});assert.equal(head.headers.get('Content-Length'),String(Buffer.byteLength(html)));assert.equal((await head.text()).length,0);
+ await second.promote();
+ const next=await fetch('/');assert.equal(next.headers.get('X-RayDE-Release'),second.id);assert.match(await next.text(),/editor second/);
+ const old=await fetch(`/releases/${first.id}/dist/thread.js`);assert.match(old.headers.get('Cache-Control'),/immutable/);assert.equal(await old.text(),first.files['dist/thread.js']);
+ const redirect=await fetch('/thread.js',{redirect:'manual'});assert.equal(redirect.status,307);assert.equal(new URL(redirect.headers.get('Location')).pathname,`/releases/${second.id}/dist/thread.js`);
+ const wasm=await mf.dispatchFetch(`${asset}/releases/${first.id}/dist/rayde.wasm`);assert.equal(wasm.headers.get('Content-Type'),'application/wasm');await WebAssembly.compile(await wasm.arrayBuffer());
+ await first.promote();assert.match(await(await fetch('/')).text(),/editor first/);
+ const alice=await signin(fetch),bob=await signin(fetch,'bob');
+ const workspace=await(await fetch('/api/workspaces/open',{method:'POST',headers:alice.headers,body:JSON.stringify({repository:111})})).json();
+ const owned=await fetch('/'+workspace.id,{headers:{Cookie:alice.cookie}});assert.match(await owned.text(),new RegExp(first.id));assert.equal(owned.headers.get('Cache-Control'),'no-store');
+ assert.equal((await fetch('/'+workspace.id,{headers:{Cookie:bob.cookie}})).status,403);
+});
+
+test('landing releases retain isolation and cannot expose account or workspace routes',async t=>{
+ const landing='https://landing.example.test';
+ const {mf}=await fixture({asset,landingOrigin:landing,editorAssets:true});t.after(()=>mf.dispose());
+ const bucket=await mf.getR2Bucket('EDITOR_ASSETS'),current=await release(bucket,'site');await current.promote();
+ const page=await mf.dispatchFetch(landing+'/');assert.equal(page.status,200);const html=await page.text();
+ assert.match(html,new RegExp(`src="/releases/${current.id}/landing.mjs"`));assert.match(html,/href="#features"/);assert.doesNotMatch(html,/<base/);
+ for(const name of ['Cross-Origin-Opener-Policy','Cross-Origin-Embedder-Policy'])assert.ok(page.headers.get(name));
+ const script=await mf.dispatchFetch(landing+'/landing.mjs',{redirect:'manual'});assert.equal(script.status,307);assert.equal(new URL(script.headers.get('Location')).pathname,`/releases/${current.id}/landing.mjs`);
+ for(const path of ['/api/session','/auth/github/start','/.dev.vars'])assert.equal((await mf.dispatchFetch(landing+path)).status,404,path);
+ const preview=await mf.dispatchFetch(`http://localhost:8787/releases/${current.id}/dist/demo/${'a'.repeat(64)}/index.html`);assert.equal(preview.status,200);assert.match(await preview.text(),/isolated app/);
+ assert.equal((await mf.dispatchFetch(`http://localhost:8787/releases/${current.id}/dist/rayde.wasm`)).status,404,'preview host never serves the editor');
+});
+
+test('invalid or incomplete promotion fails closed instead of reverting to mutable assets',async t=>{
+ const {mf,fetch}=await fixture({asset,editorAssets:true});t.after(()=>mf.dispose());
+ const bucket=await mf.getR2Bucket('EDITOR_ASSETS');await bucket.put('index.html','<html>legacy fallback</html>');
+ await bucket.put('editor-release.json',JSON.stringify({version:1,release:'../../private'}));assert.equal((await fetch('/')).status,503);
+ const current=await release(bucket,'valid');await current.promote();
+ await bucket.put(`releases/${current.id}/manifest.json`,'changed');assert.equal((await fetch('/')).status,503);
+ assert.equal((await fetch('/releases/not-a-release/dist/thread.js')).status,404);
+});

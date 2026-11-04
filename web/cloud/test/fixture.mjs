@@ -22,7 +22,7 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, github, metrics } = {}) {
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, landingOrigin, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, github, metrics } = {}) {
   const calls = { exchanges: [], runner: [], api: [] };
   const config = {
     modules: true,
@@ -35,7 +35,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     durableObjectsPersist: persist,
     r2Buckets: [...(files ? ["WORKSPACE_FILES"] : []), ...(editorAssets ? ["EDITOR_ASSETS"] : [])],
     r2Persist: persist,
-    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}) },
+    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}), ...(landingOrigin ? {LANDING_ORIGIN:landingOrigin} : {}) },
     serviceBindings: {
       GITHUB: async request => {
         const url = new URL(request.url);

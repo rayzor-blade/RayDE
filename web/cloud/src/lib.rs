@@ -196,9 +196,18 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
     let url = req.url()?;
     let origin = config(&env, "APP_ORIGIN").unwrap_or_else(|| url.origin().ascii_serialization());
     let path = url.path().to_string();
+    if assets::is_landing(&env, &url) {
+        return assets::landing(&req, &env, &path).await;
+    }
     if preview_origin(&env).is_some_and(|origin|url.origin().ascii_serialization()==origin) {
         if req.method()!=Method::Get {return Err(bad(404,"This app preview is unavailable."));}
         let demo=path.strip_prefix("/dist").unwrap_or(&path);
+        if let Some(rest) = path.strip_prefix("/releases/") {
+            let parts: Vec<_> = rest.splitn(5, '/').collect();
+            if parts.len() == 5 && opaque(parts[0]) && parts[1] == "dist" && parts[2] == "demo" && opaque(parts[3]) {
+                return assets::get(&req, &env, &path).await?.ok_or_else(|| bad(404, "This demo preview is unavailable."));
+            }
+        }
         if let Some(rest)=demo.strip_prefix("/demo/") {
             if rest.split('/').next().is_some_and(opaque) {
                 return assets::get(&req,&env,demo).await?.ok_or_else(||bad(404,"This demo preview is unavailable."));
