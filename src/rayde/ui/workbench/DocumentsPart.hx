@@ -105,7 +105,7 @@ class DocumentsPart {
 	final buffers = new Map<String, Signal<String>>();
 
 	final documents = new Map<String, DocumentState>();
-	final initialDisk = new Map<String, String>();
+	final savedContents = new Map<String, String>();
 	var sessionDocs:Null<rayde.workspace.session.EditorDocuments>;
 	var documentClient:Null<rayde.workspace.session.SessionClient>;
 	var desktopConnecting:Null<ash.Future<rayde.workspace.session.SessionClient>>;
@@ -174,13 +174,13 @@ class DocumentsPart {
 		sessionDocs = new rayde.workspace.session.EditorDocuments(client, (file, local) -> {
 			if (wb.gone) return;
 			if (local) edited(file);
-			else { checkpointHistory(file, true); wb.languagesPart.check(file); wb.themePart.edited(file); }
+			else { checkpointHistory(file, true); refreshDirty(file); wb.languagesPart.check(file); wb.themePart.edited(file); }
 		}, wb.say, file -> {
 			var editor = wb.editorOf(file), state = documents.get(file);
 			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
 		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; }, message -> {
 			if (!wb.gone) sessionWarning(message);
-		});
+		}, (file,text) -> savedContents.set(file,text));
 		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
 		wb.contributions.onFrame(sessionDocs.frame);
 		wb.contributions.onFrame(receiveSessionMoves);
@@ -250,13 +250,13 @@ class DocumentsPart {
 		var b = buffers.get(file);
 		if (b == null) {
 			var disk = Fs.getContent(file), recovered = localHistory.recover(file, disk);
-			initialDisk.set(file, disk);
+			savedContents.set(file, disk);
 			b = Signal.make(recovered);
 			buffers.set(file, b);
 			if (recovered != disk && wb.dirty.get().indexOf(file) < 0) {
 				ashui.animation.AnimationScheduler.main.after(.01, () -> {
 					if (wb.gone || !buffers.exists(file)) return;
-					if (wb.dirty.get().indexOf(file) < 0) wb.dirty.set(wb.dirty.get().concat([file]));
+					refreshDirty(file);
 					wb.say("Recovered unsaved changes in " + haxe.io.Path.withoutDirectory(file));
 				});
 			}
@@ -270,8 +270,7 @@ class DocumentsPart {
 			state = new DocumentState(buffer(file));
 			DocumentHistory.restore(state, localHistory.undo(file, state.value.get()));
 			documents.set(file, state);
-			attachSessionDocument(file,state,initialDisk.get(file) ?? state.value.get());
-			initialDisk.remove(file);
+			attachSessionDocument(file,state,savedContents.get(file) ?? state.value.get());
 		}
 		return state;
 	}
@@ -301,15 +300,38 @@ class DocumentsPart {
 		for (file in buffers.keys())
 			if (opened.indexOf(file) < 0 && changed.indexOf(file) < 0 && !wb.extensionsPart.studios.exists(file)
 				&& (wb.themePart.themeStudio == null || wb.themePart.themeStudio.file != file))
-				{ buffers.remove(file); initialDisk.remove(file); }
+				{ buffers.remove(file); savedContents.remove(file); }
+	}
+
+	/** Dirty describes the working text relative to the last successful file save. */
+	function refreshDirty(file:String):Void {
+		var value = buffers.get(file), saved = savedContents.get(file);
+		if (value == null || saved == null) return;
+		var changed = value.get() != saved, marked = wb.dirty.get().indexOf(file) >= 0;
+		if (changed != marked) wb.dirty.set(changed ? wb.dirty.get().concat([file]) : wb.dirty.get().filter(path -> path != file));
+	}
+
+	/** Revert only the working buffer; the abandoned text remains in Timeline. */
+	function discardChanges(files:Array<String>):Void {
+		for (file in files) {
+			if (!savedContents.exists(file) || wb.contributions.readOnly(file)) throw "Wait for document synchronization before discarding changes.";
+		}
+		for (file in files) {
+			checkpointHistory(file);
+			var before = buffer(file).get(), saved = savedContents.get(file), state = documents.get(file), editor = wb.editorOf(file);
+			if (editor != null) editor.applyEdits([{from:0, to:before.length, text:saved}]);
+			else if (state != null) DocumentHistory.edit(state, saved, [{from:0, removed:before, inserted:saved}]);
+			else buffer(file).set(saved);
+			edited(file);
+			localHistory.flush(file);
+		}
 	}
 
 	/** Records that `file`'s buffer has changed since it was last written, and checks it as it now is. */
 	public function edited(file:String):Void {
 		wb.contributions.edited(file);
 		checkpointHistory(file);
-		if (wb.dirty.get().indexOf(file) < 0)
-			wb.dirty.set(wb.dirty.get().concat([file]));
+		refreshDirty(file);
 		wb.languagesPart.check(file);
 		var studio = wb.extensionsPart.studios.get(file);
 		wb.themePart.edited(file);

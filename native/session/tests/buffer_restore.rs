@@ -409,3 +409,38 @@ async fn interrupted_saves_recover_on_either_side_of_the_disk_write() {
         assert_eq!(fs::read_to_string(&path).unwrap(), "buffer");
     }
 }
+
+#[tokio::test]
+async fn ordinary_document_undo_redo_and_release_never_write_without_save() {
+    use yrs::{Text,UndoManager};
+    let root=tempfile::tempdir().unwrap(); let private=tempfile::tempdir().unwrap();
+    let path=root.path().join("main.hx"); fs::write(&path,"class Main {}\n").unwrap();
+    let hub=Arc::new(DocHub::new(Arc::new(DirStore::with_state_root(root.path(),private.path()).unwrap()),Arc::new(|_|{})));
+    let opened=hub.attach("main.hx","a",None,Arc::new(|_|{})).await.unwrap();
+    assert!(opened.buffered && !opened.dirty);
+    let peer=Peer::new(); peer.apply(&B64.encode(opened.update));
+    let text=peer.doc.get_or_insert_text("text");
+    let mut undo=UndoManager::with_options(yrs::undo::Options{capture_timeout_millis:0,..Default::default()});
+    undo.expand_scope(&peer.doc,&text);
+    undo.include_origin("local");
+    let before=peer.doc.transact().state_vector();
+    text.insert(&mut peer.doc.transact_mut_with("local"),12," // working");
+    hub.receive("main.hx","a",&peer.doc.transact().encode_state_as_update_v1(&before)).unwrap();
+    for (redo,expected) in [(false,"class Main {}\n"),(true,"class Main { // working}\n")] {
+        let before=peer.doc.transact().state_vector();
+        if redo {undo.redo_blocking();} else {undo.undo_blocking();}
+        hub.receive("main.hx","a",&peer.doc.transact().encode_state_as_update_v1(&before)).unwrap();
+        assert_eq!(hub.text("main.hx").unwrap(),expected);
+        assert!(!hub.flush("main.hx").await.unwrap().0);
+        assert_eq!(fs::read_to_string(&path).unwrap(),"class Main {}\n");
+    }
+    hub.detach("main.hx","a"); hub.release("main.hx").await.unwrap();
+    assert!(hub.text("main.hx").is_none());
+    let reopened=hub.attach("main.hx","new",None,Arc::new(|_|{})).await.unwrap();
+    assert!(reopened.buffered && reopened.dirty);
+    assert_eq!(reopened.text,"class Main { // working}\n");
+    assert_eq!(fs::read_to_string(&path).unwrap(),"class Main {}\n");
+    assert!(hub.save("main.hx",false).await.unwrap().written);
+    assert_eq!(fs::read_to_string(&path).unwrap(),reopened.text);
+    hub.close().await;
+}

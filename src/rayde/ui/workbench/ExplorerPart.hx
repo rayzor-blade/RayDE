@@ -482,11 +482,11 @@ class ExplorerPart {
 				var refused = wb.contributions.refusal(path, "deleting");
 				if (refused != null) throw refused;
 				for (f in FileOps.under(wb.open.get(), path))
-					wb.closeFile(f);
+					wb.closeFileNow(f);
 				wb.documentsPart.closeComparisonsUnder(path);
 				FileOps.delete(wb.props.display.cwd, path);
 				for (f in FileOps.under([for (k in wb.documentsPart.buffers.keys()) k], path))
-					wb.documentsPart.buffers.remove(f);
+					{ wb.documentsPart.buffers.remove(f); wb.documentsPart.savedContents.remove(f); }
 				wb.dirty.set([for (f in wb.dirty.get()) if (FileOps.under([f], path).length == 0) f]);
 				refreshExplorer();
 			}
@@ -515,9 +515,9 @@ class ExplorerPart {
 			wb.documentsPart.buffers.set(now, wb.documentsPart.buffers.get(old));
 			wb.documentsPart.buffers.remove(old);
 		}
-		for (old => now in FileOps.moved([for (k in wb.documentsPart.initialDisk.keys()) k], from, to)) {
-			wb.documentsPart.initialDisk.set(now,wb.documentsPart.initialDisk.get(old));
-			wb.documentsPart.initialDisk.remove(old);
+		for (old => now in FileOps.moved([for (k in wb.documentsPart.savedContents.keys()) k], from, to)) {
+			wb.documentsPart.savedContents.set(now,wb.documentsPart.savedContents.get(old));
+			wb.documentsPart.savedContents.remove(old);
 		}
 		for (old => now in FileOps.moved([for (k in wb.documentsPart.documents.keys()) k], from, to)) {
 			wb.documentsPart.documents.set(now, wb.documentsPart.documents.get(old));

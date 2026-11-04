@@ -85,7 +85,7 @@ The host writes settled edits to disk and incorporates outside file edits into t
 
 The bridge maintains a CRDT projection of text acknowledged by the editor, preventing late typing from applying stale offsets to newer remote text. Bindings follow persistent buffers rather than mounted views. Closing a saved tab releases its projection, undo manager and subscription; dirty buffers remain retained.
 
-Save waits for earlier updates to reach the host before flushing the file. Failure leaves the tab dirty and reports the error. Builds and workspace changes wait for successful saves.
+Editor documents use private working-buffer persistence by default. Background flush, undo/redo and closing a subscription preserve recovery without replacing the saved file. Save waits for earlier updates to reach the host before writing the file. Failure leaves the tab dirty and reports the error. Builds and workspace changes wait for successful saves.
 
 ### Recovery identity
 

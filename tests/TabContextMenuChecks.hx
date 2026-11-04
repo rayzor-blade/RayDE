@@ -113,14 +113,19 @@ class TabContextMenuChecks {
 			check(nodes("#rayde-tab-menu-close").length == 1, "Tab secondary press did not open its menu");
 			check(wb.editorPart.tabDrag.file.get() == "", "Context menu started a tab drag");
 		}
+		var layouts = 0;
+		function discardPrompt():Void {
+			if (wb.prompt.get() != null) click("#rayde-prompt-discard");
+		}
 		function layout():Void {
-			wb.closeAll();
+			wb.closeAll(); settle(); discardPrompt();
 			settle();
 			for (file in files)
 				wb.openFile(file);
 			settle();
 			wb.editorPart.splitEditor("horizontal");
 			settle();
+			if (layouts++ > 0) { wb.documentsPart.buffer(files[1]).set("unsaved 1"); wb.documentsPart.edited(files[1]); }
 			check(wb.active.get() == files[5] && wb.editorPart.groups.all().length == 2, "Fixture did not create two split groups");
 		}
 		try {
@@ -182,19 +187,19 @@ class TabContextMenuChecks {
 			check(wb.open.get().indexOf(files[0]) < 0 && wb.open.get().indexOf(files[5]) >= 0, "Close Tab closed the active split instead of its target");
 			layout();
 			menu(files[2]);
-			click("#rayde-tab-menu-close-left");
+			click("#rayde-tab-menu-close-left"); discardPrompt();
 			check(wb.editorPart.groups.owner(files[2]).files.get().join("|") == files.slice(2, 5).join("|")
 				&& wb.open.get().indexOf(files[5]) >= 0,
 				"Close Left crossed a split or used the active index");
 			layout();
 			menu(files[2]);
-			click("#rayde-tab-menu-close-right");
+			click("#rayde-tab-menu-close-right"); discardPrompt();
 			check(wb.editorPart.groups.owner(files[2]).files.get().join("|") == files.slice(0, 3).join("|")
 				&& wb.open.get().indexOf(files[5]) >= 0,
 				"Close Right crossed a split or used the active index");
 			layout();
 			menu(files[2]);
-			click("#rayde-tab-menu-close-others");
+			click("#rayde-tab-menu-close-others"); discardPrompt();
 			check(wb.open.get().length == 2 && wb.open.get().indexOf(files[2]) >= 0 && wb.open.get().indexOf(files[5]) >= 0,
 				"Close Others crossed the clicked split");
 			layout();
@@ -204,7 +209,7 @@ class TabContextMenuChecks {
 				"Close Saved lost a dirty tab or closed another split");
 			layout();
 			menu(files[2]);
-			click("#rayde-tab-menu-close-all");
+			click("#rayde-tab-menu-close-all"); discardPrompt();
 			check(wb.open.get().length == 1 && wb.active.get() == files[5] && wb.editorPart.groups.all().length == 1, "Close All affected another split");
 			layout();
 			var before = wb.documentsPart.documentState(files[0]),

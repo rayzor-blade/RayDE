@@ -100,7 +100,10 @@ async fn closing_the_last_document_releases_it_without_closing_the_connection() 
     assert_eq!(b.request(json!({"op":"doc.update","path":"a.txt","update":update})).await["ok"], true);
     assert_eq!(b.request(json!({"op":"doc.close","path":"a.txt"})).await["ok"], true);
     assert!(running.workspace.docs.text("a.txt").is_none());
-    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "base!");
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "base");
+    assert_eq!(a.request(json!({"op":"doc.open","path":"a.txt"})).await["dirty"],true);
+    assert_eq!(a.request(json!({"op":"doc.save","path":"a.txt"})).await["ok"],true);
+    a.request(json!({"op":"doc.close","path":"a.txt"})).await;
     assert_eq!(a.request(json!({"op":"fs.rename","from":"a.txt","to":"b.txt"})).await["ok"], true);
     assert_eq!(a.request(json!({"op":"doc.open","path":"b.txt"})).await["text"], "base!");
     running.shutdown().await;
@@ -120,9 +123,9 @@ async fn a_failed_document_write_is_retried_instead_of_being_marked_saved() {
     peer.apply(&B64.encode(hub.attach("a.txt", "a", None, Arc::new(|_| {})).await.unwrap().update));
     hub.receive("a.txt", "a", &B64.decode(peer.edit(4, 0, "!")).unwrap()).unwrap();
     fs::remove_file(&path).unwrap(); fs::create_dir(&path).unwrap();
-    assert!(hub.flush("a.txt").await.is_err());
+    assert!(hub.save("a.txt",false).await.is_err());
     fs::remove_dir(&path).unwrap(); fs::write(&path, "base").unwrap();
-    assert!(hub.flush("a.txt").await.unwrap().0);
+    assert!(hub.save("a.txt",false).await.unwrap().written);
     assert_eq!(fs::read_to_string(&path).unwrap(), "base!");
 }
 
@@ -151,7 +154,7 @@ async fn paths_cannot_leave_the_workspace() {
 }
 
 #[tokio::test]
-async fn two_clients_edit_one_document_and_the_file_follows() {
+async fn two_clients_share_edits_and_only_explicit_save_changes_the_file() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "hello world").unwrap();
     let running = server(dir.path(), false).await;
@@ -172,7 +175,10 @@ async fn two_clients_edit_one_document_and_the_file_follows() {
     pa.apply(a_update(&mut a).await.as_str());
     assert_eq!(pa.string(), "A: hello world!");
     assert_eq!(pb.string(), "A: hello world!");
-    until(|| fs::read_to_string(dir.path().join("a.txt")).unwrap() == "A: hello world!").await;
+    running.workspace.docs.flush("a.txt").await.unwrap();
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hello world");
+    assert_eq!(a.request(json!({"op":"doc.save","path":"a.txt"})).await["ok"],true);
+    assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "A: hello world!");
     running.shutdown().await;
 }
 
@@ -194,6 +200,7 @@ async fn a_change_made_outside_the_session_becomes_an_edit_and_its_own_writes_do
     // The session's own write comes back as a file change but not as another edit.
     let update = peer.edit(0, 0, "x");
     c.request(json!({"op": "doc.update", "path": "a.txt", "update": update})).await;
+    assert_eq!(c.request(json!({"op":"doc.save","path":"a.txt"})).await["ok"],true);
     until(|| fs::read_to_string(dir.path().join("a.txt")).unwrap() == "xone\nTWO\nthree\n").await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(running.workspace.docs.text("a.txt").unwrap(), "xone\nTWO\nthree\n");
@@ -226,6 +233,7 @@ async fn edits_made_offline_merge_after_a_reconnect_and_after_the_server_restart
     let merged = page.string();
     assert!(merged.contains("(offline)") && merged.contains("from disk"), "{merged}");
     assert_eq!(merged.matches("base").count(), 1, "history is shared, so the text is not duplicated: {merged}");
+    assert_eq!(a.request(json!({"op":"doc.save","path":"a.txt"})).await["ok"],true);
     until(|| fs::read_to_string(dir.path().join("a.txt")).unwrap() == merged).await;
     running.shutdown().await;
 }

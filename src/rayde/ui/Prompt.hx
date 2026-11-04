@@ -24,6 +24,8 @@ typedef PromptRequest = {
 	?destructive:Bool,
 	?alternative:String,
 	?discard:Void->Void,
+	/** Restore the invoking view after Cancel, Escape or an outside dismissal. */
+	?cancel:Void->Void,
 	/** Does it; an exception's text is shown in the prompt, which stays open. */
 	accept:String->Void
 };
@@ -56,7 +58,10 @@ class Prompt extends Component<PromptProps> {
 					field.focus();
 			});
 		});
-		new Watch(() -> open.get(), o -> if (!o && props.request.get() != null) props.request.set(null));
+		new Watch(() -> open.get(), o -> {
+			var r = props.request.get();
+			if (!o && r != null) { props.request.set(null); if (r.cancel != null) r.cancel(); }
+		});
 		return <dialog id="rayde-prompt" open={open}>
 			<dialog-content size={Sm}>
 				<dialog-header>
@@ -66,7 +71,7 @@ class Prompt extends Component<PromptProps> {
 				<for {r in [props.request.get()]}>${body(r)}</for>
 				<dialog-footer>
 					<dialog-close id="rayde-prompt-cancel">Cancel</dialog-close>
-					<for {r in [props.request.get()]}><if {r != null && r.discard != null}><button id="rayde-prompt-discard" onClick={_ -> { r.discard(); props.request.set(null); }}>${r.alternative}</button></if></for>
+					<for {r in [props.request.get()]}><if {r != null && r.discard != null}><button id="rayde-prompt-discard" variant={Outline} onClick={_ -> discard()}>${r.alternative}</button></if></for>
 					<for {r in [props.request.get()]}>${confirm(r)}</for>
 				</dialog-footer>
 			</dialog-content>
@@ -87,6 +92,13 @@ class Prompt extends Component<PromptProps> {
 		if (r != null && r.destructive == true)
 			return <button id="rayde-prompt-accept" variant={Destructive} onClick={_ -> accept()}>${label}</button>;
 		return <button id="rayde-prompt-accept" variant={Primary} onClick={_ -> accept()}>${label}</button>;
+	}
+
+	function discard():Void {
+		var r = props.request.get();
+		if (r == null || r.discard == null) return;
+		try r.discard() catch (failure:Dynamic) { error.set(Std.string(failure)); return; }
+		props.request.set(null);
 	}
 
 	/** Checks the text, does what was asked, and closes; a refusal or a failure stays in the prompt. */

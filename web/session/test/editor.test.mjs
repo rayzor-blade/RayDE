@@ -117,3 +117,17 @@ test("concurrent opens cannot give one document two projection owners", async ()
   assert.equal(documents.opening.size,0);
   documents.close(); ydoc.destroy();
 });
+
+
+test("working snapshots retain the explicit saved baseline while local edits are merged", () => {
+  const f = fixture("abc");
+  try {
+    f.view.doc.savedText = "abc";
+    f.view.local({epoch:0,serial:1,parts:[{from:3,removed:"",inserted:" unsaved"}]});
+    const snapshot = f.view.snapshot();
+    assert.equal(snapshot.text,"abc unsaved");
+    assert.equal(snapshot.savedText,"abc","a clean server flag must never promote merged local edits to a savepoint");
+    f.remote.getText("text").insert(0,"peer "); f.deliver();
+    assert.equal(f.events[0].savedText,"abc");
+  } finally { f.dispose(); }
+});

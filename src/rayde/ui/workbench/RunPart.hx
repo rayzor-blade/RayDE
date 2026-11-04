@@ -280,20 +280,22 @@ class RunPart {
 
 	/** Writes every edited buffer to its file: a build reads the files, so it should see them as they are in the editor. */
 	public function saveAll():Void saveFiles(wb.dirty.get().copy());
-	public function saveBefore(after:Void->Void):Void saveFiles(wb.dirty.get().copy(),after);
+	public function saveBefore(after:Void->Void):Void saveFiles(wb.dirty.get().copy(),after,true);
+	/** A close waits only for the files it requested, leaving unrelated edited tabs alone. */
+	public function saveBeforeClosing(files:Array<String>, after:Void->Void):Void saveFiles(files,after);
 	var saving = false;
 
-	function saveFiles(files:Array<String>, ?after:Void->Void):Void {
+	function saveFiles(files:Array<String>, ?after:Void->Void, all = false):Void {
 		if (saving) { wb.say("Saving changes…"); return; }
 		saving = true;
-		var pending = [for (file in files) {file:file,buffer:wb.documentsPart.buffers.get(file)}];
+		var targets = [for (file in files) {file:file,buffer:wb.documentsPart.buffers.get(file)}], pending = targets.copy();
 		function next():Void {
 			if (wb.gone) { saving = false; return; }
 			var item = pending.shift();
 			if (item == null) {
 				saving = false;
 				if (after != null) {
-					if (wb.dirty.get().length > 0) wb.say("Files changed while saving. Save again before continuing.");
+					if (all ? wb.dirty.get().length > 0 : Lambda.exists(targets, target -> Lambda.exists(wb.dirty.get(), path -> target.buffer == null ? path == target.file : wb.documentsPart.buffers.get(path) == target.buffer))) wb.say("Files changed while saving. Save again before continuing.");
 					else try after() catch (error:Dynamic) wb.say(Std.string(error));
 				}
 				return;
@@ -326,15 +328,14 @@ class RunPart {
 
 	function fileSaved(file:String, text:String):Void {
 		var current = wb.documentsPart.buffer(file).get();
-		if (current == text) {
-			wb.documentsPart.localHistory.saved(file, text, wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null);
-		}
+		wb.documentsPart.localHistory.saved(file, text, wb.documentsPart.documents.exists(file) ? DocumentHistory.snapshot(wb.documentsPart.documents.get(file)) : null, current);
+		wb.documentsPart.savedContents.set(file, text);
+		wb.documentsPart.refreshDirty(file);
 		var studio = wb.extensionsPart.studios.get(file);
 		if (studio != null && !studio.live.get()) studio.reload();
 		wb.emit("file.saved", {path:file});
 		var client = wb.languagesPart.languageServers.client(file);
 		if (client != null) { wb.languagesPart.languageServers.sync(file,wb.documentsPart.buffer(file).get()); client.saved(file); }
-		if (current == text) wb.dirty.set(wb.dirty.get().filter(path -> path != file));
 	}
 
 	/** Saves what is edited, then builds the project and runs it. */

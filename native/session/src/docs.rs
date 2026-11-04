@@ -6,7 +6,7 @@ use crate::{
 use futures_util::lock::Mutex as AsyncMutex;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, atomic::{AtomicU64,Ordering}},
 };
 use yrs::{
     Doc, GetString, OffsetKind, Options, ReadTxn, StateVector, Text, TextRef, Transact, Update,
@@ -32,6 +32,7 @@ struct OpenDoc {
     subscribers: Mutex<HashMap<String, Send_>>,
     /// What the file held when the session last wrote or read it, so its own writes are not taken for outside edits.
     last_disk: Mutex<String>,
+    saved_version:AtomicU64,
     buffered: bool,
     saving: AsyncMutex<()>,
     cloud: Mutex<Option<crate::cloud::Binding>>,
@@ -79,6 +80,7 @@ fn state_of(doc: &Doc) -> Vec<u8> {
 }
 
 pub struct Opened {
+    pub saved_text:String,
     pub document_id:Option<String>,
     /// What the client lacks, given the state vector it sent.
     pub update: Vec<u8>,
@@ -92,6 +94,7 @@ pub struct Opened {
 }
 
 pub struct Saved {
+    pub text:Option<String>,
     pub written: bool,
     pub mtime: u64,
     pub state: Option<Vec<u8>>,
@@ -187,6 +190,7 @@ impl<S: FileStore> DocHub<S> {
             };
             self.store.write(path,data).await?;
             *open.last_disk.lock().unwrap() = next.into();
+            open.saved_version.fetch_add(1,Ordering::Relaxed);
             apply_diff(&open.doc,&open.text,next,DISK);
             self.persist(path,&open,&state_of(&open.doc),None).await?;
             Ok(())
@@ -228,8 +232,11 @@ impl<S: FileStore> DocHub<S> {
         if let Some(saved)=&saved {
             let state=if let Some((baseline,state))=crate::buffer_state::unpack(saved)? {
                 if let Some(binding)=baseline.path.as_deref(){if !self.store.matches_recovery_binding(path,binding).await?{return Err(Self::disk_conflict());}}
-                if !baseline.accepts(&crate::checkpoint::digest(disk.as_bytes())){return Err(Self::disk_conflict());}
-                buffered=true;cloud=baseline.cloud;state
+                if baseline.accepts(&crate::checkpoint::digest(disk.as_bytes())) {buffered=true;}
+                else if baseline.cloud.is_some() || crate::checkpoint::digest(crate::checkpoint::text(state)?.as_bytes()) != baseline.disk {return Err(Self::disk_conflict());}
+                // A clean, released local graph can adopt a newer disk version. Dirty
+                // recovery and cloud lineage still require explicit reconciliation.
+                cloud=baseline.cloud;state
             }else{saved};
             let update=Update::decode_v1(state).map_err(|_|SessionError::new("bad-buffer-state","Stored document recovery is invalid."))?;
             let mut txn=doc.transact_mut_with(yrs::Origin::from(LOAD));
@@ -259,8 +266,11 @@ impl<S: FileStore> DocHub<S> {
             }
         }
         if !buffered {apply_diff(&doc,&text,&disk,DISK);}
+        // Every editor document has an unsaved working buffer. Background persistence
+        // keeps recovery privately; only an explicit Save may replace the file.
+        let buffered=true;
         let state=state_of(&doc);
-        let state=if buffered{crate::buffer_state::pack_cloud(&state,&crate::checkpoint::digest(disk.as_bytes()),None,&self.store.recovery_path(path).await?,cloud.clone())?}else{state};
+        let state=crate::buffer_state::pack_cloud(&state,&crate::checkpoint::digest(disk.as_bytes()),None,&self.store.recovery_path(path).await?,cloud.clone())?;
         self.store.write_state(&format!("doc:{path}"),&state).await?;
 
         let subscribers: Mutex<HashMap<String, Send_>> = Mutex::new(HashMap::new());
@@ -282,7 +292,7 @@ impl<S: FileStore> DocHub<S> {
                     }
             })
             .expect("a document accepts an update observer");
-            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), buffered, saving: AsyncMutex::new(()), cloud:Mutex::new(cloud.clone()),cloud_legacy,#[cfg(feature="server")]watch:Default::default() }
+            OpenDoc { doc: doc.clone(), text: text.clone(), subscribers, last_disk: Mutex::new(disk.clone()), saved_version:AtomicU64::new(0), buffered, saving: AsyncMutex::new(()), cloud:Mutex::new(cloud.clone()),cloud_legacy,#[cfg(feature="server")]watch:Default::default() }
         });
         Ok(open)
     }
@@ -342,7 +352,7 @@ impl<S: FileStore> DocHub<S> {
         let txn = open.doc.transact();
         let text = open.text.get_string(&txn);
         let dirty = open.buffered && text != *open.last_disk.lock().unwrap();
-        Ok(Opened { document_id,update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty,cloud_lineage,cloud_legacy:open.cloud_legacy })
+        Ok(Opened { saved_text:open.last_disk.lock().unwrap().clone(),document_id,update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty,cloud_lineage,cloud_legacy:open.cloud_legacy })
     }
 
     /// Applies a client's update; the other subscribers get it from the document's update event.
@@ -440,7 +450,7 @@ impl<S: FileStore> DocHub<S> {
         self.open.lock().unwrap().iter().filter(|(_, open)| open.subscribers.lock().unwrap().is_empty()).map(|(path, _)| path.clone()).collect()
     }
 
-    /// Flush recovered buffers privately; ordinary documents also write through to the file.
+    /// Persist working buffers privately without writing the saved file.
     pub async fn flush(&self, path: &str) -> Result<(bool, u64)> {
         let saved = self.save_inner(path, false, false).await?;
         Ok((saved.written,saved.mtime))
@@ -472,7 +482,7 @@ impl<S: FileStore> DocHub<S> {
 
     async fn save_inner(&self, path: &str, checkpoint: bool, explicit: bool) -> Result<Saved> {
         let Some(open) = self.get(path) else {
-            return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
+            return Ok(Saved {text:None,written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
         };
         let _saving = open.saving.lock().await;
         if explicit{self.refresh_cloud();}
@@ -482,7 +492,7 @@ impl<S: FileStore> DocHub<S> {
         if checkpoint && state.len() > crate::checkpoint::MAX_BYTES { return Err(SessionError::new("too-large", "The document checkpoint exceeds the recovery size limit.")); }
         if open.buffered && !explicit {
             self.persist(path,&open,&state,None).await?;
-            return Ok(Saved {written:false,mtime:self.store.stat(path).await?.map_or(0,|entry|entry.mtime),state:None});
+            return Ok(Saved {text:None,written:false,mtime:self.store.stat(path).await?.map_or(0,|entry|entry.mtime),state:None});
         }
         if open.buffered {
             self.verify_disk(path,&open).await?;
@@ -496,10 +506,11 @@ impl<S: FileStore> DocHub<S> {
                 self.store.write_state(&format!("doc:{path}"), &intent).await?;
             }
             self.store.write(path, text.as_bytes()).await?;
-            *open.last_disk.lock().unwrap() = text;
+            *open.last_disk.lock().unwrap() = text.clone();
+            open.saved_version.fetch_add(1,Ordering::Relaxed);
         }
         self.persist(path,&open,&state_of(&open.doc),None).await?;
-        Ok(Saved {written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
+        Ok(Saved {text:Some(text),written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
     }
 
     /// Restore only a released document; its next open must load exactly this graph and text.
@@ -547,7 +558,7 @@ impl<S: FileStore> DocHub<S> {
     pub async fn changed(&self, path: &str) {
         let Some(open) = self.get(path) else { return };
         let _saving = open.saving.lock().await;
-        if open.buffered {return;}
+        if open.cloud.lock().unwrap().is_some() || open.text.get_string(&open.doc.transact()) != *open.last_disk.lock().unwrap() {return;}
         let Ok(bytes) = self.store.read(path).await else { return };
         let Ok(disk) = String::from_utf8(bytes) else { return };
         {
@@ -556,10 +567,21 @@ impl<S: FileStore> DocHub<S> {
                 return;
             }
             *last = disk.clone();
+            open.saved_version.fetch_add(1,Ordering::Relaxed);
         }
         apply_diff(&open.doc, &open.text, &disk, DISK);
         let state = state_of(&open.doc);
-        let _ = self.store.write_state(&format!("doc:{path}"), &state).await;
+        let _ = self.persist(path,&open,&state,None).await;
+    }
+
+    pub fn saved_version(&self,path:&str)->u64 {self.get(path).map_or(0,|open|open.saved_version.load(Ordering::Relaxed))}
+
+    pub fn saved_text(&self,path:&str)->Option<String> {
+        self.get(path).map(|open|open.last_disk.lock().unwrap().clone())
+    }
+
+    pub fn is_dirty(&self,path:&str)->bool {
+        self.get(path).is_some_and(|open|open.text.get_string(&open.doc.transact()) != *open.last_disk.lock().unwrap())
     }
 
     pub async fn close(&self) {

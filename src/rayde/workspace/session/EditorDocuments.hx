@@ -17,14 +17,15 @@ class EditorDocuments {
 	final warning:String->Void;
 	final selection:String->CodeSelection;
 	final composing:String->Bool;
+	final saved:Null<(String,String)->Void>;
 	final revision = Signal.make(0);
 	final connected = Signal.make(true);
 	var next = 0;
 	var contextChanged = false;
 	final prefix = Std.string(Std.random(0x3fffffff)) + ":";
 
-	public function new(client:SessionClient, changed:(String, Bool)->Void, failed:String->Void, selection:String->CodeSelection, composing:String->Bool, ?warning:String->Void) {
-		this.client = client; this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
+	public function new(client:SessionClient, changed:(String, Bool)->Void, failed:String->Void, selection:String->CodeSelection, composing:String->Bool, ?warning:String->Void, ?saved:(String,String)->Void) {
+		this.saved = saved; this.client = client; this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
 		this.warning = warning == null ? failed : warning;
 		connected.set(client.isOnline());
 		unsubscribe = client.subscribe(event -> {
@@ -48,7 +49,7 @@ class EditorDocuments {
 		if (bindings.exists(file)) return;
 		var binding:EditorBinding = null;
 		binding = new EditorBinding(client, prefix + next++, file, state, disk, local -> changed(binding.file, local), failed,
-			() -> selection(binding.file), () -> composing(binding.file));
+			() -> selection(binding.file), () -> composing(binding.file), saved == null ? null : text -> saved(binding.file,text));
 		bindings.set(file,binding);
 		revision.set(revision.get() + 1);
 	}
@@ -103,6 +104,7 @@ private class EditorBinding {
 	final failed:String->Void;
 	final selection:Void->CodeSelection;
 	final composing:Void->Bool;
+	final saved:Null<String->Void>;
 	var pending:Null<ash.Future<Dynamic>>;
 	var saving:Null<{future:ash.Future<Dynamic>, text:String, done:(Null<String>, String, String)->Void}>;
 	var opening = true;
@@ -113,7 +115,8 @@ private class EditorBinding {
 	var serial = 0;
 
 	public function new(client:SessionClient, handle:String, file:String, state:CodeEditorState, disk:String,
-		changed:Bool->Void, failed:String->Void, selection:Void->CodeSelection, composing:Void->Bool) {
+		changed:Bool->Void, failed:String->Void, selection:Void->CodeSelection, composing:Void->Bool, ?saved:String->Void) {
+		this.saved = saved;
 		this.client = client; this.handle = handle; this.file = file; this.state = state; this.disk = disk;
 		this.changed = changed; this.failed = failed; this.selection = selection; this.composing = composing;
 		known = initial = state.value.get();
@@ -168,6 +171,7 @@ private class EditorBinding {
 			return offset + shift;
 		}
 		known = message.text;
+		if (Std.isOfType(message.savedText,String) && saved != null) saved(message.savedText);
 		state.applyRemote(known, {caret:moved(position.caret), anchor:moved(position.anchor)});
 	}
 	public function frame():Void {
@@ -194,7 +198,9 @@ private class EditorBinding {
 			var previous = state.value.get();
 			if (opening) {
 				state.history.clear();
-				opening = false; known = result.text; state.applyRemote(known);
+				opening = false; known = result.text;
+				if (Std.isOfType(result.savedText,String) && saved != null) saved(result.savedText);
+				state.applyRemote(known);
 				blocked.set(false); notify("view.ready", {});
 				if (initial != disk && initial != known) {
 					if (known == disk) {

@@ -23,6 +23,10 @@ class LocalHistoryChecks {
 		history.saved(file, "other branch λ", null); history.dispose();
 		history = new LocalHistory(root);
 		require(history.recover(file, "other branch λ") == "other branch λ", "saved baseline survives restart");
+		history.saved(file, "saved while typing", null, "newer unsaved typing"); history.dispose();
+		history = new LocalHistory(root);
+		require(history.recover(file, "saved while typing") == "newer unsaved typing", "typing during Save remains recoverable against the completed savepoint");
+		history.saved(file, "other branch λ", null);
 		for (i in 0...220) {
 			var before = history.current(file, "other branch λ");
 			history.record(file, before, "value " + i, null);

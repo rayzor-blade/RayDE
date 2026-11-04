@@ -58,6 +58,7 @@ export class Doc {
     this.cloudLegacy = false;
     this.cloudMessage = "";
     this.buffered = false;
+    this.savedText = undefined;
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = new Set();
@@ -235,6 +236,8 @@ export class Doc {
     this.buffered=reply.buffered===true;
     if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
+    if (typeof reply.savedText === "string") this.savedText = reply.savedText;
+    else if (reply.dirty === false && typeof reply.text === "string") this.savedText = reply.text;
     Y.applyUpdate(this.ydoc,b64.decode(reply.update),"session");
   }
 
@@ -353,7 +356,11 @@ export class Doc {
     if (this.unsent) await this.sync(true);
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
     this.guard();
-    try { return await this.client.request("doc.save", { path: this.path, ...(this.documentId ? {documentId:this.documentId} : {}) }); }
+    try {
+      const reply = await this.client.request("doc.save", { path: this.path, ...(this.documentId ? {documentId:this.documentId} : {}) });
+      if (typeof reply.text === "string") this.savedText = reply.text;
+      return reply;
+    }
     catch (error) { this.fence(error); throw error; }
   }
 
@@ -557,6 +564,7 @@ export class SessionClient {
       const doc = this.docs.get(message.path);
       if (doc && !doc.closed && !doc.blocked) {
         if(doc.buffered)doc.restoredDirty=true;
+        if (typeof message.savedText === "string") doc.savedText = message.savedText;
         Y.applyUpdate(doc.ydoc, b64.decode(message.update), "session");
         doc.listeners.forEach((listener) => listener("remote"));
       }

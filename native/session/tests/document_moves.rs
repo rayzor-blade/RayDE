@@ -404,6 +404,9 @@ impl FileStore for PausedIdentity {
     async fn recovery_path(&self, p: &str) -> rayde_session::error::Result<String> {
         self.inner.recovery_path(p).await
     }
+    async fn matches_recovery_binding(&self, p: &str, binding: &str) -> rayde_session::error::Result<bool> {
+        self.inner.matches_recovery_binding(p,binding).await
+    }
     async fn rename_documents(
         &self,
         a: &str,

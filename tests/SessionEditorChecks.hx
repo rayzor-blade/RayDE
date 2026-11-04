@@ -17,14 +17,16 @@ class SessionEditorChecks {
 		rayde.workspace.PageHost.session = null;
 		var state = new CodeEditorState(), cursor:CodeSelection = {caret:3,anchor:3}, selectedFile = "", composingFile = "", changedFile = "";
 		state.value.set("abc");
+		var savedPoint = "";
 		var docs = new EditorDocuments(client, (file, local) -> { changedFile = file; changes.push(local); }, failures.push,
-			file -> { selectedFile = file; return cursor; }, file -> { composingFile = file; return false; }, warnings.push);
+			file -> { selectedFile = file; return cursor; }, file -> { composingFile = file; return false; }, warnings.push, (file,text) -> savedPoint=text);
 		docs.attach("/work/a.txt",state,"abc");
 		check(docs.readOnly("/work/a.txt"),"the editor must wait asynchronously for its CRDT projection");
 		var open = wire.sent.pop(true);
 		check(open.op == "view.open" && open.path == "a.txt","paths are relative to the session");
-		wire.reply({id:open.id,ok:true,result:{text:"abc",epoch:0,serial:0}});
+		wire.reply({id:open.id,ok:true,result:{text:"abc",epoch:0,serial:0,savedText:"saved baseline"}});
 		settle(client,docs,() -> !docs.readOnly("/work/a.txt"));
+		check(savedPoint=="saved baseline","the savepoint must come from saved contents, not the merged working text");
 		check(wire.sent.pop(true).op == "view.ready","initial projection must be acknowledged before typing");
 		state.value.set("abc!"); docs.acceptBuffer("/work/a.txt");
 		var edit = wire.sent.pop(true);

@@ -307,6 +307,7 @@ impl<S: FileStore> Editors<S> {
             let view = View::new(path, subscriber, &opened.update)?;
             let mut reply = view.snapshot();
             reply["dirty"] = opened.dirty.into();
+            reply["savedText"] = opened.saved_text.into();
             self.views.lock().unwrap().insert(handle.into(), view);
             return Ok(reply);
         }
@@ -480,7 +481,7 @@ impl<S: FileStore> Editors<S> {
                 serial: view.serial,
                 epoch,
             });
-            (self.out)(json!({"ev":"view.remote","handle":handle,"epoch":epoch,"serial":view.serial,"text":next,"parts":difference(&before,&next),"dirty":true}).to_string());
+            (self.out)(json!({"ev":"view.remote","handle":handle,"epoch":epoch,"serial":view.serial,"text":next,"parts":difference(&before,&next),"dirty":self.hub.is_dirty(path),"savedText":self.hub.saved_text(path)}).to_string());
         }
     }
     pub async fn close(&self) {

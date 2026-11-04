@@ -451,9 +451,11 @@ class ExtensionsPart {
 				wb.documentsPart.localHistory.record(full, before, text, null, "Extension edit");
 				Fs.saveContent(full, text);
 				wb.documentsPart.localHistory.saved(full, text, null);
-				if (b != null)
+				if (b != null) {
+					wb.documentsPart.savedContents.set(full, text);
 					b.set(text);
-				wb.dirty.set([for (d in wb.dirty.get()) if (d != full) d]);
+					wb.documentsPart.refreshDirty(full);
+				}
 				wb.explorerPart.refreshExplorer();
 			},
 			notify: (id, title, message, kind) -> Toaster.show({title:title, description:message,

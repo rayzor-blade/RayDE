@@ -75,6 +75,7 @@ async fn recovery_deltas_capture_a_baseline_then_only_missing_edits_and_deletion
         checkpoint::text(&checkpoint::materialize(&updates, &removed.vector).unwrap()).unwrap(),
         peer.string()
     );
+    assert_eq!(client.request(json!({"op":"doc.save","path":"main.txt"})).await["ok"],true);
     fs::write(root.path().join("main.txt"), "outside 🦊 edit").unwrap();
     running.workspace.changed("main.txt", "modified").await;
     let external:Delta=serde_json::from_value(client.request(json!({"op":"doc.update","path":"main.txt","journal":true,"vector":removed.vector,"update":"AAA="})).await["journal"].clone()).unwrap();

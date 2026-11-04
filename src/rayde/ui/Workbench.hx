@@ -523,16 +523,43 @@ class Workbench extends Component<WorkbenchProps> {
 		explorerPart.dependencyReadRoots = [];
 		explorerPart.dependenciesRevision.set(explorerPart.dependenciesRevision.get() + 1);
 		var manifest = projectManifest();
-		if (manifest != null && documentsPart.buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0)
-			documentsPart.buffers.get(manifest).set(Fs.getContent(manifest));
+		if (manifest != null && documentsPart.buffers.exists(manifest) && dirty.get().indexOf(manifest) < 0) {
+			var text = Fs.getContent(manifest);
+			documentsPart.savedContents.set(manifest, text);
+			documentsPart.buffers.get(manifest).set(text);
+		}
 		buildRevision.set(buildRevision.get() + 1);
 		for (file in open.get())
 			if (file != SETTINGS)
 				languagesPart.check(file);
 	}
 
-	/** Closes `file`'s tab, keeping what was edited in it; the tab beside it comes forward. */
-	public function closeFile(file:String):Void {
+	/** Closing an edited document always offers Save, Don't Save and Cancel. */
+	public function closeFile(file:String):Void closeFiles([file]);
+
+	/** Bulk closes make one decision before changing tabs, focus or split groups. */
+	public function closeFiles(files:Array<String>, ?after:Void->Void):Void {
+		var targets = files.filter(file -> open.get().indexOf(file) >= 0);
+		var changed = targets.filter(file -> !isVirtual(file) && dirty.get().indexOf(file) >= 0);
+		function finish():Void {
+			if (Lambda.exists(targets, file -> dirty.get().indexOf(file) >= 0)) { say("Files changed before closing. Close again to review their changes."); return; }
+			for (file in targets) closeFileNow(file);
+			if (after != null) after();
+		}
+		if (changed.length == 0) { finish(); return; }
+		if (prompt.get() != null) return;
+		var focusedFile = active.get(), editor = editorOf(focusedFile);
+		var anchor = editor == null ? 0 : editor.editing.anchor.get(), caret = editor == null ? 0 : editor.editing.caret.get();
+		prompt.set({cancel:() -> ashui.animation.AnimationScheduler.main.after(.001, () -> {
+			if (!gone && active.get() == focusedFile && editor != null && editorOf(focusedFile) == editor) { editor.focus(); editor.select(anchor,caret); }
+		}), title:changed.length == 1 ? "Save changes?" : "Save changes to these files?",
+			description:changed.length == 1 ? 'Save changes to "${haxe.io.Path.withoutDirectory(changed[0])}" before closing?' : 'There are unsaved changes in ${changed.length} files.',
+			action:"Save", accept:_ -> runPart.saveBeforeClosing(changed,finish),
+			alternative:"Don't Save", discard:() -> { documentsPart.discardChanges(changed); finish(); }});
+	}
+
+	/** Teardown after confirmation, or an already confirmed permanent deletion. */
+	function closeFileNow(file:String):Void {
 		if (file == APP_PREVIEW) runPart.closeAppPreview();
 		if (file == SURFACE_PREVIEW) runPart.closeSurfacePreview();
 		var wasActive = active.get() == file;
@@ -817,22 +844,16 @@ class Workbench extends Component<WorkbenchProps> {
 	/** Closes the tabs with nothing unsaved; the one in front goes with them unless it has edits. */
 	public function closeSaved():Void {
 		var keep = [for (f in open.get()) if (dirty.get().indexOf(f) >= 0) f];
-		if (keep.indexOf(active.get()) < 0)
-			active.set(keep.length == 0 ? "" : keep[0]);
 		closeExcept(keep);
 	}
 
 	public function closeAll():Void {
-		active.set("");
-		closeExcept([]);
-		editorPart.groups.sync([],""); editorPart.groups.join();
+		closeFiles(open.get().copy(), () -> editorPart.groups.join());
 	}
 
 	/** Bulk actions use the same teardown as a tab's close button, including extension view unmounts. */
 	function closeExcept(keep:Array<String>):Void {
-		for (file in open.get().copy())
-			if (keep.indexOf(file) < 0)
-				closeFile(file);
+		closeFiles(open.get().filter(file -> keep.indexOf(file) < 0));
 	}
 
 	/** Puts the path of the file in front on the clipboard, in full or from the project's folder. */

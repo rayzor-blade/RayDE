@@ -122,8 +122,7 @@ class TabContextMenu extends Component<TabContextMenuProps> {
 			case "saved": files.filter(path -> wb.dirty.get().indexOf(path) < 0);
 			case _: files;
 		};
-		for (path in selected)
-			wb.closeFile(path);
+		wb.closeFiles(selected);
 	}
 
 	function pathOf(file:String):Null<String>

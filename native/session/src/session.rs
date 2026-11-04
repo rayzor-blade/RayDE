@@ -354,13 +354,26 @@ impl<S: FileStore> Connection<S> {
                 };
                 let out = self.out.clone();
                 let event_path = path.clone();
-                let send = Arc::new(move |update: Vec<u8>| out(json!({"ev": "doc.update", "path": event_path, "update": B64.encode(update)}).to_string()));
+                let hub=Arc::downgrade(&workspace.docs);
+                let last_saved=AtomicU64::new(workspace.docs.saved_version(&path));
+                let send = Arc::new(move |update: Vec<u8>| {
+                    let mut event=json!({"ev": "doc.update", "path": event_path, "update": B64.encode(update)});
+                    // Ordinary edits stay incremental. Send the file baseline only when
+                    // an explicit save or external clean-file update changed it.
+                    if let Some(hub)=hub.upgrade(){
+                        let version=hub.saved_version(&event_path);
+                        if last_saved.swap(version,Ordering::Relaxed)!=version {
+                            if let Some(text)=hub.saved_text(&event_path){event["savedText"]=text.into();}
+                        }
+                    }
+                    out(event.to_string());
+                });
                 let lineage=request.get("cloudLineage").and_then(Value::as_str);
                 let opened = workspace.docs.attach_mode(&path, &self.name, vector.as_deref(), expected,lineage,request["cloud"]==true, send).await.inspect_err(|error|workspace.cloud_failed(error))?;
                 if !self.docs.contains(&path) {
                     self.docs.push(path);
                 }
-                Ok(json!({"documentId":opened.document_id,"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "buffered":opened.buffered, "dirty":opened.dirty,"cloudLineage":opened.cloud_lineage,"cloudLegacy":opened.cloud_legacy}))
+                Ok(json!({"documentId":opened.document_id,"update": B64.encode(&opened.update), "vector": B64.encode(&opened.vector), "text": opened.text, "savedText":opened.saved_text, "buffered":opened.buffered, "dirty":opened.dirty,"cloudLineage":opened.cloud_lineage,"cloudLegacy":opened.cloud_legacy}))
             }
             "doc.update" => {
                 let path = clean(text(request, "path")?)?;
@@ -382,7 +395,7 @@ impl<S: FileStore> Connection<S> {
                 let checkpoint = request["checkpoint"] == true;
                 if checkpoint && !self.docs.contains(&path) { return Err(SessionError::new("not-open", "Open this shared document before saving its checkpoint.")); }
                 let saved = workspace.docs.save(&path,checkpoint).await.inspect_err(|error|workspace.cloud_failed(error))?;
-                let mut reply = json!({"written":saved.written,"mtime":saved.mtime});
+                let mut reply = json!({"written":saved.written,"mtime":saved.mtime,"text":saved.text});
                 if let Some(state) = saved.state { reply["checkpoint"] = json!(crate::checkpoint::pack(&state)?); }
                 Ok(reply)
             }

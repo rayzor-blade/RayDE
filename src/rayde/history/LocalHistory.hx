@@ -100,10 +100,12 @@ class LocalHistory {
 		return text.substr(0, revision.from) + revision.inserted + text.substr(revision.from + revision.removed.length);
 	}
 
-	public function saved(file:String, text:String, undo:Dynamic):Void {
+	public function saved(file:String, text:String, undo:Dynamic, ?current:String):Void {
 		var item = load(file, text);
 		record(file, text, text, undo);
 		append(item, text, "Saved"); item.data.savedHash = Sha256.encode(text);
+		// A save can finish after more typing: retain both its savepoint and the newer buffer.
+		if (current != null && current != text) append(item, current, "Edit");
 		flush(file); changed();
 	}
 
