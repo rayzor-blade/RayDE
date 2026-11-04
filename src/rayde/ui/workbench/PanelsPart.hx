@@ -188,6 +188,7 @@ class PanelsPart {
 			return <div/>;
 		var mod = rayde.Platform.shortcutsMac() ? "⌘" : "Ctrl+";
 		return <div class="flex items-center gap-1">
+			<for {id in [wb.terminalPart.terminalActive.get()]}>${wb.terminalPart.shellLabel()}</for>
 			<div class="flex items-center">
 				<tooltip label="New terminal" side="top"><button id="rayde-terminal-add" variant={Ghost} size={Icon} class="rayde-panel-button" onClick={_ -> wb.terminalPart.newTerminal()}><icon document={Icons.ADD_LINE} class="size-4"/></button></tooltip>
 				<dropdown-menu ref={wb.terminalPart.profilesMenu} id="rayde-terminal-profiles">

@@ -76,7 +76,31 @@ mod native {
             }
         }
     }
+    #[cfg(unix)]
+    fn login_shell() -> Option<PathBuf> {
+        use std::{ffi::{CStr, OsString}, os::unix::ffi::OsStringExt};
+        let mut bytes = vec![0u8; 16384];
+        loop {
+            let mut account = std::mem::MaybeUninit::<libc::passwd>::uninit();
+            let mut found = std::ptr::null_mut();
+            let code = unsafe { libc::getpwuid_r(libc::geteuid(), account.as_mut_ptr(), bytes.as_mut_ptr().cast(), bytes.len(), &mut found) };
+            if code == libc::ERANGE && bytes.len() < 1024 * 1024 { bytes.resize(bytes.len() * 2, 0); continue; }
+            if code != 0 || found.is_null() { return None; }
+            let shell = unsafe { (*found).pw_shell };
+            if shell.is_null() { return None; }
+            let value = unsafe { CStr::from_ptr(shell) }.to_bytes();
+            return (!value.is_empty()).then(|| PathBuf::from(OsString::from_vec(value.to_vec())));
+        }
+    }
+    #[cfg(not(unix))]
+    fn login_shell() -> Option<PathBuf> { None }
+
     fn profiles(environment: &HashMap<String, String>) -> Value {
+        profiles_with_shell(environment, std::env::var_os("SHELL").map(PathBuf::from), login_shell())
+    }
+    fn profiles_with_shell(environment: &HashMap<String, String>, inherited: Option<PathBuf>, login: Option<PathBuf>) -> Value {
+        #[cfg(windows)]
+        let _ = (inherited, login);
         let mut paths = Vec::new();
         #[cfg(windows)]
         {
@@ -88,13 +112,9 @@ mod native {
         }
         #[cfg(not(windows))]
         {
-            if let Some(shell) = environment
-                .get("SHELL")
-                .map(std::ffi::OsString::from)
-                .or_else(|| std::env::var_os("SHELL"))
-            {
-                paths.push(PathBuf::from(shell));
-            }
+            paths.extend(environment.get("SHELL").map(PathBuf::from));
+            paths.extend(inherited);
+            paths.extend(login);
             if let Ok(shells) = std::fs::read_to_string("/etc/shells") {
                 for line in shells.lines() {
                     let p = line.trim();
@@ -116,6 +136,21 @@ mod native {
             }
         }
         json!(found)
+    }
+
+    #[cfg(all(test, unix))]
+    mod tests {
+        use super::*;
+        #[test]
+        fn a_service_without_shell_uses_the_accounts_login_shell() {
+            let shell = login_shell().expect("the current account has a login shell");
+            assert!(shell.is_file());
+            let found = profiles_with_shell(&HashMap::new(), None, Some(shell.clone()));
+            assert_eq!(found[0]["program"], shell.to_string_lossy().as_ref());
+            assert_eq!(found[0]["isDefault"], true);
+            let explicit = [("SHELL".into(), "/bin/sh".into())].into();
+            assert_eq!(profiles_with_shell(&explicit, None, Some(shell))[0]["program"], "/bin/sh");
+        }
     }
     impl Terminals for NativeTerminals {
         fn profiles(&self) -> Value {

@@ -150,6 +150,12 @@ class TerminalPart {
 	public function terminalIds():Array<Int>
 		return [for (s in sessions) s.id];
 
+	function shellLabel():Element {
+		var session = current();
+		if (session == null) return <div/>;
+		return <tooltip label={session.profile.program} side="top"><text id="rayde-terminal-shell" maxWidth={150} class="text-xs text-text-secondary truncate">${session.profile.name}</text></tooltip>;
+	}
+
 	/** The terminals that share a screen with `id`, from left to right: the one itself when it is not split. */
 	function groupOf(id:Int):Array<Session> {
 		var s = find(id);

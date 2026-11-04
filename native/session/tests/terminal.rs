@@ -62,7 +62,7 @@ async fn real_pty_input_colours_resize_and_connection_ownership() {
     );
     assert_eq!(
         client
-            .request(json!({"op":"term.write","tid":tid,"data":"hello🙂\n"}))
+            .request(json!({"op":"term.write","tid":tid,"data":"hello🙂\r"}))
             .await["ok"],
         true
     );
