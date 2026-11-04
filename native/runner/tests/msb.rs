@@ -1,7 +1,8 @@
 //! Explicit real-runtime check; the default suite never creates a VM.
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use futures_util::{SinkExt, StreamExt};
-use rayde_runner::{Config, LocalRepository, start, workspace_id};
+use rayde_runner::{Config, LocalRepository, start, workspace_id, demo_workspace_id};
+use sha2::{Digest,Sha256};
 use serde_json::{Value, json};
 use yrs::{Doc, ReadTxn, Text, Transact, Update, updates::decoder::Decode};
 use std::{
@@ -158,6 +159,72 @@ async fn delete(
         .unwrap()
         .status()
         .as_u16()
+}
+
+#[tokio::test]
+#[ignore = "requires local MSB/KVM and RAYDE_TEST_SESSION; starts two isolated short-lived Ubuntu guests"]
+async fn real_msb_demo_leases_are_isolated_and_expire() {
+    let temporary=tempfile::tempdir().unwrap();
+    let secret="demo-probe-private-runner-control-credential";
+    let secret_file=temporary.path().join("secret");std::fs::write(&secret_file,secret).unwrap();
+    #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&secret_file,std::fs::Permissions::from_mode(0o600)).unwrap();}
+    let bundle=temporary.path().join("demo.json");
+    let sources=json!({"version":1,"root":"/work/pocket-studio","project":"pocket-studio/build.hxml","entries":[
+        {"path":"/work/pocket-studio","directory":true,"data":null},
+        {"path":"/work/pocket-studio/build.hxml","directory":false,"data":B64.encode("-cp src\n-main Main\n--interp\n")},
+        {"path":"/work/pocket-studio/src/Main.hx","directory":false,"data":B64.encode("class Main {static function main(){}}\n")},
+        {"path":"/work/pocket-studio/live.txt","directory":false,"data":B64.encode("base")}
+    ]});
+    let bytes=serde_json::to_vec(&sources).unwrap();std::fs::write(&bundle,&bytes).unwrap();
+    let release:String=Sha256::digest(bytes).iter().map(|byte|format!("{byte:02x}")).collect();
+    let config:Config=serde_json::from_value(json!({
+        "listen":"127.0.0.1:0","stateRoot":temporary.path().join("state"),
+        "msb":std::env::var_os("RAYDE_TEST_MSB").map(PathBuf::from).unwrap_or_else(||PathBuf::from(std::env::var_os("HOME").unwrap()).join(".local/bin/msb")),
+        "sessionBinary":std::env::var_os("RAYDE_TEST_SESSION").map(PathBuf::from).expect("Set RAYDE_TEST_SESSION"),
+        "secretFile":secret_file,"image":"ubuntu:26.04","memoryMib":512,"cpus":1,"maxWorkspaces":2,"maxDurationSeconds":300,
+        "demo":{"bundle":bundle,"release":release,"maxWorkspaces":2}
+    })).unwrap();
+    let _cleanup=Cleanup{msb:config.msb.clone(),state:config.state_root.clone()};
+    let running=start(config.clone()).await.unwrap();let base=format!("http://{}",running.address);
+    let http=reqwest::Client::builder().timeout(Duration::from_secs(90)).build().unwrap();
+    let now=||std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let expires=now()+45;
+    let request=|lease:&str|json!({"id":demo_workspace_id(&release,lease),"owner":0,"repository":{"id":0,"fullName":"demo/pocket-studio","demo":{"release":release,"lease":lease,"expires":expires}}});
+    let a=request(&"a".repeat(43));let b=request(&"b".repeat(43));
+    let (status,left)=open(&http,&base,secret,a.clone()).await;assert_eq!(status,200,"{left}");
+    let (status,right)=open(&http,&base,secret,b).await;assert_eq!(status,200,"{right}");
+    assert_ne!(left["token"],right["token"]);
+    let mut first=Peer::connect(&left,secret).await;let mut second=Peer::connect(&right,secret).await;
+    let one=first.rpc("hello",json!({"token":left["token"]})).await;
+    let two=second.rpc("hello",json!({"token":right["token"]})).await;
+    assert_ne!(one["cacheIdentity"],two["cacheIdentity"],"visitors share a CRDT authority");
+    assert_eq!(first.rpc("fs.write",json!({"path":"only-a.txt","data":"private visitor A"})).await["ok"],true);
+    assert!(second.rpc("fs.stat",json!({"path":"only-a.txt"})).await["entry"].is_null());
+    let opened=first.rpc("doc.open",json!({"path":"live.txt"})).await;
+    let graph=Doc::new();let text=graph.get_or_insert_text("text");
+    graph.transact_mut().apply_update(Update::decode_v1(&B64.decode(opened["update"].as_str().unwrap()).unwrap()).unwrap()).unwrap();
+    let vector=graph.transact().state_vector();text.insert(&mut graph.transact_mut(),4," edited");
+    let update=graph.transact().encode_state_as_update_v1(&vector);
+    assert_eq!(first.rpc("doc.update",json!({"path":"live.txt","update":B64.encode(update)})).await["ok"],true);
+    let untouched=second.rpc("doc.open",json!({"path":"live.txt"})).await;
+    assert_ne!(opened["documentId"],untouched["documentId"]);
+    assert_eq!(second.rpc("fs.read",json!({"path":"live.txt"})).await["data"],"base");
+    drop(first);drop(second);running.shutdown().await;
+    let running=start(config.clone()).await.unwrap();let base=format!("http://{}",running.address);
+    let (status,reused)=open(&http,&base,secret,a.clone()).await;assert_eq!(status,200,"{reused}");
+    assert_eq!(left["token"],reused["token"]);
+    let mut resumed=Peer::connect(&reused,secret).await;
+    assert_eq!(resumed.rpc("hello",json!({"token":reused["token"]})).await["cacheIdentity"],one["cacheIdentity"]);
+    assert_eq!(resumed.rpc("fs.read",json!({"path":"only-a.txt"})).await["data"],"private visitor A");drop(resumed);
+    tokio::time::sleep(Duration::from_secs(expires.saturating_sub(now())+1)).await;
+    assert_eq!(open(&http,&base,secret,a).await.0,410);
+    for _ in 0..200 {
+        if std::fs::read_dir(config.state_root.join("records")).unwrap().next().is_none(){break;}
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(std::fs::read_dir(config.state_root.join("records")).unwrap().next().is_none(),"expired lease records were retained");
+    running.shutdown().await;
+    println!("Demo MSB: separate files/CRDT identities, restart reuse and expiry reclamation passed");
 }
 
 #[tokio::test]

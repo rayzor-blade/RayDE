@@ -189,9 +189,12 @@ pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<R
         .layer(DefaultBodyLimit::max(32 * 1024))
         .with_state(service.clone());
     let (stop, stopped) = oneshot::channel();
+    let reap = service.config.demo.is_some() || service.registry.records.lock().await.values()
+        .any(|cell|cell.record.try_lock().is_ok_and(|record|record.repository.demo.is_some()));
     let cleanup = service.clone();
     let mut stopping = service.halt.subscribe();
     let reaper = tokio::spawn(async move {
+        if !reap {return;}
         let mut timer = tokio::time::interval(Duration::from_secs(5));
         loop {tokio::select! {
             _ = stopping.changed() => break,
