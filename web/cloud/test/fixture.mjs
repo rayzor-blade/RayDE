@@ -22,8 +22,8 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, landingOrigin, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, github, metrics } = {}) {
-  const calls = { exchanges: [], runner: [], api: [] };
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, landingOrigin, demo, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, cleanup, github, metrics } = {}) {
+  const calls = { exchanges: [], runner: [], runnerDeletes: [], api: [] };
   const config = {
     modules: true,
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }, { type: "CompiledWasm", include: ["**/*.wasm"] }],
@@ -31,11 +31,11 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     compatibilityDate: "2026-07-30",
     port,
     host: "127.0.0.1",
-    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true } },
+    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true }, DEMO_ADMISSIONS:{className:"DemoAdmissions",useSQLite:true}, DEMO_WORKSPACES:{className:"DemoWorkspaceSession",useSQLite:true} },
     durableObjectsPersist: persist,
     r2Buckets: [...(files ? ["WORKSPACE_FILES"] : []), ...(editorAssets ? ["EDITOR_ASSETS"] : [])],
     r2Persist: persist,
-    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}), ...(landingOrigin ? {LANDING_ORIGIN:landingOrigin} : {}) },
+    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}), ...(landingOrigin ? {LANDING_ORIGIN:landingOrigin} : {}), ...(demo ? {DEMO_ORIGIN:demo.origin??appOrigin,DEMO_RELEASE:demo.release,DEMO_TOOLCHAIN:demo.toolchain??'b'.repeat(64),DEMO_MAX_SESSIONS:String(demo.maximum??1)}:{}) },
     serviceBindings: {
       GITHUB: async request => {
         const url = new URL(request.url);
@@ -59,7 +59,11 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
       },
       RUNNER: async request => {
         if (request.headers.get("Authorization") !== "Bearer "+runnerSecret) return json({}, 403);
-        const data = await request.json(); calls.runner.push(data);
+        const data = await request.json();
+        if(new URL(request.url).pathname==="/workspaces/delete"){
+          calls.runnerDeletes.push(data);return cleanup?cleanup(data):json({deleted:true});
+        }
+        calls.runner.push(data);
         if(new URL(request.url).pathname==="/workspaces/metrics")return metrics ? metrics(data) : json({available:false});
         if(runnerUrl){
           const response=await fetch(runnerUrl.replace(/\/$/,"")+"/workspaces/open",{method:"POST",headers:{Authorization:"Bearer "+runnerSecret,"Content-Type":"application/json"},body:JSON.stringify(data)});
@@ -67,7 +71,7 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
         }
         if (provision) return provision(data,calls.runner.length);
         if (failProvisionOnce && calls.runner.length === 1) return json({}, 503);
-        return json({ url: endpoint, token: "compute-secret", project: "build.hxml" });
+        return json({ url: endpoint, token: "compute-secret", project: "build.hxml", ...(data.repository?.demo?{toolchain:'b'.repeat(64)}:{}) });
       },
     },
   };

@@ -80,6 +80,14 @@ The gateway supplies the compute token in the session handshake and relays the e
 
 Each workspace admits eight connections, counting upstream handshakes in progress. Overflow returns HTTP 429 before dialing compute. Upstream opens have a ten-second deadline; failure, timeout and sign-out cancel the attempt and release its reservation. Established slots release on client close, invalid input, backend loss or sign-out. This is a workspace admission bound, separate from account-wide usage policy.
 
+## Anonymous demo admission
+
+This API is disabled by default. Enabling it requires `DEMO_ORIGIN`, `DEMO_RELEASE` (the pinned Pocket Studio bundle SHA-256), `DEMO_TOOLCHAIN` (the prepared image digest), and optional `DEMO_MAX_SESSIONS` (default one, maximum eight). The runner must independently allow the same source release. A mismatched toolchain cannot become ready. The browser's asynchronous attachment is separate work; setting these variables alone does not connect the landing editor.
+
+Same-origin `POST /api/demo/open` returns a preparing lease immediately and sets a short-lived HttpOnly cookie. `GET /api/demo/status` reports preparation; `/api/demo/socket` upgrades only the cookie's workspace. `POST /api/demo/retry` retries that lease, and `POST /api/demo/end` releases it. GitHub sign-in and sign-out do not change anonymous ownership. Caller-supplied repository, release and workspace IDs are ignored. No runner credential enters the browser.
+
+The separate `DemoAdmissions` and `DemoWorkspaceSession` Durable Objects enforce a fifteen-minute lifetime, five-minute idle deadline, bounded admission/retries and aggregate capacity. Status polling does not extend idle time. Cleanup disconnects the visitor, waits for an unfinished launch, deletes compute and disks, then purges that workspace's private recovery payloads. Failed cleanup keeps its capacity reserved for retry. Deploy the `v3` migration before enabling admission; keep the landing, asset and preview origins separate.
+
 ## Saved document recovery
 
 Hosted Save requests a complete, checksummed CRDT snapshot from compute and commits it to the workspace Durable Object before returning success to the editor. The browser receives a small checkpoint receipt; the snapshot stays on the service side. A failed durable write returns a Save failure even if compute already wrote the file, so the editor retains its dirty state. Hosts advertise `hello.checkpoints = 1`; older hosts must be updated before hosted Save can confirm recovery.

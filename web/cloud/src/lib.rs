@@ -1,5 +1,6 @@
 mod account;
 mod assets;
+mod demo;
 mod auth_popup;
 mod projects;
 mod workspace;
@@ -11,7 +12,8 @@ mod sync;
 mod sync_documents;
 mod sync_watch;
 pub use account::AccountSession;
-pub use workspace::WorkspaceSession;
+pub use workspace::{WorkspaceSession,DemoWorkspaceSession};
+pub use demo::DemoAdmissions;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
@@ -196,6 +198,7 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
     let url = req.url()?;
     let origin = config(&env, "APP_ORIGIN").unwrap_or_else(|| url.origin().ascii_serialization());
     let path = url.path().to_string();
+    if path.starts_with("/api/demo/") {return demo::route(req,env).await;}
     if assets::is_landing(&env, &url) {
         return assets::landing(&req, &env, &path).await;
     }
@@ -213,13 +216,14 @@ async fn route(mut req: Request, env: Env) -> AppResult<Response> {
                 return assets::get(&req,&env,demo).await?.ok_or_else(||bad(404,"This demo preview is unavailable."));
             }
         }
-        let parts=path.strip_prefix("/previews/").map(|path|path.splitn(3,'/').collect::<Vec<_>>()).unwrap_or_default();
+        let (namespace,rest)=if let Some(rest)=path.strip_prefix("/demo-previews/") {("DEMO_WORKSPACES",rest)}else{("WORKSPACES",path.strip_prefix("/previews/").unwrap_or(""))};
+        let parts=rest.splitn(3,'/').collect::<Vec<_>>();
         if parts.len()!=3 || !workspace_id(parts[0]) || !opaque(parts[1]) {return Err(bad(404,"This app preview is unavailable."));}
-        let namespace=env.durable_object("WORKSPACES")?;
+        let namespace=env.durable_object(namespace)?;
         let stub=namespace.id_from_name(parts[0])?.get_stub()?;
         return Ok(stub.fetch_with_request(Request::new(&format!("https://workspace/preview/{}/{}",parts[1],parts[2]),Method::Get)?).await?);
     }
-    if path.starts_with("/previews/"){return Err(bad(404,"This app preview is unavailable."));}
+    if path.starts_with("/previews/") || path.starts_with("/demo-previews/"){return Err(bad(404,"This app preview is unavailable."));}
     if assets::is_origin(&env,&url){
         return assets::get(&req,&env,&path).await?.ok_or_else(||bad(503,"Editor asset storage is not configured."));
     }

@@ -47,6 +47,17 @@ async fn usage(storage: &Storage) -> AppResult<Usage> {
     Ok(usage)
 }
 impl FilePayloads {
+    pub async fn purge(&self)->AppResult<()> {
+        let Some(bucket)=&self.bucket else {return Ok(());};
+        for _ in 0..=MAX_RECORDS/256 {
+            let page=bucket.list().prefix(&self.prefix).limit(256).execute().await?;
+            let keys:Vec<_>=page.objects().iter().map(|object|object.key()).collect();
+            if keys.is_empty(){return Ok(());}
+            if keys.iter().any(|key|!key.strip_prefix(&self.prefix).is_some_and(opaque)) {return Err(unavailable());}
+            bucket.delete_multiple(keys).await?;
+        }
+        Err(unavailable())
+    }
     pub fn new(bucket: Option<Bucket>, workspace: &str) -> Self {
         Self {
             bucket,

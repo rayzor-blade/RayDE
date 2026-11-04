@@ -1,0 +1,64 @@
+// HTTP/WebSocket protocol integration only; this test does not launch a browser.
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {createServer} from 'node:net';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {once} from 'node:events';
+import {fixture,json,origin,listening,signin} from './fixture.mjs';
+
+const release='a'.repeat(64),toolchain='b'.repeat(64);
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function port(){const server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port;}
+async function peer(fetch,cookie,claimedId){
+ const response=await fetch('/api/demo/socket'+(claimedId?'?id='+claimedId:''),{headers:{Cookie:cookie,Origin:origin,Upgrade:'websocket','CF-Connecting-IP':'192.0.2.1'}});
+ assert.equal(response.status,101);const socket=response.webSocket;socket.accept();
+ let serial=0;const pending=new Map();
+ socket.addEventListener('message',event=>{const reply=JSON.parse(event.data);pending.get(reply.id)?.(reply);pending.delete(reply.id);});
+ return {socket,rpc:(op,body={})=>new Promise((resolve,reject)=>{
+  const id=++serial,timer=setTimeout(()=>{pending.delete(id);reject(Error('Demo RPC timeout: '+op));},5000);
+  pending.set(id,reply=>{clearTimeout(timer);resolve(reply);});socket.send(JSON.stringify({id,op,...body}));
+ })};
+}
+
+test('two admitted demo sessions keep private identity/files and release only their own recovery payloads',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'rayde-demo-session-')),hosts=new Map();
+ let allow;const admitted=new Promise(resolve=>allow=resolve);
+ async function stop(id){const host=hosts.get(id);if(host&&host.process.exitCode===null&&host.process.signalCode===null){const exited=once(host.process,'exit');host.process.kill();await exited;}}
+ t.after(async()=>{allow();for(const id of hosts.keys())await stop(id);await rm(root,{recursive:true,force:true});});
+ const cloud=await fixture({demo:{release,maximum:2},provision:async data=>{
+  await admitted;
+  assert.equal(data.owner,0);assert.equal(data.repository.demo.release,release);
+  const path=join(root,data.id),number=await port();await mkdir(path);await writeFile(join(path,'build.hxml'),'-cp src\n-main Main\n--interp\n');await writeFile(join(path,'live.txt'),'base');
+  const process=spawn(resolve('../../native/session/target/release/rayde-session'),['--root',path,'--state-root',join(path,'state'),'--port',String(number),'--token','compute-secret','--origin',origin,'--exec'],{stdio:'ignore'});
+  hosts.set(data.id,{path,process});await listening(number,process);
+  return json({url:`ws://127.0.0.1:${number}/session`,token:'compute-secret',project:'build.hxml',toolchain});
+ },cleanup:async data=>{await stop(data.id);return json({deleted:true});}});
+ t.after(()=>cloud.mf.dispose());const {fetch,mf}=cloud;
+ async function open(ip){const response=await fetch('/api/demo/open',{method:'POST',headers:{Origin:origin,'CF-Connecting-IP':ip}});assert.equal(response.status,202);return {state:await response.json(),cookie:response.headers.get('Set-Cookie').split(';')[0]};}
+ const [a,b]=await Promise.race([Promise.all([open('192.0.2.1'),open('192.0.2.2')]),pause(2000).then(()=>{throw Error('Admission waited for compute instead of returning preparing');})]);
+ assert.equal(hosts.size,0);allow();
+ async function ready(visitor){for(let i=0;i<200;i++){const response=await fetch('/api/demo/status',{headers:{Cookie:visitor.cookie}}),state=await response.json();if(state.status==='ready')return;if(state.status==='failed')throw Error(state.message);await pause(10);}throw Error('Demo session not ready');}
+ await Promise.all([ready(a),ready(b)]);
+ const one=await peer(fetch,a.cookie,b.state.id),two=await peer(fetch,b.cookie,a.state.id);t.after(()=>{one.socket.close();two.socket.close();});
+ const helloA=await one.rpc('hello',{token:'client-does-not-know-runner-token'}),helloB=await two.rpc('hello');
+ assert.equal(helloA.cacheIdentity.principal,'demo:'+a.state.id);assert.equal(helloB.cacheIdentity.principal,'demo:'+b.state.id);
+ assert.notDeepEqual(helloA.cacheIdentity,helloB.cacheIdentity);
+ assert.equal((await one.rpc('fs.write',{path:'private-a.txt',data:'only A'})).ok,true);
+ assert.equal((await two.rpc('fs.stat',{path:'private-a.txt'})).entry,null);
+ assert.equal((await two.rpc('fs.write',{path:'private-b.txt',data:'only B'})).ok,true);
+ const files=await mf.getR2Bucket('WORKSPACE_FILES');assert.equal((await files.list()).objects.length,2);
+ const account=await signin(fetch);assert.equal((await fetch('/api/logout',{method:'POST',headers:account.headers,body:'{}'})).status,200);
+ assert.equal((await two.rpc('fs.read',{path:'private-b.txt'})).data,'only B','account logout ended the anonymous lease');
+ assert.equal((await one.rpc('doc.restore',{path:'live.txt'})).code,'denied');
+ assert.equal((await fetch('/api/demo/end',{method:'POST',headers:{Cookie:a.cookie,Origin:origin}})).status,200);
+ for(let i=0;i<200;i++){if((await files.list()).objects.length===1)break;await pause(10);}
+ assert.equal((await files.list()).objects.length,1,'ending A left its recovery blobs or deleted B\'s');
+ assert.equal((await fetch('/api/demo/status',{headers:{Cookie:a.cookie}})).status,410);
+ assert.equal((await two.rpc('fs.read',{path:'private-b.txt'})).data,'only B');
+ await fetch('/api/demo/end',{method:'POST',headers:{Cookie:b.cookie,Origin:origin}});
+ for(let i=0;i<200;i++){if((await files.list()).objects.length===0)break;await pause(10);}
+ assert.equal((await files.list()).objects.length,0);
+});

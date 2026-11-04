@@ -19,6 +19,14 @@
       {
         "name": "SYNC_ACCOUNTS",
         "class_name": "SyncAccountLedger"
+      },
+      {
+        "name": "DEMO_ADMISSIONS",
+        "class_name": "DemoAdmissions"
+      },
+      {
+        "name": "DEMO_WORKSPACES",
+        "class_name": "DemoWorkspaceSession"
       }
     ]
   },
@@ -42,6 +50,13 @@
       "new_sqlite_classes": [
         "SyncWorkspaceSession",
         "SyncAccountLedger"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "DemoAdmissions",
+        "DemoWorkspaceSession"
       ]
     }
   ],

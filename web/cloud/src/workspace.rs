@@ -216,6 +216,7 @@ pub struct WorkspaceSession {
     state: State,
     env: Env,
     starting: Rc<Cell<bool>>,
+    demo_preparing: Rc<futures_util::lock::Mutex<()>>,
     reconnecting: futures_util::lock::Mutex<()>,
     backends: Rc<RefCell<Vec<Backend>>>,
     checkpoints: Rc<crate::checkpoints::Checkpoints>,
@@ -226,6 +227,7 @@ pub struct WorkspaceSession {
     connecting: Openings,
     resources: futures_util::lock::Mutex<()>,
     resource_sample: RefCell<Option<(u64,Value)>>,
+    demo_activity: Cell<u64>,
 }
 impl DurableObject for WorkspaceSession {
     fn new(state: State, env: Env) -> Self {
@@ -234,6 +236,7 @@ impl DurableObject for WorkspaceSession {
             state,
             env,
             starting: Rc::new(Cell::new(false)),
+            demo_preparing: Rc::new(futures_util::lock::Mutex::new(())),
             reconnecting: futures_util::lock::Mutex::new(()),
             backends: Rc::new(RefCell::new(Vec::new())),
             checkpoints,
@@ -244,6 +247,7 @@ impl DurableObject for WorkspaceSession {
             connecting: Rc::new(RefCell::new(Vec::new())),
             resources: futures_util::lock::Mutex::new(()),
             resource_sample: RefCell::new(None),
+            demo_activity: Cell::new(0),
         }
     }
     async fn fetch(&self, req: Request) -> Result<Response> {
@@ -283,6 +287,14 @@ impl DurableObject for WorkspaceSession {
         if !data["id"].is_null() && !data["id"].is_string() && !data["id"].is_number() {
             self.disconnect(&ws);
             return ws.close(Some(1008),Some("Invalid session request ID"));
+        }
+        if let Some(key)=attachment["demoKey"].as_str() {
+            if now().saturating_sub(self.demo_activity.get())>=30_000 && matches!(data["op"].as_str(),Some("doc.update"|"fs.write"|"fs.rename"|"fs.mkdir"|"fs.remove"|"term.write"|"proc.spawn"|"preview.prepare")) {
+                if rpc(&self.env,"DEMO_ADMISSIONS","landing","activity",&json!({"key":key})).await.is_err() {
+                    self.disconnect(&ws);return ws.close(Some(1008),Some("The demo session expired"));
+                }
+                self.demo_activity.set(now());
+            }
         }
         if data["op"] == "doc.restore" {
             return ws.send(&json!({"id":data["id"],"ok":false,"code":"denied","message":"Document restoration belongs to the workspace service."}));
@@ -514,6 +526,22 @@ impl WorkspaceSession {
         if value.as_ref().is_some_and(|v| v["owner"] != data["owner"]) {
             return Err(bad(403, "This workspace belongs to another account."));
         }
+        if req.path()=="/demo/end" || req.path()=="/demo/purge" {
+            if let Some(mut record)=value {
+                if !demo_record(&record) {return Err(bad(403,"This is not a demo workspace."));}
+                record["status"]=json!("ended");storage.put("workspace",&record).await?;
+                for opening in self.connecting.borrow().iter(){opening.abort.abort();}
+                for ws in self.state.get_websockets(){self.disconnect(&ws);let _=ws.close(Some(1008),Some("The demo session ended"));}
+                // Wait for an admitted launch before deleting its compute, including an unfinished first boot.
+                let _preparing=self.demo_preparing.lock().await;
+                if req.path()=="/demo/purge" {
+                    let _guard=self.saving.lock().await;
+                    self.checkpoints.files.purge().await?;
+                    storage.delete_all().await?;
+                }
+            }
+            return Ok(reply(&json!({}),200)?);
+        }
         if req.path() == "/resources" {
             let record=value.ok_or_else(||bad(404,"Workspace not found."))?;
             if record["status"]!="ready" {return Ok(reply(&json!({"available":false,"status":record["status"]}),200)?);}
@@ -636,7 +664,8 @@ impl WorkspaceSession {
             let handshakes = Rc::new(RefCell::new(Pending::default()));
             let authority = format!("cloud:{}", self.state.id());
             let workspace = record["id"].clone();
-            let principal = format!("account:{}", data["owner"]);
+            let principal = if demo_record(&record) {record["owner"].as_str().unwrap().into()}else{format!("account:{}", data["owner"])};
+            let demo=demo_record(&record);
             let preview_origin=preview_origin(&self.env);
             self.state.accept_web_socket(&pair.server);
             let mut attachment = data.clone();
@@ -680,7 +709,7 @@ impl WorkspaceSession {
                                             if let (Some(origin),Some(id))=(&preview_origin,reply["preview"].as_str().filter(|id|opaque(id))) {
                                                 let id=id.to_owned();
                                                 handshakes.borrow_mut().previews.insert(id.clone());
-                                                reply["url"]=json!(format!("{origin}/previews/{}/{id}/index.html",workspace.as_str().unwrap_or_default()));
+                                                reply["url"]=json!(format!("{origin}/{}/{}/{id}/index.html",if demo{"demo-previews"}else{"previews"},workspace.as_str().unwrap_or_default()));
                                                 text=reply.to_string();
                                             }
                                         }
@@ -765,6 +794,7 @@ impl WorkspaceSession {
                 value = Some(record);
             }
             let mut record = value.unwrap();
+            if demo_record(&record) && (record["status"]=="ended" || record["repository"]!=data["repository"]) {return Err(bad(410,"The demo session ended."));}
             // Opening reauthorizes a synced workspace and recovers its compute without replacing its working files.
             let wanted = &data["repository"]["sync"];
             if wanted.is_object() && record["repository"]["sync"] != *wanted {
@@ -786,7 +816,13 @@ impl WorkspaceSession {
                 let storage = self.state.storage();
                 let mut next = record.clone();
                 let access = data["access"].clone();
+                let preparing=self.demo_preparing.clone();
                 self.state.wait_until(async move {
+                    let _preparing=if demo_record(&next){Some(preparing.lock().await)}else{None};
+                    if demo_record(&next) && !storage.get::<Value>("workspace").await.ok().flatten()
+                        .is_some_and(|current|current["status"]=="preparing" && current["repository"]==next["repository"]) {
+                        starting.set(false);return;
+                    }
                     match prepare(&env, &next, access).await {
                         Ok(connection) => {
                             next["connection"] = connection;
@@ -798,7 +834,10 @@ impl WorkspaceSession {
                             next["message"] = json!(error.message);
                         }
                     }
-                    let _ = storage.put("workspace", next).await;
+                    if !demo_record(&next) || storage.get::<Value>("workspace").await.ok().flatten()
+                        .is_some_and(|current|current["status"]=="preparing" && current["owner"]==next["owner"] && current["repository"]==next["repository"]) {
+                        let _ = storage.put("workspace", next).await;
+                    }
                     starting.set(false);
                 });
             }
@@ -810,6 +849,20 @@ impl WorkspaceSession {
         }
         Err(bad(404, "Unknown workspace operation."))
     }
+}
+fn demo_record(value:&Value)->bool {
+    value["repository"]["demo"].is_object() && value["owner"].as_str().is_some_and(|owner|owner==format!("demo:{}",value["id"].as_str().unwrap_or_default()))
+}
+
+#[durable_object]
+pub struct DemoWorkspaceSession {inner:WorkspaceSession}
+impl DurableObject for DemoWorkspaceSession {
+    fn new(state:State,env:Env)->Self {Self{inner:<WorkspaceSession as DurableObject>::new(state,env)}}
+    async fn fetch(&self,req:Request)->Result<Response> {DurableObject::fetch(&self.inner,req).await}
+    async fn websocket_message(&self,ws:WebSocket,message:WebSocketIncomingMessage)->Result<()> {DurableObject::websocket_message(&self.inner,ws,message).await}
+    async fn websocket_close(&self,ws:WebSocket,code:usize,reason:String,clean:bool)->Result<()> {DurableObject::websocket_close(&self.inner,ws,code,reason,clean).await}
+    async fn websocket_error(&self,ws:WebSocket,error:Error)->Result<()> {DurableObject::websocket_error(&self.inner,ws,error).await}
+    async fn alarm(&self)->Result<Response> {DurableObject::alarm(&self.inner).await}
 }
 /// What a restored session saves with: a capability for its own workspace, minted fresh for each preparation and never stored.
 fn publish_capability(env: &Env, value: &Value) -> Value {
@@ -862,7 +915,7 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
     }
     let mut req = request(
         &format!("{}/workspaces/open", url.trim_end_matches('/')),
-        &json!({"id":value["id"],"owner":value["owner"],"repository":value["repository"],"checkout":{"accessToken":access},"publish":publish_capability(env,value)}),
+        &json!({"id":value["id"],"owner":if demo_record(value){json!(0)}else{value["owner"].clone()},"repository":value["repository"],"checkout":{"accessToken":access},"publish":publish_capability(env,value)}),
     )?;
     req.headers_mut()?.set(
         "Authorization",
@@ -881,6 +934,9 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
         return Err(bad(502, "The workspace could not be prepared."));
     }
     let connection: Value = response.json().await?;
+    if demo_record(value) && config(env,"DEMO_TOOLCHAIN").is_none_or(|expected|connection["toolchain"].as_str()!=Some(expected.as_str())) {
+        return Err(bad(502,"The demo toolchain does not match its configured image."));
+    }
     let endpoint = Url::parse(text(&connection, "url")?)
         .map_err(|_| bad(502, "Invalid workspace endpoint."))?;
     if endpoint.scheme() != "wss"
