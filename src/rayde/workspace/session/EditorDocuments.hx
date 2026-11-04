@@ -111,6 +111,7 @@ private class EditorBinding {
 	var closed = false;
 	var broken = false;
 	var known:String;
+	var savedRevision = -1;
 	var epoch = 0;
 	var serial = 0;
 
@@ -159,6 +160,15 @@ private class EditorBinding {
 		if (saving != null) { var completed = saving; saving = null; completed.done(message,completed.text,file); }
 		if (report) failed(haxe.io.Path.withoutDirectory(file) + ": " + message);
 	}
+	/** Savepoint metadata can arrive behind a newer Save while its text still needs projection. */
+	function acceptSaved(message:Dynamic):Void {
+		if (!Std.isOfType(message.savedText,String)) return;
+		var revision = Std.isOfType(message.savedRevision,Int) && message.savedRevision >= 0 ? (message.savedRevision:Int) : savedRevision < 0 ? 0 : -1;
+		if (revision < savedRevision) return;
+		savedRevision = revision;
+		if (saved != null) saved(message.savedText);
+	}
+
 	function apply(message:Dynamic):Void {
 		var position = selection(), parts:Array<CodePatch> = message.parts == null ? [] : cast message.parts;
 		function moved(offset:Int):Int {
@@ -171,7 +181,7 @@ private class EditorBinding {
 			return offset + shift;
 		}
 		known = message.text;
-		if (Std.isOfType(message.savedText,String) && saved != null) saved(message.savedText);
+		acceptSaved(message);
 		state.applyRemote(known, {caret:moved(position.caret), anchor:moved(position.anchor)});
 	}
 	public function frame():Void {
@@ -180,7 +190,13 @@ private class EditorBinding {
 		if (saving != null && (saving.future.isReady() || saving.future.isRejected())) {
 			var completed = saving; saving = null;
 			var error:Null<String> = null;
-			try {var envelope:Dynamic=completed.future.await();var result:Dynamic=envelope==null?null:Reflect.hasField(envelope,"result")?envelope.result:envelope;if(result!=null&&Std.isOfType(result.text,String))completed.text=result.text;} catch (failure:Dynamic) error = Std.string(failure);
+			try {
+				var envelope:Dynamic=completed.future.await();
+				var result:Dynamic=envelope==null?null:Reflect.hasField(envelope,"result")?envelope.result:envelope;
+				if (result!=null && Std.isOfType(result.text,String)) completed.text=result.text;
+				var revision = result!=null && Std.isOfType(result.savedRevision,Int) ? (result.savedRevision:Int) : savedRevision+1;
+				acceptSaved({savedText:completed.text,savedRevision:revision});
+			} catch (failure:Dynamic) error = Std.string(failure);
 			completed.done(error,completed.text,file);
 			if (closed) return;
 		}
@@ -199,7 +215,7 @@ private class EditorBinding {
 			if (opening) {
 				state.history.clear();
 				opening = false; known = result.text;
-				if (Std.isOfType(result.savedText,String) && saved != null) saved(result.savedText);
+				acceptSaved(result);
 				state.applyRemote(known);
 				blocked.set(false); notify("view.ready", {});
 				if (initial != disk && initial != known) {

@@ -81,6 +81,7 @@ fn state_of(doc: &Doc) -> Vec<u8> {
 
 pub struct Opened {
     pub saved_text:String,
+    pub saved_version:u64,
     pub document_id:Option<String>,
     /// What the client lacks, given the state vector it sent.
     pub update: Vec<u8>,
@@ -95,6 +96,7 @@ pub struct Opened {
 
 pub struct Saved {
     pub text:Option<String>,
+    pub saved_version:u64,
     pub written: bool,
     pub mtime: u64,
     pub state: Option<Vec<u8>>,
@@ -189,8 +191,7 @@ impl<S: FileStore> DocHub<S> {
                 Err(_) => return Err(SessionError::new("not-text","Close this shared text document before replacing it with binary data.")),
             };
             self.store.write(path,data).await?;
-            *open.last_disk.lock().unwrap() = next.into();
-            open.saved_version.fetch_add(1,Ordering::Relaxed);
+            {let mut saved=open.last_disk.lock().unwrap();*saved=next.into();open.saved_version.fetch_add(1,Ordering::Relaxed);}
             apply_diff(&open.doc,&open.text,next,DISK);
             self.persist(path,&open,&state_of(&open.doc),None).await?;
             Ok(())
@@ -351,8 +352,9 @@ impl<S: FileStore> DocHub<S> {
         }
         let txn = open.doc.transact();
         let text = open.text.get_string(&txn);
-        let dirty = open.buffered && text != *open.last_disk.lock().unwrap();
-        Ok(Opened { saved_text:open.last_disk.lock().unwrap().clone(),document_id,update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty,cloud_lineage,cloud_legacy:open.cloud_legacy })
+        let (saved_text,saved_version)={let saved=open.last_disk.lock().unwrap();(saved.clone(),open.saved_version.load(Ordering::Relaxed))};
+        let dirty = open.buffered && text != saved_text;
+        Ok(Opened { saved_version,saved_text,document_id,update: txn.encode_state_as_update_v1(&from), vector: txn.state_vector().encode_v1(), text, buffered:open.buffered, dirty,cloud_lineage,cloud_legacy:open.cloud_legacy })
     }
 
     /// Applies a client's update; the other subscribers get it from the document's update event.
@@ -482,7 +484,7 @@ impl<S: FileStore> DocHub<S> {
 
     async fn save_inner(&self, path: &str, checkpoint: bool, explicit: bool) -> Result<Saved> {
         let Some(open) = self.get(path) else {
-            return Ok(Saved {text:None,written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
+            return Ok(Saved {saved_version:0,text:None,written:false,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:None});
         };
         let _saving = open.saving.lock().await;
         if explicit{self.refresh_cloud();}
@@ -492,7 +494,7 @@ impl<S: FileStore> DocHub<S> {
         if checkpoint && state.len() > crate::checkpoint::MAX_BYTES { return Err(SessionError::new("too-large", "The document checkpoint exceeds the recovery size limit.")); }
         if open.buffered && !explicit {
             self.persist(path,&open,&state,None).await?;
-            return Ok(Saved {text:None,written:false,mtime:self.store.stat(path).await?.map_or(0,|entry|entry.mtime),state:None});
+            return Ok(Saved {saved_version:open.saved_version.load(Ordering::Relaxed),text:None,written:false,mtime:self.store.stat(path).await?.map_or(0,|entry|entry.mtime),state:None});
         }
         if open.buffered {
             self.verify_disk(path,&open).await?;
@@ -506,11 +508,10 @@ impl<S: FileStore> DocHub<S> {
                 self.store.write_state(&format!("doc:{path}"), &intent).await?;
             }
             self.store.write(path, text.as_bytes()).await?;
-            *open.last_disk.lock().unwrap() = text.clone();
-            open.saved_version.fetch_add(1,Ordering::Relaxed);
+            {let mut saved=open.last_disk.lock().unwrap();*saved=text.clone();open.saved_version.fetch_add(1,Ordering::Relaxed);}
         }
         self.persist(path,&open,&state_of(&open.doc),None).await?;
-        Ok(Saved {text:Some(text),written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
+        Ok(Saved {saved_version:open.saved_version.load(Ordering::Relaxed),text:Some(text),written:changed,mtime:self.store.stat(path).await?.map_or(0, |e| e.mtime),state:checkpoint.then_some(state)})
     }
 
     /// Restore only a released document; its next open must load exactly this graph and text.
@@ -578,6 +579,10 @@ impl<S: FileStore> DocHub<S> {
 
     pub fn saved_text(&self,path:&str)->Option<String> {
         self.get(path).map(|open|open.last_disk.lock().unwrap().clone())
+    }
+
+    pub fn saved_baseline(&self,path:&str)->Option<(String,u64)> {
+        self.get(path).map(|open|{let saved=open.last_disk.lock().unwrap();(saved.clone(),open.saved_version.load(Ordering::Relaxed))})
     }
 
     pub fn is_dirty(&self,path:&str)->bool {

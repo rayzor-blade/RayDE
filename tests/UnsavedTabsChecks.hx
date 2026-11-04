@@ -13,6 +13,7 @@ import rayde.ui.Workbench;
 @:access(rayde.ui.workbench.DocumentsPart)
 @:access(rayde.ui.workbench.EditorPart)
 @:access(rayde.ui.workbench.RunPart)
+@:access(rayde.ui.workbench.KeymapPart)
 class UnsavedTabsChecks {
 	static function check(ok:Bool, message:String):Void { if (!ok) throw message; }
 	static function main():Void {
@@ -52,7 +53,13 @@ class UnsavedTabsChecks {
 			edit(a,"first edit\n"); check(wb.dirty.get().indexOf(a)>=0,"Typing did not mark dirty");
 			editor.undo(); settle(); check(wb.dirty.get().indexOf(a)<0,"Undo to original saved text stayed dirty");
 			editor.redo(); settle(); check(wb.dirty.get().indexOf(a)>=0,"Redo away from saved text stayed clean");
-			wb.runPart.saveFile(a); settle(); check(wb.dirty.get().length==0 && sys.io.File.getContent(a)=="first edit\n","Save did not move the savepoint");
+			editor.focus();
+			var mac = wb.keymapPart.bindings.mac;
+			var modifiers = window.Modifiers.State(false,!mac,false,mac,Unknown,Unknown,Unknown,Unknown,Unknown,Unknown,Unknown,Unknown);
+			for (state in [window.MouseElementState.Pressed,window.MouseElementState.Released])
+				ashui.input.Keyboard.input(tree,window.KeyEvent.Input(Unidentified(Unidentified),Character("s"),None,Standard,state,false,Unavailable),modifiers);
+			settle(); check(wb.dirty.get().length==0 && sys.io.File.getContent(a)=="first edit\n","Save shortcut did not move the savepoint");
+			check(Css.query(tree,wb.node.id,".rayde-tab[data-dirty]").length==0,"Saved tab retained its unsaved attribute");
 			editor.undo(); settle(); check(wb.dirty.get().indexOf(a)>=0,"Undo before the new savepoint stayed clean");
 			editor.redo(); settle(); check(wb.dirty.get().length==0,"Redo to new savepoint stayed dirty");
 			edit(a,"discarded but recoverable\n");

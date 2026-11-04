@@ -508,6 +508,7 @@ async fn native_editor_preserves_author_undo_when_remote_projection_races_with_t
     let undone=editor.request("view.undo",&json!({"handle":"a","epoch":1,"serial":4})).await.unwrap();assert_eq!(undone["text"],"one 🦀 two peer");
     assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two");
     let saved=editor.request("view.save",&json!({"handle":"a"})).await.unwrap();assert_eq!(saved["text"],"one 🦀 two peer");
+    assert!(saved["savedRevision"].as_u64().unwrap()>opened["savedRevision"].as_u64().unwrap(),"Save must advance the projection's saved baseline revision");
     assert_eq!(std::fs::read_to_string(root.path().join("a.txt")).unwrap(),"one 🦀 two peer");
     editor.request("view.close",&json!({"handle":"a"})).await.unwrap();assert!(hub.snapshot("a.txt").is_err());editor.close().await;
 }

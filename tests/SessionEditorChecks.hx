@@ -125,7 +125,27 @@ class SessionEditorChecks {
 		check(!localDocs.save("/work/legacy.txt",(_,_,_) -> {throw "unexpected shared Save";}),"unbound documents use their ordinary save path");
 		var jamUndo:Bool->Void=_ -> {};localState.onUndo=jamUndo;localDocs.release("/work/legacy.txt");check(localState.onUndo==jamUndo,"closing a passive cloud binding cannot erase a later Jam owner");
 		localDocs.close();localClient.close();
+		saveProjectionRace();
 		Sys.println("session editor: readiness, projections, edits, undo, save failure, legacy passthrough and release passed");
+	}
+	static function saveProjectionRace():Void {
+		var wire = new EditorChannel(), client = SessionClient.over(wire), state = new CodeEditorState(), baseline = "base", saved = false;
+		state.value.set("base");
+		var docs = new EditorDocuments(client,(_,_) -> {},message -> {throw message;},_ -> {caret:0,anchor:0},_ -> false,null,(_,text) -> baseline=text);
+		docs.attach("/work/save-race.txt",state,"base"); var opened=wire.sent.pop(true);
+		wire.reply({id:opened.id,ok:true,result:{text:"base",savedText:"base",savedRevision:0,epoch:0,serial:0}});
+		settle(client,docs,() -> !docs.readOnly("/work/save-race.txt")); wire.sent.pop(true);
+		state.value.set("base!"); docs.acceptBuffer("/work/save-race.txt"); wire.sent.pop(true);
+		docs.save("/work/save-race.txt",(error,text,file) -> {check(error==null,"Save failed");baseline=text;saved=true;}); var request=wire.sent.pop(true);
+		// Both replies are waiting when the UI frame handles Save before the older offer.
+		wire.reply({ev:"view.remote",handle:opened.handle,epoch:1,serial:1,text:"base!",parts:[],savedText:"base",savedRevision:0});
+		wire.reply({id:request.id,ok:true,result:{text:"base!",savedRevision:1}});
+		var barrier=client.requestAsync("barrier"), probe=wire.sent.pop(true); wire.reply({id:probe.id,ok:true});
+		var end=haxe.Timer.stamp()+3;
+		while (!barrier.isReady() && haxe.Timer.stamp()<end) {client.drain();Sys.sleep(.001);}
+		check(barrier.isReady(),"Save race replies did not arrive"); docs.frame();
+		check(saved && baseline=="base!","A pre-Save projection restored the old savepoint after Save succeeded");
+		docs.close();client.close();
 	}
 	static function settle(client:SessionClient, docs:EditorDocuments, ready:Void->Bool):Void {
 		var end = haxe.Timer.stamp() + 3;

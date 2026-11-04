@@ -180,7 +180,7 @@ class DocumentsPart {
 			return editor == null ? {caret:state == null ? 0 : state.caret, anchor:state == null ? 0 : state.anchor} : {caret:editor.editing.caret.get(), anchor:editor.editing.anchor.get()};
 		}, file -> { var editor = wb.editorOf(file); return editor != null && editor.editing.composing.get() != ""; }, message -> {
 			if (!wb.gone) sessionWarning(message);
-		}, (file,text) -> savedContents.set(file,text));
+		}, (file,text) -> { savedContents.set(file,text); refreshDirty(file); });
 		wb.contributions.readOnlyWhen(sessionDocs.readOnly);
 		wb.contributions.onFrame(sessionDocs.frame);
 		wb.contributions.onFrame(receiveSessionMoves);

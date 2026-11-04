@@ -59,3 +59,21 @@ test('pushed transport status preserves local edits and fences only a changed do
  f.client.receive({ev:'doc.status',path:'a',code:'document-lineage',message:'History changed'});assert.equal(doc.blocked.code,'document-lineage');assert.deepEqual(Y.encodeStateAsUpdate(doc.ydoc),before);
  views.close();f.client.close();f.server.destroy();
 });
+
+
+test('a successful Save on an older host advances the savepoint without clearing newer typing',async()=>{
+ const f=fixture(),doc=await f.client.openDoc('a'),request=f.client.request;
+ doc.setSavedText('shared');
+ doc.text.insert(doc.text.length,'!');await Promise.all([...doc.pending]);
+ let complete;
+ f.client.request=(op,params)=>op==='doc.save'?new Promise(resolve=>{complete=resolve;}):request(op,params);
+ const saving=doc.save();
+ while(!complete)await new Promise(resolve=>setImmediate(resolve));
+ const revision=doc.savedRevision;
+ doc.text.insert(doc.text.length,' later');await Promise.all([...doc.pending]);
+ complete({written:true,mtime:1});const reply=await saving;
+ assert.equal(reply.text,'shared!');assert.equal(doc.savedText,'shared!');
+ assert.ok(reply.savedRevision>revision);assert.equal(reply.savedRevision,doc.savedRevision);
+ assert.equal(doc.text.toString(),'shared! later');assert.equal(doc.restoredDirty,true);
+ await doc.close();f.client.ready=false;f.client.close();f.server.destroy();
+});

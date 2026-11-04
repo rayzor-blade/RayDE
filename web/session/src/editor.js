@@ -62,7 +62,7 @@ export class EditorDocument {
     this.shadow.on("update", this.publish);
   }
 
-  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial, dirty:!!this.doc.restoredDirty,savedText:this.doc.savedText,syncMessage:this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "")}; }
+  snapshot() { return {text:this.text.toString(), epoch:this.epoch, serial:this.serial, dirty:!!this.doc.restoredDirty,savedText:this.doc.savedText,savedRevision:this.doc.savedRevision,syncMessage:this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "")}; }
 
   local(request) {
     if (!this.ready || request.epoch !== this.epoch || request.serial !== this.serial + 1 || !Array.isArray(request.parts))
@@ -90,7 +90,7 @@ export class EditorDocument {
     const text = probe.getText("text").toString();
     probe.destroy();
     this.offer = {update, version:this.version, epoch:this.epoch + 1, serial:this.serial};
-    this.emit({ev:"view.remote", handle:this.handle, text, parts, epoch:this.offer.epoch, serial:this.serial,dirty:this.doc.buffered && this.doc.restoredDirty,savedText:this.doc.savedText});
+    this.emit({ev:"view.remote", handle:this.handle, text, parts, epoch:this.offer.epoch, serial:this.serial,dirty:this.doc.buffered && this.doc.restoredDirty,savedText:this.doc.savedText,savedRevision:this.doc.savedRevision});
   }
 
   acknowledge(request) {

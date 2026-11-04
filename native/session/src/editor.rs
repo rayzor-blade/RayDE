@@ -308,6 +308,7 @@ impl<S: FileStore> Editors<S> {
             let mut reply = view.snapshot();
             reply["dirty"] = opened.dirty.into();
             reply["savedText"] = opened.saved_text.into();
+            reply["savedRevision"] = opened.saved_version.into();
             self.views.lock().unwrap().insert(handle.into(), view);
             return Ok(reply);
         }
@@ -376,7 +377,7 @@ impl<S: FileStore> Editors<S> {
                 let saved = self.hub.save(&path, true).await?;
                 self.project(&path);
                 Ok(
-                    json!({"written":saved.written,"mtime":saved.mtime,"text":crate::checkpoint::text(&saved.state.unwrap())?}),
+                    json!({"written":saved.written,"mtime":saved.mtime,"text":crate::checkpoint::text(&saved.state.unwrap())?,"savedRevision":saved.saved_version}),
                 )
             }
             "view.sync" | "view.ready" | "view.edit" | "view.undo" => {
@@ -481,7 +482,8 @@ impl<S: FileStore> Editors<S> {
                 serial: view.serial,
                 epoch,
             });
-            (self.out)(json!({"ev":"view.remote","handle":handle,"epoch":epoch,"serial":view.serial,"text":next,"parts":difference(&before,&next),"dirty":self.hub.is_dirty(path),"savedText":self.hub.saved_text(path)}).to_string());
+            let (saved_text,saved_revision)=self.hub.saved_baseline(path).unwrap_or_default();
+            (self.out)(json!({"ev":"view.remote","handle":handle,"epoch":epoch,"serial":view.serial,"text":next,"parts":difference(&before,&next),"dirty":next!=saved_text,"savedText":saved_text,"savedRevision":saved_revision}).to_string());
         }
     }
     pub async fn close(&self) {
