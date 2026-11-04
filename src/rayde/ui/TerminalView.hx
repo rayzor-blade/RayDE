@@ -1,6 +1,8 @@
 package rayde.ui;
 
 import ashui.animation.AnimationScheduler;
+import ashui.components.Button;
+import ashui.components.Spinner;
 import ashui.core.externs.TextNative;
 import ashui.draw.DrawContext;
 import ashui.input.Clipboard;
@@ -29,6 +31,8 @@ typedef TerminalViewProps = {
 	shown:Void->Bool,
 	/** Called once with the exit code when the program ends. */
 	?onExit:Int->Void,
+	/** Restarts the same terminal profile after a service or startup failure. */
+	?onRestart:Void->Void,
 	/** Called when the view takes the keyboard, so the workbench knows which terminal is in front. */
 	?onFocus:Void->Void,
 	/** Whether the workbench takes a key press, which the terminal then leaves alone: the keys that toggle it, and a few more. */
@@ -78,6 +82,7 @@ class TerminalView extends Component<TerminalViewProps> {
 	var exited = false;
 	final exitCode = Signal.make(-1);
 	final launching = Signal.make(false);
+	final failure = Signal.make((null : Null<String>));
 	var gone = false;
 	var root:Element;
 	var anchor:Null<{row:Int, col:Int}> = null;
@@ -90,11 +95,17 @@ class TerminalView extends Component<TerminalViewProps> {
 		root = <div id="rayde-terminal" class="rayde-terminal relative flex-1 min-h-0 overflow-hidden">
 			<canvas position={Absolute} left={0} top={0} widthPercent={1} heightPercent={1} pointerEvents={PointerEvents.None} draw={paint}/>
 			${probe}
-			<if {launching.get()}><div position={Absolute} left={PAD} top={PAD}><text class="rayde-term-note">Starting terminal…</text></div></if>
+			<if {launching.get()}><div id="rayde-terminal-starting" class="flex items-center gap-2" position={Absolute} left={PAD} right={PAD} top={PAD}><spinner size={Sm}/><text class="rayde-term-note">Starting terminal…</text></div></if>
 			<div position={Absolute} left={PAD} top={PAD / 2} pointerEvents={PointerEvents.None}>
 				<for {k in [{rows: rowStates.get(), cell: measured.get()}]}>${rowElements(k.rows)}</for>
 			</div>
-			<if {exitCode.get() != -1}>
+			<if {failure.get() != null}>
+				<div id="rayde-terminal-failure" class="flex flex-col items-start gap-2 min-w-0 bg-background" position={Absolute} left={PAD} right={PAD} top={PAD}>
+					<text class="text-sm text-error">${failure.get()}</text>
+					<if {props.onRestart != null}><button id="rayde-terminal-retry" variant={Outline} size={Sm} onClick={_ -> props.onRestart()}>Retry terminal</button></if>
+				</div>
+			</if>
+			<if {exitCode.get() != -1 && failure.get() == null}>
 				<div position={Absolute} left={PAD} bottom={6} pointerEvents={PointerEvents.None}><text id="rayde-terminal-exit" class="rayde-term-note">${"[Process exited with code " + exitCode.get() + "]"}</text></div>
 			</if>
 		</div>;
@@ -229,6 +240,7 @@ class TerminalView extends Component<TerminalViewProps> {
 				var code = props.terminal.exitCode();
 				if (code != -1 && code != -3) {
 					exited = true;
+					if (props.terminal.failedToStart()) failure.set(props.terminal.failureReason() ?? "Could not start the terminal.");
 					exitCode.set(code);
 					changed = true;
 					if (props.onExit != null)

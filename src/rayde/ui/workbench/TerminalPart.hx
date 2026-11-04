@@ -238,6 +238,15 @@ class TerminalPart {
 	public function killTerminal():Void
 		endSession(activeSession);
 
+	function retryTerminal(id:Int):Void {
+		var session = find(id);
+		if (session == null) return;
+		var profile = session.profile, group = session.group;
+		endSession(id);
+		startSession(profile, group);
+		focusTerminal();
+	}
+
 	function endSession(id:Int):Void {
 		var at = -1;
 		for (i => s in sessions)
@@ -352,7 +361,7 @@ class TerminalPart {
 			views.set(s.id, ref);
 		}
 		var id = s.id;
-		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> wb.panelsPart.panelShown.get() && wb.panelsPart.bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision}
+		return <terminal-view ref={ref} terminal={s.terminal} shown={() -> wb.panelsPart.panelShown.get() && wb.panelsPart.bottom.get() == "terminal"} settings={terminalSettings} changes={settingsRevision} onRestart={() -> retryTerminal(id)}
 			onExit={code -> wb.say(s.terminal.failedToStart() ? (s.terminal.failureReason() ?? "Could not start " + s.profile.name) : s.profile.name + " exited with code " + code)} onFocus={() -> noteFocus(id)} reserved={wb.keymapPart.reservedKey}/>;
 	}
 

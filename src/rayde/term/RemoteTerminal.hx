@@ -124,7 +124,7 @@ class RemoteTerminal {
         mutex.acquire();if (cols != wantedCols || rows != wantedRows) {wantedCols = cols;wantedRows = rows;command("term.resize",{cols:cols,rows:rows});}mutex.release();
     }
 	public function scrollback(lines:Int):Int {mutex.acquire();command("term.scroll",{lines:lines});var value = grid.scrollback;mutex.release();return value;}
-	public function starting():Bool {mutex.acquire();var value = !closed && state == 0;mutex.release();return value;}
+	public function starting():Bool {mutex.acquire();var value = !closed && state >= 0 && grid.rows == 0;mutex.release();return value;}
 	public function failedToStart():Bool {mutex.acquire();var value = state == -1;mutex.release();return value;}
 	public function failureReason():Null<String> {mutex.acquire();var value = failure;mutex.release();return value;}
 	public function revision():Int {mutex.acquire();var value = version;mutex.release();return value;}
