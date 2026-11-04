@@ -103,6 +103,21 @@ export function start({ memory, address, canvas }) {
   const modifiers = (e) =>
     (e.shiftKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.altKey ? 4 : 0) | (e.metaKey ? 8 : 0);
   const touch = (e) => e.pointerType === "touch";
+  let lastModifiers = 0;
+  let sides = 0;
+  const SIDE = { Shift: 1, Control: 4, Alt: 16, Meta: 64 };
+  const syncModifiers = (e) => {
+    const mods = modifiers(e);
+    // Pointer events also repair releases missed while the page was unfocused.
+    if (!(mods & 1)) sides &= ~3;
+    if (!(mods & 2)) sides &= ~12;
+    if (!(mods & 4)) sides &= ~48;
+    if (!(mods & 8)) sides &= ~192;
+    if (((mods << 8) | sides) !== lastModifiers) {
+      lastModifiers = (mods << 8) | sides;
+      post({ kind: "modifiers-changed", modifiers: mods, sides });
+    }
+  };
 
   canvas.hidden = false;
   if (canvas.tabIndex < 0) canvas.tabIndex = 0;
@@ -193,6 +208,7 @@ export function start({ memory, address, canvas }) {
     if (!touch(e)) post({ kind: "cursor-left", device: e.pointerId });
   });
   canvas.addEventListener("pointermove", (e) => {
+    syncModifiers(e);
     const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
     for (const m of coalesced.length ? coalesced : [e]) {
       const [x, y] = at(m);
@@ -211,24 +227,50 @@ export function start({ memory, address, canvas }) {
       post({ kind: "touchpad-pressure", pressure: e.pressure, stage: e.pressure > 0.5 ? 2 : 1 });
     }
   });
+  const heldButtons = new Map();
   const button = (pressed) => (e) => {
+    syncModifiers(e);
     if (pressed) {
       if (document.activeElement !== imeTarget()) imeTarget().focus();
       runGated();
     }
+    if (pressed) canvas.setPointerCapture(e.pointerId);
     const [x, y] = at(e);
     if (touch(e)) {
       const phase = pressed ? PHASE.STARTED : PHASE.ENDED;
       post({ kind: "touch", device: e.pointerId, phase, x, y, pressure: e.pressure });
     } else {
+      let buttons = heldButtons.get(e.pointerId);
+      if (pressed) {
+        if (!buttons) heldButtons.set(e.pointerId, buttons = new Set());
+        buttons.add(e.button);
+      } else if (buttons) {
+        buttons.delete(e.button);
+        if (!buttons.size) heldButtons.delete(e.pointerId);
+      }
+      // A click need not have a preceding move, and release can be its final position.
+      post({ kind: "cursor-moved", device: e.pointerId, x, y });
       post({ kind: "mouse-input", device: e.pointerId, button: e.button, on: pressed });
+    }
+    if (!pressed && !heldButtons.has(e.pointerId) && canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
     }
   };
   canvas.addEventListener("pointerdown", button(true));
   canvas.addEventListener("pointerup", button(false));
+  const cancelPointer = (e) => {
+    const buttons = heldButtons.get(e.pointerId);
+    heldButtons.delete(e.pointerId);
+    if (buttons) post({ kind: "cursor-left", device: e.pointerId });
+    if (buttons) for (const button of buttons) {
+      post({ kind: "mouse-input", device: e.pointerId, button, on: false });
+    }
+  };
   canvas.addEventListener("pointercancel", (e) => {
     if (touch(e)) post({ kind: "touch", device: e.pointerId, phase: PHASE.CANCELLED, x: 0, y: 0 });
+    else cancelPointer(e);
   });
+  canvas.addEventListener("lostpointercapture", cancelPointer);
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   // The wheel, and the trackpad pinch browsers report as a wheel with control.
@@ -251,9 +293,6 @@ export function start({ memory, address, canvas }) {
 
   // Keys, and the modifiers they change, with the side each is held on. None
   // are held to begin with.
-  let lastModifiers = 0;
-  let sides = 0;
-  const SIDE = { Shift: 1, Control: 4, Alt: 16, Meta: 64 };
   // The paste shortcut's presses, which the paste that follows stands for.
   const pasteKey = (e) =>
     (((e.key === "v" || e.key === "V") && (e.ctrlKey || e.metaKey) && !e.altKey) ||
@@ -273,6 +312,7 @@ export function start({ memory, address, canvas }) {
     }
     const printable = Array.from(e.key).length === 1;
     const shortcut = (e.metaKey || e.ctrlKey) && !e.getModifierState?.("AltGraph");
+    syncModifiers(e);
     post({
       kind: "keyboard-input",
       on: pressed,
@@ -284,11 +324,6 @@ export function start({ memory, address, canvas }) {
       repeat: e.repeat,
       synthetic: !e.isTrusted,
     });
-    const mods = modifiers(e);
-    if (((mods << 8) | sides) !== lastModifiers) {
-      lastModifiers = (mods << 8) | sides;
-      post({ kind: "modifiers-changed", modifiers: mods, sides });
-    }
     // Clipboard shortcuts need their DOM copy/cut events; paste is handled above.
     // Only text entry and composition keep the input method's default action.
     const clipboard = shortcut && !e.altKey && /^[cx]$/i.test(e.key);
