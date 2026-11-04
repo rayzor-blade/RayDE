@@ -152,12 +152,19 @@ class CodeActionsPart {
 	}
 
 	function watchCodeActions(file:String, editor:CodeEditor):Void {
+		var refreshing = Signal.make(true);
 		new ashui.reactive.Watch(() -> editor.value.get(), _ -> queueCodeActions(file, editor));
 		new ashui.reactive.Watch(() -> wb.active.get() == file, on -> { if (on) queueCodeActions(file,editor); else editor.actions("code-actions",[]); });
 		new ashui.reactive.Watch(() -> [for (p in wb.problems.get()) if (p.file == file) p], _ -> queueCodeActions(file, editor, codeActionPicker != null && wb.quickOpen.get()), LspProtocol.sameDiagnostics);
 		new ashui.reactive.Watch(() -> codeActionRevision.get(), _ -> {
-			var groups:Array<CodeLineActions> = [], lines = new Map<Int, CodeLineActions>();
 			var version = codeActionVersion;
+			var current = wb.active.get() == file && codeActions.current(file, version);
+			refreshing.set(!current || codeActions.busy());
+			if (wb.active.get() != file) { editor.actions("code-actions",[]); return; }
+			// Keep edit-tracking rows until the entire replacement is ready. Clearing or
+			// publishing individual provider replies changes the code's vertical positions.
+			if (!current || codeActions.busy()) return;
+			var groups:Array<CodeLineActions> = [], lines = new Map<Int, CodeLineActions>();
 			for (item in codeActions.list()) if (wb.active.get() == file && codeActions.current(file, version)) {
 				var line = editor.document.lineAt(item.action.range.from);
 				var group = lines.get(line);
@@ -166,7 +173,7 @@ class CodeActionsPart {
 				}
 				var key = item.key;
 				group.actions.push({label:item.action.title,icon:ViewIcons.named(null,item.action.icon) ?? Icons.LIGHTBULB_LINE,
-					disabled:item.action.disabled != null,run:() -> { executeCodeAction(key,version); }});
+					disabled:item.action.disabled != null ? Signal.make(true) : refreshing,run:() -> { executeCodeAction(key,version); }});
 			}
 			editor.actions("code-actions", groups, true);
 		});

@@ -73,11 +73,23 @@ class CodeActionWorkbenchChecks {
 			check(runRow.length == 1 && tree.getScrolledBounds(new ashui.layout.Node(runRow[0])).y < bench.editorFor(file).rectAt(0).y,"Run action was not placed above its source line");
 			var activeGutter = tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width;
 			var typingEditor = bench.editorFor(file);
+			var sourceY = typingEditor.rectAt(source.indexOf("var n")).y;
+			var cursor = source.indexOf("var n");
+			typingEditor.focus(); typingEditor.select(cursor,cursor);
 			for (i in 0...4) {
 				var oldItem = bench.codeActionsPart.codeActions.list()[0], oldVersion = bench.codeActionsPart.codeActionVersion;
 				typingEditor.value.set(source + [for (_ in 0...i + 1) " "].join(""));
 				settle(1);
 				check(Math.abs(tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width-activeGutter)<.1,"Refreshing inline actions moved the gutter");
+				check(nodes(".ui-code-action").length == 2 && nodes(".ui-code-action:disabled").length == 2,"Refreshing removed inline actions or left stale actions enabled");
+				check(Math.abs(typingEditor.rectAt(cursor).y-sourceY)<.1,"Invalidating actions moved the code vertically");
+				// Observe the debounce and each partial provider result, not just settled endpoints.
+				var untilReady = haxe.Timer.stamp()+8.;
+				while (haxe.Timer.stamp()<untilReady && (!bench.codeActionsPart.codeActions.current(file,bench.codeActionsPart.codeActionVersion) || bench.codeActionsPart.codeActions.busy())) {
+					settle(1);
+					check(nodes(".ui-code-action").length == 2 && Math.abs(typingEditor.rectAt(cursor).y-sourceY)<.1,"Partial refresh shifted inline action rows");
+					Sys.sleep(.004);
+				}
 				check(!bench.codeActionsPart.codeActions.execute(oldItem.key,file,oldVersion,(_, _) -> true),"Refreshing actions retained an executable stale result");
 				until(() -> bench.codeActionsPart.codeActions.list().length == 2 && !bench.codeActionsPart.codeActions.busy());
 				check(Math.abs(tree.getBounds(new ashui.layout.Node(nodes(".ui-code-gutter")[0])).width-activeGutter)<.1,"Refreshed actions moved the code");
