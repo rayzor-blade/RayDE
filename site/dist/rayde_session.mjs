@@ -6,11 +6,12 @@ function pageEntry(location2, connection = null) {
   const socket = workspace ? new URL(`/api/workspaces/${workspace}/socket`, url.origin) : null;
   if (socket) socket.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   const explicit = query2.get("session");
-  const remembered = !workspace && !explicit && query2.get("demo") !== "1" ? connection : null;
+  const remembered = !landing && !workspace && !explicit && query2.get("demo") !== "1" ? connection : null;
   const endpoint2 = socket?.href ?? explicit ?? remembered?.endpoint ?? null;
   const token2 = workspace ? void 0 : explicit ? new URLSearchParams(url.hash.slice(1)).get("token") : remembered?.token;
   const project = query2.get("project") ?? remembered?.project ?? null;
-  return { workspace, endpoint: endpoint2, token: token2, project, demo: !endpoint2 && (query2.get("demo") === "1" || landing && query2.get("demo") !== "0") };
+  const demo2 = !endpoint2 && (query2.get("demo") === "1" || landing && query2.get("demo") !== "0");
+  return { workspace, endpoint: endpoint2, token: token2, project, demo: demo2, admission: demo2 && (landing || query2.get("demo-live") === "1") };
 }
 
 // src/connection.js
@@ -3452,9 +3453,9 @@ var readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = new Update
   const store = doc2.store;
   const ss = readClientsStructRefs(structDecoder, doc2);
   const restStructs = integrateStructs(transaction, store, ss);
-  const pending = store.pendingStructs;
-  if (pending) {
-    for (const [client, clock] of pending.missing) {
+  const pending2 = store.pendingStructs;
+  if (pending2) {
+    for (const [client, clock] of pending2.missing) {
       if (clock < getState(store, client)) {
         retry = true;
         break;
@@ -3462,12 +3463,12 @@ var readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = new Update
     }
     if (restStructs) {
       for (const [client, clock] of restStructs.missing) {
-        const mclock = pending.missing.get(client);
+        const mclock = pending2.missing.get(client);
         if (mclock == null || mclock > clock) {
-          pending.missing.set(client, clock);
+          pending2.missing.set(client, clock);
         }
       }
-      pending.update = mergeUpdatesV2([pending.update, restStructs.update]);
+      pending2.update = mergeUpdatesV2([pending2.update, restStructs.update]);
     }
   } else {
     store.pendingStructs = restStructs;
@@ -4621,11 +4622,11 @@ var YEvent = class {
       }
       const keys2 = /* @__PURE__ */ new Map();
       const target = this.target;
-      const changed = (
+      const changed2 = (
         /** @type Set<string|null> */
         this.transaction.changed.get(target)
       );
-      changed.forEach((key) => {
+      changed2.forEach((key) => {
         if (key !== null) {
           const item = (
             /** @type {Item} */
@@ -4718,11 +4719,11 @@ var YEvent = class {
         delta,
         keys: this.keys
       };
-      const changed = (
+      const changed2 = (
         /** @type Set<string|null> */
         this.transaction.changed.get(target)
       );
-      if (changed.has(null)) {
+      if (changed2.has(null)) {
         let lastOp = null;
         const packOp = () => {
           if (lastOp) {
@@ -10147,6 +10148,14 @@ var SessionClient = class {
     const stable = cacheNamespace(this.options.url, identity);
     return { key: stable ?? JSON.stringify(["volatile", this.volatile]), cacheable: stable !== null };
   }
+  /** Hosts may verify a deferred connection before any local replica is published. */
+  async acceptHello() {
+  }
+  async prepareConnected() {
+  }
+  makeDocument(path2) {
+    return new Doc2(this, path2);
+  }
   /** Connects, and keeps reconnecting until `close()`. Resolves when the first connection is ready. */
   connect() {
     if (this.invalidated || this.stopped) return Promise.reject(this.invalidated ?? new Error("The workspace connection is stopped."));
@@ -10204,6 +10213,8 @@ var SessionClient = class {
               }
             }
             if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) throw new Error("The connection closed during sign-in.");
+            await this.acceptHello(this.hello);
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
             const context = this.context(this.hello.cacheIdentity);
             if (this.workspace !== null && (context.key !== this.workspace || !context.cacheable && this.docs.size > 0)) throw this.invalidate();
             this.workspace = context.key;
@@ -10212,6 +10223,8 @@ var SessionClient = class {
             this.ready = true;
             this.attempt = 0;
             this.pendingAuth = !!this.hello.signin && !this.identity;
+            await this.prepareConnected();
+            if (!active() || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
             this.emit("connected", this.hello);
             await Promise.all([...this.docs.values()].map((doc2) => doc2.sync().catch(() => {
             })));
@@ -10366,7 +10379,7 @@ var SessionClient = class {
       return this.openDoc(path2);
     }
     if (!doc2) {
-      doc2 = new Doc2(this, path2);
+      doc2 = this.makeDocument(path2);
       this.docs.set(path2, doc2);
       doc2.started = doc2.start();
     }
@@ -12200,7 +12213,7 @@ var AppPreviews = class {
   }
   clip(bounds, sx, sy) {
     if (!bounds.exclusions?.length) return "";
-    let regions = [{ left: 0, top: 0, right: Math.max(0, bounds.width * sx), bottom: Math.max(0, bounds.height * sy) }], changed = false;
+    let regions = [{ left: 0, top: 0, right: Math.max(0, bounds.width * sx), bottom: Math.max(0, bounds.height * sy) }], changed2 = false;
     for (const exclusion of bounds.exclusions) {
       const hole = { left: (exclusion.x - bounds.x) * sx, top: (exclusion.y - bounds.y) * sy, right: (exclusion.x + exclusion.width - bounds.x) * sx, bottom: (exclusion.y + exclusion.height - bounds.y) * sy }, next = [];
       for (const region of regions) {
@@ -12209,7 +12222,7 @@ var AppPreviews = class {
           next.push(region);
           continue;
         }
-        changed = true;
+        changed2 = true;
         if (region.top < top) next.push({ ...region, bottom: top });
         if (bottom < region.bottom) next.push({ ...region, top: bottom });
         if (region.left < left) next.push({ left: region.left, top, right: left, bottom });
@@ -12217,7 +12230,7 @@ var AppPreviews = class {
       }
       regions = next;
     }
-    return changed ? `path("${regions.map((r) => `M${r.left} ${r.top}H${r.right}V${r.bottom}H${r.left}Z`).join(" ") || "M0 0Z"}")` : "";
+    return changed2 ? `path("${regions.map((r) => `M${r.left} ${r.top}H${r.right}V${r.bottom}H${r.left}Z`).join(" ") || "M0 0Z"}")` : "";
   }
   remove(id2) {
     const surface = this.surfaces.get(id2);
@@ -12364,11 +12377,11 @@ var parent = (path2) => path2.slice(0, Math.max(0, path2.lastIndexOf("/")));
 var under2 = (path2, dir) => dir === "" || path2 === dir || path2.startsWith(dir + "/");
 var raced = () => Object.assign(Error("The directory changed while loading."), { code: "tree-changed" });
 var TreeCache = class {
-  constructor(client, { storage: storage2 = new TreeStorage(), changed = () => {
+  constructor(client, { storage: storage2 = new TreeStorage(), changed: changed2 = () => {
   }, now = Date.now } = {}) {
     this.client = client;
     this.storage = storage2;
-    this.changed = changed;
+    this.changed = changed2;
     this.now = now;
     this.rows = /* @__PURE__ */ new Map();
     this.reads = /* @__PURE__ */ new Map();
@@ -12522,11 +12535,11 @@ var TreeCache = class {
     if (!clean(path2)) return;
     const address = this.address({ path: path2, mount });
     const keys2 = /* @__PURE__ */ new Set([...this.rows.keys(), ...this.flights.keys(), ...this.reads.keys()]);
-    let changed = false;
+    let changed2 = false;
     for (const key of keys2) {
       const [scope, dir] = JSON.parse(key);
       if (scope !== address.scope || !(dir === parent(path2) || under2(dir, path2))) continue;
-      changed = true;
+      changed2 = true;
       this.versions.set(key, (this.versions.get(key) ?? 0) + 1);
       this.flights.delete(key);
       const row = this.rows.get(key);
@@ -12536,7 +12549,7 @@ var TreeCache = class {
         });
       }
     }
-    if (changed && refresh) this.notify();
+    if (changed2 && refresh) this.notify();
   }
   close() {
     this.closed = true;
@@ -12601,6 +12614,334 @@ var TreeStorage = class {
   }
 };
 
+// src/demo-seed.js
+var DemoSource = class _DemoSource {
+  static async read(bytes, expected) {
+    if (!(bytes instanceof Uint8Array) || bytes.length > 3 * 1024 * 1024) throw Error("The demo source is invalid.");
+    const release = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    if (expected !== void 0 && release !== expected) throw Error("The demo source release changed.");
+    const preset = samplePreset(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+    if (preset.root !== "/work/pocket-studio" || preset.project !== "pocket-studio/build.hxml" || preset.entries.some((entry2) => entry2.path.split("/").some((part) => [".git", ".haxelib", ".rayde", ".rayzor", ".rayde-session"].includes(part)))) throw Error("The demo source is invalid.");
+    const source = new _DemoSource();
+    source.release = release;
+    source.preset = preset;
+    source.files = new Map(preset.entries.filter((entry2) => !entry2.directory).map((entry2) => [entry2.path.slice(preset.root.length + 1), entry2.data]));
+    return source;
+  }
+  graph(path2) {
+    const encoded = this.files.get(path2);
+    if (encoded === void 0) return null;
+    let text2;
+    try {
+      text2 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)));
+    } catch {
+      return null;
+    }
+    const seed = new Doc();
+    seed.clientID = 0;
+    try {
+      seed.getText("text").insert(0, text2);
+      return encodeStateAsUpdate(seed);
+    } finally {
+      seed.destroy();
+    }
+  }
+};
+
+// src/demo-store.js
+var invalid = () => Object.assign(Error("The demo recovery binding changed. Your previous edits are kept in this browser."), { code: "workspace-changed" });
+var valid2 = (row) => row?.version === 1 && typeof row.draft === "string" && /^[\w-]{36}$/.test(row.draft) && (row.lease === null || /^[\w-]{43}$/.test(row.lease)) && (row.context === null || typeof row.context === "string" && row.context.length <= 4096);
+var DemoStore = class {
+  constructor(origin, release) {
+    this.key = JSON.stringify([1, origin, release]);
+    this.opening = null;
+  }
+  async database() {
+    return this.opening ??= new Promise((resolve, reject) => {
+      const request = indexedDB.open("rayde-demo-bindings-v1", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("bindings");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async change(update) {
+    const database = await this.database();
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction("bindings", "readwrite"), store = tx.objectStore("bindings"), get2 = store.get(this.key);
+      let result, error;
+      get2.onsuccess = () => {
+        try {
+          if (get2.result !== void 0 && !valid2(get2.result)) throw invalid();
+          result = update(get2.result ?? { version: 1, draft: crypto.randomUUID(), lease: null, context: null });
+          if (!valid2(result)) throw invalid();
+          store.put(result, this.key);
+        } catch (failure2) {
+          error = failure2;
+          tx.abort();
+        }
+      };
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = tx.onabort = () => reject(error ?? tx.error ?? invalid());
+    });
+  }
+  open() {
+    return this.change((row) => row);
+  }
+  bind(draft, lease, context) {
+    return this.change((row) => {
+      if (row.draft !== draft || row.lease !== null && row.lease !== lease || context !== void 0 && row.context !== null && row.context !== context) throw invalid();
+      return { ...row, lease, ...context === void 0 ? {} : { context } };
+    });
+  }
+  close() {
+    this.opening?.then((db) => db.close(), () => {
+    });
+    this.opening = null;
+  }
+};
+
+// src/demo-session.js
+var pending = () => Object.assign(Error("The workspace is connecting. Your edits are kept in this browser."), { code: "connecting" });
+var changed = () => Object.assign(Error("This demo session changed. Your previous edits are kept in this browser."), { code: "workspace-changed" });
+var clean2 = (path2) => typeof path2 === "string" && !path2.startsWith("/") && !/[\\\0]/.test(path2) && (path2 === "" || path2.split("/").every((part) => part && part !== "." && part !== ".."));
+var decode3 = (data) => Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+var encode2 = (bytes) => {
+  let text2 = "";
+  for (let at2 = 0; at2 < bytes.length; at2 += 32768) text2 += String.fromCharCode(...bytes.subarray(at2, at2 + 32768));
+  return btoa(text2);
+};
+var DemoDocument = class extends Doc2 {
+  async start() {
+    if (this.client.ready || this.client.attached) return super.start();
+    const graph = this.client.source.graph(this.path);
+    if (!graph) throw pending();
+    this.suspended = true;
+    await this.recover(legacyName(this.workspace, this.path));
+    this.guard();
+    applyUpdate(this.ydoc, graph, "session");
+    await this.checkpointGraph();
+    this.restoredDirty = this.text.toString() !== new TextDecoder("utf-8", { ignoreBOM: true }).decode(decode3(this.client.source.files.get(this.path)));
+  }
+};
+var DemoSession = class extends SessionClient {
+  constructor({ source, store, binding: binding2, root = "/workspace/project", ...options }) {
+    super(options);
+    this.source = source;
+    this.store = store;
+    this.binding = binding2;
+    this.attached = false;
+    this.workspace = JSON.stringify(["demo-draft-v1", store.key, binding2.draft]);
+    this.cacheable = true;
+    this.expectedRoot = root;
+    this.hello = { root, name: source.preset.name, exec: false, syntax: true, deferred: true, documentIdentities: 0, readRoots: [] };
+    this.seedEntries = /* @__PURE__ */ new Map([["", { name: "pocket-studio", kind: "dir", size: 0, mtime: 0 }]]);
+    for (const entry2 of source.preset.entries) {
+      if (entry2.path === source.preset.root || !entry2.path.startsWith(source.preset.root + "/")) continue;
+      const path2 = entry2.path.slice(source.preset.root.length + 1);
+      for (let at2 = path2.indexOf("/"); at2 >= 0; at2 = path2.indexOf("/", at2 + 1)) {
+        const parent2 = path2.slice(0, at2);
+        this.seedEntries.set(parent2, { name: parent2.split("/").at(-1), kind: "dir", size: 0, mtime: 0 });
+      }
+      this.seedEntries.set(path2, { name: path2.split("/").at(-1), kind: entry2.directory ? "dir" : "file", size: entry2.directory ? 0 : decode3(entry2.data).length, mtime: 0 });
+    }
+  }
+  makeDocument(path2) {
+    return new DemoDocument(this, path2);
+  }
+  async acceptHello(hello) {
+    const context = cacheNamespace(this.options.url, hello.cacheIdentity);
+    if (hello.root !== this.expectedRoot || hello.demoSeed?.version !== 1 || hello.demoSeed.release !== this.source.release || !context || !this.binding.lease || hello.cacheIdentity.principal !== "demo:" + this.binding.lease) throw this.invalidate();
+    try {
+      this.binding = await this.store.bind(this.binding.draft, this.binding.lease, context);
+    } catch {
+      throw this.invalidate();
+    }
+  }
+  context(identity) {
+    if (cacheNamespace(this.options.url, identity) !== this.binding.context) throw this.invalidate();
+    return { key: this.workspace, cacheable: true };
+  }
+  async prepareConnected() {
+    this.attached = true;
+    await Promise.all([...this.docs.values()].map(async (doc2) => {
+      try {
+        await doc2.started;
+        if (!doc2.closed) await doc2.sync();
+      } catch (error) {
+        if (!doc2.closed) throw error;
+      }
+    }));
+  }
+  async admit(lease) {
+    if (lease.release !== this.source.release || !Number.isSafeInteger(lease.expires) || lease.expires <= Date.now()) throw changed();
+    try {
+      this.binding = await this.store.bind(this.binding.draft, lease.id);
+    } catch {
+      throw this.invalidate();
+    }
+    if (this.invalidated) throw this.invalidated;
+    this.stopped = false;
+    return this.connect();
+  }
+  request(op, params2 = {}) {
+    if (this.ready || this.attached || params2.mount != null) return super.request(op, params2);
+    if (!op.startsWith("fs.")) return Promise.reject(pending());
+    return this.localFile(op, params2);
+  }
+  async localFile(op, { path: path2 = "", data, encoding, offset = 0, length: length2 } = {}) {
+    if (!clean2(path2)) throw Error("Invalid workspace path.");
+    const entry2 = this.seedEntries.get(path2);
+    if (op === "fs.stat") return { entry: entry2 ? structuredClone(entry2) : null };
+    if (op === "fs.list") {
+      if (entry2?.kind !== "dir") throw Error("No such folder.");
+      return { entries: [...this.seedEntries].filter(([name]) => name !== path2 && (name.includes("/") ? name.slice(0, name.lastIndexOf("/")) : "") === path2).map(([, entry3]) => structuredClone(entry3)) };
+    }
+    if (entry2?.kind !== "file") throw pending();
+    if (op === "fs.read") {
+      const doc2 = this.docs.get(path2);
+      if (doc2 && !doc2.closed) await doc2.started;
+      let bytes = doc2 && !doc2.closed ? new TextEncoder().encode(doc2.text.toString()) : decode3(this.source.files.get(path2));
+      if (!Number.isSafeInteger(offset) || offset < 0 || length2 !== void 0 && (!Number.isSafeInteger(length2) || length2 < 0)) throw Error("Invalid file range.");
+      bytes = bytes.subarray(offset, length2 === void 0 ? void 0 : offset + length2);
+      return { data: encoding === "base64" ? encode2(bytes) : new TextDecoder().decode(bytes) };
+    }
+    if (op === "fs.write") {
+      if (typeof data !== "string") throw Error("Invalid file data.");
+      const text2 = encoding === "base64" ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(decode3(data)) : data;
+      if (text2.length > 2 * 1024 * 1024) throw Error("The file is too large.");
+      const doc2 = await this.openDoc(path2);
+      doc2.ydoc.transact(() => {
+        doc2.text.delete(0, doc2.text.length);
+        doc2.text.insert(0, text2);
+      });
+      await doc2.checkpointGraph();
+      return {};
+    }
+    throw pending();
+  }
+  close(error) {
+    super.close(error);
+    this.store.close();
+  }
+};
+
+// src/demo-admission.js
+var DemoAdmission = class {
+  constructor(client, { fetch: fetch2 = globalThis.fetch, now = Date.now, pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), locks = globalThis.navigator?.locks, changed: changed2 = () => {
+  } } = {}) {
+    this.client = client;
+    this.fetch = fetch2;
+    this.now = now;
+    this.pause = pause;
+    this.locks = locks;
+    this.changed = changed2;
+    this.closed = false;
+    this.busy = null;
+    this.state = { status: "waiting", message: "Workspace connecting\u2026" };
+    this.abort = new AbortController();
+    this.stop = client.on("disconnected", () => {
+      if (!this.closed && this.state.status === "ready") {
+        this.set("connecting", "Reconnecting workspace\u2026");
+        void this.disconnected();
+      }
+    });
+    this.connected = client.on("connected", () => this.set("ready", "Workspace connected"));
+  }
+  set(status, message) {
+    if (!this.closed) {
+      this.state = { status, message };
+      this.changed(this.state);
+    }
+  }
+  expire() {
+    this.client.stopTransport(Error("The demo session expired."));
+    this.set("expired", "Demo session expired \xB7 edits kept locally");
+    this.client.emit("disconnected", { code: "expired" });
+  }
+  async disconnected() {
+    try {
+      await this.request("status");
+    } catch (error) {
+      if (!this.closed && !this.client.ready && [401, 410].includes(error.status)) this.expire();
+    }
+  }
+  async request(action) {
+    const response = await this.fetch("/api/demo/" + action, { method: action === "status" ? "GET" : "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(15e3)]) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(Error(body.message ?? "The workspace could not connect."), { status: response.status });
+    return body;
+  }
+  start(retry = false) {
+    if (this.closed) return Promise.resolve();
+    if (this.busy) return this.busy;
+    const work = this.run(retry);
+    this.busy = work;
+    work.finally(() => {
+      if (this.busy === work) this.busy = null;
+    });
+    return work;
+  }
+  async run(retry) {
+    this.set("connecting", "Workspace connecting\u2026");
+    try {
+      if (this.client.invalidated) throw this.client.invalidated;
+      const open = async () => {
+        let lease2 = await this.request("open");
+        if (lease2.release !== this.client.source.release) throw Error("The demo source release changed. Your edits are kept in this browser.");
+        this.client.binding = await this.client.store.bind(this.client.binding.draft, lease2.id);
+        if (retry && lease2.status === "failed") lease2 = await this.request("retry");
+        return lease2;
+      };
+      let lease = this.locks ? await this.locks.request("rayde-demo-admission", open) : await open();
+      const deadline = Math.min(lease.expires, this.now() + 18e4);
+      while (lease.status === "preparing" && !this.closed) {
+        if (this.now() >= deadline) throw Error("Workspace startup is taking too long. Your edits are kept in this browser.");
+        await this.pause(1e3);
+        if (this.closed) return;
+        lease = await this.request("status");
+        if (lease.id !== this.client.binding.lease || lease.release !== this.client.source.release) throw Error("The demo session changed. Your edits are kept in this browser.");
+      }
+      if (this.closed) return;
+      if (lease.status !== "ready") throw Error(lease.message ?? "The workspace could not start. Your edits are kept in this browser.");
+      clearTimeout(this.expiry);
+      this.expiry = setTimeout(() => this.expire(), Math.max(0, lease.expires - this.now()));
+      await this.client.admit(lease);
+      if (!this.closed) this.set("ready", "Workspace connected");
+    } catch (error) {
+      if (!this.closed) this.set(error.status === 410 ? "expired" : error.code === "workspace-changed" ? "changed" : "failed", error.message);
+    }
+  }
+  close() {
+    this.closed = true;
+    clearTimeout(this.expiry);
+    this.abort.abort();
+    this.stop();
+    this.connected();
+  }
+};
+function afterEditorReady(run, { document: document2 = globalThis.document, MutationObserver = globalThis.MutationObserver, later = globalThis.requestAnimationFrame } = {}) {
+  let cancelled = false, scheduled = false, observer;
+  const status = document2.getElementById("status");
+  const check = () => {
+    if (!scheduled && (!status || status.hidden)) {
+      scheduled = true;
+      observer?.disconnect();
+      later(() => later(() => {
+        if (!cancelled) run();
+      }));
+    }
+  };
+  if (status && !status.hidden) {
+    observer = new MutationObserver(check);
+    observer.observe(status, { attributes: true, attributeFilter: ["hidden"] });
+  }
+  check();
+  return () => {
+    cancelled = true;
+    observer?.disconnect();
+  };
+}
+
 // src/agent.js
 var query = new URLSearchParams(location.search);
 var entry = pageEntry(location, readConnection());
@@ -12626,22 +12967,34 @@ var start = (ask) => serve(ask, {
     }
     const database = await storage();
     let preset = null;
+    let demoSource = null;
     const sample = document.querySelector('meta[name="rayde-demo"]')?.content;
     if ((demo || query.get("demo-preview") === "1") && sample) {
       const url = new URL(sample, import.meta.url);
       if (url.origin !== location.origin) throw new Error("The sample must come from this site.");
       const response = await fetch(url);
       if (!response.ok) throw new Error("The sample workspace could not be loaded.");
-      const text2 = await response.text();
-      if (text2.length > 3 * 1024 * 1024) throw new Error("The sample workspace is too large.");
-      preset = samplePreset(JSON.parse(text2));
-      if (!endpoint) {
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.length > 3 * 1024 * 1024) throw new Error("The sample workspace is too large.");
+      if (entry.admission) {
+        demoSource = await DemoSource.read(bytes);
+        preset = demoSource.preset;
+      } else preset = samplePreset(JSON.parse(new TextDecoder().decode(bytes)));
+      if (!endpoint && !entry.admission) {
         await seedSample(database, preset);
         project ??= preset.project;
       }
     }
     let storageFailure = null;
     let client = null;
+    if (entry.admission) {
+      if (!demoSource) throw Error("The demo source bundle is unavailable.");
+      const url = new URL("/api/demo/socket", location.href);
+      url.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const store = new DemoStore(location.origin, demoSource.release);
+      client = new DemoSession({ source: demoSource, store, binding: await store.open(), url: url.href });
+      project = "build.hxml";
+    }
     if (endpoint) {
       const url = new URL(endpoint, location.href);
       if (!["ws:", "wss:"].includes(url.protocol)) throw new Error("The session address must use ws:// or wss://.");
@@ -12652,6 +13005,7 @@ var start = (ask) => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at2 = 0; at2 < bytes.length; at2 += 16384) deliver(bytes.subarray(at2, at2 + 16384));
     };
+    const admission = entry.admission ? new DemoAdmission(client, { changed: (state) => answer({ ev: "demo.status", ...state }) }) : null;
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -12686,9 +13040,29 @@ var start = (ask) => serve(ask, {
       previews?.reset();
       answer({ ev: "session.disconnected", generation: client.generation, code: "workspace-changed", message });
     });
+    const hello = () => ({
+      ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false },
+      treeCache: !!tree,
+      appPreviews: client?.hello.appPreviews === true || !!cached,
+      webPreviews: client?.hello.webPreviews === true || !!cached,
+      demoPreview: !!cached,
+      generation: client?.generation ?? 0,
+      online: client ? client.ready : true,
+      remote: !!client,
+      embedded: window.parent !== window,
+      documentBridge: !!documents,
+      documentMoves: !!documents && client.documentMoves,
+      storageKey: client?.workspace,
+      demo,
+      repositories: query.get("repositories") === "1",
+      project,
+      deferred: !!admission,
+      demoState: admission?.state.status,
+      demoMessage: admission?.state.message
+    });
     client?.on("connected", () => {
       previews?.connection(true);
-      answer({ ev: "session.connected", generation: client.generation, documentMoves: !!documents && client.documentMoves, syncWriteback: client.hello?.syncWriteback ?? null });
+      answer({ ev: "session.connected", generation: client.generation, capabilities: hello(), documentMoves: !!documents && client.documentMoves, syncWriteback: client.hello?.syncWriteback ?? null });
       syncStatus();
     });
     if (client) syncStatus();
@@ -12698,8 +13072,11 @@ var start = (ask) => serve(ask, {
       void (async () => {
         try {
           let reply;
-          if (request.op === "hello") reply = { ...client?.hello ?? { root: "/work", name: preset?.name ?? "work", exec: false }, treeCache: !!tree, appPreviews: client?.hello.appPreviews === true || !!cached, webPreviews: client?.hello.webPreviews === true || !!cached, demoPreview: !!cached, generation: client?.generation ?? 0, remote: !!client, embedded: window.parent !== window, documentBridge: !!documents, documentMoves: !!documents && client.documentMoves, storageKey: client?.workspace, demo, repositories: query.get("repositories") === "1", project };
-          else if (request.op === "page.tree.list" && tree) reply = await tree.list(request);
+          if (request.op === "hello") reply = hello();
+          else if (request.op === "page.demo-retry" && admission) {
+            void admission.start(true);
+            reply = {};
+          } else if (request.op === "page.tree.list" && tree) reply = await tree.list(request);
           else if (request.op === "page.tree.refresh" && tree) {
             tree.invalidate(request.path ?? "", request.mount ?? null, true);
             reply = {};
@@ -12780,6 +13157,8 @@ var start = (ask) => serve(ask, {
       })();
     });
     const stopAccounts = followAccount(accounts, entry.workspace ? client : null, (status) => answer({ ev: "account.changed", user: status.user }));
+    const stopReady = admission ? afterEditorReady(() => void admission.start()) : () => {
+    };
     return {
       send(bytes) {
         try {
@@ -12790,6 +13169,8 @@ var start = (ask) => serve(ask, {
         }
       },
       close() {
+        stopReady();
+        admission?.close();
         stopAccounts();
         accounts.signin?.cancel();
         tree?.close();
