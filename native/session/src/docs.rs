@@ -104,6 +104,7 @@ pub struct DocHub<S: FileStore> {
     /// Called with a path whose document has edits to write; the runner calls `flush` after they settle.
     dirty: Arc<dyn Fn(&str) + Send + Sync>,
     cloud: OnceLock<Arc<dyn crate::cloud::Provider>>,
+    demo_seed:OnceLock<crate::demo_seed::DemoSeed>,
     cloud_status:Mutex<HashMap<String,Arc<dyn Fn(&str,Option<SessionError>)+Send+Sync>>>,
     #[cfg(feature="server")] link:OnceLock<std::sync::Weak<Self>>,
     #[cfg(feature="server")] watch_jobs:Mutex<HashMap<String,Option<std::sync::Weak<OpenDoc>>>>,
@@ -111,11 +112,13 @@ pub struct DocHub<S: FileStore> {
 
 impl<S: FileStore> DocHub<S> {
     pub fn new(store: Arc<S>, dirty: Arc<dyn Fn(&str) + Send + Sync>) -> Self {
-        Self { store, open: Mutex::new(HashMap::new()), opening: AsyncMutex::new(()), dirty, cloud:OnceLock::new(),cloud_status:Default::default(),#[cfg(feature="server")]link:OnceLock::new(),#[cfg(feature="server")]watch_jobs:Default::default() }
+        Self { store, open: Mutex::new(HashMap::new()), opening: AsyncMutex::new(()), dirty, cloud:OnceLock::new(),demo_seed:OnceLock::new(),cloud_status:Default::default(),#[cfg(feature="server")]link:OnceLock::new(),#[cfg(feature="server")]watch_jobs:Default::default() }
     }
 
     pub fn set_cloud(&self,provider:Arc<dyn crate::cloud::Provider>){let _=self.cloud.set(provider);}
     pub fn cloud_available(&self)->bool{self.cloud.get().is_some()}
+    pub fn set_demo_seed(&self,seed:crate::demo_seed::DemoSeed)->bool {self.demo_seed.set(seed).is_ok()}
+    pub fn demo_release(&self)->Option<&str> {self.demo_seed.get().map(|seed|seed.release())}
     #[cfg(feature="server")] pub fn enable_push(self:&Arc<Self>){let _=self.link.set(Arc::downgrade(self));}
     pub fn on_cloud_status(&self,id:String,listener:Arc<dyn Fn(&str,Option<SessionError>)+Send+Sync>){self.cloud_status.lock().unwrap().insert(id,listener);}
     pub fn remove_cloud_status(&self,id:&str){self.cloud_status.lock().unwrap().remove(id);}
@@ -214,6 +217,13 @@ impl<S: FileStore> DocHub<S> {
         let doc = Doc::with_options(Options { offset_kind: OffsetKind::Utf16, ..Options::default() });
         let text = doc.get_or_insert_text("text");
         let saved=self.store.read_state(&format!("doc:{path}")).await?;
+        if saved.is_none() {
+            if let Some(seed)=self.demo_seed.get().and_then(|seed|seed.graph(path)) {
+                doc.transact_mut_with(yrs::Origin::from(LOAD)).apply_update(Update::decode_v1(&seed)
+                    .map_err(|_|SessionError::new("demo-seed","The demo source graph is invalid."))?)
+                    .map_err(|_|SessionError::new("demo-seed","The demo source graph cannot be applied."))?;
+            }
+        }
         let mut buffered=false;let mut cloud=None;
         if let Some(saved)=&saved {
             let state=if let Some((baseline,state))=crate::buffer_state::unpack(saved)? {

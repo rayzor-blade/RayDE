@@ -1,0 +1,64 @@
+//! A pinned public source graph, shared before admission without sharing visitor edits.
+use crate::error::{Result,SessionError};
+use base64::{Engine,engine::general_purpose::STANDARD as B64};
+use serde::Deserialize;
+use std::collections::{BTreeMap,BTreeSet};
+use yrs::{ClientID,Doc,OffsetKind,Options,ReadTxn,StateVector,Text,Transact};
+
+#[derive(Deserialize)]
+struct Bundle {version:u64,root:String,project:String,entries:Vec<Entry>}
+#[derive(Deserialize)]
+struct Entry {path:String,directory:bool,data:Option<String>}
+
+pub struct DemoSeed {release:String,texts:BTreeMap<String,String>}
+fn invalid()->SessionError {SessionError::new("demo-seed","The pinned demo source graph is invalid.")}
+impl DemoSeed {
+    pub fn parse(bytes:&[u8],release:&str)->Result<Self> {
+        if bytes.len()>3*1024*1024 || release.len()!=64 || crate::checkpoint::digest(bytes)!=release {return Err(invalid());}
+        let value:Bundle=serde_json::from_slice(bytes).map_err(|_|invalid())?;
+        if value.version!=1 || value.root!="/work/pocket-studio" || value.project!="pocket-studio/build.hxml" || value.entries.len()>256 {return Err(invalid());}
+        let mut paths=BTreeSet::new();let mut texts=BTreeMap::new();let mut total=0;
+        for entry in value.entries {
+            if !paths.insert(entry.path.clone()) || entry.directory && entry.data.is_some(){return Err(invalid());}
+            if entry.path=="/work" || entry.path==value.root {
+                if !entry.directory{return Err(invalid());}continue;
+            }
+            let path=entry.path.strip_prefix(&(value.root.clone()+"/")).ok_or_else(invalid)?;
+            if path.is_empty() || path.split('/').any(|part|part.is_empty() || part=="." || part==".." || part.contains(['\\','\0']) || [".git",".haxelib",".rayde",".rayzor",".rayde-session"].contains(&part)) {return Err(invalid());}
+            if !entry.directory {
+                let bytes=B64.decode(entry.data.as_deref().ok_or_else(invalid)?).map_err(|_|invalid())?;
+                total+=bytes.len();if total>2*1024*1024{return Err(invalid());}
+                if let Ok(text)=String::from_utf8(bytes){texts.insert(path.to_owned(),text);}
+            }
+        }
+        if !paths.contains(&value.root) || !texts.contains_key("build.hxml"){return Err(invalid());}
+        Ok(Self{release:release.into(),texts})
+    }
+    pub fn release(&self)->&str {&self.release}
+    /// Only immutable source uses client zero; live replicas always keep their own writer identity.
+    pub fn graph(&self,path:&str)->Option<Vec<u8>> {
+        let source=self.texts.get(path)?;
+        let doc=Doc::with_options(Options{offset_kind:OffsetKind::Utf16,..Options::with_client_id(ClientID::new(0))});
+        doc.get_or_insert_text("text").insert(&mut doc.transact_mut(),0,source);
+        Some(doc.transact().encode_state_as_update_v1(&StateVector::default()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn only_verified_bounded_public_sources_supply_initial_graphs(){
+        let make=|path:&str|serde_json::to_vec(&serde_json::json!({"version":1,"root":"/work/pocket-studio","project":"pocket-studio/build.hxml","entries":[
+            {"path":"/work/pocket-studio","directory":true},
+            {"path":path,"directory":false,"data":B64.encode("-main Main\n")}
+        ]})).unwrap();
+        let bytes=make("/work/pocket-studio/build.hxml");let release=crate::checkpoint::digest(&bytes);
+        let seed=DemoSeed::parse(&bytes,&release).unwrap();
+        assert!(seed.graph("build.hxml").is_some());assert!(seed.graph("../build.hxml").is_none());
+        assert!(DemoSeed::parse(&bytes,&"0".repeat(64)).is_err());
+        for path in ["/outside","/work/pocket-studio/../build.hxml","/work/pocket-studio/.git/config"] {
+            let bytes=make(path);assert!(DemoSeed::parse(&bytes,&crate::checkpoint::digest(&bytes)).is_err());
+        }
+    }
+}

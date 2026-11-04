@@ -66,6 +66,8 @@ fn outbox(capacity: usize, limit: usize) -> (Out, mpsc::Receiver<(String, Output
 pub struct Options {
     pub root: PathBuf,
     pub state_root: Option<PathBuf>,
+    /// Trusted pinned public source, never a visitor-provided recovery graph.
+    pub demo_seed:Option<(PathBuf,String)>,
     pub address: SocketAddr,
     /// The session's token; `None` opens it to whoever reaches it.
     pub token: Option<String>,
@@ -96,7 +98,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, preview_tools:None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, demo_seed:None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, preview_tools:None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -146,6 +148,25 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
         }
     }
     let store = Arc::new(match &options.state_root { Some(state) => DirStore::with_state_root(&options.root,state)?, None => DirStore::new(&options.root)? });
+    let bound=store.read_state("demo-source-release").await.map_err(std::io::Error::other)?;
+    let seed=match &options.demo_seed {
+        Some((path,release))=>{
+            let bytes=DirStore::bounded_read(path,3*1024*1024).await.map_err(std::io::Error::other)?;
+            let seed=crate::demo_seed::DemoSeed::parse(&bytes,release).map_err(std::io::Error::other)?;
+            if let Some(bound)=bound {
+                if bound!=release.as_bytes(){return Err(std::io::Error::other("The demo source release does not match this session's document history."));}
+            }else{
+                let mut entries=tokio::fs::read_dir(&store.state).await?;
+                while let Some(entry)=entries.next_entry().await? {
+                    if entry.path().extension().is_some_and(|ext|ext=="ydoc"){return Err(std::io::Error::other("Existing document history cannot become a demo source graph."));}
+                }
+                store.write_state("demo-source-release",release.as_bytes()).await.map_err(std::io::Error::other)?;
+            }
+            Some(seed)
+        },
+        None if bound.is_some()=>return Err(std::io::Error::other("This document history requires its pinned demo source release.")),
+        None=>None,
+    };
     let extension_host = options.extension_host.as_ref().map(std::fs::canonicalize).transpose()?;
     let extensions = options.extensions.as_ref().map(std::fs::canonicalize).transpose()?;
     if extension_host.is_some() && !options.exec {
@@ -188,9 +209,11 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
     let clock: Arc<dyn Fn() -> u64 + Send + Sync> = Arc::new(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()));
     let workspace = Workspace::with_authority(store.clone(), options.token.clone(), programs, dirty, options.authority, clock);
+    if let Some(seed)=seed {workspace.docs.set_demo_seed(seed);}
     let previews = if options.exec {Some(crate::previews::Previews::start(store.root(),options.preview_tools,&options.environment).await?)} else {None};
     if let Some(previews)=&previews {workspace.set_previews(previews.registry.clone());}
     if let Some(writeback)=crate::writeback::Writeback::from_env(store.clone()) {
+        if options.demo_seed.is_some(){return Err(std::io::Error::other("A demo source graph cannot use an account's cloud document history."));}
         workspace.docs.set_cloud(Arc::new(crate::cloud_gateway::Gateway::new(writeback.clone())));
         workspace.set_writeback(writeback.clone());
         let weak=Arc::downgrade(&workspace);

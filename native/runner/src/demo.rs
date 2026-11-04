@@ -36,7 +36,7 @@ async fn read(path:&Path, release:&str) -> Result<Bundle> {
             continue;
         }
         let relative = entry.path.strip_prefix(&(bundle.root.clone()+"/")).ok_or_else(invalid)?;
-        if relative.is_empty() || relative.split('/').any(|part|part.is_empty() || part=="." || part==".." || part.contains(['\\','\0']) || [".git",".haxelib",".rayde",".rayzor"].contains(&part)) {return Err(invalid());}
+        if relative.is_empty() || relative.split('/').any(|part|part.is_empty() || part=="." || part==".." || part.contains(['\\','\0']) || [".git",".haxelib",".rayde",".rayzor",".rayde-session"].contains(&part)) {return Err(invalid());}
         if !entry.directory {
             let data = STANDARD.decode(entry.data.as_deref().ok_or_else(invalid)?).map_err(|_|invalid())?;
             total += data.len();

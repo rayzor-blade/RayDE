@@ -197,6 +197,8 @@ async fn real_msb_demo_leases_are_isolated_and_expire() {
     let mut first=Peer::connect(&left,secret).await;let mut second=Peer::connect(&right,secret).await;
     let one=first.rpc("hello",json!({"token":left["token"]})).await;
     let two=second.rpc("hello",json!({"token":right["token"]})).await;
+    assert_eq!(one["demoSeed"],json!({"version":1,"release":release}));
+    assert_eq!(two["demoSeed"],one["demoSeed"]);
     assert_ne!(one["cacheIdentity"],two["cacheIdentity"],"visitors share a CRDT authority");
     assert_eq!(first.rpc("fs.write",json!({"path":"only-a.txt","data":"private visitor A"})).await["ok"],true);
     assert!(second.rpc("fs.stat",json!({"path":"only-a.txt"})).await["entry"].is_null());

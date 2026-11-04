@@ -39,6 +39,7 @@ fn main() {
         println!("rayde-session [--root DIR] [--port N] [--host ADDR] [--token T] [--origin URL]... [--web DIR] [--exec]\n              [--raw-port N] [--extension-host BIN --extensions DIR] [--auth-secret S --login-url URL]\nrayde-session issue --auth-secret S --login NAME --id N [--ttl SECONDS]\n\nServes DIR (default: the current directory) to RayDE over a WebSocket at /session.\nPrograms run only with --exec. --extension-host enables a supervised RayScript host per extension; --extensions locates the built-in installation. Without --token a random one is made and printed.\nWith --auth-secret, changes need a credential the sign-in edge signed with that secret; `issue` mints one for development.");
         println!("Environment defaults load from ~/.rayde-session/environment.json; --env-file PATH selects another JSON string map.\n--read-root DIR exposes an installed source directory read-only; may be repeated.\nState is stored under ~/.rayde-session, separated by workspace. --state-root DIR selects another private state directory.");
         println!("--token-file PATH reads a persistent token from a private file instead of putting it in process arguments.\n--preview-project FILE enables same-origin bootstrap for a trusted loopback preview with --web and an explicit token; never use it for a public deployment.");
+        println!("--demo-seed BUNDLE --demo-release SHA256 pins the public Pocket Studio source graph for deferred browser admission; visitor edits remain private.");
         return;
     }
     if args.first().map(String::as_str) == Some("issue") {
@@ -64,6 +65,11 @@ fn main() {
         options.environment=rayde_session::environment::load(path,environment_file.is_some()).expect("valid session environment configuration");
     }
     options.state_root = option("--state-root").map(PathBuf::from);
+    options.demo_seed=match (option("--demo-seed"),option("--demo-release")) {
+        (Some(path),Some(release))=>Some((PathBuf::from(path),release)),
+        (None,None)=>None,
+        _=>{eprintln!("--demo-seed and --demo-release must be supplied together.");std::process::exit(1);}
+    };
     options.address = address;
     options.token = Some(token.clone());
     options.exec = args.iter().any(|a| a == "--exec");

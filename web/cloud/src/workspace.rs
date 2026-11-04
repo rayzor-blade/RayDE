@@ -289,7 +289,7 @@ impl DurableObject for WorkspaceSession {
             return ws.close(Some(1008),Some("Invalid session request ID"));
         }
         if let Some(key)=attachment["demoKey"].as_str() {
-            if now().saturating_sub(self.demo_activity.get())>=30_000 && matches!(data["op"].as_str(),Some("doc.update"|"fs.write"|"fs.rename"|"fs.mkdir"|"fs.remove"|"term.write"|"proc.spawn"|"preview.prepare")) {
+            if now().saturating_sub(self.demo_activity.get())>=30_000 && matches!(data["op"].as_str(),Some("doc.open"|"doc.update"|"doc.save"|"fs.write"|"fs.rename"|"fs.mkdir"|"fs.remove"|"term.open"|"term.write"|"proc.spawn"|"preview.prepare"|"preview.open")) {
                 if rpc(&self.env,"DEMO_ADMISSIONS","landing","activity",&json!({"key":key})).await.is_err() {
                     self.disconnect(&ws);return ws.close(Some(1008),Some("The demo session expired"));
                 }
@@ -666,6 +666,7 @@ impl WorkspaceSession {
             let workspace = record["id"].clone();
             let principal = if demo_record(&record) {record["owner"].as_str().unwrap().into()}else{format!("account:{}", data["owner"])};
             let demo=demo_record(&record);
+            let demo_release=record["repository"]["demo"]["release"].clone();
             let preview_origin=preview_origin(&self.env);
             self.state.accept_web_socket(&pair.server);
             let mut attachment = data.clone();
@@ -717,6 +718,10 @@ impl WorkspaceSession {
                                             && handshakes.borrow_mut().hello.remove(&reply["id"].to_string())
                                             && reply["ok"] == true
                                         {
+                                            if demo && (reply["demoSeed"]["version"]!=1 || reply["demoSeed"]["release"]!=demo_release) {
+                                                let _=client.send(&json!({"id":reply["id"],"ok":false,"code":"demo-source","message":"The demo runtime does not match its pinned source graph."}));
+                                                break;
+                                            }
                                             // Compute still owns CRDT state: a fresh disk must not replay an older replica's baseline.
                                             let backend = reply["cacheIdentity"].clone();
                                             let valid = backend["version"] == 1

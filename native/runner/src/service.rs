@@ -485,6 +485,9 @@ impl<P: Backend> Service<P> {
             "--token", tunnel::GUEST_TOKEN, "--exec",
         ];
         args.extend(toolchain::session_args(&self.config));
+        if let Some(reference)=&record.repository.demo {
+            args.extend(["--demo-seed","/opt/rayde-demo.json","--demo-release",&reference.release]);
+        }
         let mut env = std::collections::BTreeMap::new();
         if let Some(grant) = sync {
             env.extend([("RAYDE_SYNC_GATEWAY".into(), grant.gateway), ("RAYDE_SYNC_WORKSPACE".into(), grant.workspace), ("RAYDE_SYNC_TOKEN".into(), grant.token),
@@ -730,6 +733,10 @@ impl<P: Backend> Service<P> {
                 .await?;
         }
         self.backend.copy_in(&record.sandbox, self.config.session_binary.clone(), "/opt/rayde-session").await?;
+        if record.repository.demo.is_some() {
+            let source=self.config.demo.as_ref().ok_or_else(unavailable)?;
+            self.backend.copy_in(&record.sandbox,source.bundle.clone(),"/opt/rayde-demo.json").await?;
+        }
         if let Some(storage) = &record.storage {storage.bind(self.backend.as_ref(), &record.sandbox, initialize).await?;}
         Ok(())
     }

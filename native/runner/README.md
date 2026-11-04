@@ -40,6 +40,8 @@ Anonymous demo compute is disabled unless `demo` supplies `{ "bundle": "/private
 
 Each lease receives a fresh clean Git tree and separate workspace/state disks. Duplicate opens reuse its binding; requests cannot extend its lifetime or reopen an ended lease. The demo cap and the runner's total workspace cap both apply. Guests have no network, and their maximum duration cannot exceed the lease. The runner closes expired relays and reclaims compute, disks and records, including after restart. This private API alone does not enable public browser admission.
 
+The runner passes the verified public bundle to the session with `--demo-seed` and `--demo-release`. Initial text graphs use the same immutable baseline as the browser; live writers keep distinct identities. Existing private document state takes precedence on restart. Changes to disk before the first open become edits on that baseline, so early browser changes merge without replacing the workspace's changes. `hello.demoSeed` identifies the release; it grants no access to another visitor's state.
+
 Cloud Sync uses `syncGateway: { "url": "https://gateway.example.org", "secret": "…" }`. Synced guests can reach only that gateway's host. If the runner fetches from a local development gateway, set `guestUrl` in the same object to the gateway's HTTPS address reachable from the VM; guest loopback addresses are refused before compute starts. The provisioning secret stays on the runner. A session receives its workspace's publish capability.
 
 ## Toolchain template
