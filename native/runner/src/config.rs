@@ -161,6 +161,8 @@ pub struct Toolchain {
     pub digest: String,
     #[serde(default)]
     pub app_previews:bool,
+    #[serde(default)]
+    pub demo_release:Option<String>,
 }
 fn image() -> String {
     "alpine:3.23".into()
@@ -229,6 +231,7 @@ impl Config {
                 || !toolchain.snapshot.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
                 || toolchain.digest.len() != 64
                 || !toolchain.digest.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                || toolchain.demo_release.as_ref().is_some_and(|release|release.len()!=64 || !release.bytes().all(|byte|byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
         }) {
             return Err(invalid());
         }

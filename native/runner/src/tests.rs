@@ -196,6 +196,10 @@ fn toolchain_selectors_and_persistent_disk_bindings_are_operator_scoped() {
     let config:Config = serde_json::from_value(value.clone()).unwrap();
     assert!(config.validate().is_ok());
     assert!(!toolchain::session_args(&config).contains(&"--preview-tools"));
+    for release in ["", "not-a-release", &"g".repeat(64), &"a".repeat(63)] {
+        let mut invalid=value.clone();invalid["toolchain"]["demoRelease"]=serde_json::json!(release);
+        assert!(serde_json::from_value::<Config>(invalid).unwrap().validate().is_err());
+    }
     let mut previews=value.clone();previews["toolchain"]["appPreviews"]=serde_json::json!(true);
     assert!(toolchain::session_args(&serde_json::from_value(previews).unwrap()).windows(2).any(|pair|pair==["--preview-tools","/opt/rayde/preview"]));
     for selector in ["--help","../other","/private/image","group:one two",""] {

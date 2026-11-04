@@ -48,11 +48,50 @@ pub(crate) fn session_args(config: &Config) -> Vec<&'static str> {
     args
 }
 
+/// Only fresh matching public demos receive operator-prepared caches, before programs start.
+pub(crate) async fn seed_demo(backend:&impl sb::SandboxProvider,config:&Config,sandbox:&str,reference:&DemoRef)->Result<()> {
+    if !config.toolchain.as_ref().is_some_and(|toolchain|toolchain.demo_release.as_deref()==Some(reference.release.as_str())){return Ok(())}
+    let command=sb::Command{program:"/usr/bin/python3".into(),args:vec!["/opt/rayde/demo_cache.py".into(),"restore".into(),"--release".into(),reference.release.clone()],env:Default::default()};
+    let output=backend.run(sandbox,command,64*1024,std::time::Duration::from_secs(15)).await?;
+    if output.status!=0{return Err(Failure(StatusCode::CONFLICT,"The prepared demo cache could not be verified."));}
+    let report:serde_json::Value=serde_json::from_slice(&output.stdout).map_err(|_|unavailable())?;
+    if !matches!(report["status"].as_str(),Some("restored"|"cold")){return Err(unavailable());}
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sb::SandboxProvider;
     use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn prepared_caches_are_opt_in_and_bound_to_one_public_release() {
+        let calls=std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed=calls.clone();
+        let fake=sb::fake::Fake::new(Default::default()).with_program("/usr/bin/python3",move |_,command,_,mut stdout| {
+            let observed=observed.clone();
+            async move {
+                observed.lock().unwrap().push(command.args);
+                stdout.write_all(br#"{"status":"restored","files":1}"#).await.unwrap();
+                0
+            }
+        });
+        fake.create(sb::SandboxSpec{name:"demo".into(),template:sb::Template::Image("fixture".into()),cpus:1,memory_mib:512,
+            security:sb::Security::Restricted,network:sb::Network::None,gpu:None,labels:Default::default(),mounts:vec![],max_duration:None}).await.unwrap();
+        let mut config:Config=serde_json::from_value(serde_json::json!({
+            "listen":"127.0.0.1:0","stateRoot":"/tmp/state","msb":"/bin/msb","sessionBinary":"/bin/session","secretFile":"/tmp/secret",
+            "toolchain":{"snapshot":"group:template","digest":"a".repeat(64)}
+        })).unwrap();
+        let reference=DemoRef{release:"b".repeat(64),lease:"x".repeat(43),expires:demo::now().unwrap()+60};
+        for release in [None,Some("c".repeat(64)),Some(reference.release.clone())] {
+            config.toolchain.as_mut().unwrap().demo_release=release;
+            seed_demo(&fake,&config,"demo",&reference).await.unwrap();
+        }
+        let calls=calls.lock().unwrap();
+        assert_eq!(calls.len(),1);
+        assert_eq!(calls[0],vec!["/opt/rayde/demo_cache.py","restore","--release",reference.release.as_str()]);
+    }
 
     #[tokio::test]
     async fn toolchain_guests_keep_the_workspaces_network_policy() {

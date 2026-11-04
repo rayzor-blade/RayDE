@@ -688,6 +688,9 @@ impl<P: Backend> Service<P> {
         }
         self.boot(record, true).await?;
         self.backend.copy_in(&record.sandbox, project, "/workspace/project").await?;
+        if let Some(reference)=&record.repository.demo {
+            toolchain::seed_demo(self.backend.as_ref(),&self.config,&record.sandbox,reference).await?;
+        }
         let grant = self.sync_grant(record,request,restored)?;
         record.identity = Some(self.launch_session(record, grant).await?);
         Ok(())

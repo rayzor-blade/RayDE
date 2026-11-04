@@ -35,6 +35,9 @@ if [ -d /opt/rayde/preview ]; then
   haxe build.hxml -D wasm -cp /opt/rayde/preview/haxe
 fi
 rm -rf bin .rayde .rayzor /tmp/rayde-probe
+if [ -f /opt/rayde/demo-workspace.json ]; then
+  python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json
+fi
 apt-get clean
 rm -rf /var/lib/apt/lists/*
 python3 /opt/rayde/finalize.py

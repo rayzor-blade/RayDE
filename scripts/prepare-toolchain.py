@@ -59,6 +59,7 @@ def main():
     parser.add_argument('--stdlib',type=Path,required=True)
     parser.add_argument('--haxe-archive',type=Path,required=True)
     parser.add_argument('--preview-tools',type=Path,help='staged browser preview tooling, including ash_runtime.o')
+    parser.add_argument('--demo-bundle',type=Path,help='verified public source bundle to prepare at the canonical guest path')
     parser.add_argument('--base',default='ubuntu:26.04')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
@@ -91,6 +92,12 @@ def main():
         shutil.copytree(ROOT/'site/demo',payload/'pocket-studio',ignore=shutil.ignore_patterns('bin','.rayde','.rayzor','.haxelib','.git'))
         for name in ['bootstrap.sh','finalize.py']:
             shutil.copy2(ROOT/'native/runner/toolchain'/name,payload/name)
+        if args.demo_bundle:
+            if args.demo_bundle.stat().st_size>3*1024*1024:
+                parser.error('The demo source bundle exceeds its size limit')
+            shutil.copy2(args.demo_bundle,payload/'demo-workspace.json')
+            shutil.copy2(ROOT/'scripts/warm-rayzor.py',payload/'warm-rayzor.py')
+            shutil.copy2(ROOT/'native/runner/toolchain/demo_cache.py',payload/'demo_cache.py')
         shutil.copy2(args.haxe_archive,payload/'haxe.tar.gz')
         environment={'PATH':'/opt/rayde/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LD_LIBRARY_PATH':'/opt/rayde/lib','TMPDIR':'/tmp','HAXE_STD_PATH':'/opt/rayde/haxe/std/','HAXELIB_PATH':'/opt/rayde/haxelib','RAYZOR_STD_PATH':'/opt/rayde/haxe-std'}
         (payload/'environment.json').write_text(json.dumps(environment)+'\n')
@@ -111,7 +118,9 @@ def main():
             msb('snapshot','verify',selector,timeout=120)
             args.output.parent.mkdir(parents=True,exist_ok=True)
             with args.output.open('x') as output:
-                json.dump({'snapshot':selector,'digest':identity,'appPreviews':bool(args.preview_tools)},output,indent=2);output.write('\n')
+                configuration={'snapshot':selector,'digest':identity,'appPreviews':bool(args.preview_tools)}
+                if args.demo_bundle:configuration['demoRelease']=digest(payload/'demo-workspace.json')
+                json.dump(configuration,output,indent=2);output.write('\n')
             print('Verified toolchain configuration: '+str(args.output),flush=True)
         finally:
             if created:

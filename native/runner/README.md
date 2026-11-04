@@ -62,6 +62,10 @@ Preparation runs in a disposable, network-enabled builder. It installs Git, Neko
 
 For app preview tabs, also pass `--preview-tools /absolute/preview-tools`. Stage that directory with `scripts/stage-preview.py --runtime /path/to/wasm32-wasip1-threads/ash_runtime.o`. Preparation checks the WASM runtime/channel and Ash's `--codegen-opt-level` support before booting a builder, then compiles a WASM probe with the preview optimization flags and checks Pocket Studio's WASM dependencies inside it. A file/LSP-only template can omit preview tooling.
 
+For anonymous Pocket Studio guests, add `--demo-bundle /absolute/demo-workspace.json`. Preparation compiles that public release and warms Rayzor at `/workspace/project`, then requires a fresh LSP process to reuse every persisted editor index. It stores immutable copies of the bytecode and indexes inside the image; the output includes `demoRelease`. Keep that field when configuring the runner. A fresh guest with the same release and source contents receives its own cache copy before session programs start. Identical source timestamps are retained because Rayzor includes configuration timestamps in its keys. Changed sources, library overrides and existing visitor state skip seeding. Recovery does not run the installer.
+
+This prepares Rayzor indexes and Haxe bytecode. The managed preview build cache has additional fingerprints; its Haxe/WASM stages still need separate preparation. Neither compiler preparation nor LSP warming runs on the editor's opening path.
+
 Use the complete output object as the runner configuration's `"toolchain": { ... }`, including `appPreviews` when enabled. Start with `"memoryMib": 1024` for files/LSP, or `3072` for app compilation alongside Rayzor; size the budget for your projects. Compiler temporary files use `/tmp`, keeping generated CSS out of workspace inputs. Each launch verifies snapshot integrity, installed files and the expected manifest identity. The runner copies its configured static session executable into the guest, loads `/opt/rayde/environment.json`, and starts supervised extension hosts there. Installed sources use read-only session mounts. Existing live workspaces refuse a different toolchain identity until migrated.
 
 ## Lifecycle and isolation
@@ -90,6 +94,7 @@ Missing disks, changed identities, unexpected inventory and unverifiable runtime
 
 ```sh
 python3 tests/toolchain_preview_test.py
+python3 tests/demo_cache_test.py
 cargo test --manifest-path native/runner/Cargo.toml
 RAYDE_TEST_SESSION=/absolute/static/linux/rayde-session \
   RAYDE_TEST_TOOLCHAIN=/private/toolchain.json \
