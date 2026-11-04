@@ -28,6 +28,12 @@ class DemoCaches(unittest.TestCase):
         (self.root / '.rayzor/blade/editor/main.bidx').write_bytes(b'operator index')
         (self.root / 'bin').mkdir()
         (self.root / 'bin/main.hl').write_bytes(b'operator bytecode')
+        for stage in ['bytecode', 'wasm']:
+            directory = self.root / '.rayde/preview-cache' / stage
+            (directory / 'files').mkdir(parents=True)
+            (directory / 'files/app.hl').write_bytes(b'compiled bytecode')
+            (directory / 'manifest.json').write_text(json.dumps({'key': 'b'*64, 'files': {'app.hl': cache.digest(directory / 'files/app.hl')}}))
+        (self.root / '.rayde/settings.json').write_text('private settings are not cache artifacts')
         self.manifest = cache.seal(self.root, self.prepared, 'a' * 64, {'restored': {'files': 1, 'reused': 1}})
         self.old = self.base / 'old'
         self.root.rename(self.old)
@@ -41,10 +47,25 @@ class DemoCaches(unittest.TestCase):
         self.assertEqual(report['status'], 'restored')
         self.assertEqual((self.root / '.rayzor/blade/editor/main.bidx').read_bytes(), b'operator index')
         self.assertEqual((self.root / 'bin/main.hl').read_bytes(), b'operator bytecode')
+        self.assertFalse((self.root / '.rayde/settings.json').exists())
+        self.assertTrue((self.root / '.rayde/preview-cache/wasm/manifest.json').is_file())
         for name, item in self.manifest['inputs'].items():
             self.assertEqual((self.root / name).stat().st_mtime_ns, item['modifiedNs'])
         (self.root / '.rayzor/blade/editor/main.bidx').write_bytes(b'visitor index')
         self.assertEqual((self.prepared / 'files/.rayzor/blade/editor/main.bidx').read_bytes(), b'operator index')
+        (self.root / '.rayde/preview-cache/wasm/files/app.hl').write_bytes(b'visitor bytecode')
+        self.assertEqual((self.prepared / 'files/.rayde/preview-cache/wasm/files/app.hl').read_bytes(), b'compiled bytecode')
+
+    def test_only_managed_preview_cache_paths_may_be_installed(self):
+        path = self.prepared / 'files/.rayde/settings.json'
+        path.write_text('unrelated settings')
+        manifest_path = self.prepared / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        manifest['artifacts']['.rayde/settings.json'] = {'bytes': path.stat().st_size, 'sha256': cache.digest(path)}
+        manifest_path.write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, 'Invalid cache artifact'):
+            cache.restore(self.root, self.prepared, 'a'*64)
+        self.assertFalse((self.root / '.rayde').exists())
 
     def test_modified_or_additional_inputs_do_not_receive_caches(self):
         for change in ['edited', 'additional']:

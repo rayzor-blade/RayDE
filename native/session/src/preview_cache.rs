@@ -93,6 +93,10 @@ impl Cache {
     pub fn new(root: &Path, tools: Option<&Path>, environment: &HashMap<String, String>) -> Self {
         let mut values: BTreeMap<_, _> = std::env::vars().collect();
         values.extend(environment.iter().map(|(k, v)| (k.clone(), v.clone())));
+        // Match ChildPrograms after it removes host capabilities and boot telemetry.
+        values.remove("RAYDE_SYNC_TOKEN");
+        values.remove("RAYDE_SYNC_CONTROL");
+        values.remove("KRUN_BOOT_START_NS");
         Self {
             root: std::fs::canonicalize(root).unwrap_or_else(|_| root.into()),
             tools: tools.map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| path.into())),
@@ -178,6 +182,9 @@ impl Cache {
                 .args(libraries)
                 .current_dir(&cwd)
                 .envs(&self.environment)
+                .env_remove("RAYDE_SYNC_TOKEN")
+                .env_remove("RAYDE_SYNC_CONTROL")
+                .env_remove("KRUN_BOOT_START_NS")
                 .kill_on_drop(true);
             let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
                 .await
@@ -223,8 +230,8 @@ impl Cache {
         let hashes = self.hashes.clone();
         tokio::task::spawn_blocking(move || {
             let mut haxe = Sha256::new();
-            haxe.update(b"rayde-preview-bytecode-v4\0");
-            hash_tool(&mut haxe, &compiler)?;
+            haxe.update(b"rayde-preview-bytecode-v5\0");
+            hash_files(&mut haxe, BTreeSet::from([compiler]), &hashes)?;
             haxe.update(serde_json::to_vec(&serde_json::json!({"compiler":recipe.compiler,"args":recipe.args,"cwd":recipe.cwd,"primary":recipe.primary,"assets":recipe.assets,"entry":recipe.entry})).map_err(err)?);
             haxe.update(serde_json::to_vec(&env).map_err(err)?);
             let mut files = BTreeSet::new();
@@ -248,8 +255,8 @@ impl Cache {
             if let Some(tools)=tools {collect(&tools, &mut files, &mut visited)?;}
             if let Some(runner)=&recipe.runner {
                 wasm.update(serde_json::to_vec(runner).map_err(err)?);
-                if !runner.command.is_empty(){hash_tool(&mut wasm,&executable(&runner.command,&cwd,&env)?)?;}
-            }else{hash_tool(&mut wasm, &executable("ash", &cwd, &env)?)?;}
+                if !runner.command.is_empty(){hash_files(&mut wasm,BTreeSet::from([executable(&runner.command,&cwd,&env)?]),&hashes)?;}
+            }else{hash_files(&mut wasm, BTreeSet::from([executable("ash", &cwd, &env)?]), &hashes)?;}
             hash_files(&mut wasm, files, &hashes)?;
             Ok(Plan {
                 recipe,
@@ -351,16 +358,6 @@ impl Cache {
 }
 fn err(error: impl std::fmt::Display) -> String {
     error.to_string()
-}
-fn hash_tool(hash: &mut Sha256, path: &Path) -> Result<()> {
-    let value = stamp(&std::fs::metadata(path).map_err(err)?)?;
-    hash.update(path.as_os_str().as_encoded_bytes());
-    hash.update([0]);
-    hash.update(value.size.to_le_bytes());
-    hash.update(value.modified.to_le_bytes());
-    hash.update(value.changed.0.to_le_bytes());
-    hash.update(value.changed.1.to_le_bytes());
-    Ok(())
 }
 fn executable(name: &str, cwd: &Path, environment: &BTreeMap<String, String>) -> Result<PathBuf> {
     let path = Path::new(name);
@@ -620,6 +617,19 @@ mod tests {
             "preparing an unchanged bundled tool must preserve cached compiler output"
         );
         assert_eq!(plan.wasm, unchanged.wasm);
+        std::fs::write(host.join("haxe"), "initial").unwrap();
+        std::fs::write(host.join("ash"), "initial").unwrap();
+        let copied = make().plan(recipe.clone()).await.unwrap();
+        assert_eq!(plan.bytecode, copied.bytecode, "Identical copied compilers preserve their identity");
+        assert_eq!(plan.wasm, copied.wasm);
+        let mut changed_environment = environment.clone();
+        changed_environment.insert("DEMO_MACRO_FLAG".into(), "changed".into());
+        assert_ne!(Cache::new(&root, Some(&tools), &changed_environment).plan(recipe.clone()).await.unwrap().bytecode, plan.bytecode);
+        let mut capabilities = environment.clone();
+        capabilities.insert("RAYDE_SYNC_TOKEN".into(), "private-token".into());
+        capabilities.insert("RAYDE_SYNC_CONTROL".into(), "private-control".into());
+        capabilities.insert("KRUN_BOOT_START_NS".into(), "12345".into());
+        assert_eq!(Cache::new(&root, Some(&tools), &capabilities).plan(recipe.clone()).await.unwrap().bytecode, plan.bytecode);
         let mut configured = recipe.clone();
         configured.runner = Some(CompilerRunner {
             command: host.join("ash").to_string_lossy().into(),

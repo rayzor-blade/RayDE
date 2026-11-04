@@ -60,6 +60,8 @@ def main():
     parser.add_argument('--haxe-archive',type=Path,required=True)
     parser.add_argument('--preview-tools',type=Path,help='staged browser preview tooling, including ash_runtime.o')
     parser.add_argument('--demo-bundle',type=Path,help='verified public source bundle to prepare at the canonical guest path')
+    parser.add_argument('--session',type=Path,help='matching Linux session binary for managed demo preview preparation')
+    parser.add_argument('--preview-operator',type=Path,help='headless PrepareDemoPreview bytecode built by scripts/build-site.sh')
     parser.add_argument('--base',default='ubuntu:26.04')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
@@ -69,6 +71,8 @@ def main():
         parser.error('The pinned Haxe archive or Rayzor standard library is invalid')
     if args.output.exists():
         parser.error('Choose a new output file; existing template configuration is preserved')
+    if bool(args.session)!=bool(args.preview_operator) or args.preview_operator and not (args.demo_bundle and args.preview_tools):
+        parser.error('Managed demo previews require --session, --preview-operator, --demo-bundle and --preview-tools')
     if args.preview_tools:
         try:
             validate_previews(args.ash,args.preview_tools)
@@ -83,6 +87,11 @@ def main():
         payload=Path(temporary)/'rayde';(payload/'bin').mkdir(parents=True);(payload/'lib').mkdir()
         for source,name in [(args.ash,'ash'),(args.rayzor,'rayzor'),(args.extension_host,'rayde-extension-host')]:
             copy_binary(source,payload/'bin'/name,payload/'lib')
+        if args.session:
+            copy_binary(args.session,payload/'bin/rayde-session',payload/'lib')
+            if args.preview_operator.stat().st_size>8*1024*1024 or args.preview_operator.read_bytes()[:3]!=b'HLB':
+                parser.error('The preview operator must be bounded HashLink bytecode')
+            shutil.copy2(args.preview_operator,payload/'preview-operator.hl')
         for source in args.ash.parent.glob('*.hdll'):
             shutil.copy2(source,payload/'bin'/source.name)
         shutil.copytree(args.stdlib,payload/'haxe-std',symlinks=False)

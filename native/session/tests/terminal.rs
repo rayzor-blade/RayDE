@@ -191,9 +191,10 @@ async fn session_environment_reaches_processes_and_terminals_with_explicit_proce
         .insert("RAYDE_SESSION_ENV_TEST".into(), "configured".into());
     options.environment.insert("RAYDE_SYNC_TOKEN".into(),"private-publish-token".into());
     options.environment.insert("RAYDE_SYNC_CONTROL".into(),"private-control-token".into());
+    options.environment.insert("KRUN_BOOT_START_NS".into(),"12345".into());
     let running = start(options).await.unwrap();
     let mut client = Client::hello(&running).await;
-    let process=client.request(json!({"op":"proc.spawn","command":"/bin/sh","args":["-c","printf '%s' \"$RAYDE_SESSION_ENV_TEST,$RAYDE_SYNC_TOKEN,$RAYDE_SYNC_CONTROL\""],"env":{"RAYDE_SESSION_ENV_TEST":"override","RAYDE_SYNC_CONTROL":"request-control-token"}})).await;
+    let process=client.request(json!({"op":"proc.spawn","command":"/bin/sh","args":["-c","printf '%s' \"$RAYDE_SESSION_ENV_TEST,$RAYDE_SYNC_TOKEN,$RAYDE_SYNC_CONTROL$KRUN_BOOT_START_NS\""],"env":{"RAYDE_SESSION_ENV_TEST":"override","RAYDE_SYNC_CONTROL":"request-control-token"}})).await;
     assert_eq!(process["ok"], true);
     let event = client.event("proc.out").await;
     assert_eq!(

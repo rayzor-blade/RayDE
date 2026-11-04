@@ -6,8 +6,11 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import secrets
+import socket
 import subprocess
 import tempfile
+import time
 
 MAX_BYTES = 64 * 1024 * 1024
 MAX_FILES = 4096
@@ -90,7 +93,7 @@ def seal(root, cache, release, report):
         raise ValueError('Choose a new immutable cache directory')
     sources = files(root, RESERVED)
     artifacts = {}
-    for directory in [root / '.rayzor', root / 'bin']:
+    for directory in [root / '.rayzor', root / 'bin', root / '.rayde/preview-cache/bytecode', root / '.rayde/preview-cache/wasm']:
         if directory.exists():
             for _, path in files(directory).items():
                 if directory.name == 'bin' and path.suffix != '.hl':
@@ -130,7 +133,8 @@ def restore(root, cache, release):
         raise ValueError('Prepared cache inventory changed')
     for name, item in artifacts.items():
         path = relative(name)
-        if path.parts[0] != '.rayzor' and not (path.parts[0] == 'bin' and path.suffix == '.hl'):
+        preview = len(path.parts) >= 4 and path.parts[:2] == ('.rayde', 'preview-cache') and path.parts[2] in ('bytecode', 'wasm') and (path.parts[3:] == ('manifest.json',) or len(path.parts) >= 5 and path.parts[3] == 'files')
+        if path.parts[0] != '.rayzor' and not (path.parts[0] == 'bin' and path.suffix == '.hl') and not preview:
             raise ValueError('Invalid cache artifact')
         source = cache / 'files' / name
         if source.is_symlink() or source.stat().st_size != item['bytes'] or digest(source) != item['sha256']:
@@ -144,10 +148,56 @@ def restore(root, cache, release):
             shutil.copy2(cache / 'files' / name, target)
         for name, path in sources.items():
             os.utime(path, ns=(path.stat().st_atime_ns, manifest['inputs'][name]['modifiedNs']))
-        for name in ['.rayzor', 'bin']:
+        for name in ['.rayzor', 'bin', '.rayde']:
             if (stage / name).exists():
                 (stage / name).rename(root / name)
     return {'status': 'restored', 'files': len(artifacts), 'bytes': sum(item['bytes'] for item in artifacts.values())}
+
+
+def warm_preview(root, session, operator, timeout):
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        raw_port = listener.getsockname()[1]
+    with tempfile.TemporaryDirectory(prefix='rayde-demo-operator-') as temporary:
+        directory = Path(temporary)
+        token = directory / 'token'
+        token.write_text(secrets.token_urlsafe(32))
+        token.chmod(0o600)
+        # Match direct guest launches rather than inheriting the builder shell's state.
+        environment = {name: os.environ[name] for name in ['HOME', 'PATH', 'TERM'] if name in os.environ}
+        with (directory / 'session.log').open('w') as output:
+            process = subprocess.Popen([str(session), '--root', str(root), '--state-root', str(directory / 'state'),
+                                        '--host', '127.0.0.1', '--port', str(port), '--raw-port', str(raw_port), '--token-file', str(token),
+                                        '--exec', '--env-file', '/opt/rayde/environment.json', '--preview-tools', '/opt/rayde/preview'], env=environment, stdout=output, stderr=output)
+            try:
+                deadline = time.monotonic() + 10
+                while True:
+                    try:
+                        with socket.create_connection(('127.0.0.1', raw_port), timeout=1):
+                            break
+                    except OSError:
+                        if process.poll() is not None or time.monotonic() >= deadline:
+                            raise ValueError('Private preview preparation session did not start')
+                        time.sleep(.05)
+                # The native socket reader must not occupy the operator's only worker.
+                result = subprocess.run(['ash', str(operator), f'127.0.0.1:{raw_port}', str(token), '-', '--framed'], cwd=root,
+                                        env={**os.environ, 'ASH_WORKERS': '4'}, stdout=subprocess.PIPE, text=True, check=True, timeout=timeout)
+                print(result.stdout, end='', flush=True)
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        for stage in ['bytecode', 'wasm']:
+            manifest = root / '.rayde/preview-cache' / stage / 'manifest.json'
+            if not manifest.is_file():
+                raise ValueError('Preview preparation did not publish both compiler stages')
+        return {'reused': result.stdout.count('Reusing unchanged preview bundle.') == 2}
 
 
 def main():
@@ -157,20 +207,29 @@ def main():
     parser.add_argument('--cache', type=Path, default=Path('/opt/rayde/demo-cache'))
     parser.add_argument('--bundle', type=Path)
     parser.add_argument('--release')
+    parser.add_argument('--session-binary', type=Path)
+    parser.add_argument('--preview-operator', type=Path)
     parser.add_argument('--timeout', type=int, default=600)
     args = parser.parse_args()
     if args.action == 'prepare':
         if args.bundle is None or not 1 <= args.timeout <= 600:
             parser.error('Preparation requires a public bundle and a bounded timeout')
+        if bool(args.session_binary) != bool(args.preview_operator):
+            parser.error('Preview preparation requires both the session binary and operator')
         materialize(args.bundle, args.root)
+        subprocess.run(['git', 'init', '--quiet', str(args.root)], check=True, timeout=10)
         expected = {name: digest(path) for name, path in files(args.root, RESERVED).items()}
         subprocess.run(['haxe', 'build.hxml'], cwd=args.root, check=True, timeout=args.timeout)
         warmed = subprocess.run(['python3', str(Path(__file__).with_name('warm-rayzor.py')), '--root', str(args.root), '--command', 'rayzor', '--timeout', str(args.timeout)],
                                 check=True, text=True, stdout=subprocess.PIPE, timeout=args.timeout * 2 + 10)
         report = json.loads(warmed.stdout)
+        if args.preview_operator:
+            warm_preview(args.root, args.session_binary, args.preview_operator, args.timeout)
+            report['preview'] = {'bytecode': True, 'wasm': True}
         if {name: digest(path) for name, path in files(args.root, RESERVED).items()} != expected:
             raise ValueError('Preparation changed the public demo sources')
         manifest = seal(args.root, args.cache, digest(args.bundle), report)
+        shutil.rmtree(args.root)
         print(json.dumps({'release': manifest['release'], 'report': report, 'files': len(manifest['artifacts'])}))
     else:
         if args.release is None:

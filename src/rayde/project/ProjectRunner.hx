@@ -5,11 +5,13 @@ class ProjectRunner {
 	public static final choices = ["auto", "ash", "hashlink"];
 	static var apple:Null<Bool>;
 	public static function defaultHashlink(?system:String, ?appleSilicon:Bool):String {
-		#if (wasm || rayde_page)
+		#if (wasm || rayde_page || rayde_remote)
 		if(system==null){var client=rayde.workspace.PageHost.session;if(client!=null && client.hostSystem!=""){system=client.hostSystem;appleSilicon=client.hostArchitecture=="aarch64"||client.hostArchitecture=="arm64";}else return "ash";}
 		#end
 		if ((system ?? Sys.systemName()) != "Mac") return "hashlink";
+		#if !(wasm || rayde_page || rayde_remote)
 		if (appleSilicon == null) { if (apple == null) apple = nativeAppleSilicon(); appleSilicon = apple; }
+		#end
 		return appleSilicon ? "ash" : "hashlink";
 	}
 	public static function preference(root:String):String {

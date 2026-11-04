@@ -36,7 +36,12 @@ if [ -d /opt/rayde/preview ]; then
 fi
 rm -rf bin .rayde .rayzor /tmp/rayde-probe
 if [ -f /opt/rayde/demo-workspace.json ]; then
-  python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json
+  if [ -f /opt/rayde/preview-operator.hl ]; then
+    python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json \
+      --session-binary /opt/rayde/bin/rayde-session --preview-operator /opt/rayde/preview-operator.hl
+  else
+    python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json
+  fi
 fi
 apt-get clean
 rm -rf /var/lib/apt/lists/*

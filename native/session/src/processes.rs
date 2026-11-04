@@ -83,6 +83,7 @@ impl Programs for ChildPrograms {
             .envs(env)
             .env_remove("RAYDE_SYNC_TOKEN")
             .env_remove("RAYDE_SYNC_CONTROL")
+            .env_remove("KRUN_BOOT_START_NS")
             .current_dir(directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
