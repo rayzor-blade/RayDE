@@ -9740,6 +9740,7 @@ var Doc2 = class {
     this.cloudMessage = "";
     this.buffered = false;
     this.savedText = void 0;
+    this.savedRevision = 0;
     this.suspended = false;
     this.abort = new AbortController();
     this.pending = /* @__PURE__ */ new Set();
@@ -9909,6 +9910,11 @@ var Doc2 = class {
     this.guard();
     return this.client.request("doc.open", { path: this.path, vector: b64.encode(vector), ...expected ? { documentId: expected } : {}, ...this.client.hello?.cloudDocuments === 1 ? { cloud: true } : {}, ...this.cloudLineage ? { cloudLineage: this.cloudLineage } : {} });
   }
+  setSavedText(text2) {
+    if (typeof text2 !== "string" || text2 === this.savedText) return;
+    this.savedText = text2;
+    this.savedRevision++;
+  }
   applyReply(reply) {
     this.guard();
     if (reply.cloudLineage != null) {
@@ -9919,8 +9925,8 @@ var Doc2 = class {
     this.buffered = reply.buffered === true;
     if (this.documentId) this.identify(reply.documentId);
     this.restoredDirty = reply.buffered === true && reply.dirty === true;
-    if (typeof reply.savedText === "string") this.savedText = reply.savedText;
-    else if (reply.dirty === false && typeof reply.text === "string") this.savedText = reply.text;
+    if (typeof reply.savedText === "string") this.setSavedText(reply.savedText);
+    else if (reply.dirty === false && typeof reply.text === "string") this.setSavedText(reply.text);
     applyUpdate(this.ydoc, b64.decode(reply.update), "session");
   }
   async synchronizeIdentity() {
@@ -10041,10 +10047,12 @@ var Doc2 = class {
     if (this.unsent) await this.sync(true);
     if (this.unsent) throw new Error("Reconnect before saving this document. Its edits are kept in this browser.");
     this.guard();
+    const captured = this.text.toString();
     try {
       const reply = await this.client.request("doc.save", { path: this.path, ...this.documentId ? { documentId: this.documentId } : {} });
-      if (typeof reply.text === "string") this.savedText = reply.text;
-      return reply;
+      this.setSavedText(typeof reply.text === "string" ? reply.text : captured);
+      this.restoredDirty = this.text.toString() !== this.savedText;
+      return { ...reply, text: this.savedText, savedRevision: this.savedRevision };
     } catch (error) {
       this.fence(error);
       throw error;
@@ -10272,7 +10280,7 @@ var SessionClient = class {
       const doc2 = this.docs.get(message.path);
       if (doc2 && !doc2.closed && !doc2.blocked) {
         if (doc2.buffered) doc2.restoredDirty = true;
-        if (typeof message.savedText === "string") doc2.savedText = message.savedText;
+        if (typeof message.savedText === "string") doc2.setSavedText(message.savedText);
         applyUpdate(doc2.ydoc, b64.decode(message.update), "session");
         doc2.listeners.forEach((listener) => listener("remote"));
       }
@@ -10512,7 +10520,7 @@ var EditorDocument = class {
     this.shadow.on("update", this.publish);
   }
   snapshot() {
-    return { text: this.text.toString(), epoch: this.epoch, serial: this.serial, dirty: !!this.doc.restoredDirty, savedText: this.doc.savedText, syncMessage: this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "") };
+    return { text: this.text.toString(), epoch: this.epoch, serial: this.serial, dirty: !!this.doc.restoredDirty, savedText: this.doc.savedText, savedRevision: this.doc.savedRevision, syncMessage: this.doc.cloudMessage || (this.doc.cloudLegacy ? "Live sync needs recovery reconciliation" : "") };
   }
   local(request) {
     if (!this.ready || request.epoch !== this.epoch || request.serial !== this.serial + 1 || !Array.isArray(request.parts))
@@ -10541,7 +10549,7 @@ var EditorDocument = class {
     const text2 = probe.getText("text").toString();
     probe.destroy();
     this.offer = { update, version: this.version, epoch: this.epoch + 1, serial: this.serial };
-    this.emit({ ev: "view.remote", handle: this.handle, text: text2, parts, epoch: this.offer.epoch, serial: this.serial, dirty: this.doc.buffered && this.doc.restoredDirty, savedText: this.doc.savedText });
+    this.emit({ ev: "view.remote", handle: this.handle, text: text2, parts, epoch: this.offer.epoch, serial: this.serial, dirty: this.doc.buffered && this.doc.restoredDirty, savedText: this.doc.savedText, savedRevision: this.doc.savedRevision });
   }
   acknowledge(request) {
     const offer = this.offer;
