@@ -1,7 +1,8 @@
 //! The runner's open, reuse, recovery, isolation and delete flows against an in-memory sandbox backend, so they need no VM.
 //! A stand-in program plays the session bridge that runs inside a guest.
 
-use rayde_runner::{Config, LocalRepository, SyncGateway, start_with, workspace_id};
+use rayde_runner::{Config, DemoSource, LocalRepository, SyncGateway, start_with, workspace_id, demo_workspace_id};
+use sha2::{Digest,Sha256};
 use rayde_sandbox::{Capabilities, Labels, SandboxProvider, fake::Fake};
 use serde_json::{Value, json};
 use std::{
@@ -69,6 +70,25 @@ struct Fixture {
 }
 
 impl Fixture {
+    async fn enable_demo(&mut self, maximum:usize) -> String {
+        use base64::{Engine,engine::general_purpose::STANDARD};
+        self.running.take().unwrap().shutdown().await;
+        let bundle=self._temp.path().join("demo.json");
+        let value=json!({"version":1,"root":"/work/pocket-studio","project":"pocket-studio/build.hxml","entries":[
+            {"path":"/work/pocket-studio","directory":true,"data":null},
+            {"path":"/work/pocket-studio/build.hxml","directory":false,"data":STANDARD.encode("-cp src\n-main Main\n--interp\n")}
+        ]});
+        let bytes=serde_json::to_vec(&value).unwrap();std::fs::write(&bundle,&bytes).unwrap();
+        let release:String=Sha256::digest(bytes).iter().map(|byte|format!("{byte:02x}")).collect();
+        self.config.demo=Some(DemoSource{bundle,release:release.clone(),max_workspaces:maximum});
+        let running=start_with(self.config.clone(),self.fake.clone()).await.unwrap();
+        self.base=format!("http://{}",running.address);self.running=Some(running);release
+    }
+    async fn demo(&self, release:&str, lease:&str, expires:u64)->(u16,Value) {
+        let body=demo_request(release,lease,expires);
+        let response=self.http.post(format!("{}/workspaces/open",self.base)).bearer_auth(SECRET).json(&body).send().await.unwrap();
+        (response.status().as_u16(),response.json().await.unwrap())
+    }
     async fn new(max_workspaces: usize) -> Self {
         Self::with_gateway(max_workspaces, None).await
     }
@@ -110,6 +130,7 @@ impl Fixture {
             max_duration_seconds: 300,
             local_repositories: vec![local(1, 111), local(2, 111), local(1, 222)],
             sync_gateway,
+            demo: None,
         };
         let controls=Arc::new(Mutex::new(vec![]));
         let fake = Arc::new(guest(controls.clone()));
@@ -164,6 +185,61 @@ impl Fixture {
         self.base=format!("http://{}",running.address);
         self.running=Some(running);
     }
+}
+
+fn seconds()->u64 {std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()}
+fn demo_request(release:&str,lease:&str,expires:u64)->Value {
+    json!({"id":demo_workspace_id(release,lease),"owner":0,"repository":{"id":0,"fullName":"demo/pocket-studio","demo":{"release":release,"lease":lease,"expires":expires}}})
+}
+
+#[tokio::test]
+async fn demos_require_pinned_sources_and_use_separate_capped_private_disks() {
+    let mut fixture=Fixture::new(3).await;
+    assert_eq!(fixture.demo(&"a".repeat(64),&"a".repeat(43),seconds()+300).await.0,503);
+    let release=fixture.enable_demo(2).await;
+    assert_eq!(fixture.demo(&"a".repeat(64),&"a".repeat(43),seconds()+300).await.0,400);
+    assert_eq!(fixture.demo(&release,&"a".repeat(43),seconds()+901).await.0,400);
+    let mut invalid=demo_request(&release,&"a".repeat(43),seconds()+300);invalid["owner"]=json!(1);
+    assert_eq!(fixture.http.post(format!("{}/workspaces/open",fixture.base)).bearer_auth(SECRET).json(&invalid).send().await.unwrap().status().as_u16(),400);
+    let expires=seconds()+300;
+    let (status,first)=fixture.demo(&release,&"a".repeat(43),expires).await;assert_eq!(status,200,"{first}");
+    let (status,second)=fixture.demo(&release,&"b".repeat(43),expires).await;assert_eq!(status,200,"{second}");
+    assert_ne!(first["token"],second["token"]);assert_ne!(first["url"],second["url"]);
+    let (status,reused)=fixture.demo(&release,&"a".repeat(43),expires).await;assert_eq!(status,200);assert_eq!(first,reused);
+    assert_eq!(fixture.demo(&release,&"c".repeat(43),expires).await.0,429);
+    assert_eq!(fixture.demo(&release,&"a".repeat(43),expires+1).await.0,403,"a lease lifetime cannot be extended");
+    let names=fixture.sandboxes().await;assert_eq!(names.len(),2);
+    let a=fixture.fake.spec(&names[0]).unwrap();let b=fixture.fake.spec(&names[1]).unwrap();
+    assert_ne!(a.mounts,b.mounts);assert_eq!(a.network,rayde_sandbox::Network::None);
+    assert!(a.max_duration.unwrap()<=Duration::from_secs(300));
+    assert_eq!(fixture.open(1,111).await.0,200,"demos do not consume the owned-workspace identity");
+    fixture.stop().await;
+}
+
+#[tokio::test]
+async fn expired_demo_leases_close_access_and_reclaim_disks_and_records() {
+    use futures_util::{SinkExt,StreamExt};
+    use tokio_tungstenite::{connect_async,tungstenite::{client::IntoClientRequest,Message}};
+    let mut fixture=Fixture::new(1).await;let release=fixture.enable_demo(1).await;
+    let expires=seconds()+2;
+    let (status,connection)=fixture.demo(&release,&"a".repeat(43),expires).await;assert_eq!(status,200,"{connection}");
+    let names=fixture.sandboxes().await;let volumes=Fixture::volumes(&names[0]);
+    let mut request=connection["url"].as_str().unwrap().into_client_request().unwrap();
+    request.headers_mut().insert("Authorization",format!("Bearer {SECRET}").parse().unwrap());
+    let (mut socket,_)=connect_async(request).await.unwrap();
+    socket.send(Message::Text(json!({"id":1,"op":"hello","token":connection["token"]}).to_string().into())).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(fixture.demo(&release,&"a".repeat(43),expires).await.0,410);
+    for _ in 0..100 {if fixture.sandboxes().await.is_empty(){break;}tokio::time::sleep(Duration::from_millis(100)).await;}
+    assert!(fixture.sandboxes().await.is_empty());
+    let closed=tokio::time::timeout(Duration::from_secs(2),async {
+        while let Some(event)=socket.next().await {if matches!(event,Ok(Message::Close(_))|Err(_)){return true;}}
+        true
+    }).await.unwrap();assert!(closed);
+    for name in volumes {assert!(!fixture.volume_exists(&name).await);}
+    assert!(!fixture.config.state_root.join("records").join(format!("{}.json",demo_workspace_id(&release,&"a".repeat(43)))).exists());
+    assert_eq!(fixture.demo(&release,&"b".repeat(43),seconds()+300).await.0,200);
+    fixture.stop().await;
 }
 
 #[tokio::test]

@@ -8,6 +8,7 @@ fn repository() -> Repository {
         branch: "main".into(),
         clone_url: "https://github.com/alice/demo.git".into(),
         sync: None,
+        demo: None,
     }
 }
 fn request() -> Open {
@@ -213,7 +214,7 @@ fn sync_request(id: &str) -> Open {
     Open {
         id: id.into(),
         owner: 1,
-        repository: Repository { id: 0, full_name: format!("sync/{id}"), branch: String::new(), clone_url: String::new(), sync: Some(SyncRef { workspace: id.into() }) },
+        repository: Repository { id: 0, full_name: format!("sync/{id}"), branch: String::new(), clone_url: String::new(), sync: Some(SyncRef { workspace: id.into() }), demo: None },
         checkout: Checkout::default(),
         publish: None,
     }

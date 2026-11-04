@@ -41,6 +41,16 @@ pub struct Config {
     /// Where Cloud Sync snapshots are restored from. Without it a synced workspace cannot be opened.
     #[serde(default)]
     pub sync_gateway: Option<SyncGateway>,
+    /// An operator-owned public source bundle, addressed by its complete SHA-256.
+    #[serde(default)]
+    pub demo: Option<DemoSource>,
+}
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DemoSource {
+    pub bundle: PathBuf,
+    pub release: String,
+    pub max_workspaces: usize,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -222,6 +232,9 @@ impl Config {
         }) {
             return Err(invalid());
         }
+        if self.demo.as_ref().is_some_and(|demo| !demo.bundle.is_absolute() || demo.release.len()!=64
+            || !demo.release.bytes().all(|byte|byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || demo.max_workspaces==0 || demo.max_workspaces>self.max_workspaces) { return Err(invalid()); }
         if self.sync_gateway.as_ref().is_some_and(|gateway| {
             SyncGateway::address(&gateway.url).is_none()
                 || gateway.guest_url.as_ref().is_some_and(|_| gateway.guest_address().is_err())

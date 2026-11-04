@@ -10,7 +10,7 @@ const MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE: u64 = MAX_BYTES + 16 * 1024 * 1024;
 const MAX_FILES: usize = 10000;
 
-fn git(root: &Path) -> Command {
+pub(crate) fn git(root: &Path) -> Command {
     let mut command = Command::new("git");
     command
         .env_clear()
@@ -54,6 +54,9 @@ pub(crate) async fn authorize(
     request: &Open,
     http: &reqwest::Client,
 ) -> Result<Option<PathBuf>> {
+    if request.repository.demo.is_some() {
+        return Ok(Some(crate::demo::authorize(config, request).await?));
+    }
     // A synced workspace was authorised by the gateway, which signs the open request; there is no GitHub repository to verify.
     if request.repository.sync.is_some() {
         return Ok(None);
@@ -129,6 +132,9 @@ pub(crate) async fn prepare(
         tokio::fs::remove_dir_all(root).await?;
     }
     private_dir(root).await?;
+    if request.repository.demo.is_some() {
+        return crate::demo::prepare(root, request, &local.ok_or_else(invalid)?, work).await;
+    }
     let (bare, project, archive) = (
         root.join("bare"),
         root.join("project"),

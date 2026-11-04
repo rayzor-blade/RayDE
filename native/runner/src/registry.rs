@@ -94,7 +94,6 @@ impl Registry {
             let record: Record = serde_json::from_slice(&tokio::fs::read(entry.path()).await?)
                 .map_err(|_| unavailable())?;
             if record.version != 1
-                || record.owner == 0
                 || !binds(record.owner, &record.id, &record.repository)
                 || record.token.len() != 64
                 || record.generation == 0
@@ -142,6 +141,13 @@ impl Registry {
             &serde_json::to_vec(record).map_err(|_| unavailable())?,
         )
         .await
+    }
+    pub async fn remove(&self, id: &str) -> Result<()> {
+        tokio::fs::remove_file(self.root.join("records").join(format!("{id}.json"))).await?;
+        #[cfg(unix)]
+        tokio::fs::File::open(self.root.join("records")).await?.sync_all().await?;
+        self.records.lock().await.remove(id);
+        Ok(())
     }
     pub fn work(&self, cell: &Cell) -> Result<Arc<Work>> {
         let permit = cell.work.clone().try_acquire_owned().map_err(|_| {

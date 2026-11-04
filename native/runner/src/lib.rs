@@ -1,6 +1,7 @@
 mod checkout;
 mod command;
 mod config;
+mod demo;
 mod msb;
 mod registry;
 mod restore;
@@ -10,7 +11,7 @@ mod tests;
 mod tunnel;
 mod toolchain;
 mod volumes;
-pub use config::{Config, LocalRepository, SyncGateway, Toolchain};
+pub use config::{Config, DemoSource, LocalRepository, SyncGateway, Toolchain};
 pub use msb::Msb;
 pub use service::{Backend, Running, start, start_with};
 
@@ -65,6 +66,9 @@ fn random() -> String {
 pub fn workspace_id(owner: u64, repository: u64) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(format!("github:{owner}:{repository}")))
 }
+pub fn demo_workspace_id(release: &str, lease: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(format!("demo:{release}:{lease}")))
+}
 fn valid_id(value: &str) -> bool {
     value.len() == 43
         && value
@@ -88,6 +92,15 @@ pub(crate) struct Repository {
     /// A Cloud Sync snapshot stands in for the Git repository: the workspace is restored from the gateway, not cloned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sync: Option<SyncRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    demo: Option<DemoRef>,
+}
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DemoRef {
+    release: String,
+    lease: String,
+    expires: u64,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct SyncRef {
@@ -124,6 +137,8 @@ pub(crate) struct Open {
 pub(crate) struct Delete {
     id: String,
     owner: u64,
+    #[serde(default)]
+    demo: Option<DemoRef>,
 }
 
 /// A synced workspace is named by its own id and has no Git repository behind it.
@@ -144,10 +159,15 @@ fn valid_publish(request: &Open) -> bool {
 }
 /// Whether a workspace id and repository belong together: a GitHub one by the hash of owner and repository, a synced one by its own id.
 fn binds(owner: u64, id: &str, repo: &Repository) -> bool {
-    if repo.sync.is_some() {
-        valid_sync(repo, id)
+    if let Some(demo) = &repo.demo {
+        owner == 0 && repo.sync.is_none() && repo.id == 0 && repo.full_name == "demo/pocket-studio"
+            && repo.branch.is_empty() && repo.clone_url.is_empty() && valid_id(&demo.lease)
+            && demo.release.len() == 64 && demo.release.bytes().all(|byte|byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            && demo.expires > 0 && id == demo_workspace_id(&demo.release, &demo.lease)
+    } else if repo.sync.is_some() {
+        owner > 0 && valid_sync(repo, id)
     } else {
-        id == workspace_id(owner, repo.id) && valid_repository(repo)
+        owner > 0 && id == workspace_id(owner, repo.id) && valid_repository(repo)
     }
 }
 fn valid_repository(repo: &Repository) -> bool {

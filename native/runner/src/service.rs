@@ -189,12 +189,23 @@ pub async fn start_with<P: Backend>(config: Config, backend: Arc<P>) -> Result<R
         .layer(DefaultBodyLimit::max(32 * 1024))
         .with_state(service.clone());
     let (stop, stopped) = oneshot::channel();
+    let cleanup = service.clone();
+    let mut stopping = service.halt.subscribe();
+    let reaper = tokio::spawn(async move {
+        let mut timer = tokio::time::interval(Duration::from_secs(5));
+        loop {tokio::select! {
+            _ = stopping.changed() => break,
+            _ = timer.tick() => {let _ = cleanup.reap_demos().await;}
+        }}
+    });
     let done = tokio::spawn(async move {
         let _ = axum::serve(listener, router)
             .with_graceful_shutdown(async {
                 let _ = stopped.await;
             })
             .await;
+        reaper.abort();
+        let _ = reaper.await;
     });
     Ok(Running {
         address,
@@ -278,8 +289,7 @@ async fn open<P: Backend>(
             "The provisioning queue is busy.",
         )
     })?;
-    if request.owner == 0
-        || !valid_id(&request.id)
+    if !valid_id(&request.id)
         || !binds(request.owner, &request.id, &request.repository)
         || !valid_publish(&request)
     {
@@ -314,7 +324,7 @@ async fn delete<P: Backend>(
     if *service.halt.borrow() {
         return Err(unavailable());
     }
-    if !valid_id(&request.id) || request.owner == 0 {
+    if !valid_id(&request.id) || (request.owner == 0) != request.demo.is_some() {
         return Err(invalid());
     }
     let _permit = service.control.clone().try_acquire_owned().map_err(|_| {
@@ -332,7 +342,7 @@ async fn delete<P: Backend>(
         .cloned()
         .ok_or(Failure(StatusCode::NOT_FOUND, "Workspace not found."))?;
     let mut record = cell.record.lock().await;
-    if record.owner != request.owner {
+    if record.owner != request.owner || record.repository.demo != request.demo {
         return Err(Failure(
             StatusCode::FORBIDDEN,
             "This workspace belongs to another account.",
@@ -384,6 +394,7 @@ async fn socket<P: Backend>(
     if record.phase != "ready" {
         return Err(Failure(StatusCode::CONFLICT, "The workspace is not ready."));
     }
+    if let Some(reference) = &record.repository.demo {demo::live(reference)?;}
     if tunnel::probe(service.backend.as_ref(), &record.sandbox, service.config.persistent_disks).await.ok().as_ref() != record.identity.as_ref() {
         return Err(Failure(StatusCode::SERVICE_UNAVAILABLE, "Workspace compute needs to reconnect."));
     }
@@ -402,6 +413,25 @@ async fn socket<P: Backend>(
     Ok(response)
 }
 impl<P: Backend> Service<P> {
+    async fn reap_demos(&self) -> Result<()> {
+        let now = demo::now()?;
+        let cells:Vec<_> = self.registry.records.lock().await.values().cloned().collect();
+        for cell in cells {
+            let Ok(mut record) = cell.record.try_lock() else {continue;};
+            if !record.repository.demo.as_ref().is_some_and(|lease|lease.expires<=now) {continue;}
+            let Ok(_work) = self.registry.work(&cell) else {continue;};
+            record.phase="deleting".into();
+            self.registry.save(&record).await?;
+            cell.closed.send_modify(|generation| *generation+=1);
+            if self.cleanup(&record).await.is_err() {continue;}
+            if let Some(storage)=&record.storage {if storage.remove(self.backend.as_ref()).await.is_err(){continue;}}
+            let checkout=self.config.state_root.join("checkout").join(&record.id);
+            if tokio::fs::try_exists(&checkout).await? {tokio::fs::remove_dir_all(checkout).await?;}
+            cell.deactivate();
+            self.registry.remove(&record.id).await?;
+        }
+        Ok(())
+    }
     /// The labels every sandbox of one workspace carries, and what finds them.
     fn workspace_labels(&self, id: &str) -> sb::Labels {
         sb::Labels::from([("rayde.runner".to_string(), self.registry.instance.clone()), ("rayde.workspace".to_string(), id.to_string())])
@@ -486,6 +516,12 @@ impl<P: Backend> Service<P> {
                         "The runner workspace limit was reached.",
                     ));
                 }
+                if request.repository.demo.is_some() {
+                    let maximum=self.config.demo.as_ref().ok_or_else(unavailable)?.max_workspaces;
+                    let demos=records.values().filter(|cell|cell.active.load(Ordering::Acquire))
+                        .filter(|cell|cell.record.try_lock().map_or(true,|record|record.repository.demo.is_some())).count();
+                    if demos>=maximum {return Err(Failure(StatusCode::TOO_MANY_REQUESTS,"All demo sessions are in use. Try again shortly."));}
+                }
                 let record = Record {
                     version: 1,
                     id: request.id.clone(),
@@ -513,6 +549,9 @@ impl<P: Backend> Service<P> {
                 StatusCode::FORBIDDEN,
                 "Workspace ownership or repository binding changed.",
             ));
+        }
+        if record.repository.demo.is_some() && record.phase=="deleted" {
+            return Err(Failure(StatusCode::GONE,"The demo session ended. Start a new lease."));
         }
         if record.phase != "deleted" && record.toolchain != toolchain::identity(&self.config) {
             return Err(Failure(StatusCode::CONFLICT, "This workspace needs a toolchain migration before reopening."));
@@ -567,6 +606,12 @@ impl<P: Backend> Service<P> {
                     "The runner workspace limit was reached.",
                 ));
             }
+            if request.repository.demo.is_some() {
+                let maximum=self.config.demo.as_ref().ok_or_else(unavailable)?.max_workspaces;
+                let demos=records.values().filter(|cell|cell.active.load(Ordering::Acquire))
+                    .filter(|cell|cell.record.try_lock().map_or(true,|record|record.repository.demo.is_some())).count();
+                if demos>=maximum {return Err(Failure(StatusCode::TOO_MANY_REQUESTS,"All demo sessions are in use. Try again shortly."));}
+            }
             cell.active.store(true, Ordering::Release);
         }
         if record.phase == "deleted" {
@@ -607,7 +652,7 @@ impl<P: Backend> Service<P> {
         Ok(self.connection(&record))
     }
     fn connection(&self, record: &Record) -> serde_json::Value {
-        serde_json::json!({"url":format!("{}/workspaces/{}/session",self.base,record.id),"token":record.token,"project":record.project,"generation":record.generation,"toolchain":record.toolchain,"recoverable":record.storage.is_some()})
+        serde_json::json!({"url":format!("{}/workspaces/{}/session",self.base,record.id),"token":record.token,"project":record.project,"generation":record.generation,"toolchain":record.toolchain,"recoverable":record.storage.is_some(),"demo":record.repository.demo})
     }
     async fn provision(
         &self,
@@ -642,6 +687,11 @@ impl<P: Backend> Service<P> {
         Ok(())
     }
     async fn boot(&self, record: &Record, initialize: bool) -> Result<()> {
+        let mut config=self.config.clone();
+        if let Some(reference)=&record.repository.demo {
+            demo::live(reference)?;
+            config.max_duration_seconds=config.max_duration_seconds.min(reference.expires.saturating_sub(demo::now()?).max(1));
+        }
         let labels = self.workspace_labels(&record.id);
         let network = self.config.workspace_network(record.repository.sync.is_some())?;
         let mounts = match &record.storage {
@@ -654,7 +704,7 @@ impl<P: Backend> Service<P> {
             None => Vec::new(),
         };
         if self.config.toolchain.is_some() {
-            toolchain::restore(self.backend.as_ref(), &self.config, &record.sandbox, labels, mounts, network).await?;
+            toolchain::restore(self.backend.as_ref(), &config, &record.sandbox, labels, mounts, network).await?;
         } else {
             let mounts = if record.storage.is_some() {
                 mounts
@@ -672,7 +722,7 @@ impl<P: Backend> Service<P> {
                     gpu: None,
                     labels,
                     mounts,
-                    max_duration: Some(Duration::from_secs(self.config.max_duration_seconds)),
+                    max_duration: Some(Duration::from_secs(config.max_duration_seconds)),
                 })
                 .await?;
         }

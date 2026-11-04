@@ -36,6 +36,10 @@ For hosted sessions, set `publicUrl` to the root `wss://` address of authenticat
 
 For test repositories, `localRepositories` can explicitly bind `{ "owner": 1, "repository": 111, "path": "/absolute/git/repository" }`. This bypasses GitHub authorization only for that operator-configured pairing. Leave it empty for real repository access.
 
+Anonymous demo compute is disabled unless `demo` supplies `{ "bundle": "/private/demo-workspace.json", "release": "<bundle-sha256>", "maxWorkspaces": 1 }`. Use the pinned public Pocket Studio bundle from a verified browser release. Private provisioning requests carry `owner: 0` and `repository.demo: {release, lease, expires}`; this reserved owner is valid only for that explicit demo binding, never for a GitHub repository. The workspace ID is `demo_workspace_id(release, lease)` and expiry is Unix seconds, at most fifteen minutes ahead.
+
+Each lease receives a fresh clean Git tree and separate workspace/state disks. Duplicate opens reuse its binding; requests cannot extend its lifetime or reopen an ended lease. The demo cap and the runner's total workspace cap both apply. Guests have no network, and their maximum duration cannot exceed the lease. The runner closes expired relays and reclaims compute, disks and records, including after restart. This private API alone does not enable public browser admission.
+
 Cloud Sync uses `syncGateway: { "url": "https://gateway.example.org", "secret": "…" }`. Synced guests can reach only that gateway's host. If the runner fetches from a local development gateway, set `guestUrl` in the same object to the gateway's HTTPS address reachable from the VM; guest loopback addresses are refused before compute starts. The provisioning secret stays on the runner. A session receives its workspace's publish capability.
 
 ## Toolchain template

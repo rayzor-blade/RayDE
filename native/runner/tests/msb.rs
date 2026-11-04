@@ -201,6 +201,7 @@ async fn real_msb_provisioning_reuse_isolation_restart_and_cleanup() {
         image: "alpine:3.23".into(),
         toolchain: None,
         persistent_disks: true,
+        demo: None,
         memory_mib: 512,
         cpus: 1,
         max_workspaces: 2,
