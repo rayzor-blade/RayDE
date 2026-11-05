@@ -28,7 +28,6 @@ editor.searchParams.set('demo-preview', '1');
 if(!connected){editor.searchParams.set('demo','1');editor.searchParams.set('demo-live','1');}
 const authenticated = new URLSearchParams(location.hash.slice(1)).has('token');
 if (authenticated) editor.hash = location.hash;
-detail.textContent = 'Explore Pocket Studio with Rayzor, built-in extensions and app previews.';
 for (const link of document.querySelectorAll('.editor-link')) link.href = editor.href;
 let loading = false;
 function start() {
