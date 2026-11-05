@@ -22,15 +22,18 @@ RayDE is an IDE for Haxe projects. It is written in Haxe on [ashui](https://gith
 
 ## Getting started
 
+Install [Ash CLI](https://ash.rayzor.tech/), Haxe 4.3.6 and the [source dependencies](docs/contributing/building.md#first-source-build), then compile and run the editor:
+
 ```sh
-scripts/rayde.sh                        # Restore windows and tabs, or Welcome on first launch
-scripts/rayde.sh path/to/folder          # a folder workspace, including non-Haxe projects
-scripts/rayde.sh path/to/build.hxml     # a Haxe project
-scripts/rayde.sh path/to/name.rayext    # an extension
-scripts/rayde.sh path/to/name.raytheme  # a theme
+ASH="$(command -v ash)" scripts/rayde.sh --build
+ash bin/rayde.hl                        # Restore windows and tabs, or Welcome on first launch
+ash bin/rayde.hl path/to/folder         # a folder workspace, including non-Haxe projects
+ash bin/rayde.hl path/to/build.hxml     # a Haxe project
+ash bin/rayde.hl path/to/name.rayext    # an extension
+ash bin/rayde.hl path/to/name.raytheme  # a theme
 ```
 
-Requirements: `haxe`, `ash` on `PATH` (or `ASH=<path>`), and a Rust toolchain for the first build of the native libraries.
+For a native AOT executable, run `ash --build bin/rayde bin/rayde.hl`, then `./bin/rayde` (`bin/rayde.exe` on Windows). Keep the native libraries beside it. The [build guide](docs/contributing/building.md) includes the macOS/Linux and Windows Ash installers and the one-time dependency setup.
 
 ## Documentation
 

@@ -1,5 +1,52 @@
 # Building and running
 
+## Install Ash CLI
+
+Install the [Ash distribution](https://ash.rayzor.tech/). On macOS or Linux:
+
+```sh
+curl -fsSL https://ash.rayzor.tech/install.sh | sh
+. "$HOME/.ash/env"
+ash --version
+```
+
+On Windows, run the installer in PowerShell, then open a new terminal:
+
+```powershell
+irm https://ash.rayzor.tech/install.ps1 | iex
+```
+
+## First source build
+
+Install Haxe 4.3.6, Python 3.11 or newer, Git, Rustup, CMake and a C/C++ build toolchain. Native image decoders also require NASM on x86 machines. Linux needs the window-system development libraries listed in the [distribution workflow](../../.github/workflows/distribution.yml); Windows needs a Visual Studio x64 developer environment and Git Bash.
+
+Clone into a dedicated parent directory: the source dependency helper creates pinned sibling checkouts and refuses to replace mismatched or modified ones.
+
+```sh
+git clone https://github.com/rayzor-blade/RayDE.git
+cd RayDE
+python3 scripts/ci-deps.py --fetch
+export RUSTUP_TOOLCHAIN=$(python3 -c 'import json; print(json.load(open("packaging/dependencies.json"))["rust"])')
+rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --target wasm32-unknown-unknown
+cargo build --locked --release --manifest-path ../hlwgpu/Cargo.toml -p hlwgpu
+cargo build --locked --release --manifest-path ../hlwindow/Cargo.toml
+ASH="$(command -v ash)" scripts/rayde.sh --build
+```
+
+The fetch step installs the pinned Haxe libraries and obtains the development sources, including Ash's Haxelib classpaths. The build uses the installed Ash CLI. The editor script compiles Ashui, the terminal and extension runtime, stages native libraries and writes `bin/rayde.hl`. Windows native-library builds also need the Ash runtime import library configured as described in [packaging](packaging.md).
+
+Run the bytecode or compile a native AOT executable with Ash:
+
+```sh
+ash bin/rayde.hl
+ash --build bin/rayde bin/rayde.hl
+./bin/rayde
+```
+
+Use `bin/rayde.exe` as the native output on Windows. Keep the staged native libraries beside the program. Arguments after `bin/rayde.hl` or the executable select a workspace, extension or theme.
+
+## Development shortcuts
+
 ```sh
 scripts/rayde.sh                        # Welcome, with opening and creation choices
 scripts/rayde.sh path/to/workspace       # any folder, including non-Haxe projects
