@@ -21,8 +21,8 @@
     }
   },
   "dependencies": {
-    "ashui": "0.2.3",
-    "ashui-components": "0.2.3",
-    "ashui-icons": "0.2.3"
+    "ashui": "0.2.4",
+    "ashui-components": "0.2.4",
+    "ashui-icons": "0.2.4"
   }
 }

@@ -13,7 +13,7 @@ import tempfile
 import urllib.parse
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PREVIOUS_ASHUI = ('0.1.5', '0.2.0', '0.2.1', '0.2.2')
+PREVIOUS_ASHUI = ('0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3')
 
 def process_environment():
     environment = dict(os.environ)

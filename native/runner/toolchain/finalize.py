@@ -32,7 +32,7 @@ for name in ['/usr/bin/git','/usr/bin/neko']:
             system.add(Path(word).resolve())
 for path in sorted(system):
     files.append({'path':str(path),'sha256':digest(path),'bytes':path.stat().st_size})
-manifest={'version':1,'platform':'linux-'+platform.machine(),'haxe':'4.3.6','systemPackages':subprocess.check_output(['dpkg-query','-W','-f=${Package}=${Version}\n'],text=True).splitlines(),'libraries':{'ashui':'0.2.3','ashui-components':'0.2.3','ashui-icons':'0.2.3'},'files':files}
+manifest={'version':1,'platform':'linux-'+platform.machine(),'haxe':'4.3.6','systemPackages':subprocess.check_output(['dpkg-query','-W','-f=${Package}=${Version}\n'],text=True).splitlines(),'libraries':{'ashui':'0.2.4','ashui-components':'0.2.4','ashui-icons':'0.2.4'},'files':files}
 if (root/'rayzor-build.json').is_file():
     manifest['compilers']={'rayzor':json.loads((root/'rayzor-build.json').read_text())}
 identity=root/'toolchain.json'

@@ -9,8 +9,8 @@ tar -xzf /opt/rayde/haxe.tar.gz --strip-components=1 -C /opt/rayde/haxe
 cp /opt/rayde/haxe/haxe /opt/rayde/bin/haxe
 cp /opt/rayde/haxe/haxelib /opt/rayde/bin/haxelib
 rm /opt/rayde/haxe.tar.gz
-haxelib install ashui-components 0.2.3 --always --quiet
-haxelib install ashui-icons 0.2.3 --always --quiet
+haxelib install ashui-components 0.2.4 --always --quiet
+haxelib install ashui-icons 0.2.4 --always --quiet
 if [ -d /opt/rayde/preview/native-web ]; then
   python3 /opt/rayde/native_web.py --bundle /opt/rayde/preview/native-web \
     --repository /opt/rayde/haxelib --runtime /opt/rayde/preview/ash_runtime.o

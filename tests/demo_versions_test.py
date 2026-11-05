@@ -43,14 +43,14 @@ class DemoVersions(unittest.TestCase):
     def test_managed_demo_upgrades_published_versions_and_preserves_custom_sources(self):
         current = (ROOT / 'site/demo/build.hxml').read_text()
         for version in site.PREVIOUS_ASHUI:
-            previous = current.replace(':0.2.3', ':' + version)
+            previous = current.replace(':0.2.4', ':' + version)
             self.assertEqual(site.demo_build(previous), current)
             self.assertEqual(site.demo_build(previous + '-cp custom\n'), current + '-cp custom\n')
             manifest = json.loads((ROOT / 'site/demo/haxelib.json').read_text())
             manifest['dependencies'] = {name: version for name in manifest['dependencies']}
-            self.assertEqual(set(site.demo_manifest(manifest)['dependencies'].values()), {'0.2.3'})
+            self.assertEqual(set(site.demo_manifest(manifest)['dependencies'].values()), {'0.2.4'})
             guide = (ROOT / 'site/demo/README.md').read_text()
-            self.assertEqual(site.demo_readme(guide.replace('0.2.3', version) + '\nMy notes\n'), guide + '\nMy notes\n')
+            self.assertEqual(site.demo_readme(guide.replace('0.2.4', version) + '\nMy notes\n'), guide + '\nMy notes\n')
 
 if __name__ == '__main__':
     unittest.main()
