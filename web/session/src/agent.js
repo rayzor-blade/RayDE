@@ -74,7 +74,8 @@ export const start = ask => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at = 0; at < bytes.length; at += 16384) deliver(bytes.subarray(at, at + 16384));
     };
-    const admission=entry.admission?new DemoAdmission(client,{changed:state=>answer({ev:'demo.status',...state})}):null;
+    const admission=entry.admission?new DemoAdmission(client,{changed:state=>{if(query.has('debug'))console.info('demo admission:',state.status,state.message);answer({ev:'demo.status',...state});}}):null;
+    if(query.has('debug'))console.info('demo controller:',!!admission,'remote endpoint:',!!endpoint);
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -186,7 +187,7 @@ export const start = ask => serve(ask, {
       })();
     });
     const stopAccounts = followAccount(accounts, entry.workspace ? client : null, status => answer({ev:"account.changed", user:status.user}));
-    const stopReady=admission?afterEditorReady(()=>void admission.start()):()=>{};
+    const stopReady=admission?afterEditorReady(()=>{if(query.has('debug'))console.info('demo editor ready');void admission.start();}):()=>{};
     return {
       send(bytes) { try { requests.push(bytes); } catch (error) { closed(error.message); client?.close(); } },
       close() { stopReady();admission?.close();stopAccounts(); accounts.signin?.cancel(); tree?.close(); previews?.dispose(); documents?.close(); client?.close(); database.close(); closed("The page closed the session."); },

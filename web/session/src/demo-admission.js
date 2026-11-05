@@ -1,6 +1,6 @@
 /** Admission begins after the editor is visible; failed requests never replace its local documents. */
 export class DemoAdmission {
- constructor(client,{fetch=globalThis.fetch,now=Date.now,pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),locks=globalThis.navigator?.locks,changed=()=>{}}={}){
+ constructor(client,{fetch=globalThis.fetch.bind(globalThis),now=Date.now,pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),locks=globalThis.navigator?.locks,changed=()=>{}}={}){
   this.client=client;this.fetch=fetch;this.now=now;this.pause=pause;this.locks=locks;this.changed=changed;
   this.closed=false;this.busy=null;this.state={status:'waiting',message:'Workspace connecting…'};this.abort=new AbortController();
   this.stop=client.on('disconnected',()=>{if(!this.closed&&this.state.status==='ready'){this.set('connecting','Reconnecting workspace…');void this.disconnected();}});
@@ -47,7 +47,7 @@ export class DemoAdmission {
  close(){this.closed=true;clearTimeout(this.expiry);this.abort.abort();this.stop();this.connected();}
 }
 
-export function afterEditorReady(run,{document=globalThis.document,MutationObserver=globalThis.MutationObserver,later=globalThis.requestAnimationFrame}={}){
+export function afterEditorReady(run,{document=globalThis.document,MutationObserver=globalThis.MutationObserver,later=callback=>globalThis.requestAnimationFrame(callback)}={}){
  let cancelled=false,scheduled=false,observer;const status=document.getElementById('status');
  const check=()=>{if(!scheduled&&(!status||status.hidden)){scheduled=true;observer?.disconnect();later(()=>later(()=>{if(!cancelled)run();}));}};
  if(status&&!status.hidden){observer=new MutationObserver(check);observer.observe(status,{attributes:true,attributeFilter:['hidden']});}

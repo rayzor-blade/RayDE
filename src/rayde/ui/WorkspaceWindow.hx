@@ -88,7 +88,7 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 			bench.openFile(example);
 			if (pocket) { bench.openFile(board); bench.editorPart.splitEditor("horizontal"); }
 		}
-		if (!started && embedded) bench.collapseSidebar();
+		if (!started && (demo || embedded)) bench.collapseSidebar();
 		#end
 		#if wasm
 		if (!started && rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.repositories)

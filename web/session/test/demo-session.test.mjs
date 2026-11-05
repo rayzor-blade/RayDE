@@ -113,3 +113,31 @@ test('compute admission waits for the editor readiness signal and subsequent pai
  assert.equal(opened,0);assert.equal(frames.length,0);status.hidden=true;changed();assert.equal(opened,0);
  frames.shift()();assert.equal(opened,0);frames.shift()();assert.equal(opened,1);stop();assert.ok(disconnected>0);
 });
+
+test('default browser fetch retains its global receiver',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=function(url){
+  assert.equal(this,globalThis,'Browser fetch must not receive the admission controller as its receiver');
+  assert.equal(url,'/api/demo/status');
+  return Promise.resolve(new Response(JSON.stringify({status:'ready'})));
+ };
+ let admission;
+ try{
+  admission=new DemoAdmission({on:()=>()=>{}},{locks:null});
+  assert.equal((await admission.request('status')).status,'ready');
+ }finally{admission?.close();globalThis.fetch=original;}
+});
+
+test('default readiness scheduler retains its browser receiver and can be cancelled',()=>{
+ const original=globalThis.requestAnimationFrame,frames=[];let opened=0;
+ globalThis.requestAnimationFrame=function(callback){
+  assert.equal(this,globalThis,'The browser frame scheduler requires its window receiver');
+  frames.push(callback);
+ };
+ try{
+  const stop=afterEditorReady(()=>opened++,{document:{getElementById:()=>({hidden:true})}});
+  frames.shift()();stop();frames.shift()();assert.equal(opened,0);
+  afterEditorReady(()=>opened++,{document:{getElementById:()=>null}});
+  frames.shift()();frames.shift()();assert.equal(opened,1);
+ }finally{globalThis.requestAnimationFrame=original;}
+});
