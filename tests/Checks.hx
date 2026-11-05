@@ -876,6 +876,7 @@ class Checks {
 		settingsChecks();
 		RecentProjectsChecks.run();
 		WorkspaceSessionChecks.run();
+		WorkspaceTrustChecks.run();
 		EditorGroupsChecks.run();
 		ProjectChecks.run();
 		CaribouProjectChecks.run();

@@ -70,10 +70,13 @@ class ProjectWindowChecks {
 		var broken = root + "/haxelib.json";
 		sys.io.File.saveContent(broken, "{");
 		RecentProjects.remember(broken);
+		rayde.settings.WorkspaceTrust.remember(broken);
 		var fallback = ProjectWindows.startup(null)[0];
 		check(fallback.config.data.title == "RayDE", "unreadable last project falls back to Welcome");
 		fallback.server.stop();
 		RecentProjects.remember(root + "/one");
+		rayde.settings.WorkspaceTrust.remember(root + "/one");
+		rayde.settings.WorkspaceTrust.remember(root + "/two");
 		var explicit = ProjectWindows.startup(root + "/two")[0];
 		check(explicit.config.data.title == "RayDE · two", "explicit path takes precedence over last workspace");
 		explicit.server.stop();

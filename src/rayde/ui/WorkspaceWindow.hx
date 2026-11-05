@@ -16,11 +16,29 @@ typedef WorkspaceWindowProps = {initial:WorkbenchProps, server:CompilerServer, ?
 class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 	public var bench(default, null):Workbench;
 	final current:Signal<WorkbenchProps>;
+	final pendingTrust:Signal<Null<String>>;
+	final approving = Signal.make(false);
+	final approvalError = Signal.make("");
+	final approvals = new rayde.run.Worker<{server:CompilerServer,entry:String}, {entry:String,workspace:WorkbenchProps}>((job, cancelled) -> {
+		if (cancelled() || !rayde.settings.WorkspaceTrust.trusted(job.entry)) throw "The workspace approval changed. Open the project again.";
+		return {entry:job.entry,workspace:describe(job.server, job.entry)};
+	});
+	var approvalTimer:Null<ashui.animation.AnimationScheduler.Timer>;
+	var gone = false;
 	var started = false;
 
 	public function new(props:WorkspaceWindowProps) {
 		current = Signal.make(props.initial);
+		pendingTrust = Signal.make(props.initial.pendingTrust);
 		super(props);
+	}
+
+	/** The initial shell is inert until an existing project's authors have been approved. */
+	public static function prepare(server:CompilerServer, ?entry:String):WorkbenchProps {
+		if (entry == null || rayde.settings.WorkspaceTrust.trusted(entry)) return describe(server, entry);
+		var welcome = describe(server);
+		welcome.pendingTrust = Fs.fullPath(entry);
+		return welcome;
 	}
 
 	public static function describe(server:CompilerServer, ?entry:String):WorkbenchProps {
@@ -44,11 +62,43 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 	}
 
 	public function open(entry:String):Void {
+		if (pendingTrust.get() != null || approving.get()) cancelTrust();
+		if (!rayde.settings.WorkspaceTrust.trusted(entry)) { approvalError.set(""); pendingTrust.set(Fs.fullPath(entry)); return; }
 		var next = describe(props.server, entry);
+		activate(entry, next);
+	}
+
+	function activate(entry:String, next:WorkbenchProps):Void {
 		rayde.settings.RecentProjects.remember(entry);
 		current.set(next);
 		rayde.workspace.PageHost.selected(entry);
 		if (props.onWorkspaceChanged != null) props.onWorkspaceChanged(Fs.fullPath(entry));
+	}
+
+	function trust(entry:String):Void {
+		if (pendingTrust.get() != entry || approving.get()) return;
+		rayde.settings.WorkspaceTrust.remember(entry);
+		approvalError.set(""); approving.set(true);
+		approvals.submit("open", {entry:entry,server:props.server});
+		approvalTimer = ashui.animation.AnimationScheduler.main.after(.016, pollApproval);
+	}
+
+	function cancelTrust():Void {
+		approvals.cancel("open"); pendingTrust.set(null); approving.set(false); approvalError.set("");
+		if (approvalTimer != null) { approvalTimer.cancel(); approvalTimer = null; }
+	}
+
+	function pollApproval():Void {
+		approvalTimer = null; if (gone) return;
+		for (result in approvals.poll()) {
+			approving.set(false);
+			if (result.error != null) approvalError.set(result.error);
+			else {
+				var entry = pendingTrust.get();
+				if (entry != null && entry == result.value.entry) try { activate(entry, result.value.workspace); pendingTrust.set(null); } catch (error:Dynamic) approvalError.set(Std.string(error));
+			}
+		}
+		if (approving.get()) approvalTimer = ashui.animation.AnimationScheduler.main.after(.02, pollApproval);
 	}
 
 	function render():Element {
@@ -60,7 +110,12 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 			content = new Owner(tree, parent);
 			holder.appendChild(content.run(() -> mount(workspace)));
 		});
-		Owner.onCleanup(() -> { if (content != null) content.dispose(); });
+		Owner.onCleanup(() -> {
+			gone = true; approvals.dispose();
+			if (approvalTimer != null) approvalTimer.cancel();
+			if (content != null) content.dispose();
+		});
+		holder.appendChild(<for {entry in [pendingTrust.get()]}><if {entry != null}><workspace-trust-dialog entry={entry} busy={approving} error={approvalError} cancel={cancelTrust} trust={() -> trust(entry)}/></if></for>);
 		return holder;
 	}
 
@@ -91,10 +146,10 @@ class WorkspaceWindow extends Component<WorkspaceWindowProps> {
 		if (!started && (demo || embedded)) bench.collapseSidebar();
 		#end
 		#if wasm
-		if (!started && rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.repositories)
+		if (!started && workspace.pendingTrust == null && rayde.workspace.PageHost.bridge != null && rayde.workspace.PageHost.bridge.repositories)
 			bench.projectPart.pickProject("project");
 		#end
-		if (!started) {
+		if (!started && workspace.pendingTrust == null) {
 			started = true;
 			var tab = Sys.getEnv("RAYDE_PANEL");
 			if (tab == "terminal") bench.toggleTerminal(); else if (tab != null && tab != "") bench.showPanel(tab);

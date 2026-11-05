@@ -8,6 +8,8 @@ On `rayde.org`, the example opens with `Main.hx` ready to edit. Repository works
 
 In the browser, **Open Project** and **Open Folder** open the GitHub repository chooser. Sign in, choose a repository and wait for the workspace to start. Reloading its URL reconnects to that workspace. Keyboard shortcuts follow your browser's operating system.
 
+Existing workspaces ask you to trust their authors before activating project tools. Approval is remembered for that workspace in this browser; other workspaces ask separately. See [Projects](projects.md).
+
 **New Project** starts with the template grid. Select a starter, continue to **Create a repository**, and choose its name and visibility. GitHub sign-in opens a separate window so your editor and selected starter stay open. Repositories are private by default; after creation, RayDE prepares their remote workspace.
 
 Your GitHub account appears at the top right of the editor. Click the GitHub icon and username for **Manage access** and **Sign out**. Manage access opens GitHub in another tab. RayDE asks you to save edited files before signing out and returning to Welcome. When signed out, use **Sign in** in the same place.

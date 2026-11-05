@@ -99,7 +99,7 @@ export const start = ask => serve(ask, {
     const hello=()=>({...(client?.hello??{root:'/work',name:preset?.name??'work',exec:false}),treeCache:!!tree,
       appPreviews:client?.hello.appPreviews===true||!!cached,webPreviews:client?.hello.webPreviews===true||!!cached,demoPreview:!!cached,
       generation:client?.generation??0,online:client?client.ready:true,remote:!!client,embedded:window.parent!==window,documentBridge:!!documents,
-      documentMoves:!!documents&&client.documentMoves,storageKey:client?.workspace,demo,repositories:query.get('repositories')==='1',project,
+      documentMoves:!!documents&&client.documentMoves,storageKey:client?.workspace,workspaceId:entry.workspace,demo,repositories:query.get('repositories')==='1',project,
       deferred:!!admission,demoState:admission?.state.status,demoMessage:admission?.state.message});
     client?.on("connected", () => {previews?.connection(true);answer({ ev: "session.connected", generation:client.generation, capabilities:hello(), documentMoves:!!documents && client.documentMoves, syncWriteback:client.hello?.syncWriteback??null });syncStatus();});
     if (client) syncStatus();
@@ -118,7 +118,13 @@ export const start = ask => serve(ask, {
             if (request.id === undefined) return;
           }
           else if (request.op === "fs.rename" && documents && client.documentMoves) reply = await documents.rename(request.from,request.to);
-          else if (request.op.startsWith("account.")) reply = { result: await accounts.request(request.op, request.op === "account.resources" ? {...request,workspace:entry.workspace} : request) };
+          else if (request.op.startsWith("account.")) {
+            if (request.op === "account.connect") {
+              await files("readonly", store => store.count());
+              if (storageFailure) throw storageFailure;
+            }
+            reply = { result: await accounts.request(request.op, request.op === "account.resources" ? {...request,workspace:entry.workspace} : request) };
+          }
           else if (request.op === "page.markdown") reply = {result:documentation(request.source)};
           else if (request.op === 'page.demo-preview') {
             reply = cached && !request.force ? await cached.open(request.root,request.configuration) : {available:false};

@@ -37,6 +37,8 @@ class SessionClient {
 	public var documentBridge(default, null) = false;
 	public var documentMoves(default, null) = false;
 	public var storageKey(default, null):Null<String>;
+	/** The authenticated cloud route's workspace, independent of its guest filesystem path. */
+	public var workspaceId(default, null):Null<String>;
 	public var project(default, null):Null<String>;
 	public var extensionHost(default, null):Null<String>;
 	public var extensionsRoot(default, null):Null<String>;
@@ -82,6 +84,7 @@ class SessionClient {
 			client.demoState = hello.demoState ?? ""; client.demoMessage = hello.demoMessage ?? "";
 			client.online = !Reflect.hasField(hello,"online") || hello.online == true;
 			client.documentBridge = hello.documentBridge == true; client.storageKey = hello.storageKey;
+			client.workspaceId = Std.isOfType(hello.workspaceId, String) && ~/^[\w-]{43}$/.match(hello.workspaceId) ? hello.workspaceId : null;
 			client.documentMoves = client.documentBridge && hello.documentMoves == true;
 			client.embedded = hello.embedded == true;
 			if (Std.isOfType(hello.generation,Int)) client.generation = hello.generation;

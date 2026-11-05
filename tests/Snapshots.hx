@@ -27,6 +27,10 @@ class Snapshots {
 	static inline var HEIGHT = 800;
 
 	static function main():Void {
+		if (Sys.getEnv("SNAPSHOT_ONLY") == "workspace-trust") {
+			WorkspaceTrustChecks.main();
+			return;
+		}
 		if (Sys.getEnv("SNAPSHOT_ONLY") == "git-sidebar") {
 			GitSidebarChecks.main();
 			return;

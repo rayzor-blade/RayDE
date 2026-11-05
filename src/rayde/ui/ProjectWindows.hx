@@ -85,10 +85,10 @@ class ProjectWindows {
 
 	static function prepare(entry:Null<String>):PreparedWindow {
 		var server = new CompilerServer();
-		var workspace = WorkspaceWindow.describe(server, entry);
+		var workspace = WorkspaceWindow.prepare(server, entry);
 		if (entry != null) entry = Fs.fullPath(entry);
 		var appearance = rayde.settings.Appearance.read(workspace.display.cwd);
-		if (entry != null)
+		if (entry != null && workspace.pendingTrust == null)
 			rayde.settings.RecentProjects.remember(entry);
 		var app:WindowedApp = null,
 			host:WorkspaceWindow = null,
@@ -140,7 +140,7 @@ class ProjectWindows {
 					openWindow: open,
 					onWorkspaceChanged: path -> { record.entry = path; checkpoint(); }
 				});
-				record = {app:app, host:host, entry:entry, closing:false};
+				record = {app:app, host:host, entry:workspace.pendingTrust == null ? entry : null, closing:false};
 				live.push(record);
 				Owner.onCleanup(() -> live.remove(record));
 				checkpoint();

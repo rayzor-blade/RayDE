@@ -117,6 +117,13 @@ class ProjectPart {
 		} else try open() catch (error:Dynamic) wb.say(Std.string(error));
 	}
 
+	function createdProject(path:String):Void {
+		try {
+			rayde.settings.WorkspaceTrust.remember(path);
+			openWorkspace(path);
+		} catch (error:Dynamic) wb.say(Std.string(error));
+	}
+
 	/** Defers a window close while edited files need a save decision. */
 	public function mayCloseWindow(close:Void->Void):Bool {
 		if (wb.dirty.get().length == 0) return true;

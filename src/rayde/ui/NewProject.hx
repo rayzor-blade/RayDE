@@ -107,6 +107,7 @@ class NewProject extends Component<NewProjectProps> {
 			</dialog-content>
 		</dialog>;
 		return <div>${dialog}<if {repository.get() != null}><create-repository opened={props.opened} template={repository.get()} name={name.get()} back={() -> repository.set(null)} ready={(id, project) -> {
+			rayde.settings.WorkspaceTrust.rememberCloud(id, project);
 			props.opened.set(false); if (props.repositoryReady != null) props.repositoryReady(id, project);
 		}}/></if><if {workspaceBrowsing.get()}><workspace-picker opened={workspaceBrowsing} root={rayde.workspace.PageHost.workspaceRoot()} directory={directory.get()} folder={true} title="Choose a parent folder" complete={path -> {
 			browsing.set(false); if (path != null) directory.set(path);

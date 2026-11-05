@@ -125,6 +125,8 @@ class WorkspaceWelcomeChecks {
 			click("#rayde-activity-explorer");
 			width=1280; height=800; settle();
 			click("#welcome-project-0");
+			check(host.bench == fresh && count("#rayde-workspace-trust-dialog") == 1, "Recent workspace skipped its first-open trust decision");
+			click("#rayde-workspace-trust-accept");
 			until(() -> host.bench != fresh && host.bench.explorerPart.projectFiles().length == 4);
 			var opened = host.bench;
 			check(fresh.gone && count("#rayde") == 1 && opened.display().cwd == folder && opened.display().project.kind == "folder", "Recent folder did not replace the workspace owner");
@@ -142,6 +144,8 @@ class WorkspaceWelcomeChecks {
 			click("#rayde-prompt-cancel");
 			check(host.bench == opened && sys.io.File.getContent(code) == "hello\n", "Cancelling changed the workspace or file");
 			opened.projectPart.openWorkspace(entry); settle(); click("#rayde-prompt-accept");
+			check(count("#rayde-workspace-trust-dialog") == 1, "Save and Open skipped authorship approval");
+			click("#rayde-workspace-trust-accept");
 			until(() -> host.bench != opened);
 			check(opened.gone && sys.io.File.getContent(code) == "changed\n" && host.bench.display().project.file == entry, "Save and Open lost changes or the project entry");
 			var project = host.bench;

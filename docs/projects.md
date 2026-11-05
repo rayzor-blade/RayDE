@@ -8,6 +8,8 @@ Welcome offers three ways to start:
 
 Recent projects and folders open directly from Welcome. These commands are also available in the File menu and command center. Opening from an empty Welcome uses that window; opening another project from an existing workspace creates a new window.
 
+The first time you open an existing project or folder, RayDE asks **Trust this project's authors?** Choose **Trust and Open** to enable its tools, or **Cancel** to keep the current workspace. Approval is remembered privately on this device. Projects you create from a template and the built-in demo open directly.
+
 ## Create a project
 
 Choose a starter card, enter a name and parent folder, then select **Create Project**. The dialog shows its requirements and first build command. Existing directories are never overwritten.
