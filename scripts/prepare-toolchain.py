@@ -67,6 +67,7 @@ def main():
     parser.add_argument('--session',type=Path,help='matching Linux session binary for managed demo preview preparation')
     parser.add_argument('--preview-operator',type=Path,help='headless PrepareDemoPreview bytecode built by scripts/build-site.sh')
     parser.add_argument('--base',default='ubuntu:26.04')
+    parser.add_argument('--builder-memory-mib',type=int,help='builder memory budget (default: 3072 with previews, otherwise 1024)')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     if platform.system()!='Linux' or platform.machine()!='x86_64':
@@ -75,6 +76,9 @@ def main():
         parser.error('The pinned Haxe archive or Rayzor standard library is invalid')
     if args.output.exists():
         parser.error('Choose a new output file; existing template configuration is preserved')
+    memory=args.builder_memory_mib if args.builder_memory_mib is not None else 3072 if args.preview_tools else 1024
+    if not 512<=memory<=16384:
+        parser.error('Builder memory must be between 512 and 16384 MiB')
     if bool(args.session)!=bool(args.preview_operator) or args.preview_operator and not (args.demo_bundle and args.preview_tools):
         parser.error('Managed demo previews require --session, --preview-operator, --demo-bundle and --preview-tools')
     if args.preview_tools:
@@ -118,7 +122,7 @@ def main():
         variables=[part for key,value in environment.items() for part in ['--env',key+'='+value]]
         try:
             created=True
-            msb('create',args.base,'--name',builder,'--cpus','1','--memory','1024M','--security','restricted','--deployment-profile','multi-tenant',
+            msb('create',args.base,'--name',builder,'--cpus','1','--memory',str(memory)+'M','--security','restricted','--deployment-profile','multi-tenant',
                 '--mkdir','/workspace','--mkdir','/state','--copy-dir',str(payload)+':/opt/rayde','--max-duration','1800s','--label','rayde.toolchain-builder=true',*variables,timeout=90)
             msb('exec',builder,'--quiet','--no-stdin','--','/bin/sh','/opt/rayde/bootstrap.sh',timeout=1200)
             result=msb('exec',builder,'--quiet','--no-stdin','--','sha256sum','/opt/rayde/toolchain.json',capture=True)
