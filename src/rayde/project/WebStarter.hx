@@ -3,6 +3,8 @@ package rayde.project;
 /** Browser and Node entry points share dependencies, with separate compiler targets. */
 class WebStarter {
 	public static function files(name:String):Map<String, String> return [
+		"LICENSE" => rayde.workspace.Embed.text("LICENSE"),
+		"NOTICE" => "Includes starter code from RayDE.\n\n" + rayde.workspace.Embed.text("NOTICE"),
 		".gitignore" => ".rayde/\n.haxelib/\nbin/\n",
 		"build.hxml" => "-cp src\n-main Main\n-lib coconut.vdom\n-lib coconut.data\n-js bin/app.js\n",
 		"server.hxml" => "-cp server\n-main Server\n-lib hxnodejs\n-lib tink_web\n-js bin/server.js\n",

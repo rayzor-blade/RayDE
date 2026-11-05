@@ -46,7 +46,11 @@ class ProjectTemplates {
 	}
 
 	public static function scaffold(id:String, name:String):ProjectScaffold {
-		var template = get(id), files:Map<String, String> = [".gitignore" => ".rayde/\n.rayzor/\nbin/\nbuild/\nExport/\n"];
+		var template = get(id), files:Map<String, String> = [
+			"LICENSE" => rayde.workspace.Embed.text("LICENSE"),
+			"NOTICE" => "Includes starter code from RayDE.\n\n" + rayde.workspace.Embed.text("NOTICE"),
+			".gitignore" => ".rayde/\n.rayzor/\nbin/\nbuild/\nExport/\n"
+		];
 		var entry = "build.hxml";
 		var main = 'class Main {\n\tstatic function main() {\n\t\ttrace("Hello, world!");\n\t}\n}\n';
 		var build = "-cp src\n-main Main\n";

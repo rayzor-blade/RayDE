@@ -7,6 +7,13 @@ import haxe.macro.Expr;
 
 /** Files compiled into the program, for a page that has no disk to find its built-in themes and extensions on. */
 class Embed {
+	/** Text available to generated projects on desktop and in the browser. */
+	public static macro function text(path:String):Expr {
+		var file = sys.FileSystem.fullPath(path);
+		Context.registerModuleDependency(Context.getLocalModule(), file);
+		return macro $v{sys.io.File.getContent(file)};
+	}
+
 	/**
 	 * Every file under `directory` (relative to the project, or absolute), as an array of `{path, directory, bytes}` entries
 	 * under `mount`, ready for `MemoryWorkspace.load`. Files over `limit` bytes and names in `skip` (such as native libraries) are left out.

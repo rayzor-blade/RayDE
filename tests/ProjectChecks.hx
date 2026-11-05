@@ -42,6 +42,8 @@ class ProjectChecks {
 		check(sys.io.File.getContent(occupied) == "keep", "Existing file was modified");
 		for (template in rayde.project.ProjectTemplates.all) {
 			var entry = ProjectFile.create(root, "starter-" + template.id, template.id), project = ProjectFile.read(entry);
+			check(sys.io.File.getContent(project.root + "/LICENSE") == sys.io.File.getContent("LICENSE"), "Starter omitted the Apache license text: " + template.id);
+			check(sys.io.File.getContent(project.root + "/NOTICE").indexOf(sys.io.File.getContent("NOTICE")) >= 0, "Starter omitted the RayDE attribution: " + template.id);
 			if (template.id == "ceramic") {
 				check(project.kind == "folder" && !project.runnable && sys.FileSystem.exists(project.root + "/ceramic.yml") && sys.FileSystem.exists(project.root + "/src/Project.hx") && sys.FileSystem.exists(project.root + "/src/MainScene.hx"), "Ceramic did not open its engine-managed source folder");
 				continue;
