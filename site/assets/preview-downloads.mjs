@@ -2,17 +2,29 @@ export const releasesURL = 'https://github.com/rayzor-blade/RayDE/releases';
 const releaseAPI = 'https://api.github.com/repos/rayzor-blade/RayDE/releases?per_page=10';
 const processors = {
   macos: [['aarch64', 'Apple silicon'], ['x86_64', 'Intel']],
-  windows: [['x86_64', 'x86-64']],
-  linux: [['x86_64', 'x86-64']]
+  windows: [['x86_64', 'x86-64'], ['aarch64', 'ARM64']],
+  linux: [['x86_64', 'x86-64'], ['aarch64', 'ARM64']]
 };
 
 export function browserPlatform(browser) {
   const agent = browser.userAgent ?? '';
-  if (/Android|iPhone|iPad|iPod/.test(agent) || (browser.maxTouchPoints > 1 && /Mac/.test(browser.platform ?? ''))) return '';
+  if (browser.userAgentData?.mobile || /Android|iPhone|iPad|iPod/.test(agent) || (browser.maxTouchPoints > 1 && /Mac/.test(browser.platform ?? ''))) return '';
   const platform = browser.userAgentData?.platform || browser.platform || agent;
   if (/Mac/i.test(platform)) return 'macos';
   if (/Win/i.test(platform)) return 'windows';
   if (/Linux/i.test(platform)) return 'linux';
+  return '';
+}
+
+export async function browserArchitecture(browser) {
+  const platform = browserPlatform(browser);
+  if (!platform || typeof browser.userAgentData?.getHighEntropyValues !== 'function') return '';
+  try {
+    const hints = await browser.userAgentData.getHighEntropyValues(['architecture', 'bitness', 'wow64']);
+    const bits = hints.bitness;
+    if (hints.architecture === 'arm' && bits === '64') return 'aarch64';
+    if (hints.architecture === 'x86' && (bits === '64' || platform === 'windows' && hints.wow64 === true)) return 'x86_64';
+  } catch { /* Processor selection stays available when hints are denied. */ }
   return '';
 }
 
@@ -35,13 +47,17 @@ export function previewDownload(releases, platform, architecture) {
   return null;
 }
 
-function mountDownloads() {
+export function mountDownloads(document = globalThis.document, browser = globalThis.navigator) {
+  const Observer = document.defaultView?.IntersectionObserver ?? globalThis.IntersectionObserver;
+  const request = document.defaultView?.fetch?.bind(document.defaultView) ?? globalThis.fetch;
   const platform = document.querySelector('#preview-platform');
   const architecture = document.querySelector('#preview-architecture');
   const link = document.querySelector('#preview-download');
   const label = link.querySelector('[data-download-label]');
   const status = document.querySelector('#preview-download-status');
   let releases = null, loading = false, failed = false;
+  const detectedPlatform = browserPlatform(browser);
+  let detectedArchitecture = '', selectionChanged = false, detecting = !!detectedPlatform;
 
   function update() {
     const selected = releases && previewDownload(releases, platform.value, architecture.value);
@@ -51,7 +67,7 @@ function mountDownloads() {
     else if (failed) status.textContent = 'Check GitHub Releases for available preview builds.';
     else if (releases?.length === 0) status.textContent = 'Desktop previews have not been published yet. Try the live editor or build from source.';
     else if (!platform.value) status.textContent = 'Choose your desktop platform.';
-    else if (!architecture.value) status.textContent = 'Choose Apple silicon or Intel for your Mac.';
+    else if (!architecture.value) status.textContent = detecting && !selectionChanged ? 'Detecting your processor…' : platform.value === 'macos' ? 'Choose Apple silicon or Intel for your Mac.' : 'Choose your processor.';
     else if (!releases) status.textContent = 'Preview packages are portable downloads.';
     else if (!selected) status.textContent = 'No preview package is available for this platform and processor yet.';
     else status.textContent = `${selected.version} · ${platform.value === 'linux' ? 'tar.gz' : 'ZIP'} preview archive`;
@@ -59,26 +75,32 @@ function mountDownloads() {
 
   function changePlatform() {
     const options = processors[platform.value] ?? [];
-    architecture.replaceChildren(new Option('Choose processor', ''), ...options.map(([value, text]) => new Option(text, value)));
-    // A macOS user-agent does not identify Apple silicon versus Intel.
-    architecture.value = options.length === 1 ? options[0][0] : '';
+    const option = (value, text) => {
+      const node = document.createElement('option'); node.value = value; node.textContent = text; return node;
+    };
+    architecture.replaceChildren(option('', 'Choose processor'), ...options.map(([value, text]) => option(value, text)));
+    architecture.value = platform.value === detectedPlatform ? detectedArchitecture : '';
     architecture.disabled = !options.length;
     update();
   }
 
-  platform.value = browserPlatform(navigator);
-  platform.addEventListener('change', changePlatform);
-  architecture.addEventListener('change', update);
+  platform.value = detectedPlatform;
+  platform.addEventListener('change', () => { selectionChanged = true; changePlatform(); });
+  architecture.addEventListener('change', () => { selectionChanged = true; update(); });
   document.querySelector('[data-preview-options]').hidden = false;
   status.hidden = false;
   changePlatform();
+  browserArchitecture(browser).then(value => {
+    detectedArchitecture = value; detecting = false;
+    if (!selectionChanged) changePlatform(); else update();
+  });
 
-  const observer = new IntersectionObserver(async entries => {
+  const observer = new Observer(async entries => {
     if (!entries.some(entry => entry.isIntersecting)) return;
     observer.disconnect();
     loading = true; update();
     try {
-      const response = await fetch(releaseAPI, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(5000) });
+      const response = await request(releaseAPI, { credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(5000) });
       if (!response.ok) throw new Error('Release lookup failed');
       const value = await response.json();
       if (!Array.isArray(value)) throw new Error('Invalid release list');
