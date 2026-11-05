@@ -43,3 +43,7 @@ For a native AOT executable, run `ash --build bin/rayde bin/rayde.hl`, then `./b
 | [Writing an extension](docs/extensions.md) | Config, commands, menus, hooks, tabs, Extension Studio, debugger. |
 | [Theme bundles](docs/themes.md) | File format, fonts, CSS, installing, Theme Studio. |
 | [Contributing](docs/contributing/README.md) | Implementation, building, checks, benchmarks, packaging and issue tracking. |
+
+## License
+
+RayDE is licensed under [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for copyright information. Separately identified third-party components and assets retain their own licenses.

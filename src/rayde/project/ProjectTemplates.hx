@@ -144,7 +144,7 @@ class ProjectTemplates {
 	static function manifest(name:String, libraries:Array<String>, description:String):String {
 		var dependencies:Dynamic = {};
 		for (library in libraries) Reflect.setField(dependencies, library, "");
-		return haxe.Json.stringify({name:name.toLowerCase(), version:"0.1.0", classPath:"src", license:"MIT", description:description, contributors:[], dependencies:dependencies}, null, "\t") + "\n";
+		return haxe.Json.stringify({name:name.toLowerCase(), version:"0.1.0", classPath:"src", license:"Apache", description:description, contributors:[], dependencies:dependencies}, null, "\t") + "\n";
 	}
 
 	static function html(name:String, body:String):String

@@ -83,6 +83,16 @@ class SiteReleaseChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'public regular files'):
             self.prepare()
 
+    def test_browser_release_requires_project_license_and_notice(self):
+        for name in ('LICENSE', 'NOTICE'):
+            with self.subTest(name=name):
+                path = self.source / 'dist/notices/rayde' / name
+                content = path.read_bytes()
+                path.unlink()
+                with self.assertRaisesRegex(ValueError, 'Release file is missing: dist/notices/rayde/' + name):
+                    self.prepare()
+                path.write_bytes(content)
+
     def test_build_changes_during_packaging_do_not_publish_a_directory(self):
         copy = release.shutil.copyfile
         def changing(source, target):

@@ -3,7 +3,7 @@ name = "rayde-sync"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
-license = "MIT"
+license = "Apache-2.0"
 publish = false
 description = "RayDE Cloud Sync: workspace identity, sharing policy, expiry and quota rules, the snapshot manifest, and the desktop engine that scans and chunks a Git working tree."
 

@@ -26,7 +26,7 @@ class DistributionChecks(unittest.TestCase):
     def fixture(self, root, target):
         bindir, data, extensions, program, rayzor = package.layout(root, target)
         files = [bindir / p for p in [program, "rayde-extension-host" + (".exe" if target == "windows" else ""), "blinc_abi.hdll", "xgpu.hdll", "xwindow.hdll", "cterm.hdll", "rayscript.hdll"]]
-        files += [data / rayzor, data / "haxe-std/Std.hx", data / "distribution.json", data / "notices/dependencies.json"]
+        files += [data / rayzor, data / "haxe-std/Std.hx", data / "distribution.json", data / "notices/dependencies.json", data / "LICENSE", data / "NOTICE"]
         files.append(bindir / {"macos": "libhl.dylib", "linux": "libhl.so", "windows": "libhl.dll"}[target])
         for path in files:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,6 +48,14 @@ class DistributionChecks(unittest.TestCase):
                 root = Path(temp)
                 bindir, _ = self.fixture(root, target)
                 package.validate(root, target)
+                _, data, _, _, _ = package.layout(root, target)
+                for name in ("LICENSE", "NOTICE"):
+                    path = data / name
+                    contents = path.read_bytes()
+                    path.unlink()
+                    with self.assertRaisesRegex(RuntimeError, name):
+                        package.validate(root, target)
+                    path.write_bytes(contents)
                 (bindir / "rayscript.hdll").unlink()
                 with self.assertRaisesRegex(RuntimeError, "Missing distribution file"):
                     package.validate(root, target)

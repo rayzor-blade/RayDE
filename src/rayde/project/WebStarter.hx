@@ -6,7 +6,7 @@ class WebStarter {
 		".gitignore" => ".rayde/\n.haxelib/\nbin/\n",
 		"build.hxml" => "-cp src\n-main Main\n-lib coconut.vdom\n-lib coconut.data\n-js bin/app.js\n",
 		"server.hxml" => "-cp server\n-main Server\n-lib hxnodejs\n-lib tink_web\n-js bin/server.js\n",
-		"haxelib.json" => haxe.Json.stringify({name:name.toLowerCase(), version:"0.1.0", classPath:"src", license:"MIT", contributors:[], description:"Coconut browser UI and a Tink Web API", dependencies:{"coconut.vdom":"0.10.1", "coconut.data":"0.12.1", "tink_state":"1.0.0-beta.3", "tink_web":"0.3.0", "hxnodejs":"12.2.0"}}, null, "\t") + "\n",
+		"haxelib.json" => haxe.Json.stringify({name:name.toLowerCase(), version:"0.1.0", classPath:"src", license:"Apache", contributors:[], description:"Coconut browser UI and a Tink Web API", dependencies:{"coconut.vdom":"0.10.1", "coconut.data":"0.12.1", "tink_state":"1.0.0-beta.3", "tink_web":"0.3.0", "hxnodejs":"12.2.0"}}, null, "\t") + "\n",
 		"src/Main.hx" => 'import coconut.ui.Renderer;\nimport js.Browser;\n\nclass Main {\n\tstatic function main() {\n\t\tvar counter = new Counter();\n\t\tRenderer.mount(Browser.document.getElementById("app"), \'<App counter={counter}/>\');\n\t}\n}\n',
 		"src/Counter.hx" => 'class Counter implements coconut.data.Model {\n\t@:editable var count:Int = 0;\n}\n',
 		"src/App.hx" => 'class App extends coconut.ui.View {\n\t@:attribute var counter:Counter;\n\n\tfunction render() \'\n\t\t<main>\n\t\t\t<h1>Hello from Coconut!</h1>\n\t\t\t<p>A reactive Haxe app powered by Tink.</p>\n\t\t\t<button type="button" onclick={counter.count++}>Clicked {counter.count} times</button>\n\t\t</main>\n\t\';\n}\n',

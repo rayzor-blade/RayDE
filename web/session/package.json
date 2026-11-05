@@ -17,5 +17,6 @@
     "esbuild": "0.25.12",
     "fake-indexeddb": "6.2.7",
     "puppeteer-core": "24.12.1"
-  }
+  },
+  "license": "Apache-2.0"
 }

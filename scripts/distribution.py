@@ -187,7 +187,7 @@ def validate(root, target):
     bindir, data, extensions, program, rayzor = layout(root, target)
     host = "rayde-extension-host" + (".exe" if target == "windows" else "")
     required = [bindir / name for name in [program, host, "blinc_abi.hdll", "xgpu.hdll", "xwindow.hdll", "cterm.hdll", "rayscript.hdll"]]
-    required += [data / rayzor, data / "haxe-std/Std.hx", data / "distribution.json", data / "notices/dependencies.json"]
+    required += [data / rayzor, data / "haxe-std/Std.hx", data / "distribution.json", data / "notices/dependencies.json", data / "LICENSE", data / "NOTICE"]
     required += [extensions / name / (name + ".rayext") for name in ["git", "markdown", "rayzor"]]
     runtime = {"macos": "libhl.dylib", "linux": "libhl.so", "windows": "libhl.dll"}[target]
     required.append(bindir / runtime)
@@ -224,6 +224,8 @@ def finalize(root, target, version):
     bindir, data, extensions, _, _ = layout(root, target)
     {"macos": bundle_macos, "linux": bundle_linux, "windows": bundle_windows}[target](root, bindir)
     notices = data / "notices"
+    for name in ("LICENSE", "NOTICE"):
+        shutil.copy2(SOURCE / name, data / name)
     lock = json.loads((SOURCE / "packaging/dependencies.json").read_text())
     shutil.copy2(SOURCE / "packaging/dependencies.json", notices / "dependencies.json")
     for name in lock["sources"]:
@@ -245,7 +247,7 @@ def finalize(root, target, version):
         if license.is_file():
             (notices / "ashui").mkdir(exist_ok=True)
             shutil.copy2(license, notices / "ashui" / license.name)
-    info = {"version": version, "platform": target, "architecture": platform.machine(),
+    info = {"version": version, "license": "Apache-2.0", "platform": target, "architecture": platform.machine(),
             "commit": output("git", "-C", SOURCE, "rev-parse", "HEAD").strip(),
             "dirty": bool(output("git", "-C", SOURCE, "status", "--porcelain").strip()),
             "dependencies": {**lock["sources"], "ashui": ashui_revision},

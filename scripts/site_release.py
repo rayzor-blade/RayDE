@@ -18,7 +18,8 @@ REQUIRED = ('index.html', 'landing.css', 'landing.mjs', 'assets/editor-preview.w
             'dist/ashui-host.mjs', 'dist/worker.js', 'dist/thread.js',
             'dist/rayde_session.mjs', 'dist/rayde_connection.mjs',
             'dist/rayde-platform.js', 'dist/rayde-page.css',
-            'dist/demo-workspace.json', 'dist/libraries.json')
+            'dist/demo-workspace.json', 'dist/libraries.json',
+            'dist/notices/rayde/LICENSE', 'dist/notices/rayde/NOTICE')
 DIGEST = re.compile(r'[a-f0-9]{64}\Z')
 
 

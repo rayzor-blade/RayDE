@@ -34,6 +34,8 @@ cp "$here/web/session/dist/rayde_session.js" "$out/rayde_session.mjs"
 cp "$here/web/session/dist/rayde_connection.js" "$out/rayde_connection.mjs"
 mkdir -p "$out/notices/marked"
 cp "$here/web/session/node_modules/marked/LICENSE" "$out/notices/marked/LICENSE"
+mkdir -p "$out/notices/rayde"
+cp "$here/LICENSE" "$here/NOTICE" "$out/notices/rayde/"
 cd "$here"
 haxe "${ui_args[@]}" -cp "$channel/haxelib/ash-channel" -D wasm -D ashui_no_hdll -D ashui_window -D rayde_page -D "hlwgpu_web=$libs/hlwgpu-web" -D "hlwindow_web=$libs/hlwindow-web" \
   -dce full --macro "ashui.core.render.UiFramework.register()" --macro "ashui.macro.DefaultFonts.stage()" --macro "rayde.workspace.PageFonts.stage()" --macro "ashui.macro.WebPage.stage()" \

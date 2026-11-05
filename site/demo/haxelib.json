@@ -1,7 +1,7 @@
 {
   "name": "pocket-studio",
   "version": "0.1.0",
-  "license": "MIT",
+  "license": "Apache",
   "description": "A small project board built with Haxe and Ashui, with a companion RayScript extension.",
   "classPath": "src",
   "rayde": {
