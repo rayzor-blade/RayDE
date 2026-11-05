@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 POINTER = 'editor-release.json'
 PARTS = ('index.html', 'landing.css', 'landing.mjs', 'assets', 'docs', 'dist')
 REQUIRED = ('index.html', 'landing.css', 'landing.mjs', 'assets/editor-preview.webp',
-            'assets/remix.svg', 'assets/rayde-icon.svg', 'docs/index.html',
+            'assets/remix.svg', 'assets/rayde-icon.svg', 'assets/preview-downloads.mjs', 'docs/index.html',
             'dist/index.html', 'dist/rayde.wasm', 'dist/ash_browser_bg.wasm',
             'dist/ashui-host.mjs', 'dist/worker.js', 'dist/thread.js',
             'dist/rayde_session.mjs', 'dist/rayde_connection.mjs',
