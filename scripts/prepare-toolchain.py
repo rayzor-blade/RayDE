@@ -11,6 +11,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+from native_web import verify as verify_native_web
 
 ROOT=Path(__file__).resolve().parent.parent
 HAXE_SHA256='810e1752c8eb3065dbff54c050b20a712ce276f407741f0bf94696b454a597ad'
@@ -27,6 +28,9 @@ def validate_previews(ash,tools):
         with (tools/name).open('rb') as stream:
             if stream.read(8)!=b'\x00asm\x01\x00\x00\x00':
                 raise ValueError('The app preview runtime and channel must be WebAssembly modules')
+    if not (tools/'native-web').is_dir():
+        raise ValueError('The app preview tooling needs matching native web modules; stage with --native-web')
+    verify_native_web(tools/'native-web',tools/'ash_runtime.o')
     help=subprocess.run([str(ash),'--help'],text=True,capture_output=True,check=True,timeout=10).stdout
     if '--codegen-opt-level' not in help:
         raise ValueError('App previews require an Ash build with --codegen-opt-level support')
@@ -98,6 +102,7 @@ def main():
         shutil.copytree(ROOT/'extensions',payload/'extensions',ignore=shutil.ignore_patterns('target','.git'))
         if args.preview_tools:
             shutil.copytree(args.preview_tools,payload/'preview',symlinks=False)
+            shutil.copy2(ROOT/'scripts/native_web.py',payload/'native_web.py')
         shutil.copytree(ROOT/'site/demo',payload/'pocket-studio',ignore=shutil.ignore_patterns('bin','.rayde','.rayzor','.haxelib','.git'))
         for name in ['bootstrap.sh','finalize.py']:
             shutil.copy2(ROOT/'native/runner/toolchain'/name,payload/name)

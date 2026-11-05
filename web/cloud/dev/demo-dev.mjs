@@ -7,10 +7,12 @@ import {options} from '../test/fixture.mjs';
 import {stageEditorRelease} from './editor-assets.mjs';
 
 const [configuration,...args]=process.argv.slice(2);
-if(!configuration)throw Error('Use demo-dev.mjs PRIVATE_CLIENT_JSON [--port N] [--assets URL] [--release DIRECTORY] [--gate FILE] [--events FILE]');
+if(!configuration)throw Error('Use demo-dev.mjs PRIVATE_CLIENT_JSON [--port N] [--hostname localhost|127.0.0.1] [--assets URL] [--release DIRECTORY] [--gate FILE] [--events FILE]');
 const option=(name,fallback)=>{const at=args.indexOf(name);return at<0?fallback:args[at+1];};
 const settings=JSON.parse(await readFile(configuration,'utf8'));
-const port=Number(option('--port','8797')),appOrigin=`http://127.0.0.1:${port}`;
+const port=Number(option('--port','8797')),hostname=option('--hostname','127.0.0.1');
+if(!['localhost','127.0.0.1'].includes(hostname))throw Error('The acceptance harness requires a loopback hostname');
+const appOrigin=`http://${hostname}:${port}`;
 const gate=option('--gate'),events=option('--events'),release=option('--release');
 const abort=new AbortController();
 const {config}=options({port,appOrigin,asset:option('--assets','http://127.0.0.1:8798'),editorAssets:!!release,

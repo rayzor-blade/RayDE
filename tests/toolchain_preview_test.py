@@ -2,13 +2,16 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
 spec=importlib.util.spec_from_file_location('prepare_toolchain',ROOT/'scripts/prepare-toolchain.py')
 module=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+from native_web import MODULES, stage
 
 class PreviewToolchain(unittest.TestCase):
     def setUp(self):
@@ -22,6 +25,10 @@ class PreviewToolchain(unittest.TestCase):
             path=self.root/name
             path.parent.mkdir(parents=True,exist_ok=True)
             path.write_bytes(b'\x00asm\x01\x00\x00\x00' if name.endswith(('.o','.wasm')) else b'fixture')
+        for names in MODULES.values():
+            for name in names:
+                (self.root/name).write_bytes(b'\x00asm\x01\x00\x00\x00' if name.endswith('.wasm') else b'fixture')
+        stage(self.root,self.root/'native-web',self.root/'ash_runtime.o')
 
     def test_current_compiler_and_complete_wasm_tools_are_accepted(self):
         module.validate_previews(self.compiler,self.root)
@@ -42,6 +49,14 @@ class PreviewToolchain(unittest.TestCase):
     def test_failing_compiler_is_not_reported_ready(self):
         self.compiler.write_text('#!/bin/sh\nexit 2\n')
         with self.assertRaises(subprocess.CalledProcessError):
+            module.validate_previews(self.compiler,self.root)
+
+    def test_missing_or_mismatched_target_modules_are_rejected_before_image_creation(self):
+        (self.root/'ash_runtime.o').write_bytes(b'\x00asm\x01\x00\x00\x00changed')
+        with self.assertRaisesRegex(ValueError,'another preview runtime'):
+            module.validate_previews(self.compiler,self.root)
+        (self.root/'native-web').rename(self.root/'saved-native-web')
+        with self.assertRaisesRegex(ValueError,'matching native web modules'):
             module.validate_previews(self.compiler,self.root)
 
 if __name__=='__main__':

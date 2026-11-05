@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import urllib.parse
 from demo_inputs import inputs
+from native_web import overlay as overlay_native_web
 
 ROOT=Path(__file__).resolve().parent.parent
 
@@ -30,6 +31,12 @@ def main():
         token=temporary/'token';token.write_text(secrets.token_hex(32));token.chmod(0o600)
         environment=dict(os.environ)
         environment['PATH']=str(Path(args.ash).resolve().parent)+os.pathsep+environment.get('PATH','')
+        native_web=args.tools.resolve()/'native-web'
+        if not native_web.is_dir():
+            parser.error('Stage matching preview tools with scripts/stage-preview.py --native-web first')
+        repository=Path(subprocess.check_output(['haxelib','config'],cwd=workspace,env=environment,text=True).strip())
+        overlay_native_web(native_web,repository,temporary/'haxelib',args.tools.resolve()/'ash_runtime.o')
+        environment['HAXELIB_PATH']=str(temporary/'haxelib')
         session=subprocess.Popen([args.session,'--root',str(workspace),'--state-root',str(temporary/'state'),'--port','0','--token-file',str(token),'--exec','--preview-tools',str(args.tools.resolve())],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env=environment)
         try:
             address=None

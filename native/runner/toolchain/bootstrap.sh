@@ -11,6 +11,10 @@ cp /opt/rayde/haxe/haxelib /opt/rayde/bin/haxelib
 rm /opt/rayde/haxe.tar.gz
 haxelib install ashui-components 0.2.3 --always --quiet
 haxelib install ashui-icons 0.2.3 --always --quiet
+if [ -d /opt/rayde/preview/native-web ]; then
+  python3 /opt/rayde/native_web.py --bundle /opt/rayde/preview/native-web \
+    --repository /opt/rayde/haxelib --runtime /opt/rayde/preview/ash_runtime.o
+fi
 mkdir -p /opt/rayde/extensions/git/natives
 cp -L /usr/lib/x86_64-linux-gnu/libgit2.so.1.9 /opt/rayde/extensions/git/natives/libgit2.so
 python3 - <<'PY'

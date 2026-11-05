@@ -4,7 +4,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 bash "$here/scripts/build-web.sh" "${1:-$here/site/dist}"
 python3 "$here/scripts/package-demo.py" "${1:-$here/site/dist}/demo-workspace.json"
-python3 "$here/scripts/stage-preview.py" --bundle "${1:-$here/site/dist}" ${ASH_RUNTIME:+--runtime "$ASH_RUNTIME"}
+python3 "$here/scripts/stage-preview.py" --bundle "${1:-$here/site/dist}" --native-web "${1:-$here/site/dist}" --ash "${ASH:-ash}" ${ASH_RUNTIME:+--runtime "$ASH_RUNTIME"}
 RAYDE_BUILD_TARGET=web source "$here/scripts/deps.sh"
 haxe "${ui_args[@]}" -D rayde_remote -dce full -cp "$here/tools" -main PrepareDemoPreview -hl "$here/bin/prepare-demo-preview.hl"
 python3 - "${1:-$here/site/dist}/index.html" <<'PY'
