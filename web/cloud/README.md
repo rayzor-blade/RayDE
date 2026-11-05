@@ -82,11 +82,13 @@ Each workspace admits eight connections, counting upstream handshakes in progres
 
 ## Anonymous demo admission
 
-This API is disabled by default. Enabling it requires `DEMO_ORIGIN`, `DEMO_RELEASE` (the pinned Pocket Studio bundle SHA-256), `DEMO_TOOLCHAIN` (the prepared image digest), and optional `DEMO_MAX_SESSIONS` (default one, maximum eight). The runner must independently allow the same source release. A mismatched toolchain cannot become ready. The browser's asynchronous attachment is separate work; setting these variables alone does not connect the landing editor.
+This API is disabled by default. Enabling it requires `DEMO_ORIGIN`, `DEMO_RELEASE` (the pinned Pocket Studio bundle SHA-256), `DEMO_TOOLCHAIN` (the prepared image digest), and optional `DEMO_MAX_SESSIONS` (default one, maximum eight). The runner must independently allow the same source release. A mismatched toolchain cannot become ready. The browser opens the verified public source first, then starts admission after the editor renders. Attachment retains its document objects, local edits and undo history.
 
 Same-origin `POST /api/demo/open` returns a preparing lease immediately and sets a short-lived HttpOnly cookie. `GET /api/demo/status` reports preparation; `/api/demo/socket` upgrades only the cookie's workspace. `POST /api/demo/retry` retries that lease, and `POST /api/demo/end` releases it. GitHub sign-in and sign-out do not change anonymous ownership. Caller-supplied repository, release and workspace IDs are ignored. No runner credential enters the browser.
 
 The separate `DemoAdmissions` and `DemoWorkspaceSession` Durable Objects enforce a fifteen-minute lifetime, five-minute idle deadline, bounded admission/retries and aggregate capacity. Status polling does not extend idle time. Cleanup disconnects the visitor, waits for an unfinished launch, deletes compute and disks, then purges that workspace's private recovery payloads. Failed cleanup keeps its capacity reserved for retry. Deploy the `v3` migration before enabling admission; keep the landing, asset and preview origins separate.
+
+For local acceptance, prepare a release with `python3 scripts/site_release.py prepare` from the repository root. From `web/cloud`, run `node dev/demo-dev.mjs PRIVATE_CLIENT_JSON --release RELEASE_DIRECTORY`. The private JSON names the loopback runner URL, credential file, toolchain digest and demo release as `url`, `secretFile`, `toolchain` and `release`. This development emulator runs the Rust Worker and real runner; it verifies and stages the immutable release into local R2 before promoting it, including the isolated cached app preview. Without `--release`, the harness uses `--assets URL` for editor assets only.
 
 ## Saved document recovery
 
