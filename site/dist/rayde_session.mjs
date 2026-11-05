@@ -12841,7 +12841,7 @@ var DemoSession = class extends SessionClient {
 
 // src/demo-admission.js
 var DemoAdmission = class {
-  constructor(client, { fetch: fetch2 = globalThis.fetch, now = Date.now, pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), locks = globalThis.navigator?.locks, changed: changed2 = () => {
+  constructor(client, { fetch: fetch2 = globalThis.fetch.bind(globalThis), now = Date.now, pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), locks = globalThis.navigator?.locks, changed: changed2 = () => {
   } } = {}) {
     this.client = client;
     this.fetch = fetch2;
@@ -12933,7 +12933,7 @@ var DemoAdmission = class {
     this.connected();
   }
 };
-function afterEditorReady(run, { document: document2 = globalThis.document, MutationObserver = globalThis.MutationObserver, later = globalThis.requestAnimationFrame } = {}) {
+function afterEditorReady(run, { document: document2 = globalThis.document, MutationObserver = globalThis.MutationObserver, later = (callback) => globalThis.requestAnimationFrame(callback) } = {}) {
   let cancelled = false, scheduled = false, observer;
   const status = document2.getElementById("status");
   const check = () => {
@@ -13019,7 +13019,11 @@ var start = (ask) => serve(ask, {
       const bytes = frame(JSON.stringify(message));
       for (let at2 = 0; at2 < bytes.length; at2 += 16384) deliver(bytes.subarray(at2, at2 + 16384));
     };
-    const admission = entry.admission ? new DemoAdmission(client, { changed: (state) => answer({ ev: "demo.status", ...state }) }) : null;
+    const admission = entry.admission ? new DemoAdmission(client, { changed: (state) => {
+      if (query.has("debug")) console.info("demo admission:", state.status, state.message);
+      answer({ ev: "demo.status", ...state });
+    } }) : null;
+    if (query.has("debug")) console.info("demo controller:", !!admission, "remote endpoint:", !!endpoint);
     const files = (mode, body) => new Promise((resolve, reject) => {
       const transaction = database.transaction("files", mode);
       const request = body(transaction.objectStore("files"));
@@ -13171,7 +13175,10 @@ var start = (ask) => serve(ask, {
       })();
     });
     const stopAccounts = followAccount(accounts, entry.workspace ? client : null, (status) => answer({ ev: "account.changed", user: status.user }));
-    const stopReady = admission ? afterEditorReady(() => void admission.start()) : () => {
+    const stopReady = admission ? afterEditorReady(() => {
+      if (query.has("debug")) console.info("demo editor ready");
+      void admission.start();
+    }) : () => {
     };
     return {
       send(bytes) {
