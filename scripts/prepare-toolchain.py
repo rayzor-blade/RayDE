@@ -20,6 +20,26 @@ def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream,'sha256').hexdigest()
 
+def stdlib_digest(root):
+    value=hashlib.sha256()
+    for path in sorted(root.rglob('*')):
+        if path.is_symlink():
+            raise ValueError('Rayzor standard-library provenance requires regular files')
+        if path.is_file():
+            value.update(path.relative_to(root).as_posix().encode()+b'\0'+digest(path).encode()+b'\n')
+    return value.hexdigest()
+
+def verify_rayzor_build(build,binary,stdlib):
+    hashes=['binarySha256','stdlibSha256','sourceArchiveSha256']
+    if not isinstance(build,dict) or build.get('version')!=1 or build.get('target')!='x86_64-unknown-linux-gnu' or build.get('profile')!='release' \
+        or not re.fullmatch('[0-9a-f]{40}',str(build.get('revision',''))) \
+        or any(not re.fullmatch('[0-9a-f]{64}',str(build.get(key,''))) for key in hashes):
+        raise ValueError('Invalid Rayzor release build provenance')
+    if build['binarySha256']!=digest(binary):
+        raise ValueError('Rayzor executable differs from its recorded build')
+    if build['stdlibSha256']!=stdlib_digest(stdlib):
+        raise ValueError('Rayzor standard library differs from its recorded build')
+
 def validate_previews(ash,tools):
     required=['ash_runtime.o','ash_channel.wasm','channel-agent.mjs','rayde_preview_files.mjs','preview-frames.mjs','haxe/rayde/preview/Files.hx']
     if not all((tools/name).is_file() for name in required):
@@ -59,6 +79,7 @@ def main():
     parser.add_argument('--msb',type=Path,default=Path.home()/'.local/bin/msb')
     parser.add_argument('--ash',type=Path,required=True)
     parser.add_argument('--rayzor',type=Path,required=True)
+    parser.add_argument('--rayzor-provenance',type=Path,help='release build record binding the Rayzor source revision, executable and standard library')
     parser.add_argument('--extension-host',type=Path,required=True)
     parser.add_argument('--stdlib',type=Path,required=True)
     parser.add_argument('--haxe-archive',type=Path,required=True)
@@ -74,6 +95,15 @@ def main():
         parser.error('This profile builds the Linux x86_64 toolchain on a compatible Linux host')
     if digest(args.haxe_archive)!=HAXE_SHA256 or not (args.stdlib/'StdTypes.hx').is_file():
         parser.error('The pinned Haxe archive or Rayzor standard library is invalid')
+    rayzor_build=None
+    if args.rayzor_provenance:
+        try:
+            if args.rayzor_provenance.stat().st_size>16384:
+                raise ValueError('Rayzor build provenance exceeds its size limit')
+            rayzor_build=json.loads(args.rayzor_provenance.read_text())
+            verify_rayzor_build(rayzor_build,args.rayzor,args.stdlib)
+        except (ValueError,OSError) as error:
+            parser.error(str(error))
     if args.output.exists():
         parser.error('Choose a new output file; existing template configuration is preserved')
     memory=args.builder_memory_mib if args.builder_memory_mib is not None else 3072 if args.preview_tools else 1024
@@ -103,6 +133,9 @@ def main():
         for source in args.ash.parent.glob('*.hdll'):
             shutil.copy2(source,payload/'bin'/source.name)
         shutil.copytree(args.stdlib,payload/'haxe-std',symlinks=False)
+        if rayzor_build is not None:
+            verify_rayzor_build(rayzor_build,payload/'bin/rayzor',payload/'haxe-std')
+            (payload/'rayzor-build.json').write_text(json.dumps(rayzor_build,sort_keys=True)+'\n')
         shutil.copytree(ROOT/'extensions',payload/'extensions',ignore=shutil.ignore_patterns('target','.git'))
         if args.preview_tools:
             shutil.copytree(args.preview_tools,payload/'preview',symlinks=False)

@@ -59,5 +59,22 @@ class PreviewToolchain(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'matching native web modules'):
             module.validate_previews(self.compiler,self.root)
 
+    def test_rayzor_revision_is_bound_to_the_executable_and_standard_library(self):
+        stdlib=self.root/'stdlib';stdlib.mkdir()
+        (stdlib/'StdTypes.hx').write_text('extern class Int {}')
+        build={'version':1,'revision':'a'*40,'target':'x86_64-unknown-linux-gnu','profile':'release',
+               'sourceArchiveSha256':'b'*64,'binarySha256':module.digest(self.compiler),'stdlibSha256':module.stdlib_digest(stdlib)}
+        module.verify_rayzor_build(build,self.compiler,stdlib)
+        self.compiler.write_text('another binary')
+        with self.assertRaisesRegex(ValueError,'executable differs'):
+            module.verify_rayzor_build(build,self.compiler,stdlib)
+        build['binarySha256']=module.digest(self.compiler)
+        (stdlib/'StdTypes.hx').write_text('extern class Bool {}')
+        with self.assertRaisesRegex(ValueError,'standard library differs'):
+            module.verify_rayzor_build(build,self.compiler,stdlib)
+        for changed in [{'revision':'0.1.0'},{'target':'aarch64-apple-darwin'},{'profile':'dev'},{'sourceArchiveSha256':'missing'}]:
+            with self.assertRaisesRegex(ValueError,'Invalid Rayzor release'):
+                module.verify_rayzor_build({**build,**changed},self.compiler,stdlib)
+
 if __name__=='__main__':
     unittest.main()

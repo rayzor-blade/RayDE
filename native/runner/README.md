@@ -52,11 +52,14 @@ Prepare a disk template on a compatible **Ubuntu 26.04 x86_64** KVM host. Supply
 python3 scripts/prepare-toolchain.py \
   --ash /opt/build/ash/ash \
   --rayzor /opt/build/rayzor \
+  --rayzor-provenance /opt/build/rayzor-build.json \
   --extension-host /opt/build/rayde-extension-host \
   --stdlib /opt/build/rayzor-src/compiler/haxe-std \
   --haxe-archive /opt/downloads/haxe-4.3.6-linux64.tar.gz \
   --output /private/toolchain.json
 ```
+
+`--rayzor-provenance` accepts the release builder's JSON record: `version: 1`, the full Git `revision`, `target: "x86_64-unknown-linux-gnu"`, `profile: "release"`, and `binarySha256`, `stdlibSha256`, `sourceArchiveSha256`. The standard-library digest hashes sorted relative file names, a NUL, their SHA-256 hex digest and a newline for each file. Preparation checks the executable and library before and after copying, then records the provenance in the immutable image manifest. The flag is optional for legacy builders; release builders should supply it because the CLI version alone does not identify a source revision.
 
 Preparation runs in a disposable, network-enabled builder. It installs Git, Neko and published `ashui`, `ashui-components` and `ashui-icons` 0.2.3, compiles/runs a Haxe/Ash probe and builds Pocket Studio. It installs platform-correct built-in extension manifests, records installed package versions and file hashes, then captures and verifies a disk-only MSB snapshot. Builder compute is removed afterward; keep the verified snapshot. This explicit preparation is separate from page startup. Package repositories may change; preserve the resulting template and digest rather than treating a later rebuild as the same image.
 

@@ -33,6 +33,8 @@ for name in ['/usr/bin/git','/usr/bin/neko']:
 for path in sorted(system):
     files.append({'path':str(path),'sha256':digest(path),'bytes':path.stat().st_size})
 manifest={'version':1,'platform':'linux-'+platform.machine(),'haxe':'4.3.6','systemPackages':subprocess.check_output(['dpkg-query','-W','-f=${Package}=${Version}\n'],text=True).splitlines(),'libraries':{'ashui':'0.2.3','ashui-components':'0.2.3','ashui-icons':'0.2.3'},'files':files}
+if (root/'rayzor-build.json').is_file():
+    manifest['compilers']={'rayzor':json.loads((root/'rayzor-build.json').read_text())}
 identity=root/'toolchain.json'
 identity.write_text(json.dumps(manifest,separators=(',',':'),sort_keys=True)+'\n')
 (root/'SHA256SUMS').write_text(''.join(item['sha256']+'  '+item['path']+'\n' for item in files)+digest(identity)+'  toolchain.json\n')
