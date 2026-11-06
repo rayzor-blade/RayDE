@@ -68,6 +68,8 @@ pub struct Options {
     pub state_root: Option<PathBuf>,
     /// Trusted pinned public source, never a visitor-provided recovery graph.
     pub demo_seed:Option<(PathBuf,String)>,
+    /// Internal container readiness identity; absent for ordinary sessions.
+    pub container_health:Option<crate::demo_container::Health>,
     pub address: SocketAddr,
     /// The session's token; `None` opens it to whoever reaches it.
     pub token: Option<String>,
@@ -98,7 +100,7 @@ pub struct Options {
 
 impl Options {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into(), state_root: None, demo_seed:None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, preview_tools:None, raw: None, flush_delay: Duration::from_millis(150) }
+        Self { root: root.into(), state_root: None, demo_seed:None, container_health:None, address: ([127, 0, 0, 1], 0).into(), token: None, origins: Vec::new(), exec: false, environment:HashMap::new(), extension_host: None, extensions: None, read_roots:Vec::new(), authority: None, web: None, preview_project:None, preview_tools:None, raw: None, flush_delay: Duration::from_millis(150) }
     }
 }
 
@@ -136,6 +138,7 @@ struct Shared {
     origins: Arc<Vec<String>>,
     web: Option<Arc<PathBuf>>,
     preview: Option<(String,String)>,
+    container_health:Option<crate::demo_container::Health>,
 }
 
 pub async fn start(options: Options) -> std::io::Result<Running> {
@@ -250,8 +253,8 @@ pub async fn start(options: Options) -> std::io::Result<Running> {
     };
 
     let preview = options.preview_project.map(|project| (project,options.token.clone().unwrap()));
-    let shared = Shared { workspace: workspace.clone(), origins: Arc::new(options.origins), web: options.web.map(Arc::new), preview };
-    let app = Router::new().route("/session", get(upgrade)).route("/.well-known/rayde-preview",get(preview_connection)).fallback(get(page)).with_state(shared);
+    let shared = Shared { workspace: workspace.clone(), origins: Arc::new(options.origins), web: options.web.map(Arc::new), preview, container_health:options.container_health };
+    let app = Router::new().route("/health",get(container_health)).route("/session", get(upgrade)).route("/.well-known/rayde-preview",get(preview_connection)).fallback(get(page)).with_state(shared);
     let listener = TcpListener::bind(options.address).await?;
     let address = listener.local_addr()?;
     let (stop, stopped) = oneshot::channel::<()>();
@@ -489,5 +492,12 @@ mod output_tests {
         drop(queue);
         let (out,queue,state) = outbox(1,100); drop(queue); out("closed".into());
         assert!(state.closed()); assert_eq!(state.bytes.load(Ordering::Acquire),0);
+    }
+}
+
+async fn container_health(State(shared):State<Shared>)->Response {
+    match shared.container_health {
+        Some(value)=>axum::Json(value).into_response(),
+        None=>StatusCode::NOT_FOUND.into_response(),
     }
 }

@@ -7,6 +7,8 @@ mod buffer_state;
 pub mod docs;
 pub mod demo_seed;
 #[cfg(feature = "server")]
+pub mod demo_container;
+#[cfg(feature = "server")]
 pub mod editor;
 #[cfg(feature = "server")]
 pub mod desktop;

@@ -17,7 +17,7 @@ impl DemoSeed {
         if bytes.len()>3*1024*1024 || release.len()!=64 || crate::checkpoint::digest(bytes)!=release {return Err(invalid());}
         let value:Bundle=serde_json::from_slice(bytes).map_err(|_|invalid())?;
         if value.version!=1 || value.root!="/work/pocket-studio" || value.project!="pocket-studio/build.hxml" || value.entries.len()>256 {return Err(invalid());}
-        let mut paths=BTreeSet::new();let mut texts=BTreeMap::new();let mut total=0;
+        let mut paths=BTreeSet::new();let mut texts=BTreeMap::new();let mut files=BTreeSet::new();let mut total=0;
         for entry in value.entries {
             if !paths.insert(entry.path.clone()) || entry.directory && entry.data.is_some(){return Err(invalid());}
             if entry.path=="/work" || entry.path==value.root {
@@ -28,13 +28,37 @@ impl DemoSeed {
             if !entry.directory {
                 let bytes=B64.decode(entry.data.as_deref().ok_or_else(invalid)?).map_err(|_|invalid())?;
                 total+=bytes.len();if total>2*1024*1024{return Err(invalid());}
-                if let Ok(text)=String::from_utf8(bytes){texts.insert(path.to_owned(),text);}
+                if let Ok(text)=std::str::from_utf8(&bytes){texts.insert(path.to_owned(),text.to_owned());}
+                files.insert(path.to_owned());
             }
         }
         if !paths.contains(&value.root) || !texts.contains_key("build.hxml"){return Err(invalid());}
+        if files.iter().any(|file| paths.iter().any(|path| path.starts_with(&format!("{}/{file}/",value.root)))) {return Err(invalid());}
         Ok(Self{release:release.into(),texts})
     }
     pub fn release(&self)->&str {&self.release}
+    /// Check image preparation before the first visitor process starts; never overwrite live files.
+    #[cfg(feature = "server")]
+    pub fn verify_files(bytes:&[u8],release:&str,root:&std::path::Path)->std::io::Result<()> {
+        Self::parse(bytes,release).map_err(|_|std::io::Error::other("Invalid demo source release."))?;
+        let bundle:Bundle=serde_json::from_slice(bytes)?;
+        for entry in bundle.entries.into_iter().filter(|entry|!entry.directory) {
+            let path=entry.path.strip_prefix(&(bundle.root.clone()+"/")).unwrap();
+            let bytes=B64.decode(entry.data.as_deref().unwrap()).map_err(|_|std::io::Error::other("Invalid demo source bytes."))?;
+            let mut current=root.to_path_buf();
+            for part in path.split('/') {
+                current.push(part);
+                if std::fs::symlink_metadata(&current)?.file_type().is_symlink() {
+                    return Err(std::io::Error::other("The demo image contains a source symlink."));
+                }
+            }
+            let metadata=std::fs::metadata(&current)?;
+            if !metadata.is_file() || metadata.len()!=bytes.len() as u64 || std::fs::read(current)?!=bytes {
+                return Err(std::io::Error::other("The demo image does not match its source release."));
+            }
+        }
+        Ok(())
+    }
     /// Only immutable source uses client zero; live replicas always keep their own writer identity.
     pub fn graph(&self,path:&str)->Option<Vec<u8>> {
         let source=self.texts.get(path)?;

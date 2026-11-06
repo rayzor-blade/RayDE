@@ -89,7 +89,9 @@ def main():
     parser.add_argument('--preview-operator',type=Path,help='headless PrepareDemoPreview bytecode built by scripts/build-site.sh')
     parser.add_argument('--base',default='ubuntu:26.04')
     parser.add_argument('--builder-memory-mib',type=int,help='builder memory budget (default: 3072 with previews, otherwise 1024)')
-    parser.add_argument('--output',type=Path,required=True)
+    destination=parser.add_mutually_exclusive_group(required=True)
+    destination.add_argument('--output',type=Path,help='write an MSB toolchain snapshot configuration')
+    destination.add_argument('--container-context',type=Path,help='stage an OCI build context; does not start MSB or Docker')
     args=parser.parse_args()
     if platform.system()!='Linux' or platform.machine()!='x86_64':
         parser.error('This profile builds the Linux x86_64 toolchain on a compatible Linux host')
@@ -104,8 +106,11 @@ def main():
             verify_rayzor_build(rayzor_build,args.rayzor,args.stdlib)
         except (ValueError,OSError) as error:
             parser.error(str(error))
-    if args.output.exists():
-        parser.error('Choose a new output file; existing template configuration is preserved')
+    destination=args.container_context or args.output
+    if destination.exists():
+        parser.error('Choose a new output; existing template configuration is preserved')
+    if args.container_context and (not all([args.session,args.preview_operator,args.demo_bundle,args.preview_tools,args.rayzor_provenance]) or not re.fullmatch(r'ubuntu:26\.04@sha256:[0-9a-f]{64}',args.base)):
+        parser.error('Container contexts require pinned ubuntu:26.04@sha256:..., Rayzor provenance, session, preview tooling/operator and demo bundle')
     memory=args.builder_memory_mib if args.builder_memory_mib is not None else 3072 if args.preview_tools else 1024
     if not 512<=memory<=16384:
         parser.error('Builder memory must be between 512 and 16384 MiB')
@@ -120,8 +125,8 @@ def main():
         return subprocess.run([str(args.msb),*map(str,command)],env={**os.environ,'MSB_BACKEND':'local'},check=True,timeout=timeout,text=True,stdout=subprocess.PIPE if capture else None)
     builder='rayde-toolchain-build-'+secrets.token_hex(8)
     created=False
-    args.output.parent.mkdir(parents=True,exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='rayde-toolchain-',dir=args.output.parent.resolve()) as temporary:
+    destination.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='rayde-toolchain-',dir=destination.parent.resolve()) as temporary:
         payload=Path(temporary)/'rayde';(payload/'bin').mkdir(parents=True);(payload/'lib').mkdir()
         for source,name in [(args.ash,'ash'),(args.rayzor,'rayzor'),(args.extension_host,'rayde-extension-host')]:
             copy_binary(source,payload/'bin'/name,payload/'lib')
@@ -152,6 +157,18 @@ def main():
         shutil.copy2(args.haxe_archive,payload/'haxe.tar.gz')
         environment={'PATH':'/opt/rayde/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin','LD_LIBRARY_PATH':'/opt/rayde/lib','TMPDIR':'/tmp','HAXE_STD_PATH':'/opt/rayde/haxe/std/','HAXELIB_PATH':'/opt/rayde/haxelib','RAYZOR_STD_PATH':'/opt/rayde/haxe-std'}
         (payload/'environment.json').write_text(json.dumps(environment)+'\n')
+        if args.container_context:
+            shutil.copy2(ROOT/'native/session/container/prepare.py',payload/'container_image.py')
+            context=Path(temporary)/'context';context.mkdir()
+            payload.rename(context/'payload')
+            recipe=(ROOT/'native/session/container/Dockerfile').read_text().replace('ARG BASE_IMAGE\n','ARG BASE_IMAGE='+args.base+'\n')
+            (context/'Dockerfile').write_text(recipe)
+            shutil.copy2(ROOT/'LICENSE',context/'payload/LICENSE')
+            shutil.copy2(ROOT/'NOTICE',context/'payload/NOTICE')
+            (context/'.dockerignore').write_text('*\n!Dockerfile\n!payload/\n!payload/**\n')
+            context.rename(args.container_context)
+            print('Prepared OCI build context: '+str(args.container_context),flush=True)
+            return
         variables=[part for key,value in environment.items() for part in ['--env',key+'='+value]]
         try:
             created=True
