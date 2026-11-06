@@ -11,7 +11,7 @@ On a Linux x86_64 builder, use `scripts/prepare-toolchain.py` with the same rele
 --base ubuntu:26.04@sha256:VERIFIED_BASE_IMAGE_DIGEST
 ```
 
-This only stages a build context; it starts no VM, daemon or deployment. Build it with an OCI builder, targeting `linux/amd64`. Package installation, Haxe/WASM compilation and Rayzor warming happen during that build. The image contains published Ashui 0.2.4. Its prepared source and caches live at `/workspace/project`; startup runs `rayde-session container` directly, with no shell build script. Each visitor gets a separate writable image layer. No host credential is included in the context.
+This only stages a build context; it starts no VM, daemon or deployment. Build it with an OCI builder, targeting `linux/amd64`. Package installation, Haxe/WASM compilation and Rayzor warming happen during that build. Preparation requires zero settled Rayzor errors and reuse by a fresh process. The image contains published Ashui 0.2.4. Its prepared source and caches live at `/workspace/project`; startup runs `rayde-session container` directly, with no shell build script. Each visitor gets a separate writable image layer. No host credential is included in the context.
 
 Extract the SHA-256 of `/opt/rayde/toolchain.json` and `/opt/rayde/demo-workspace.json` from the built image for `DEMO_TOOLCHAIN` and `DEMO_RELEASE`. Pin the resulting OCI image digest when configuring deployment. A mismatched identity cannot become ready.
 

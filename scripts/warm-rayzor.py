@@ -30,6 +30,7 @@ async def warm(root, command, timeout, progress=None, files=None):
             os.setpriority(os.PRIO_PROCESS, process.pid, 10)
         except PermissionError:
             pass
+    diagnostics = {}
 
     async def send(message):
         body = json.dumps({'jsonrpc': '2.0', **message}).encode()
@@ -42,7 +43,11 @@ async def warm(root, command, timeout, progress=None, files=None):
         length = int(next(value for key, value in fields.items() if key.lower() == b'content-length'))
         if not 0 < length <= 8 * 1024 * 1024:
             raise ValueError('Invalid LSP response length')
-        return json.loads(await process.stdout.readexactly(length))
+        message = json.loads(await process.stdout.readexactly(length))
+        if message.get('method') == 'textDocument/publishDiagnostics':
+            params = message.get('params', {})
+            diagnostics[params.get('uri')] = [item for item in params.get('diagnostics', []) if item.get('severity') == 1]
+        return message
 
     async def reply(request):
         if request.get('method') and 'id' in request:
@@ -57,7 +62,7 @@ async def warm(root, command, timeout, progress=None, files=None):
                 return message.get('result')
             await reply(message)
 
-    report = {'files': len(documents), 'indexed': 0, 'reused': 0}
+    report = {'files': len(documents), 'indexed': 0, 'reused': 0, 'errors': 0}
     try:
         async with asyncio.timeout(timeout):
             await send({'id': 1, 'method': 'initialize', 'params': {
@@ -81,6 +86,10 @@ async def warm(root, command, timeout, progress=None, files=None):
                     if message.get('method') == 'rayzor/analysisStatus' and params.get('uri') == uri:
                         indexed |= params.get('state') == 'checking'
                         if params.get('state') == 'ready':
+                            errors = diagnostics.get(uri, [])
+                            if errors:
+                                message = str(errors[0].get('message', 'Unspecified diagnostic')).replace('\n', ' ')[:512]
+                                raise ValueError(f'Rayzor reported {len(errors)} error(s) in {uri.rsplit("/", 1)[-1]}: {message}')
                             report['indexed' if indexed else 'reused'] += 1
                             break
                 await send({'method': 'textDocument/didClose', 'params': {'textDocument': {'uri': uri}}})
