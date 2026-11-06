@@ -110,6 +110,7 @@ export const start = ask => serve(ask, {
         try {
           let reply;
           if (request.op === "hello") reply = hello();
+          else if(request.op==='page.probe'){if(query.getAll('env').includes('RAYDE_PROBE=1'))globalThis.__raydeProbe={...request.snapshot,page:hello(),at:Date.now()};reply={};}
           else if(request.op==='page.demo-retry'&&admission){void admission.start(true);reply={};}
           else if(request.op==='page.tree.list'&&tree)reply=await tree.list(request);
           else if(request.op==='page.tree.refresh'&&tree){tree.invalidate(request.path??'',request.mount??null,true);reply={};}

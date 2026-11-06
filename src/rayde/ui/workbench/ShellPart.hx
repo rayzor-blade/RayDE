@@ -233,7 +233,7 @@ class ShellPart {
 	function host():Host
 		return {
 			contributions: wb.contributions, cwd: wb.props.display.cwd, name: wb.props.name ?? haxe.io.Path.withoutDirectory(wb.props.display.cwd),
-			active: wb.active, dirty: wb.dirty, closed: () -> wb.gone,
+			active: wb.active, dirty: wb.dirty, tabs: wb.open, problems: wb.problems, closed: () -> wb.gone,
 			isDocument: file -> file != "" && !Workbench.isVirtual(file) && !ImagePreview.isRaster(file) && FileOps.inside(wb.props.display.cwd, file),
 			hasBuffer: file -> wb.documentsPart.buffers.exists(file), state: wb.documentsPart.documentState, editorOf: wb.editorOf, open: wb.openFile, say: wb.say, ask: request -> wb.prompt.set(request),
 			edited: wb.documentsPart.edited, releaseDocuments: wb.documentsPart.releaseClosedDocuments,

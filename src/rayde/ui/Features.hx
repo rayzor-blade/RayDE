@@ -4,7 +4,8 @@ package rayde.ui;
 class Features {
 	public static final builtin:Array<Host->Void> = [
 		rayde.jam.JamFeature.install,
-		rayde.sync.SyncFeature.install
+		rayde.sync.SyncFeature.install,
+		rayde.ui.Probe.install
 	];
 
 	public static function installAll(host:Host):Void

@@ -13,6 +13,9 @@ typedef Host = {
 	/** The file in front ("" for none), and the files with changes not yet written. */
 	active:Signal<String>,
 	dirty:Signal<Array<String>>,
+	/** The open tabs, and the problems the language server and compiler have reported. */
+	tabs:Signal<Array<String>>,
+	problems:Signal<Array<rayde.lang.Display.Diagnostic>>,
 	/** Whether the workbench has closed. */
 	closed:Void->Bool,
 	/** Whether `file` is a text document of this workspace that a feature may work on. */

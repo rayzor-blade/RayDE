@@ -6,6 +6,8 @@
 // cannot be observed from outside the canvas editor is reported as "skip" with the reason, never as a pass.
 //   RAYDE_ACCEPT_CAPACITY=N   also open N+1 visitors and expect the last to be refused while its editor stays usable
 //   RAYDE_ACCEPT_OUT=dir      reports and screenshots (default bin/web/acceptance)
+//   RAYDE_ACCEPT_PROBE=0      do not ask the editor to publish its state (it reports tabs, problems and contributions through globalThis.__raydeProbe)
+//   RAYDE_ACCEPT_EXPECT=a,b   contribution ids (commands, activities or status items) that must be present
 //   CHROME=path               browser executable
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
@@ -52,6 +54,9 @@ async function check(name, run) {
 function expect(condition, message) { if (!condition) throw Error(message); }
 
 const url = await base();
+// The editor publishes its state only when asked, through the page's env parameter.
+const visit = new URL(url);
+if (process.env.RAYDE_ACCEPT_PROBE !== '0') visit.searchParams.append('env', 'RAYDE_PROBE=1');
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: true, args: ['--no-sandbox', '--enable-unsafe-webgpu'], defaultViewport: {width: 1440, height: 900}
@@ -69,6 +74,18 @@ async function visitor(label) {
     if (response.status() >= 400 && !response.url().endsWith('/favicon.ico')) problems.push(response.status() + ' ' + new URL(response.url()).pathname);
   });
   return {label, context, page, problems, started: Date.now()};
+}
+/** What the editor last published about itself, or null before the first report. */
+const probeOf = async page => (await editorOf(page)).evaluate(() => globalThis.__raydeProbe ?? null);
+async function probeUntil(page, ready, what, timeout = 60000) {
+  const deadline = Date.now() + timeout;
+  let seen = null;
+  while (Date.now() < deadline) {
+    seen = await probeOf(page);
+    if (seen && ready(seen)) return seen;
+    await pause(500);
+  }
+  throw Error(`${what}; last report: ${seen ? JSON.stringify(seen).slice(0, 400) : 'none (is this build probing?)'}`);
 }
 const isLive = page => page.waitForFunction(() => document.querySelector('#demo-state')?.hasAttribute('data-live'), {timeout: LIVE_TIMEOUT});
 const editorOf = async page => (await page.$('#editor')).contentFrame();
@@ -155,7 +172,7 @@ try {
 
   await check('desktop: the live editor appears without admission on its path', async () => {
     first.v = await visitor('first');
-    await first.v.page.goto(url);
+    await first.v.page.goto(visit.href);
     await isLive(first.v.page);
     facts.liveEditorMs = Date.now() - first.v.started;
     const frame = await editorOf(first.v.page);
@@ -222,7 +239,7 @@ try {
 
   await check('isolation: a second visitor gets another session and none of the first edits', async () => {
     const second = await visitor('second');
-    await second.page.goto(url);
+    await second.page.goto(visit.href);
     await isLive(second.page);
     const remote = await demoCall(second.page, 'status');
     if (remote.status === 404) { await second.context.close(); return {skip: 'this host has no demo admission'}; }
@@ -266,8 +283,40 @@ try {
     expect([401, 410].includes(after.status), 'the lease still answers after end: ' + after.status);
   });
 
-  for (const name of ['terminal and Output', 'extensions: every built-in contribution', 'LSP: hover, goto, actions', 'cached app preview, source edit and rebuild', 'Git sidebar and graph']) {
-    await check(name, async () => ({skip: 'the editor is one canvas with no in-page hook; needs a probe in the page, see git-bug 4fc81d5'}));
+  await check('probe: tabs, contributions and the language server settle', async () => {
+    if (process.env.RAYDE_ACCEPT_PROBE === '0') return {skip: 'probing is off'};
+    const {page} = first.v;
+    const settled = await probeUntil(page, p => p.tabs?.length > 0 && p.problems, 'the editor reported no tabs');
+    facts.tabs = settled.tabs.map(file => file.split('/').pop());
+    const names = new Set(facts.tabs);
+    expect(names.has('Main.hx') && names.has('BoardApp.hx'), 'Main.hx and BoardApp.hx are not both open: ' + facts.tabs.join(', '));
+    // Errors must stay at zero for ten seconds in a row: a first analysis may publish transient ones.
+    let quietSince = null;
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+      const now = await probeOf(page);
+      if (now?.problems?.errors === 0) { quietSince ??= Date.now(); if (Date.now() - quietSince >= 10000) break; } else quietSince = null;
+      await pause(500);
+    }
+    expect(quietSince !== null && Date.now() - quietSince >= 10000, 'problems did not settle at zero errors: ' + JSON.stringify((await probeOf(page))?.problems));
+    facts.contributions = {commands: settled.commands.length, activities: settled.activities, status: settled.status};
+    const expected = (process.env.RAYDE_ACCEPT_EXPECT ?? '').split(',').filter(Boolean);
+    const have = new Set([...settled.commands, ...settled.activities, ...settled.status]);
+    const missing = expected.filter(id => !have.has(id));
+    expect(missing.length === 0, 'missing contributions: ' + missing.join(', '));
+    expect(settled.commands.length > 0, 'no commands are registered');
+    return {detail: `${facts.tabs.join(', ')}; ${settled.commands.length} commands; activities ${settled.activities.join(', ')}`};
+  });
+
+  await check('remote state: the page reports a ready demo session', async () => {
+    if (process.env.RAYDE_ACCEPT_PROBE === '0') return {skip: 'probing is off'};
+    if (facts.hasAdmission === false) return {skip: 'this host has no demo admission'};
+    const seen = await probeUntil(first.v.page, p => p.page?.demoState === 'ready' && p.page?.online === true, 'the page never reported a ready, online demo session', 180000);
+    return {detail: JSON.stringify({demoState: seen.page.demoState, remote: seen.page.remote, generation: seen.page.generation})};
+  });
+
+  for (const name of ['terminal and Output', 'cached app preview, source edit and rebuild', 'LSP: hover, goto, actions', 'Git sidebar and graph']) {
+    await check(name, async () => ({skip: 'the probe reports tabs, problems and contributions only; this needs more of the editor exposed, see git-bug 4fc81d5'}));
   }
 
   // Without admission the page's own demo and session calls are refused by design.
