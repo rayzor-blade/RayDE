@@ -1,6 +1,7 @@
 mod account;
 mod assets;
 mod demo;
+mod demo_container;
 mod auth_popup;
 mod projects;
 mod workspace;
@@ -14,6 +15,7 @@ mod sync_watch;
 pub use account::AccountSession;
 pub use workspace::{WorkspaceSession,DemoWorkspaceSession};
 pub use demo::DemoAdmissions;
+pub use demo_container::DemoContainer;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};

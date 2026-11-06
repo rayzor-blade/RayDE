@@ -4,7 +4,7 @@ Authentication and workspace orchestration are Rust (`src/`), compiled to Worker
 
 ## Public demo and workspace URLs
 
-The editor bundle opens a bootstrapped example on `rayde.org` and `www.rayde.org`, with `Main.hx` already visible. `?demo=1` enables the same entry locally; `?demo=0` disables it. Demo files stay in browser storage and do not provision a private workspace. Signing in from the public demo navigates to the app host; it does not query private account APIs from the landing origin.
+The editor bundle opens Pocket Studio on `rayde.org` and `www.rayde.org`, with its sources visible before network admission. `?demo=1` enables the same entry locally; `?demo=0` disables it. Configured anonymous admission attaches private compute after the UI renders, retaining browser edits. It supplies real language, extension, terminal and build services. Signing in from the public demo navigates to the app host; it does not query private account APIs from the landing origin.
 
 Set the account Worker's `APP_ORIGIN` to `https://app.rayde.org` for deployment. Its root opens Welcome/repository selection; owned workspaces open at `https://app.rayde.org/{session_id}`. The edge authenticates those pages before serving the editor, and sign-in returns to the same workspace. The browser derives its authenticated socket from the path; connection credentials stay off the URL. `ASSETS_ORIGIN` supplies the static editor bundle, including the index served for workspace paths. These hostname defaults do not configure DNS or deploy either site.
 
@@ -81,6 +81,8 @@ The gateway supplies the compute token in the session handshake and relays the e
 Each workspace admits eight connections, counting upstream handshakes in progress. Overflow returns HTTP 429 before dialing compute. Upstream opens have a ten-second deadline; failure, timeout and sign-out cancel the attempt and release its reservation. Established slots release on client close, invalid input, backend loss or sign-out. This is a workspace admission bound, separate from account-wide usage policy.
 
 ## Anonymous demo admission
+
+For the landing page's Cloudflare compute provider, see the [demo container reference](../../native/session/container/README.md). It uses the same admission and recovery gateway; dedicated workspaces retain the MSB runner.
 
 This API is disabled by default. Enabling it requires `DEMO_ORIGIN`, `DEMO_RELEASE` (the pinned Pocket Studio bundle SHA-256), `DEMO_TOOLCHAIN` (the prepared image digest), and optional `DEMO_MAX_SESSIONS` (default one, maximum eight). The runner must independently allow the same source release. A mismatched toolchain cannot become ready. The browser opens the verified public source first, then starts admission after the editor renders. Attachment retains its document objects, local edits and undo history.
 

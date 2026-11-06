@@ -58,7 +58,7 @@ pub(crate) async fn route(req:Request,env:Env)->AppResult<Response> {
 }
 
 #[derive(Clone,Serialize,Deserialize)]
-struct Lease {key:String,id:String,lease:String,release:String,expires:u64,idle:u64,phase:String,attempts:u8,retry:u64,cleanup:u64}
+struct Lease {#[serde(default)] containers:bool,key:String,id:String,lease:String,release:String,expires:u64,idle:u64,phase:String,attempts:u8,retry:u64,cleanup:u64}
 #[derive(Serialize,Deserialize)]
 struct Rate {key:String,expires:u64,count:u8}
 #[derive(Default,Serialize,Deserialize)]
@@ -66,7 +66,10 @@ struct Ledger {leases:Vec<Lease>,rates:Vec<Rate>}
 
 impl Lease {
     fn owner(&self)->String {format!("demo:{}",self.id)}
-    fn repository(&self)->Value {json!({"id":0,"fullName":"demo/pocket-studio","demo":{"release":self.release,"lease":self.lease,"expires":self.expires/1000}})}
+    fn repository(&self)->Value {
+        let mut value=json!({"id":0,"fullName":"demo/pocket-studio","demo":{"release":self.release,"lease":self.lease,"expires":self.expires/1000}});
+        if self.containers {value["demo"]["compute"]=json!("containers");}value
+    }
     fn live(&self)->AppResult<()> {
         if self.phase!="active" || self.expires<=now() || self.idle<=now() {return Err(bad(410,"The demo session expired."));}
         Ok(())
@@ -120,7 +123,7 @@ impl DemoAdmissions {
             if ledger.leases.len()>=maximum {return Err(bad(429,"All demo sessions are in use. You can keep editing while you wait."));}
             let lease=hash(&format!("demo-lease:{key}"));
             let id=URL_SAFE_NO_PAD.encode(Sha256::digest(format!("demo:{release}:{lease}")));
-            ledger.leases.push(Lease{key:key.into(),id,lease,release,expires:now()+LIFETIME,idle:now()+IDLE,phase:"active".into(),attempts:0,retry:0,cleanup:0});
+            ledger.leases.push(Lease{containers:crate::demo_container::enabled(&self.env),key:key.into(),id,lease,release,expires:now()+LIFETIME,idle:now()+IDLE,phase:"active".into(),attempts:0,retry:0,cleanup:0});
             dirty=true;
         }
         let Some(index)=ledger.leases.iter().position(|lease|lease.key==key) else {
@@ -166,11 +169,15 @@ impl DemoAdmissions {
         self.state.wait_until(async move {
             let work=async {
                 rpc(&env,"DEMO_WORKSPACES",&lease.id,"demo/end",&json!({"owner":lease.owner()})).await?;
+                if lease.containers {
+                    crate::demo_container::delete(&env,&lease.id).await?;
+                } else {
                 let base=config(&env,"RUNNER_URL").unwrap_or_else(||"https://runner.internal".into());
                 let mut req=request(&format!("{}/workspaces/delete",base.trim_end_matches('/')),&json!({"id":lease.id,"owner":0,"demo":lease.repository()["demo"]}))?;
                 req.headers_mut()?.set("Authorization",&format!("Bearer {}",config(&env,"RUNNER_SECRET").ok_or_else(||bad(503,"Demo cleanup is unavailable."))?))?;
                 let response=if let Ok(binding)=env.service("RUNNER") {binding.fetch_request(req).await?}else{Fetch::Request(req).send().await?};
                 if response.status_code()>=400 && response.status_code()!=404 {return Err(bad(503,"Demo cleanup is pending."));}
+                }
                 rpc(&env,"DEMO_WORKSPACES",&lease.id,"demo/purge",&json!({"owner":lease.owner()})).await?;
                 Ok::<(),Failure>(())
             };

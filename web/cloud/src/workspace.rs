@@ -893,6 +893,7 @@ fn runner_session_origin(env: &Env, endpoint: &Url) -> AppResult<()> {
     Ok(())
 }
 async fn workspace_resources(env:&Env, value:&Value) -> AppResult<Value> {
+    if value["connection"]["provider"]=="demo-container" {return Ok(json!({"available":false,"status":"ready","sampledAt":now()}));}
     let url=config(env,"RUNNER_URL").unwrap_or_else(||"https://runner.internal".into());
     let endpoint=Url::parse(&url).map_err(|_|bad(503,"Invalid runner configuration."))?;
     if endpoint.scheme()!="https" && config(env,"LOCAL_DEV").as_deref()!=Some("1") {return Err(bad(503,"The runner requires HTTPS."));}
@@ -913,6 +914,7 @@ async fn workspace_resources(env:&Env, value:&Value) -> AppResult<Value> {
     deadline(fetch,10).await.map_err(|_|bad(504,"Workspace usage did not respond. Try refreshing."))?
 }
 async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
+    if demo_record(value) && value["repository"]["demo"]["compute"]=="containers" {return crate::demo_container::prepare(env,value).await;}
     let url = config(env, "RUNNER_URL").unwrap_or_else(|| "https://runner.internal".into());
     let endpoint = Url::parse(&url).map_err(|_| bad(503, "Invalid runner configuration."))?;
     if endpoint.scheme() != "https" && config(env, "LOCAL_DEV").as_deref() != Some("1") {
@@ -962,6 +964,9 @@ async fn prepare(env: &Env, value: &Value, access: Value) -> AppResult<Value> {
 }
 
 async fn connect_backend(env: &Env, connection: &Value, data: &Value, signal: &worker::AbortSignal) -> AppResult<Response> {
+    if connection["provider"]=="demo-container" {
+        return deadline(crate::demo_container::connect(env,connection,data),10).await.map_err(|_|bad(504,"The demo did not respond. Reconnect and try again."))?;
+    }
     let mut endpoint = Url::parse(text(connection,"url")?).map_err(|_|bad(502,"Invalid workspace endpoint."))?;
     runner_session_origin(env,&endpoint)?;
     let scheme = if endpoint.scheme()=="wss" {"https"} else {"http"};

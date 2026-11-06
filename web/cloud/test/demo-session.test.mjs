@@ -1,5 +1,6 @@
 // HTTP/WebSocket protocol integration only; this test does not launch a browser.
 import {test} from 'node:test';
+import {fetch as portFetch} from 'miniflare';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:net';
@@ -32,20 +33,39 @@ async function peer(fetch,cookie,claimedId){
  })};
 }
 
-test('two admitted demo sessions keep private identity/files and release only their own recovery payloads',async t=>{
+for(const compute of ['runner','containers'])test(`${compute}: two admitted demo sessions keep private identity/files and release only their own recovery payloads`,async t=>{
  const root=await mkdtemp(join(tmpdir(),'rayde-demo-session-')),hosts=new Map();
  const seed=join(root,'demo.json');await writeFile(seed,bundle);
  let allow;const admitted=new Promise(resolve=>allow=resolve);
  async function stop(id){const host=hosts.get(id);if(host&&host.process.exitCode===null&&host.process.signalCode===null){const exited=once(host.process,'exit');host.process.kill();await exited;}}
  t.after(async()=>{allow();for(const id of hosts.keys())await stop(id);await rm(root,{recursive:true,force:true});});
- const cloud=await fixture({demo:{release,maximum:2},provision:async data=>{
+ const provision=async data=>{
   await admitted;
   assert.equal(data.owner,0);assert.equal(data.repository.demo.release,release);
   const path=join(root,data.id),number=await port();await mkdir(path);await writeFile(join(path,'build.hxml'),build);await writeFile(join(path,'live.txt'),'base');
-  const process=spawn(resolve('../../native/session/target/release/rayde-session'),['--root',path,'--state-root',join(path,'state'),'--port',String(number),'--token','compute-secret','--origin',origin,'--exec','--demo-seed',seed,'--demo-release',release],{stdio:'ignore'});
-  hosts.set(data.id,{path,process});await listening(number,process);
+  const process=spawn(resolve('../../native/session/target/release/rayde-session'),['--root',path,'--state-root',join(path,'state'),'--port',String(number),'--token',data.token??'compute-secret','--origin',origin,'--exec','--demo-seed',seed,'--demo-release',release],{stdio:'ignore'});
+  hosts.set(data.id,{path,process,port:number});await listening(number,process);
   return json({url:`ws://127.0.0.1:${number}/session`,token:'compute-secret',project:'build.hxml',toolchain});
- },cleanup:async data=>{await stop(data.id);return json({deleted:true});}});
+ };
+ const instances=new Map();
+ const container=async request=>{
+  const [,id,operation]=new URL(request.url).pathname.split('/');
+  if(operation==='running')return json({running:instances.has(id)});
+  if(operation==='start'){
+   const data=await request.json(),env=data.env;
+   await provision({id,owner:0,token:env.RAYDE_DEMO_TOKEN,repository:{demo:{release:env.RAYDE_DEMO_RELEASE}}});
+   instances.set(id,env);return json({});
+  }
+  if(operation==='health'){
+   const env=instances.get(id);if(!env)return json({},503);
+   return json({version:1,id,release:env.RAYDE_DEMO_RELEASE,toolchain:env.RAYDE_DEMO_TOOLCHAIN,expires:Number(env.RAYDE_DEMO_EXPIRES),generation:1});
+  }
+  if(operation==='destroy'){await stop(id);instances.delete(id);return json({});}
+  if(operation==='session')return portFetch(`http://127.0.0.1:${hosts.get(id).port}/session`,{headers:{Upgrade:'websocket',Origin:origin}});
+  return json({},404);
+ };
+ const cloud=await fixture({demo:{release,maximum:2,...(compute==='containers'?{compute}:{})},provision,
+  ...(compute==='containers'?{container}:{}),cleanup:async data=>{await stop(data.id);return json({deleted:true});}});
  t.after(()=>cloud.mf.dispose());const {fetch,mf}=cloud;
  async function open(ip){const response=await fetch('/api/demo/open',{method:'POST',headers:{Origin:origin,'CF-Connecting-IP':ip}});assert.equal(response.status,202);return {state:await response.json(),cookie:response.headers.get('Set-Cookie').split(';')[0]};}
  const [a,b]=await Promise.race([Promise.all([open('192.0.2.1'),open('192.0.2.2')]),pause(2000).then(()=>{throw Error('Admission waited for compute instead of returning preparing');})]);

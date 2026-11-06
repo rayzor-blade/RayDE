@@ -23,7 +23,7 @@ The `v4` migration and `DEMO_CONTAINERS` binding are defined in `web/cloud/wrang
 "containers": [{
   "class_name": "DemoContainer",
   "scheduling_policy": "durable_object",
-  "images": {"base": "registry.cloudflare.com/ACCOUNT/IMAGE@sha256:DIGEST"},
+  "images": {"base": {"image": "registry.cloudflare.com/ACCOUNT/IMAGE@sha256:DIGEST"}},
   "max_instances": 2
 }]
 ```

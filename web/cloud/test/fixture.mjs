@@ -22,8 +22,8 @@ export async function listening(port,child) {
   }
   throw Error("Workspace test server did not start listening");
 }
-export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, landingOrigin, demo, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, cleanup, github, metrics } = {}) {
-  const calls = { exchanges: [], runner: [], runnerDeletes: [], api: [] };
+export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/session", asset, assetSource, landingOrigin, demo, editorAssets = false, port = 0, appOrigin = origin, failProvisionOnce = false, files = true, runnerUrl, runnerSecret = "test-runner-secret", runnerSessionOrigin, provision, cleanup, github, metrics, container } = {}) {
+  const calls = { exchanges: [], runner: [], runnerDeletes: [], api: [], containers: [] };
   const config = {
     modules: true,
     modulesRules: [{ type: "ESModule", include: ["**/*.js"] }, { type: "CompiledWasm", include: ["**/*.wasm"] }],
@@ -31,12 +31,13 @@ export function options({ persist = false, endpoint = "ws://127.0.0.1:8790/sessi
     compatibilityDate: "2026-07-30",
     port,
     host: "127.0.0.1",
-    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true }, DEMO_ADMISSIONS:{className:"DemoAdmissions",useSQLite:true}, DEMO_WORKSPACES:{className:"DemoWorkspaceSession",useSQLite:true} },
+    durableObjects: { ACCOUNTS: { className: "AccountSession", useSQLite: true }, WORKSPACES: { className: "WorkspaceSession", useSQLite: true }, SYNC_WORKSPACES: { className: "SyncWorkspaceSession", useSQLite: true }, SYNC_ACCOUNTS: { className: "SyncAccountLedger", useSQLite: true }, DEMO_ADMISSIONS:{className:"DemoAdmissions",useSQLite:true}, DEMO_WORKSPACES:{className:"DemoWorkspaceSession",useSQLite:true}, DEMO_CONTAINERS:{className:"DemoContainer",useSQLite:true} },
     durableObjectsPersist: persist,
     r2Buckets: [...(files ? ["WORKSPACE_FILES"] : []), ...(editorAssets ? ["EDITOR_ASSETS"] : [])],
     r2Persist: persist,
-    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}), ...(landingOrigin ? {LANDING_ORIGIN:landingOrigin} : {}), ...(demo ? {DEMO_ORIGIN:demo.origin??appOrigin,DEMO_RELEASE:demo.release,DEMO_TOOLCHAIN:demo.toolchain??'b'.repeat(64),DEMO_MAX_SESSIONS:String(demo.maximum??1)}:{}) },
+    bindings: { LOCAL_DEV: "1", APP_ORIGIN: appOrigin, GITHUB_CLIENT_ID: "test-client", GITHUB_CLIENT_SECRET: "test-client-secret", GITHUB_APP_SLUG: "rayde-test", RUNNER_SECRET: runnerSecret, ...(runnerSessionOrigin ? {RUNNER_SESSION_ORIGIN:runnerSessionOrigin} : {}), ...(asset ? { ASSETS_ORIGIN: asset } : {}), ...(assetSource ? { EDITOR_ASSETS_SOURCE: assetSource } : {}), ...(landingOrigin ? {LANDING_ORIGIN:landingOrigin} : {}), ...(demo ? {DEMO_ORIGIN:demo.origin??appOrigin,DEMO_RELEASE:demo.release,DEMO_TOOLCHAIN:demo.toolchain??'b'.repeat(64),DEMO_MAX_SESSIONS:String(demo.maximum??1),...(demo.compute?{DEMO_COMPUTE:demo.compute}:{})}:{}) },
     serviceBindings: {
+      ...(container ? {DEMO_CONTAINER_RUNTIME:async request=>{calls.containers.push({path:new URL(request.url).pathname,headers:Object.fromEntries(request.headers)});return container(request);}} : {}),
       GITHUB: async request => {
         const url = new URL(request.url);
         if (url.pathname === "/login/oauth/access_token") {
