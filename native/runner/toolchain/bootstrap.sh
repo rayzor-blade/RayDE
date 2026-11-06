@@ -20,7 +20,7 @@ cp -L /usr/lib/x86_64-linux-gnu/libgit2.so.1.9 /opt/rayde/extensions/git/natives
 python3 - <<'PY'
 import hashlib,json,pathlib
 root=pathlib.Path('/opt/rayde/extensions/git');path=root/'git.rayext'
-manifest=json.loads(path.read_text());native=root/'natives/libgit2.so'
+manifest=json.loads((path if path.is_file() else root/'git.rayext.in').read_text());native=root/'natives/libgit2.so'
 manifest['natives']['git2']={'path':'natives/libgit2.so','sha256':hashlib.sha256(native.read_bytes()).hexdigest()}
 path.write_text(json.dumps(manifest,indent=2)+'\n')
 PY
