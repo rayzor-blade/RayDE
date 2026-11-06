@@ -339,7 +339,7 @@ impl DemoContainer {
             let response = runtime
                 .fetch_request(request(
                     &format!("https://container/{}/start", lease.id),
-                    &json!({"env":lease.environment(),"enableInternet":false}),
+                    &json!({"env":lease.environment(),"enableInternet":false,"instance":instance(&self.env)?}),
                 )?)
                 .await?;
             if response.status_code() != 200 {
@@ -372,7 +372,7 @@ impl DemoContainer {
             .ok_or_else(|| bad(503, "The demo base image is missing."))?;
         set(&options, "image", &JsValue::from_str(&image))?;
         // Size comes from reviewed application configuration, never from a visitor's request.
-        set(&options, "instance", &JsValue::from_str("basic"))?;
+        set(&options, "instance", &JsValue::from_str(instance(&self.env)?))?;
         call(&container, "start", options.as_ref())?;
         inactivity(&container).await.map_err(Failure::from)
     }
@@ -412,6 +412,15 @@ impl DemoContainer {
             .get_tcp_port(8080)?
             .fetch_request(req)
             .await?)
+    }
+}
+/// The platform's named instance size for a demo container, from `DEMO_INSTANCE`.
+fn instance(env: &Env) -> AppResult<&'static str> {
+    const SIZES: [&str; 6] = ["lite", "basic", "standard-1", "standard-2", "standard-3", "standard-4"];
+    let wanted = config(env, "DEMO_INSTANCE");
+    match wanted.as_deref() {
+        None => Ok("standard-1"),
+        Some(name) => SIZES.iter().copied().find(|size| *size == name).ok_or_else(|| bad(503, "Invalid demo container size.")),
     }
 }
 fn set(object: &Object, name: &str, value: &JsValue) -> AppResult<()> {

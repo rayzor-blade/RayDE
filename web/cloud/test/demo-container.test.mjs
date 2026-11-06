@@ -50,7 +50,7 @@ test('container admission returns preparing immediately and gives each visitor p
  assert.notEqual(a.state.id,b.state.id);allow();
  await Promise.all([state(fetch,a),state(fetch,b)]);
  assert.equal(host.starts.length,2);assert.equal(calls.runner.length,0);
- const [one,two]=host.starts;assert.equal(one.enableInternet,false);assert.notEqual(one.env.RAYDE_DEMO_TOKEN,two.env.RAYDE_DEMO_TOKEN);
+ const [one,two]=host.starts;assert.equal(one.enableInternet,false);assert.equal(one.instance,'standard-1','the default size is a documented start() value');assert.notEqual(one.env.RAYDE_DEMO_TOKEN,two.env.RAYDE_DEMO_TOKEN);
  for(const item of host.starts){
   assert.equal(item.env.RAYDE_DEMO_ID,item.id);assert.equal(item.env.RAYDE_DEMO_RELEASE,release);assert.equal(item.env.RAYDE_DEMO_TOOLCHAIN,toolchain);
   assert.match(item.env.RAYDE_DEMO_TOKEN,/^[a-f0-9]{64}$/);assert.equal(item.env.RAYDE_DEMO_GENERATION,'1');

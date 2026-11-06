@@ -23,12 +23,13 @@ The `v4` migration and `DEMO_CONTAINERS` binding are defined in `web/cloud/wrang
 "containers": [{
   "class_name": "DemoContainer",
   "scheduling_policy": "durable_object",
-  "images": {"base": {"image": "registry.cloudflare.com/ACCOUNT/IMAGE@sha256:DIGEST"}},
-  "max_instances": 2
+  "images": {"base": {"image": "registry.cloudflare.com/ACCOUNT/IMAGE@sha256:DIGEST"}}
 }]
 ```
 
-Set `DEMO_COMPUTE=containers`, `DEMO_ORIGIN`, `DEMO_RELEASE`, `DEMO_TOOLCHAIN`, `DEMO_MAX_SESSIONS=2` and the landing asset route before enabling the live demo. The controller selects `basic` (1 GiB / ¼ vCPU) and disables Internet egress. Measure changed-source builds before choosing a larger instance. No `RUNNER_SECRET`, GitHub token or private repository is sent into these containers.
+Under this scheduling policy Wrangler rejects `image`, `instance_type` and `max_instances`: the size is chosen by the controller at start, and concurrency is bounded by `DEMO_MAX_SESSIONS` in admission. The image must fit the instance's disk.
+
+Set `DEMO_COMPUTE=containers`, `DEMO_ORIGIN`, `DEMO_RELEASE`, `DEMO_TOOLCHAIN`, `DEMO_MAX_SESSIONS=2` and the landing asset route before enabling the live demo. `DEMO_INSTANCE` names the instance size (`lite`, `basic`, `standard-1` to `standard-4`; default `standard-1`: ½ vCPU, 4 GiB, 8 GB disk). Cloudflare's start() reference lists `lite` and `standard-*` only, so confirm `basic` on staging before using it. Measure peak memory of changed-source builds and the language server, then pick the smallest size that holds them. Internet egress is disabled. No `RUNNER_SECRET`, GitHub token or private repository is sent into these containers.
 
 Admission still enforces the fifteen-minute hard deadline, five-minute idle deadline and bounded retries. Both the Rust entrypoint and Durable Object enforce expiry. Cleanup must confirm container destruction before freeing capacity and purging private recovery data. Lease provider selection persists, so changing configuration cannot send an older MSB lease to container cleanup.
 
