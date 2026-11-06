@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs only in the isolated, network-enabled image builder, never in a user's workspace.
 set -eu
+install_toolchain() {
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ca-certificates git neko python3 libgit2-1.9
@@ -39,6 +40,11 @@ if [ -d /opt/rayde/preview ]; then
   haxe build.hxml -D wasm -cp /opt/rayde/preview/haxe
 fi
 rm -rf bin .rayde .rayzor /tmp/rayde-probe
+apt-get clean
+rm -rf /var/lib/apt/lists/*
+}
+
+prepare_demo() {
 if [ -f /opt/rayde/demo-workspace.json ]; then
   if [ -f /opt/rayde/preview-operator.hl ]; then
     python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json \
@@ -47,6 +53,13 @@ if [ -f /opt/rayde/demo-workspace.json ]; then
     python3 /opt/rayde/demo_cache.py prepare --bundle /opt/rayde/demo-workspace.json
   fi
 fi
-apt-get clean
-rm -rf /var/lib/apt/lists/*
 python3 /opt/rayde/finalize.py
+}
+
+# OCI builds retain installed libraries while preparing the immutable demo caches.
+case "${1:-all}" in
+  install) install_toolchain ;;
+  prepare) prepare_demo ;;
+  all) install_toolchain; prepare_demo ;;
+  *) echo 'Expected install, prepare, or all' >&2; exit 2 ;;
+esac
