@@ -14,6 +14,16 @@ spec.loader.exec_module(module)
 from native_web import MODULES, stage
 
 class PreviewToolchain(unittest.TestCase):
+    def test_installed_ash_support_preserves_runtime_and_aot_without_copying_unrelated_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);installed=root/'installed';output=root/'output'
+            installed.mkdir();output.mkdir()
+            for name in ['ash','libash_std.so','libash_std.a','simd.hdll','unrelated-private-file']:
+                (installed/name).write_text(name)
+            module.copy_ash_support(installed/'ash',output)
+            self.assertEqual(sorted(path.name for path in output.iterdir()),['libash_std.a','libash_std.so','simd.hdll'])
+            for path in output.iterdir():self.assertEqual(path.read_text(),path.name)
+
     def setUp(self):
         self.temporary=tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

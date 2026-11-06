@@ -74,6 +74,12 @@ def copy_binary(source,destination,libraries):
             raise ValueError('Conflicting toolchain runtime libraries')
         shutil.copy2(Path(path).resolve(),target)
 
+def copy_ash_support(ash,destination):
+    # The installed CLI loads its shared runtime beside the executable and uses the archive for AOT.
+    for source in ash.parent.iterdir():
+        if source.is_file() and (source.suffix=='.hdll' or source.name in ('libash_std.so','libash_std.a','libhl.so')):
+            shutil.copy2(source,destination/source.name)
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--msb',type=Path,default=Path.home()/'.local/bin/msb')
@@ -135,8 +141,7 @@ def main():
             if args.preview_operator.stat().st_size>8*1024*1024 or args.preview_operator.read_bytes()[:3]!=b'HLB':
                 parser.error('The preview operator must be bounded HashLink bytecode')
             shutil.copy2(args.preview_operator,payload/'preview-operator.hl')
-        for source in args.ash.parent.glob('*.hdll'):
-            shutil.copy2(source,payload/'bin'/source.name)
+        copy_ash_support(args.ash,payload/'bin')
         shutil.copytree(args.stdlib,payload/'haxe-std',symlinks=False)
         if rayzor_build is not None:
             verify_rayzor_build(rayzor_build,payload/'bin/rayzor',payload/'haxe-std')

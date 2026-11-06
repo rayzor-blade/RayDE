@@ -4,10 +4,8 @@
 # blinc_abi.hdll, xgpu.hdll and xwindow.hdll (RayDE's bin by default). The app is drawn on the host's wgpu adapter; no window is made.
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
-siblings=$(dirname "$here")
 hxml=${HXML:-build.hxml}
-ash=${ASH:-$siblings/ash/target/release/ash}
-[ -x "$ash" ] || ash=$(command -v ash || true)
+ash=$(command -v "${ASH:-ash}" || true)
 [ -x "$ash" ] || { echo "ashui-surface.sh: put ash on PATH or set ASH" >&2; exit 1; }
 [ -f "$hxml" ] || { echo "ashui-surface.sh: no $hxml in $(pwd)" >&2; exit 1; }
 natives=${ASH_UI_BIN:-$here/bin}
