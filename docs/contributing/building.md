@@ -20,7 +20,7 @@ irm https://ash.rayzor.tech/install.ps1 | iex
 
 Install Haxe 4.3.6, Python 3.11 or newer, Git, Rustup, CMake and a C/C++ build toolchain. Native image decoders also require NASM on x86 machines. Linux needs the window-system development libraries listed in the [distribution workflow](../../.github/workflows/distribution.yml); Windows needs a Visual Studio x64 developer environment and Git Bash.
 
-Clone into a dedicated parent directory: the source dependency helper creates pinned sibling checkouts and refuses to replace mismatched or modified ones.
+Clone into a dedicated parent directory: (e.g. `C:/Users/NAME/ash-dev`) the source dependency helper creates pinned sibling checkouts and refuses to replace mismatched or modified ones.
 
 ```sh
 git clone https://github.com/rayzor-blade/RayDE.git
